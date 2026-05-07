@@ -1,0 +1,846 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Q-Vuln Post-Quantum Security Scanner API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Authentication
+  - name: projects
+    description: Project management
+  - name: scans
+    description: Security scanning
+  - name: community
+    description: Community hub
+  - name: stats
+    description: Platform statistics
+  - name: demo
+    description: Demo repositories
+  - name: github
+    description: GitHub repository scanning
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all projects
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectBody"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get a project by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /scans:
+    post:
+      operationId: createScan
+      tags: [scans]
+      summary: Start a new scan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScanBody"
+      responses:
+        "201":
+          description: Scan initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+
+  /scans/{id}:
+    get:
+      operationId: getScan
+      tags: [scans]
+      summary: Get scan results
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Scan results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+        "404":
+          description: Not found
+
+  /scans/{id}/findings:
+    get:
+      operationId: getScanFindings
+      tags: [scans]
+      summary: Get all findings for a scan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Scan findings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Finding"
+
+  /community/posts:
+    get:
+      operationId: listCommunityPosts
+      tags: [community]
+      summary: List community posts
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [article, question, migration-story, all]
+        - name: language
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Community posts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommunityPost"
+    post:
+      operationId: createCommunityPost
+      tags: [community]
+      summary: Create a community post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommunityPostBody"
+      responses:
+        "201":
+          description: Created post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityPost"
+
+  /community/posts/{id}/vote:
+    post:
+      operationId: voteCommunityPost
+      tags: [community]
+      summary: Vote on a community post
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoteBody"
+      responses:
+        "200":
+          description: Updated post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityPost"
+
+  /community/leaderboard:
+    get:
+      operationId: getLeaderboard
+      tags: [community]
+      summary: Get top contributors leaderboard
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Leaderboard
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+
+  /stats:
+    get:
+      operationId: getGlobalStats
+      tags: [stats]
+      summary: Get global platform statistics
+      responses:
+        "200":
+          description: Global stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GlobalStats"
+
+  /demo/repos:
+    get:
+      operationId: listDemoRepos
+      tags: [demo]
+      summary: List available demo repositories
+      responses:
+        "200":
+          description: Demo repos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DemoRepo"
+
+  /demo/repos/{slug}/scan:
+    post:
+      operationId: runDemoScan
+      tags: [demo]
+      summary: Run a scan on a demo repository
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Demo scan results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scan"
+
+  /auth/user:
+    get:
+      operationId: getCurrentAuthUser
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Current auth state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetCurrentAuthUserResponse"
+
+  /github/scan:
+    post:
+      operationId: scanGithubRepo
+      tags: [github]
+      summary: Scan a public GitHub repository for quantum vulnerabilities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GithubScanBody"
+      responses:
+        "200":
+          description: GitHub scan results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GithubScanResult"
+        "400":
+          description: Invalid URL
+        "404":
+          description: Repository not found
+        "429":
+          description: GitHub API rate limit
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        language:
+          type: string
+        riskScore:
+          type: integer
+          nullable: true
+        lastScanAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        totalScans:
+          type: integer
+        criticalCount:
+          type: integer
+        alertCount:
+          type: integer
+        cleanCount:
+          type: integer
+      required:
+        - id
+        - name
+        - language
+        - createdAt
+        - totalScans
+        - criticalCount
+        - alertCount
+        - cleanCount
+
+    CreateProjectBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        language:
+          type: string
+        code:
+          type: string
+      required:
+        - name
+        - language
+        - code
+
+    Scan:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        mode:
+          type: string
+          enum: [scan-only, interactive, proactive, community]
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        riskScore:
+          type: integer
+          nullable: true
+        totalLines:
+          type: integer
+        criticalCount:
+          type: integer
+        alertCount:
+          type: integer
+        cleanCount:
+          type: integer
+        totalEffortHours:
+          type: number
+        estimatedCost:
+          type: integer
+        executiveSummary:
+          type: string
+          nullable: true
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - projectId
+        - mode
+        - status
+        - totalLines
+        - criticalCount
+        - alertCount
+        - cleanCount
+        - totalEffortHours
+        - estimatedCost
+        - createdAt
+
+    CreateScanBody:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        mode:
+          type: string
+          enum: [scan-only, interactive, proactive, community]
+        code:
+          type: string
+        language:
+          type: string
+      required:
+        - projectId
+        - mode
+        - code
+        - language
+
+    Finding:
+      type: object
+      properties:
+        id:
+          type: integer
+        scanId:
+          type: integer
+        fileName:
+          type: string
+        lineNumber:
+          type: integer
+        severity:
+          type: string
+          enum: [critical, alert, safe]
+        algorithm:
+          type: string
+        codeSnippet:
+          type: string
+        nistReplacement:
+          type: string
+          nullable: true
+        nistStandard:
+          type: string
+          nullable: true
+        effortHours:
+          type: number
+        explanation:
+          type: string
+          nullable: true
+      required:
+        - id
+        - scanId
+        - fileName
+        - lineNumber
+        - severity
+        - algorithm
+        - codeSnippet
+        - effortHours
+
+    CommunityPost:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [article, question, migration-story]
+        title:
+          type: string
+        content:
+          type: string
+        authorName:
+          type: string
+        language:
+          type: string
+          nullable: true
+        framework:
+          type: string
+          nullable: true
+        upvotes:
+          type: integer
+        downvotes:
+          type: integer
+        tags:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - type
+        - title
+        - content
+        - authorName
+        - upvotes
+        - downvotes
+        - tags
+        - createdAt
+
+    CreateCommunityPostBody:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [article, question, migration-story]
+        title:
+          type: string
+        content:
+          type: string
+        authorName:
+          type: string
+        language:
+          type: string
+        framework:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+        - type
+        - title
+        - content
+        - authorName
+
+    VoteBody:
+      type: object
+      properties:
+        direction:
+          type: string
+          enum: [up, down]
+      required:
+        - direction
+
+    LeaderboardEntry:
+      type: object
+      properties:
+        rank:
+          type: integer
+        authorName:
+          type: string
+        totalScans:
+          type: integer
+        totalPosts:
+          type: integer
+        totalUpvotes:
+          type: integer
+        badge:
+          type: string
+          enum: [bronze, silver, gold, quantum-guardian]
+        points:
+          type: integer
+      required:
+        - rank
+        - authorName
+        - totalScans
+        - totalPosts
+        - totalUpvotes
+        - badge
+        - points
+
+    GlobalStats:
+      type: object
+      properties:
+        totalReposScanned:
+          type: integer
+        totalVulnerabilitiesFound:
+          type: integer
+        totalLinesScanned:
+          type: integer
+        totalCommunityPosts:
+          type: integer
+        totalMigrationsAssisted:
+          type: integer
+        mostCommonAlgorithm:
+          type: string
+        recentActivity:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityItem"
+      required:
+        - totalReposScanned
+        - totalVulnerabilitiesFound
+        - totalLinesScanned
+        - totalCommunityPosts
+        - totalMigrationsAssisted
+        - mostCommonAlgorithm
+        - recentActivity
+
+    ActivityItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        description:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        severity:
+          type: string
+          enum: [critical, alert, info]
+      required:
+        - id
+        - description
+        - timestamp
+        - severity
+
+    DemoRepo:
+      type: object
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        language:
+          type: string
+        stars:
+          type: integer
+        riskScore:
+          type: integer
+        criticalCount:
+          type: integer
+        alertCount:
+          type: integer
+      required:
+        - slug
+        - name
+        - description
+        - language
+        - stars
+        - riskScore
+        - criticalCount
+        - alertCount
+
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          nullable: true
+        firstName:
+          type: string
+          nullable: true
+        lastName:
+          type: string
+          nullable: true
+        profileImageUrl:
+          type: string
+          nullable: true
+      required:
+        - id
+
+    GetCurrentAuthUserResponse:
+      type: object
+      properties:
+        user:
+          anyOf:
+            - $ref: "#/components/schemas/AuthUser"
+            - type: "null"
+      required:
+        - user
+
+    ExchangeMobileAuthorizationCodeBody:
+      type: object
+      properties:
+        code:
+          type: string
+        code_verifier:
+          type: string
+        redirect_uri:
+          type: string
+        state:
+          type: string
+        nonce:
+          type: string
+          nullable: true
+      required:
+        - code
+        - code_verifier
+        - redirect_uri
+        - state
+
+    ExchangeMobileAuthorizationCodeResponse:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
+
+    LogoutMobileSessionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success
+
+    GithubScanBody:
+      type: object
+      properties:
+        repoUrl:
+          type: string
+          description: Public GitHub repository URL
+      required:
+        - repoUrl
+
+    GithubFileResult:
+      type: object
+      properties:
+        path:
+          type: string
+        language:
+          type: string
+        lines:
+          type: integer
+        criticalCount:
+          type: integer
+        alertCount:
+          type: integer
+      required:
+        - path
+        - language
+        - lines
+        - criticalCount
+        - alertCount
+
+    GithubScanResult:
+      type: object
+      properties:
+        repoUrl:
+          type: string
+        owner:
+          type: string
+        repo:
+          type: string
+        totalFiles:
+          type: integer
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+        criticalCount:
+          type: integer
+        alertCount:
+          type: integer
+        cleanCount:
+          type: integer
+        riskScore:
+          type: integer
+        totalLines:
+          type: integer
+        totalEffortHours:
+          type: number
+          nullable: true
+        executiveSummary:
+          type: string
+        fileResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/GithubFileResult"
+      required:
+        - repoUrl
+        - owner
+        - repo
+        - totalFiles
+        - findings
+        - criticalCount
+        - alertCount
+        - cleanCount
+        - riskScore
+        - totalLines
+        - executiveSummary
+        - fileResults

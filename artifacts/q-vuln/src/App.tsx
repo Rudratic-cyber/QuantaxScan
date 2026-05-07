@@ -1,0 +1,87 @@
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import NotFound from "@/pages/not-found";
+import { Layout } from "@/components/layout/Layout";
+import { Home } from "@/pages/Home";
+import { Scan } from "@/pages/Scan";
+import { Demo } from "@/pages/Demo";
+import { Dashboard } from "@/pages/Dashboard";
+import { Community } from "@/pages/Community";
+import { CreatePost } from "@/pages/CreatePost";
+import { Report } from "@/pages/Report";
+import { IntroScreen } from "@/components/IntroScreen";
+import { motion } from "framer-motion";
+import { useState } from "react";
+
+const queryClient = new QueryClient();
+
+let introHasPlayed = false;
+
+function AppRouter() {
+  return (
+    <Switch>
+      <Route path="/" component={Home} />
+      <Route path="/scan" component={Scan} />
+      <Route path="/demo/:slug" component={Demo} />
+      <Route path="/dashboard" component={Dashboard} />
+      <Route path="/community/create" component={CreatePost} />
+      <Route path="/community" component={Community} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function AppInner() {
+  const [location]  = useLocation();
+  const isHome      = location === "/";
+  const isReport    = location.startsWith("/report/");
+  const [introDone, setIntroDone] = useState(() => introHasPlayed);
+
+  const handleIntroDone = () => {
+    introHasPlayed = true;
+    setIntroDone(true);
+  };
+
+  // Report pages are fully standalone — no Layout, no intro, no animation wrapper
+  if (isReport) {
+    return <Route path="/report/:id" component={Report} />;
+  }
+
+  return (
+    <>
+      {isHome && !introDone && (
+        <IntroScreen onDone={handleIntroDone} />
+      )}
+      <motion.div
+        animate={
+          introDone || !isHome
+            ? { opacity: 1, scale: 1, filter: "blur(0px)" }
+            : { opacity: 0, scale: 0.96, filter: "blur(6px)" }
+        }
+        transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
+        style={{ willChange: "transform, opacity, filter" }}
+      >
+        <Layout>
+          <AppRouter />
+        </Layout>
+      </motion.div>
+    </>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <AppInner />
+        </WouterRouter>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;

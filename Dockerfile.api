@@ -1,0 +1,26 @@
+FROM node:24-bookworm-slim AS build
+
+WORKDIR /app
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+
+RUN corepack enable
+
+COPY . .
+
+RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm --filter @workspace/api-server run build
+
+FROM node:24-bookworm-slim
+
+WORKDIR /app
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+
+RUN corepack enable
+COPY --from=build /app /app
+
+EXPOSE 5000
+
+CMD ["pnpm", "--filter", "@workspace/api-server", "start"]

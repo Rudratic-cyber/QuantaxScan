@@ -1,0 +1,12 @@
+.git
+.gitignore
+.vscode
+**/node_modules
+**/dist
+**/build
+**/.turbo
+**/.next
+**/.cache
+pnpm-debug.log
+npm-debug.log
+.DS_Store

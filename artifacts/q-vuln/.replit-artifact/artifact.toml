@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Q-Vuln — Post-Quantum Security Scanner"
+version = "1.0.0"
+id = "artifacts/q-vuln"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20714
+
+[services.development]
+run = "pnpm --filter @workspace/q-vuln run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/q-vuln", "run", "build" ]
+publicDir = "artifacts/q-vuln/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20714"
+BASE_PATH = "/"
