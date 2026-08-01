@@ -32,17 +32,21 @@ lib/
   db/           — Drizzle ORM schema + client
 ```
 
-## Design System (Electric Blue / Deep Space)
+## Design System (Clean Light Enterprise)
 
-- **Primary**: Electric blue `#4f8ef7` with glow utilities
-- **Accent**: Quantum purple `#a78bfa`
-- **Backgrounds**: `#050810` void → `#0d1224` surface → `#131d35` elevated
-- **Text**: `#f1f5f9` primary, `#94a3b8` secondary, `#475569` muted
-- **Logo**: Hexagonal mark with circuit traces, Q letterform, and orbit ring (QBitronLogo.tsx)
-- **Fonts**: Inter (sans) + JetBrains Mono (mono)
-- **Background**: GalaxyBackground.tsx — animated canvas with nebula, stars, hex grid, quantum wave lines, floating particles
-- **Animations**: Framer Motion throughout — whileInView scroll reveals, hover lift/scale, animated number counters, typewriter cycling hero taglines
-- **Cards**: `rounded-xl` uniform rounding with `border-white/6` subtle borders
+- **Primary**: Indigo `#4f46e5` (hover `#4338ca`), soft fill `#eef0fe`
+- **Accent**: Teal `#0d9488` for a distinct secondary
+- **Surfaces**: `#ffffff` page/cards → `#f7f8fa` alternating sections → `#f1f3f7` elevated
+- **Text**: `#0a0e1a` ink → `#475569` secondary → `#6b7280` muted → `#9aa3b2` faint
+- **Semantic**: critical `#dc2626`, alert `#d97706`, safe `#059669` (soft bgs `#fef2f2` / `#fffbeb` / `#ecfdf5`)
+- **Borders**: hairline `#e5e7eb` (subtle dividers `#eceef2`)
+- **Logo**: Hexagonal mark with circuit traces, Q letterform, and orbit ring in indigo/teal (QBitronLogo.tsx)
+- **Fonts**: Inter (sans, incl. 800 for display) + JetBrains Mono (reserved for code / terminal / tabular data)
+- **Chrome**: white blurred navbar with hairline border; standardised Footer
+- **Intro**: brief, fully-skippable product boot (Skip button + Esc + click-anywhere; plays once per session)
+- **Animations**: Framer Motion — whileInView scroll reveals, subtle hover lift, animated counters
+- **Cards**: `rounded-xl`/`rounded-2xl` with `border-[#e5e7eb]` and soft neutral shadows (`.card-lift`)
+- **Marketing pages**: `/` Home (inventory-first), `/coverage` (honest surface grid), `/security` (trust posture)
 
 ## Key Features
 

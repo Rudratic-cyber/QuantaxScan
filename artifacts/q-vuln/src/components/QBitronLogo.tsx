@@ -11,9 +11,7 @@ const SIZE_MAP: Record<LogoSize, { icon: number; text: string; gap: string; font
   xl: { icon: 64, text: "text-4xl", gap: "gap-4", fontSize: 30 },
 };
 
-function QBitronMark({ size = 32, glow = true, animate: doAnimate = false }: {
-  size?: number; glow?: boolean; animate?: boolean;
-}) {
+function QBitronMark({ size = 32 }: { size?: number; glow?: boolean; animate?: boolean }) {
   const s = size;
   const cx = s / 2;
   const cy = s / 2;
@@ -36,16 +34,15 @@ function QBitronMark({ size = 32, glow = true, animate: doAnimate = false }: {
       viewBox={`0 0 ${s} ${s}`}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      style={glow ? { filter: "drop-shadow(0 0 4px rgba(79,142,247,0.8)) drop-shadow(0 0 14px rgba(79,142,247,0.35))" } : undefined}
     >
       <defs>
         <linearGradient id="qb-grad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#4f8ef7" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.08" />
+          <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.12" />
+          <stop offset="100%" stopColor="#0d9488" stopOpacity="0.06" />
         </linearGradient>
         <linearGradient id="qb-stroke" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#4f8ef7" />
-          <stop offset="100%" stopColor="#7c6af5" />
+          <stop offset="0%" stopColor="#4f46e5" />
+          <stop offset="100%" stopColor="#4338ca" />
         </linearGradient>
       </defs>
 
@@ -62,7 +59,7 @@ function QBitronMark({ size = 32, glow = true, animate: doAnimate = false }: {
       <polygon
         points={innerHexPoints}
         fill="none"
-        stroke="rgba(79,142,247,0.2)"
+        stroke="rgba(79,70,229,0.18)"
         strokeWidth={s * 0.022}
         strokeLinejoin="round"
       />
@@ -76,7 +73,7 @@ function QBitronMark({ size = 32, glow = true, animate: doAnimate = false }: {
         const y2 = cy + r * 0.6 * Math.sin(a);
         return (
           <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-            stroke="rgba(79,142,247,0.3)" strokeWidth={s * 0.025} strokeLinecap="round" />
+            stroke="rgba(79,70,229,0.28)" strokeWidth={s * 0.025} strokeLinecap="round" />
         );
       })}
 
@@ -86,23 +83,23 @@ function QBitronMark({ size = 32, glow = true, animate: doAnimate = false }: {
         textAnchor="middle"
         fontSize={s * 0.36}
         fontWeight="800"
-        fontFamily="'JetBrains Mono', 'SF Mono', monospace"
-        fill="#4f8ef7"
+        fontFamily="'Inter', system-ui, sans-serif"
+        fill="#4f46e5"
         letterSpacing="-1"
       >Q</text>
 
       {/* Quantum orbit ring */}
       <ellipse cx={cx} cy={cy} rx={r * 0.82} ry={r * 0.28}
         fill="none"
-        stroke="rgba(167,139,250,0.35)" strokeWidth={s * 0.022}
+        stroke="rgba(13,148,136,0.4)" strokeWidth={s * 0.022}
         transform={`rotate(-40 ${cx} ${cy})`}
         strokeDasharray={`${s * 0.15} ${s * 0.06}`}
       />
 
       {/* Corner quantum dots */}
-      <circle cx={cx + r * 0.72} cy={cy - r * 0.42} r={s * 0.042} fill="#a78bfa" opacity="0.9" />
-      <circle cx={cx - r * 0.65} cy={cy + r * 0.48} r={s * 0.032} fill="#4f8ef7" opacity="0.7" />
-      <circle cx={cx + r * 0.1}  cy={cy - r * 0.82} r={s * 0.028} fill="#a78bfa" opacity="0.6" />
+      <circle cx={cx + r * 0.72} cy={cy - r * 0.42} r={s * 0.042} fill="#0d9488" opacity="0.9" />
+      <circle cx={cx - r * 0.65} cy={cy + r * 0.48} r={s * 0.032} fill="#4f46e5" opacity="0.7" />
+      <circle cx={cx + r * 0.1}  cy={cy - r * 0.82} r={s * 0.028} fill="#0d9488" opacity="0.6" />
     </svg>
   );
 }
@@ -110,9 +107,7 @@ function QBitronMark({ size = 32, glow = true, animate: doAnimate = false }: {
 export function QBitronLogo({
   variant = "full",
   size = "sm",
-  glow = true,
   className = "",
-  animate = false,
 }: {
   variant?: LogoVariant;
   size?: LogoSize;
@@ -122,35 +117,27 @@ export function QBitronLogo({
 }) {
   const s = SIZE_MAP[size];
 
-  if (variant === "icon") return <QBitronMark size={s.icon} glow={glow} animate={animate} />;
+  if (variant === "icon") return <QBitronMark size={s.icon} />;
 
   if (variant === "wordmark") {
     return (
       <span
-        className={`font-mono font-bold tracking-tight ${s.text} ${className}`}
-        style={{
-          color: "#f1f5f9",
-          textShadow: glow ? "0 0 12px rgba(79,142,247,0.4)" : undefined,
-          letterSpacing: "-0.02em",
-        }}
+        className={`font-bold tracking-tight ${s.text} ${className}`}
+        style={{ color: "#0a0e1a", letterSpacing: "-0.02em" }}
       >
-        Q-<span style={{ color: "#4f8ef7" }}>BITRON</span>
+        Q-<span style={{ color: "#4f46e5" }}>Vuln</span>
       </span>
     );
   }
 
   return (
     <div className={`flex items-center ${s.gap} ${className}`}>
-      <QBitronMark size={s.icon} glow={glow} animate={animate} />
+      <QBitronMark size={s.icon} />
       <span
-        className={`font-mono font-bold tracking-tight ${s.text}`}
-        style={{
-          color: "#f1f5f9",
-          textShadow: glow ? "0 0 10px rgba(79,142,247,0.3)" : undefined,
-          letterSpacing: "-0.02em",
-        }}
+        className={`font-bold tracking-tight ${s.text}`}
+        style={{ color: "#0a0e1a", letterSpacing: "-0.02em" }}
       >
-        Q-<span style={{ color: "#4f8ef7" }}>BITRON</span>
+        Q-<span style={{ color: "#4f46e5" }}>Vuln</span>
       </span>
     </div>
   );

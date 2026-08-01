@@ -1,3 +1,9 @@
 <svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="180" height="180" rx="36" fill="#FF3C00"/>
+  <rect width="180" height="180" rx="40" fill="#4F46E5"/>
+  <polygon points="90,34 138,62 138,118 90,146 42,118 42,62"
+    fill="none" stroke="#ffffff" stroke-width="7" stroke-linejoin="round" opacity="0.55"/>
+  <text x="90" y="118" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+    font-size="86" font-weight="800" fill="#ffffff" letter-spacing="-3">Q</text>
+  <ellipse cx="90" cy="90" rx="52" ry="18" fill="none" stroke="#a5f3ec" stroke-width="5"
+    transform="rotate(-38 90 90)" stroke-dasharray="14 8" opacity="0.9"/>
 </svg>
