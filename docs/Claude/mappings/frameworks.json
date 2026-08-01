@@ -1,0 +1,237 @@
+{
+  "schemaVersion": "1.0.0",
+  "dataVersion": "0.3.0",
+  "compiledAt": "2026-08-01",
+  "verifiedAt": "2026-08-01",
+  "verificationNote": "NIST, CISA joint factsheet and CycloneDX entries verified against primary sources on 2026-08-01. CNSA 2.0 and OMB M-23-02 remain needs-check — nsa.gov, media.defense.gov and cisa.gov all return HTTP 403 to automated fetches and must be verified by hand.",
+
+  "frameworks": [
+    {
+      "id": "NIST-FIPS",
+      "name": "NIST Post-Quantum Cryptography Standards",
+      "publisher": "NIST",
+      "documents": ["FIPS 203 (ML-KEM)", "FIPS 204 (ML-DSA)", "FIPS 205 (SLH-DSA)"],
+      "status": "FINAL — all three published August 2024",
+      "applicability": { "jurisdictions": ["*"], "sectors": ["*"], "systemTypes": ["*"] },
+      "role": "Defines the approved replacement algorithms. Universally applicable as the target state.",
+      "url": "https://csrc.nist.gov/projects/post-quantum-cryptography",
+      "retrievedAt": "2026-08-01",
+      "confidence": "verified",
+      "pendingAdditions": "Falcon (FN-DSA) and HQC are selected but standardization is still underway. No published FIPS number confirmed for either as of 2026-08-01."
+    },
+    {
+      "id": "NIST-IR-8547",
+      "name": "Transition to Post-Quantum Cryptography Standards",
+      "publisher": "NIST",
+      "documents": ["NIST IR 8547 ipd"],
+      "status": "INITIAL PUBLIC DRAFT",
+      "published": "2024-11-12",
+      "commentPeriodClosed": "2025-01-10",
+      "finalStatus": "NOT FINAL as of 2026-08-01. The CSRC landing page still shows only the ipd.",
+      "applicability": { "jurisdictions": ["US", "*"], "sectors": ["*"], "systemTypes": ["*"] },
+      "role": "Defines the deprecation and disallowance TIMELINE. This is the source of the dates that make our reports actionable.",
+      "keyDates": [
+        { "securityStrength": "112 bits", "type": "deprecated", "after": "2030", "appliesTo": "RSA, ECDSA, finite-field DH/MQV, elliptic-curve DH/MQV", "source": "Tables 2 and 4", "confidence": "verified" },
+        { "securityStrength": "112 bits", "type": "disallowed", "after": "2035", "appliesTo": "RSA, ECDSA, finite-field DH/MQV, elliptic-curve DH/MQV", "source": "Tables 2 and 4", "confidence": "verified" },
+        { "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "appliesTo": "RSA, ECDSA, EdDSA, DH/MQV, ECDH/MQV — ALL sizes", "source": "Tables 2 and 4", "confidence": "verified" },
+        { "securityStrength": "112 bits (symmetric)", "type": "disallowed", "in": "2030", "appliesTo": "Symmetric standards at the 112-bit level", "source": "§4.1.3", "confidence": "verified" }
+      ],
+      "criticalNuance": "Larger classical key sizes do NOT extend the deadline. RSA-3072 and P-384 are disallowed after 2035 on the same schedule as RSA-2048 and P-256. The only difference is that 112-bit parameters get an earlier DEPRECATION milestone in 2030. Many vendors get this wrong.",
+      "contextQuote": "§4.1.1: SP 800-57pt1 had projected NIST would disallow 112-bit public-key schemes on 2031-01-01; IR 8547 instead DEPRECATES them at that level so organisations can continue use while migrating.",
+      "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
+      "pdf": "https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf",
+      "retrievedAt": "2026-08-01",
+      "confidence": "verified",
+      "customerFacingRule": "Because this is a DRAFT, every customer-facing use must be labelled 'NIST draft guidance (IR 8547 ipd, November 2024)'. Presenting these as final binding dates is a factual error."
+    },
+    {
+      "id": "NIST-SP-1800-38",
+      "name": "Migration to Post-Quantum Cryptography — Quantum Readiness: Cryptographic Discovery",
+      "publisher": "NIST NCCoE",
+      "documents": [
+        "SP 1800-38A — Executive Summary (preliminary draft, comment closed 2023-06-08)",
+        "SP 1800-38B — Approach, Architecture, and Security Characteristics of Public Key Application Discovery Tools (preliminary draft, December 2023)",
+        "SP 1800-38C — Quantum Readiness: Testing Draft Standards for Interoperability and Performance (preliminary draft, December 2023)"
+      ],
+      "status": "PRELIMINARY DRAFT — Volumes B and C comment period closed 2024-02-20. Additional volumes expected.",
+      "applicability": { "jurisdictions": ["*"], "sectors": ["*"], "systemTypes": ["*"] },
+
+      "role": "THE MOST DIRECTLY RELEVANT NIST PUBLICATION TO THIS PRODUCT. Volume B is a practice guide for cryptographic discovery TOOLS — i.e. the exact product category Q-Vuln is in. It defines a discovery architecture, a normalisation scheme for discovery output, and a functional test plan for evaluating discovery tools.",
+
+      "whyItMatters": "IR 8547 tells us WHICH algorithms must go and by when. The CISA factsheet tells us inventory comes first. SP 1800-38B tells us HOW a discovery tool should be built and what it should emit. It is the closest thing to a specification for our product, and a buyer evaluating us may well use its functional test plan (Appendix C, eight use cases) as an evaluation rubric.",
+
+      "discoveryArchitecture": {
+        "note": "SP 1800-38B §4.1 defines three discovery domains. Our collector roadmap should map onto these explicitly.",
+        "domains": [
+          { "section": "4.1.1", "name": "Protecting the Code Development Pipeline", "covers": "CI/CD pipeline software, SDLC software, repository components", "ourCollectors": ["B1 source", "B2 dependencies"] },
+          { "section": "4.1.2", "name": "Operational Systems and Applications", "covers": "Filesystem scanning sensors on end-user devices and servers; EDR integration; BINARY scanning for third-party code with no available source", "ourCollectors": ["B7 data-at-rest", "B10 binaries — NOTE: NIST treats binary scanning as core, not deferred"] },
+          { "section": "4.1.3", "name": "Transport Protocols and Network Services", "covers": "Real-time network scanning and passive discovery from historical packet captures, across cloud, on-premises and untrusted networks", "ourCollectors": ["B3 TLS", "B4 certificates", "B6 protocol config"] }
+        ]
+      },
+
+      "discoveryModalities": {
+        "note": "SP 1800-38B §4.1.4 names four ways discovery data is obtained. Our confidence model should distinguish them.",
+        "modalities": ["passive network observations", "active network scans", "endpoint monitoring", "configuration information"]
+      },
+
+      "normalisationRequirement": {
+        "note": "DIRECT VALIDATION of our collector/observation design — and a concrete schema requirement we do not currently meet.",
+        "problemQuote": "§4.1.4: 'The reports produced by the discovery platforms in this demonstration are unique in that they do not use a common format for representing the discovery results. In a contrived example, a network discovery platform may identify a host system as host.example.com:443, whereas another may omit the port number (host.example.com). Therefore, we identified the need for a common format to represent normalized discovery reports, ideally by leveraging existing normalization efforts to the extent possible.'",
+        "scopeNote": "§4.1.4 explicitly states it 'does not define a schema, but instead defines descriptive data elements'. So this is guidance to align with, not a format to serialise to — CycloneDX CBOM remains our wire format.",
+        "networkDataElements": [
+          { "element": "IP (v4 or v6) Address", "representation": "String" },
+          { "element": "Destination Port", "representation": "Number" },
+          { "element": "Hostname", "representation": "String" },
+          { "element": "Application Layer Protocol", "representation": "String — IANA Service Name or TLS ALPN ID (RFC 6335 §5.1 / RFC 7301)" },
+          { "element": "Application Software", "representation": "String — Common Platform Enumeration (CPE) 2.3, NIST IR 7695" },
+          { "element": "Operating System", "representation": "String — CPE 2.3, NIST IR 7695" },
+          { "element": "Device Vendor", "representation": "String — CPE 2.3, NIST IR 7695" }
+        ],
+        "actionRequired": "Our asset model uses a freeform jsonb locationDetail. To align, network-surface assets should carry these named elements with CPE 2.3 for software/OS/vendor identification. See open gap G-15."
+      },
+
+      "consortiumMembers": {
+        "note": "COMMERCIAL REALITY CHECK. SP 1800-38B §5.1 lists the technology collaborators who contributed discovery tools to the NCCoE lab. These are the credible competitors in this exact category — not a spreadsheet.",
+        "members": ["Cisco", "IBM", "Infosec Global (ISG)", "ISARA Corporation", "Keyfactor", "Microsoft", "SafeLogic", "Samsung SDS", "SandboxAQ", "wolfSSL"]
+      },
+
+      "functionalTestPlan": "Appendix C defines eight use cases for a Discovery Platform Lab Functional Demonstration. Worth treating as an acceptance-test suite for our own collectors, and as a likely buyer evaluation rubric.",
+
+      "url": "https://www.nccoe.nist.gov/publications/practice-guide/migration-post-quantum-cryptography-nist-sp-1800-38-practice-guide",
+      "csrcUrl": "https://csrc.nist.gov/pubs/sp/1800/38/iprd-(1)",
+      "volumeBPdf": "https://www.nccoe.nist.gov/sites/default/files/2023-12/pqc-migration-nist-sp-1800-38b-preliminary-draft.pdf",
+      "volumeCPdf": "https://www.nccoe.nist.gov/sites/default/files/2023-12/pqc-migration-nist-sp-1800-38c-preliminary-draft.pdf",
+      "retrievedAt": "2026-08-01",
+      "confidence": "verified"
+    },
+    {
+      "id": "CISA-QR",
+      "name": "Quantum-Readiness: Migration to Post-Quantum Cryptography",
+      "publisher": "CISA / NSA / NIST (joint factsheet)",
+      "documentDate": "As of August 17, 2023",
+      "tlp": "TLP:CLEAR — may be shared without restriction",
+      "applicability": { "jurisdictions": ["US", "*"], "sectors": ["*"], "systemTypes": ["*"] },
+      "role": "The authoritative statement that quantum readiness begins with a cryptographic inventory. The structure our dashboard mirrors.",
+
+      "CORRECTION": "This document does NOT define a numbered five-stage roadmap. Earlier seed data in this repo invented one. The factsheet is organised into the NAMED SECTIONS listed below. Do not present numbered stages as quoted from CISA.",
+
+      "sections": [
+        { "heading": "BACKGROUND", "order": 1 },
+        { "heading": "WHY PREPARE NOW?", "order": 2 },
+        { "heading": "ESTABLISH A QUANTUM-READINESS ROADMAP", "order": 3 },
+        { "heading": "PREPARE A CRYPTOGRAPHIC INVENTORY", "order": 4 },
+        { "heading": "DISCUSS POST-QUANTUM ROADMAPS WITH TECHNOLOGY VENDORS", "order": 5 },
+        { "heading": "SUPPLY CHAIN QUANTUM-READINESS", "order": 6 },
+        { "heading": "TECHNOLOGY VENDOR RESPONSIBILITIES", "order": 7 }
+      ],
+
+      "discoveryTargets": {
+        "note": "Under PREPARE A CRYPTOGRAPHIC INVENTORY, the factsheet names exactly three places cryptographic discovery tools should look. Our collector roadmap should map onto these explicitly.",
+        "targets": [
+          "Network protocols, used to identify quantum-vulnerable algorithms in network protocols that allow traceability",
+          "Assets on end user systems and servers, including applications and associated libraries, both within application functionality and for firmware and software updates",
+          "Cryptographic code or dependencies in the continuous integration/continuous delivery development pipeline"
+        ],
+        "embeddedCryptoWarning": "Quoted: 'Discovery tools may not be able to identify embedded cryptography used internally within products, hindering discoverability or documentation. Organizations should ask vendors for lists of embedded cryptography within their products.' — PRIMARY-SOURCE SUPPORT for our coverage-gap panel (feature D3). CISA itself says tools have blind spots.",
+        "confidence": "verified"
+      },
+
+      "dataLifetimeSupport": {
+        "note": "PRIMARY-SOURCE SUPPORT for the X variable in Mosca (feature A3).",
+        "quotes": [
+          "'cyber threat actors could be targeting data today that would still require protection in the future (or in other words, has a long secrecy lifetime), using a catch now, break later or harvest now, decrypt later operation'",
+          "'Organizations should include in their inventory when and where quantum-vulnerable cryptography is being leveraged to protect the most sensitive and critical datasets and include estimates on length of protection for these datasets.'",
+          "'Prioritization should be given to high impact systems, industrial control systems (ICSs), and systems with long-term confidentiality/secrecy needs.'"
+        ],
+        "confidence": "verified"
+      },
+
+      "productNote": "The inventory and prioritisation sections are what Q-Vuln automates. Vendor engagement is the vendor collector (B9). Roadmap establishment and migration execution are customer process we evidence but do not perform.",
+      "url": "https://www.cisa.gov/resources-tools/resources/quantum-readiness-migration-post-quantum-cryptography",
+      "mirrorUrl": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf",
+      "retrievedAt": "2026-08-01",
+      "retrievalNote": "cisa.gov returns HTTP 403 to automated fetches; verified against the NIST NCCoE-hosted copy of the same factsheet.",
+      "confidence": "verified"
+    },
+    {
+      "id": "CNSA-2.0",
+      "name": "Commercial National Security Algorithm Suite 2.0",
+      "publisher": "NSA",
+      "documents": ["CNSA 2.0 Cybersecurity Advisory", "CNSA 2.0 FAQ (Ver 2.1, December 2024)"],
+      "applicability": {
+        "jurisdictions": ["US"],
+        "sectors": ["government", "defense"],
+        "systemTypes": ["national-security-system", "defense-contractor"]
+      },
+      "role": "Binding for US National Security Systems. Phased adoption by system category, with DIFFERENT dates per category.",
+      "indicativeDates": [
+        { "category": "software and firmware signing", "note": "begin transitioning immediately; support and prefer by 2025; exclusively by 2030", "confidence": "needs-check" },
+        { "category": "general equipment transitions", "note": "NSA expects completion by 2030-12-31", "confidence": "needs-check" },
+        { "category": "custom applications and legacy equipment", "note": "updated or replaced by 2033", "confidence": "needs-check" },
+        { "category": "CNSA 1.0 acceptance", "note": "accepted without waiver until 2025-12-31", "confidence": "needs-check" }
+      ],
+      "algorithmsIndicative": "ML-KEM-1024 (FIPS 203), ML-DSA-87 (FIPS 204), AES-256, SHA-384/SHA-512, LMS/XMSS (SP 800-208) for software and firmware signing.",
+      "BLOCKER": "NOT VERIFIED AGAINST PRIMARY SOURCE. nsa.gov and media.defense.gov both return HTTP 403 to automated fetches. The dates above came from search-result summaries and secondary vendor sites and MUST be confirmed by a human opening the CNSA 2.0 FAQ (Ver 2.1, December 2024) directly before any customer-facing use. Note the seed data previously said '~2033 end state' as a single date — the real timeline is per-category and 2033 appears to apply only to custom/legacy equipment.",
+      "primarySourceUrls": [
+        "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF",
+        "https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF",
+        "https://www.nsa.gov/Cybersecurity/Post-Quantum-Cybersecurity-Resources/"
+      ],
+      "applicabilityWarning": "Hiding this framework for non-US-NSS customers is REQUIRED. Showing a UK bank a CNSA 2.0 compliance percentage is noise that damages credibility.",
+      "confidence": "needs-check"
+    },
+    {
+      "id": "OMB-M-23-02",
+      "name": "Migrating to Post-Quantum Cryptography (federal inventory mandate)",
+      "publisher": "OMB / ONCD",
+      "documents": ["OMB M-23-02", "NSM-10"],
+      "applicability": {
+        "jurisdictions": ["US"],
+        "sectors": ["government"],
+        "systemTypes": ["federal-civilian-agency"]
+      },
+      "role": "Requires US federal civilian agencies to submit an annual prioritised cryptographic inventory. Defines a reporting FORMAT — our export must match it.",
+      "corroboration": "NIST IR 8547 §4 (line 432) states: 'National Security Memorandum 10 (NSM-10) establishes the year 2035 as the primary target' and refers to 'the overall goal of achieving widespread PQC adoption by 2035.' This corroborates the 2035 horizon from a verified NIST source.",
+      "BLOCKER": "The submission format and current status are NOT verified. whitehouse.gov/omb was not fetched. A human must confirm whether M-23-02 is superseded and obtain the current inventory submission template before we claim conformance.",
+      "url": "https://www.whitehouse.gov/omb/",
+      "confidence": "needs-check"
+    },
+    {
+      "id": "CYCLONEDX-CBOM",
+      "name": "CycloneDX Cryptographic Bill of Materials",
+      "publisher": "OWASP / CycloneDX / ECMA",
+      "currentSpecVersion": "1.7",
+      "currentSpecReleased": "2025-10-21",
+      "ecmaStandard": "ECMA-424",
+      "applicability": { "jurisdictions": ["*"], "sectors": ["*"], "systemTypes": ["*"] },
+      "role": "The machine-readable interchange format for cryptographic inventory. Our primary export contract.",
+      "capabilities": "CBOM enables detailed representation of cryptographic assets — algorithms, keys and certificates — and their relationships to software components, to 'discover, manage, and report on cryptographic assets in preparation for a quantum-safe future'.",
+      "CORRECTION": "Seed data said 1.6 was current. It is not — 1.7 was released 2025-10-21. Target 1.7 for the CBOM exporter (feature A5/E3). Which version first introduced CBOM was not confirmed on the pages fetched; it is not needed to implement against 1.7.",
+      "url": "https://cyclonedx.org/specification/overview/",
+      "cbomUrl": "https://cyclonedx.org/capabilities/cbom/",
+      "retrievedAt": "2026-08-01",
+      "confidence": "verified"
+    },
+    {
+      "id": "PCI-DSS-4",
+      "name": "PCI DSS v4.0 Requirement 12.3.3",
+      "publisher": "PCI Security Standards Council",
+      "applicability": { "jurisdictions": ["*"], "sectors": ["payments", "retail", "financial-services"], "systemTypes": ["cardholder-data-environment"] },
+      "role": "Mandates a documented, annually-reviewed cryptographic inventory. Close to a literal description of this product.",
+      "requirement": "Cryptographic cipher suites and protocols in use are documented and reviewed at least once every 12 months, including: an up-to-date inventory of all cryptographic cipher suites and protocols in use (including purpose and where used); active monitoring of industry trends regarding continued viability; and a documented plan to respond to anticipated changes in cryptographic vulnerabilities.",
+      "mandatorySince": "2025-03-31",
+      "statusNote": "Was future-dated best practice in PCI DSS 4.0; became mandatory after 2025-03-31, so it is IN FORCE now.",
+      "commercialNote": "Strongest commercial hook available for any card-handling customer — a mandated, recurring, documented cryptographic inventory with an explicit crypto-agility rationale. Build a PCI-specific report template.",
+      "confidence": "needs-check",
+      "verificationNote": "Consistent across multiple independent secondary sources but NOT verified against the PCI SSC primary document, which requires registration. A human must confirm exact wording and the 12.3.3 numbering in v4.0.1 before customer-facing use."
+    }
+  ],
+
+  "qDayScenarios": [
+    { "id": "conservative", "year": 2030, "basis": "NIST IR 8547 ipd deprecation milestone for 112-bit classical security, and NSA's indicative CNSA 2.0 equipment-transition completion date", "confidence": "verified-for-NIST-component" },
+    { "id": "central",      "year": 2035, "basis": "NIST IR 8547 ipd disallowance date for ALL classical public-key algorithms, and the NSM-10 target year of 2035 as cited in IR 8547 §4", "confidence": "verified" },
+    { "id": "aggressive",   "year": 2040, "basis": "Slower-than-expected quantum hardware scaling. NOT derived from any published deadline — this is our own scenario and must be labelled as such.", "confidence": "our-own-assumption" }
+  ],
+
+  "qDayNote": "These are REGULATORY deadlines, not predictions of when a cryptographically-relevant quantum computer will exist. That framing is both more defensible and more useful — compliance dates bind long before the physics does. The UI must say this explicitly rather than implying we know when Q-Day is. Note the 2030 and 2035 figures now trace to a verified primary source (IR 8547 ipd), but that source is a DRAFT."
+}

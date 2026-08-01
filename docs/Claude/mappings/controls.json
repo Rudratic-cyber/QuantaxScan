@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "1.0.0",
+  "dataVersion": "0.2.0-seed",
+  "compiledAt": "2026-08-01",
+  "warning": "SEED DATA — unverified. Control identifiers and clause numbers MUST be checked against the actual standard before appearing in any audit-facing output. See README.md.",
+
+  "purpose": "Crosswalk from cryptographic inventory findings to the general control frameworks a CISO is already audited against. Lets the customer answer 'which of my existing controls does this evidence?' rather than treating PQC as a separate silo. This is a Phase 3+ concern (feature C9, P3) — seeded here so the data shape is settled early.",
+
+  "crosswalks": [
+    {
+      "framework": "ISO/IEC 27001:2022",
+      "controls": [
+        { "id": "A.8.24", "name": "Use of cryptography", "relevance": "primary", "evidencedBy": ["cryptographic-inventory", "algorithm-policy-conformance", "waiver-register"], "confidence": "needs-check" },
+        { "id": "A.5.9",  "name": "Inventory of information and other associated assets", "relevance": "primary", "evidencedBy": ["cryptographic-inventory", "asset-ownership"], "confidence": "needs-check" },
+        { "id": "A.5.21", "name": "Managing information security in the ICT supply chain", "relevance": "secondary", "evidencedBy": ["vendor-pqc-assessment", "dependency-inventory"], "confidence": "needs-check" },
+        { "id": "A.8.8",  "name": "Management of technical vulnerabilities", "relevance": "secondary", "evidencedBy": ["drift-detection", "remediation-backlog"], "confidence": "needs-check" }
+      ]
+    },
+    {
+      "framework": "SOC 2 (TSC 2017)",
+      "controls": [
+        { "id": "CC6.1", "name": "Logical access — encryption of data", "relevance": "primary", "evidencedBy": ["cryptographic-inventory", "data-at-rest-coverage"], "confidence": "needs-check" },
+        { "id": "CC7.1", "name": "Detection of configuration changes and vulnerabilities", "relevance": "secondary", "evidencedBy": ["drift-detection"], "confidence": "needs-check" }
+      ]
+    },
+    {
+      "framework": "PCI DSS 4.0",
+      "controls": [
+        { "id": "4.2.1",  "name": "Strong cryptography for cardholder data in transit", "relevance": "primary", "evidencedBy": ["tls-inventory", "cipher-suite-conformance"], "confidence": "needs-check" },
+        { "id": "12.3.3", "name": "Documented inventory of cryptographic cipher suites and protocols in use, reviewed at least annually, with a plan to respond to changes in cryptographic vulnerabilities", "relevance": "primary", "evidencedBy": ["cryptographic-inventory", "annual-review-report", "migration-plan"], "confidence": "needs-check",
+          "productNote": "This control is close to a literal description of the product. If verified, it is the single strongest commercial hook for any card-handling customer — a mandated, recurring, documented crypto inventory. Verify the exact wording and requirement date, then build a PCI-specific report template (E-series)." }
+      ]
+    },
+    {
+      "framework": "DORA (EU 2022/2554)",
+      "controls": [
+        { "id": "Art.9",  "name": "Protection and prevention — ICT security tools and policies", "relevance": "primary", "evidencedBy": ["cryptographic-inventory", "algorithm-policy-conformance"], "confidence": "needs-check" },
+        { "id": "Art.28", "name": "General principles — ICT third-party risk", "relevance": "secondary", "evidencedBy": ["vendor-pqc-assessment"], "confidence": "needs-check" }
+      ],
+      "applicabilityNote": "EU financial entities only."
+    },
+    {
+      "framework": "NIST CSF 2.0",
+      "CORRECTION": "Earlier versions of this file listed CSF 2.0 as if it were the relevant NIST framework for post-quantum work. THAT WAS WRONG. NIST's PQC-specific publications are NIST IR 8547 (transition timeline) and NIST SP 1800-38 (NCCoE cryptographic discovery practice guide) — both are first-class entries in frameworks.json. CSF is a generic cybersecurity framework and belongs here only as a control crosswalk, at the same level as ISO 27001 and SOC 2.",
+      "narrowerRole": "SP 1800-38B does reference CSF, but only in passing: identifying hardware and software assets as part of an inventory is noted as a core function of the Cybersecurity Framework. That is the correct, limited relationship — CSF describes asset management generally; SP 1800-38 describes cryptographic discovery specifically.",
+      "controls": [
+        { "id": "ID.AM", "name": "Asset Management", "relevance": "secondary", "evidencedBy": ["cryptographic-inventory"], "confidence": "needs-check" },
+        { "id": "ID.RA", "name": "Risk Assessment", "relevance": "secondary", "evidencedBy": ["mosca-verdicts", "risk-scoring"], "confidence": "needs-check" },
+        { "id": "PR.DS", "name": "Data Security", "relevance": "secondary", "evidencedBy": ["data-classification", "data-at-rest-coverage"], "confidence": "needs-check" }
+      ]
+    }
+  ],
+
+  "primaryNistReferences": {
+    "note": "For post-quantum work these are the NIST documents that matter. They live in frameworks.json, not here, because they are not control crosswalks — they are the substantive guidance.",
+    "references": [
+      { "id": "NIST-IR-8547", "role": "WHICH algorithms must go, and by WHEN" },
+      { "id": "NIST-SP-1800-38", "role": "HOW to build and operate cryptographic discovery — the practice guide for our product category" },
+      { "id": "NIST-FIPS", "role": "WHAT to replace them with (FIPS 203/204/205)" }
+    ]
+  },
+
+  "evidenceTypes": [
+    { "id": "cryptographic-inventory",        "producedBy": "inventory export / CBOM" },
+    { "id": "algorithm-policy-conformance",   "producedBy": "policy engine (Phase 3)" },
+    { "id": "waiver-register",                "producedBy": "exceptions register (C8)" },
+    { "id": "asset-ownership",                "producedBy": "asset owner field (A1)" },
+    { "id": "dependency-inventory",           "producedBy": "dependency collector (B2)" },
+    { "id": "tls-inventory",                  "producedBy": "TLS collector (B3)" },
+    { "id": "cipher-suite-conformance",       "producedBy": "TLS collector + policy engine" },
+    { "id": "data-at-rest-coverage",          "producedBy": "data-at-rest collector (B7)" },
+    { "id": "data-classification",            "producedBy": "classification field (A3)" },
+    { "id": "mosca-verdicts",                 "producedBy": "risk engine (A4)" },
+    { "id": "risk-scoring",                   "producedBy": "risk engine (A4)" },
+    { "id": "drift-detection",                "producedBy": "drift engine (D4)" },
+    { "id": "remediation-backlog",            "producedBy": "technical report (E4)" },
+    { "id": "vendor-pqc-assessment",          "producedBy": "vendor collector (B9)" },
+    { "id": "annual-review-report",           "producedBy": "scheduled reports (E6)" },
+    { "id": "migration-plan",                 "producedBy": "wave planner (D6)" }
+  ]
+}
