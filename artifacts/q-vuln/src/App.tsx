@@ -19,13 +19,12 @@ import { useState } from "react";
 
 const queryClient = new QueryClient();
 
-const INTRO_KEY = "qvuln:intro-seen";
-
+// Intro plays once per page-load (module variable resets on every hard refresh).
+// SPA navigation back to "/" within the same tab won't replay it.
 let introHasPlayed = false;
 
 function introAlreadySeen() {
-  if (introHasPlayed) return true;
-  try { return sessionStorage.getItem(INTRO_KEY) === "1"; } catch { return false; }
+  return introHasPlayed;
 }
 
 function AppRouter() {
