@@ -5,6 +5,11 @@ Status: `built` · `next` · `planned` · `deferred` · `won't`
 Priority: **P0** blocks a milestone · **P1** milestone scope · **P2** valuable, cuttable ·
 **P3** later
 
+> **Edition tiering lives in [10-editions.md](10-editions.md), not here.** That document assigns
+> every feature below to Community (Apache 2.0) or Enterprise (commercial). This file is the
+> authority on what a feature *is* and its build status; 10 is the authority on which edition
+> ships it. Keep them in sync when adding a feature — add the row here first, then tier it there.
+
 ---
 
 ## A. Inventory core

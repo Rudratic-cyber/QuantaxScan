@@ -33,6 +33,8 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-15 | Observation model not aligned to SP 1800-38B data elements | Medium | Design | A2 |
 | G-16 | Binary scanning deferred; NIST treats it as core | Medium | Roadmap call | Re-scope B10 |
 | G-17 | Competitive framing understates the field | High | Wrong assumption | Marketing rewrite |
+| G-18 | `package.json` says MIT, no LICENSE file exists | High | Two-line fix | Before any publication |
+| G-19 | `attached_assets/` unaudited, 4 MB of Replit scraps | Medium | Nobody has looked | Delete or audit |
 
 ---
 
@@ -329,16 +331,45 @@ buyer evaluation rubric. Treat it as an acceptance-test suite for our collectors
 
 ---
 
+## G-18 — Licensing conflict `High`
+
+`package.json` declares `"license": "MIT"`. There is **no LICENSE file** in the repository.
+
+The repo is private today so nothing has been granted to anyone. But if it is published as-is,
+that manifest declaration is what governs — **MIT over the entire workspace**, including
+anything intended to ship as Enterprise. MIT permits unrestricted commercial redistribution.
+
+**What closes it:** set the root manifest to the intended licence, add LICENSE files per tier,
+add `mappings/LICENSE` for CC BY 4.0. See [10-editions.md](10-editions.md#licensing--three-separate-decisions).
+
+**Do it now** — it is two lines while the repo is private and a genuine mess afterwards.
+
+---
+
+## G-19 — `attached_assets/` unaudited `Medium`
+
+Roughly 4 MB of Replit screenshots and pasted-text scraps in the repo root. **Nobody has
+reviewed them** for credentials, internal URLs, customer data, or third-party copyrighted
+content.
+
+Invisible while the repo is private; permanent and indexable once it is not.
+
+**What closes it:** delete the directory. It is development detritus with no ongoing value, and
+deleting is cheaper than auditing 20+ images. Note this does **not** remove it from git history
+— see Gate 2 in [10-editions.md](10-editions.md#publication-gates--hard-blockers).
+
+---
+
 ## Suggested order
 
-1. **G-13** — two minutes, free today
+1. **G-13, G-18** — minutes each, and both are free only while the repo is private
 2. **G-17** — the positioning is wrong *now*, and it is a document edit
 3. **G-06** — one pattern, closes a real detection hole
 4. **G-01** — 30 minutes, unblocks a whole customer segment
 5. **G-16** — a roadmap decision to make before committing to A2's surface priorities
 6. **G-05, G-10, G-11, G-15** — land together with A2/A4; they are the same refactor
 7. **G-07, G-08, G-09** — reporting/copy changes, cheap once A4 exists
-8. **G-12** — before any pilot
+8. **G-12, G-19** — before any pilot, and hard gates on open-sourcing
 9. **G-14** — process, set up once
 10. **G-02, G-03** — when the relevant customer segment is actually in play
 11. **G-04** — with C9

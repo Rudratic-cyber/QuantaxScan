@@ -39,6 +39,7 @@ its three variables in the codebase. See [01-strategy.md](01-strategy.md).
 | 07 | [Reports](07-reports.md) | Board pack, regulator submission, CBOM, technical remediation |
 | 08 | [Security](08-security.md) | Best practices for a platform that ingests customer source code |
 | 09 | [Open gaps](09-open-gaps.md) | **Every known gap, what closes it, what it blocks** |
+| 10 | [Editions](10-editions.md) | Community vs Enterprise, all 46 features tiered, licensing, publication gates |
 
 ### Data
 
@@ -75,6 +76,9 @@ and [07-reports.md](07-reports.md) — those are the artifacts the buyer actuall
   Standards timelines move. Anything tagged `needs-check` must be confirmed against the primary
   source before it appears in a customer-facing report. See
   [05-compliance-mapping.md § Provenance](05-compliance-mapping.md#provenance-and-freshness).
+- **Dates are absolute** (`2030-12-31`), never relative ("next year").
+- **Edition tags** in [10-editions.md](10-editions.md): **C** Community · **E** Enterprise ·
+  **C→E** open core with a paid extension.
 
 ### Standards verification — done 2026-08-01
 
@@ -126,7 +130,6 @@ Full register in [09-open-gaps.md](09-open-gaps.md); data status in
 ⚠️ **NIST IR 8547 is still an initial public draft** (published 2024-11-12). The 2030/2035 dates
 are verified as what the draft says — they are not final binding guidance, and customer-facing
 output must label them as draft.
-- Dates are absolute (`2030-12-31`), never relative ("next year").
 
 ---
 
