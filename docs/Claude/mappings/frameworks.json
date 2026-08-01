@@ -97,7 +97,8 @@
 
       "functionalTestPlan": "Appendix C defines eight use cases for a Discovery Platform Lab Functional Demonstration. Worth treating as an acceptance-test suite for our own collectors, and as a likely buyer evaluation rubric.",
 
-      "url": "https://www.nccoe.nist.gov/crypto-agility-considerations-migrating-post-quantum-cryptographic-algorithms",
+      "url": "https://www.nccoe.nist.gov/publications/practice-guide/migration-post-quantum-cryptography-nist-sp-1800-38-practice-guide",
+      "csrcUrl": "https://csrc.nist.gov/pubs/sp/1800/38/iprd-(1)",
       "volumeBPdf": "https://www.nccoe.nist.gov/sites/default/files/2023-12/pqc-migration-nist-sp-1800-38b-preliminary-draft.pdf",
       "volumeCPdf": "https://www.nccoe.nist.gov/sites/default/files/2023-12/pqc-migration-nist-sp-1800-38c-preliminary-draft.pdf",
       "retrievedAt": "2026-08-01",
