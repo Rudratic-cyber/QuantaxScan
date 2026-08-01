@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1.0.0",
-  "dataVersion": "0.2.0",
+  "dataVersion": "0.3.0",
   "compiledAt": "2026-08-01",
   "verifiedAt": "2026-08-01",
-  "verificationNote": "NIST entries verified against NIST IR 8547 ipd (November 2024) Tables 2-7 and the NIST PQC project page. CNSA 2.0 entries remain needs-check — nsa.gov and media.defense.gov return HTTP 403 to automated fetches and must be checked by hand. See README.md.",
+  "verificationNote": "NIST entries verified against NIST IR 8547 ipd (November 2024) Tables 2-7, FIPS 186-5 (2023-02-03), SP 800-131A Rev 2 (2019-03), SP 800-38A and SP 800-38D, plus the NIST PQC project page. CNSA 2.0 entries remain needs-check — nsa.gov and media.defense.gov return HTTP 403 to automated fetches and must be checked by hand. See README.md.",
 
   "sources": {
     "IR8547": { "document": "NIST IR 8547 ipd (Initial Public Draft)", "title": "Transition to Post-Quantum Cryptography Standards", "published": "2024-11-12", "status": "INITIAL PUBLIC DRAFT — comment period closed 2025-01-10, not yet final as of 2026-08-01", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "pdf": "https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf", "retrievedAt": "2026-08-01" },
@@ -119,11 +119,16 @@
         { "purpose": "signature", "algorithm": "ML-DSA", "standard": "FIPS 204" },
         { "purpose": "signature", "algorithm": "SLH-DSA", "standard": "FIPS 205" }
       ],
-      "deadlines": [],
-      "citation": { "document": "NIST IR 8547 ipd", "section": "Table 2", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
-      "confidence": "needs-check",
-      "verificationNote": "DSA does NOT appear as a separate row in IR 8547 Table 2 (which lists ECDSA, EdDSA, RSA). DSA was already withdrawn for signature generation in earlier FIPS 186 revisions. Confirm the correct citation before making deadline claims about DSA specifically — do not reuse the RSA/ECDSA dates by assumption.",
-      "explanation": "DSA rests on the discrete logarithm problem and is broken by Shor's algorithm. Already discouraged for new use independently of quantum concerns."
+      "deadlines": [
+        { "framework": "FIPS 186-5", "type": "not-approved", "since": "2023-02-03", "appliesTo": "digital signature GENERATION", "source": "FIPS 186-5 Appendix E", "confidence": "verified" },
+        { "framework": "FIPS 186-5", "type": "legacy-use", "appliesTo": "verification of signatures generated prior to the implementation date of FIPS 186-5", "source": "FIPS 186-5 Appendix E", "confidence": "verified" }
+      ],
+      "citation": { "document": "FIPS 186-5, Digital Signature Standard (DSS)", "section": "Appendix E (Revisions)", "published": "2023-02-03", "url": "https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-5.pdf", "retrievedAt": "2026-08-01" },
+      "confidence": "verified",
+      "sourceQuote": "FIPS 186-5 Appendix E: 'DSA is no longer approved for digital signature generation. DSA may be used to verify signatures generated prior to the implementation date of this standard.' and 'The specifications and algorithms for DSA are no longer included in FIPS 186-5. They may be found in FIPS 186-4.'",
+      "explanation": "DSA rests on the discrete logarithm problem and is broken by Shor's algorithm. But the important finding is not quantum: DSA has been UNAPPROVED for signature generation since FIPS 186-5 (2023-02-03), independent of any quantum timeline.",
+      "reportingNote": "REPORT DIFFERENTLY FROM RSA/ECDSA. DSA is not a 2030/2035 problem — a DSA signature-generation site is non-compliant with FIPS 186-5 TODAY. It should surface as an immediate finding with no deadline runway, not as a future PQC migration item. DSA correctly appears in no IR 8547 transition table because it was already removed from the standard.",
+      "detectionNuance": "Signature generation vs verification matters. Verification of pre-2023 signatures is permitted legacy use. The current regex cannot distinguish the two, so DSA findings should carry reduced confidence pending manual review."
     },
     {
       "id": "md5",
@@ -138,11 +143,14 @@
         { "purpose": "hashing", "algorithm": "SHA-256", "standard": "FIPS 180-4" },
         { "purpose": "hashing", "algorithm": "SHA3-256", "standard": "FIPS 202" }
       ],
-      "deadlines": [],
-      "citation": { "document": "NIST SP 800-131A Rev 2", "url": "https://csrc.nist.gov/", "retrievedAt": null },
-      "confidence": "needs-check",
-      "explanation": "MD5 is classically broken by collision attacks. Not a quantum issue — already unfit for security use.",
-      "reportingNote": "MUST NOT count toward the post-quantum risk score. Classical hygiene finding — track in a separate panel so PQC metrics are not inflated."
+      "deadlines": [
+        { "framework": "FIPS 180-4", "type": "never-approved", "appliesTo": "all uses", "source": "MD5 is absent from the list of approved hash functions", "confidence": "verified" }
+      ],
+      "citation": { "document": "FIPS 180-4, Secure Hash Standard", "url": "https://csrc.nist.gov/pubs/fips/180-4/upd1/final", "retrievedAt": "2026-08-01" },
+      "confidence": "verified",
+      "CORRECTION": "Earlier versions of this file cited NIST SP 800-131A Rev 2 for MD5. That citation is WRONG — MD5 appears ZERO times in SP 800-131A Rev 2 (verified by full-text search of the PDF, 2026-08-01). MD5 has never been a NIST-approved hash function, so it does not appear in a transition document; there is nothing to transition from. The correct framing is 'not approved', not 'deprecated'.",
+      "explanation": "MD5 is classically broken by collision attacks and was never NIST-approved. Not a quantum issue.",
+      "reportingNote": "MUST NOT count toward the post-quantum risk score. Classical hygiene finding — track in a separate panel so PQC metrics are not inflated. Do not cite a transition deadline; there is none."
     },
     {
       "id": "sha1",
@@ -157,11 +165,17 @@
         { "purpose": "hashing", "algorithm": "SHA-256", "standard": "FIPS 180-4" },
         { "purpose": "hashing", "algorithm": "SHA3-256", "standard": "FIPS 202" }
       ],
-      "deadlines": [],
-      "citation": { "document": "NIST IR 8547 ipd", "section": "Table 7", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "deadlines": [
+        { "framework": "SP 800-131A Rev 2", "type": "disallowed", "appliesTo": "digital signature GENERATION (except where specifically allowed by NIST protocol-specific guidance)", "source": "SP 800-131A Rev 2 §9 and Appendix note 11", "confidence": "verified" },
+        { "framework": "SP 800-131A Rev 2", "type": "legacy-use", "appliesTo": "digital signature VERIFICATION of already-generated signatures", "source": "SP 800-131A Rev 2 §9", "confidence": "verified" },
+        { "framework": "SP 800-131A Rev 2", "type": "acceptable", "appliesTo": "non-digital-signature applications that do not require collision resistance", "source": "SP 800-131A Rev 2 §9", "confidence": "verified" }
+      ],
+      "citation": { "document": "NIST SP 800-131A Revision 2", "section": "§9 (hash functions) and Appendix change note 11", "published": "2019-03", "url": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf", "retrievedAt": "2026-08-01" },
       "confidence": "verified",
-      "explanation": "IR 8547 Table 7 lists SHA-1 at 80 bits collision security (security category <1) and 160 bits preimage security (category 1). Classically deprecated due to collision attacks; the quantum impact on hashes is a parameter concern, not a break.",
-      "reportingNote": "Classical hygiene finding. Track separately from PQC risk."
+      "sourceQuote": "SP 800-131A Rev 2 §9: 'SHA-1 may only be used for digital signature generation where specifically allowed by NIST protocol-specific guidance. For all other applications, SHA-1 is disallowed for digital signature generation.' / 'When used for digital signature verification, SHA-1 is allowed for legacy use.' / 'For non-digital-signature applications, the use of SHA-1 is acceptable for applications that do not require collision resistance.'",
+      "explanation": "SHA-1 is classically broken for collision resistance. IR 8547 Table 7 places it at 80 bits collision security (category <1) and 160 bits preimage security (category 1). The quantum impact on hashes is a parameter concern, not a break.",
+      "reportingNote": "Classical hygiene finding. Track separately from PQC risk.",
+      "detectionNuance": "CRITICAL: NIST's rule is USE-DEPENDENT, not algorithm-dependent. SHA-1 inside HMAC-SHA1 does not require collision resistance and is therefore ACCEPTABLE per SP 800-131A Rev 2. A blanket 'SHA-1 = alert' finding is incorrect and will be challenged. The current regex cannot tell a signature use from an HMAC use, so SHA-1 findings must carry reduced confidence and say which uses are actually disallowed. See open gap G-07."
     },
     {
       "id": "aes-ecb",
@@ -176,10 +190,12 @@
         { "purpose": "encryption", "algorithm": "AES-GCM", "standard": "NIST SP 800-38D" }
       ],
       "deadlines": [],
-      "citation": { "document": "NIST SP 800-38D", "url": "https://csrc.nist.gov/", "retrievedAt": null },
-      "confidence": "needs-check",
-      "explanation": "ECB mode leaks plaintext structure — identical blocks produce identical ciphertext. A mode-of-operation flaw, unrelated to quantum computing.",
-      "reportingNote": "Classical hygiene finding. Track separately from PQC risk."
+      "citation": { "document": "NIST SP 800-38A (defines ECB); NIST SP 800-38D (defines GCM, the recommended replacement)", "url": "https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf", "retrievedAt": "2026-08-01" },
+      "confidence": "verified",
+      "CORRECTION": "Earlier versions of this file cited SP 800-38D as the authority for AES-ECB. That is WRONG on two counts, both verified by full-text search on 2026-08-01: (1) 'ECB' appears ZERO times in SP 800-38D, which is the Galois/Counter Mode specification (November 2007); (2) ECB is defined in SP 800-38A as one of five APPROVED confidentiality modes. Saying AES-ECB 'violates SP 800-38D' would be a false compliance claim.",
+      "complianceStatus": "ECB is an APPROVED NIST confidentiality mode (SP 800-38A). Using it is not a standards violation.",
+      "explanation": "ECB mode does not provide semantic security — identical plaintext blocks produce identical ciphertext, leaking structure. This is a well-established cryptographic weakness, but it is a best-practice concern, not a NIST compliance failure, and it is unrelated to quantum computing.",
+      "reportingNote": "Classical hygiene finding, and specifically a BEST-PRACTICE finding rather than a compliance finding. Do not present it as a NIST violation — an auditor will check. Track separately from PQC risk."
     },
     {
       "id": "aes",

@@ -38,6 +38,7 @@ its three variables in the codebase. See [01-strategy.md](01-strategy.md).
 | 06 | [CISA dashboard](06-cisa-dashboard.md) | The quantum-readiness dashboard spec |
 | 07 | [Reports](07-reports.md) | Board pack, regulator submission, CBOM, technical remediation |
 | 08 | [Security](08-security.md) | Best practices for a platform that ingests customer source code |
+| 09 | [Open gaps](09-open-gaps.md) | **Every known gap, what closes it, what it blocks** |
 
 ### Data
 
@@ -89,9 +90,21 @@ primary sources**. Three seed claims turned out to be wrong:
 Plus one substantive gap: **≥128-bit classical algorithms are disallowed after 2035 too**, not
 just 112-bit ones. Bigger RSA keys do not buy time.
 
+A second pass (2026-08-01, `dataVersion 0.3.0`) verified FIPS 186-5, SP 800-131A Rev 2 and
+SP 800-38A/D, and found **two more wrong citations**:
+
+| Was | Actually |
+|---|---|
+| MD5 cited to SP 800-131A Rev 2 | MD5 appears **zero times** in it — it was never NIST-approved, so there is nothing to transition |
+| AES-ECB cited to SP 800-38D | "ECB" appears **zero times** in SP 800-38D (the GCM spec). ECB is an **approved** mode in SP 800-38A — calling it a violation would be false |
+
+Plus: **DSA has been unapproved for signature generation since FIPS 186-5 (2023-02-03)** — it is
+a present-tense compliance failure, not a 2035 migration item.
+
 Still `needs-check`: CNSA 2.0 per-category dates and OMB M-23-02 format — `nsa.gov`,
 `media.defense.gov` and `cisa.gov` all return HTTP 403 to automated fetches and need a human.
-Details in [mappings/README.md](mappings/README.md).
+Full register in [09-open-gaps.md](09-open-gaps.md); data status in
+[mappings/README.md](mappings/README.md).
 
 ⚠️ **NIST IR 8547 is still an initial public draft** (published 2024-11-12). The 2030/2035 dates
 are verified as what the draft says — they are not final binding guidance, and customer-facing

@@ -26,8 +26,10 @@ Loaded and schema-validated at boot by `lib/mappings/`. See
 | CycloneDX — **1.7**, released 2025-10-21 | ✅ `verified` |
 | AES / symmetric guidance | ✅ `verified` |
 | SHA-1 security strengths | ✅ `verified` |
-| DSA-specific deadlines | ⚠️ `needs-check` — not a separate row in IR 8547 Table 2 |
-| MD5, AES-ECB citations | ⚠️ `needs-check` — SP 800-131A/800-38D not opened |
+| DSA — FIPS 186-5 Appendix E, unapproved for signature generation | ✅ `verified` |
+| SHA-1 — SP 800-131A Rev 2 §9, all three use-dependent rules | ✅ `verified` |
+| MD5 — never NIST-approved (absent from FIPS 180-4) | ✅ `verified` |
+| AES-ECB — approved mode per SP 800-38A, not a violation | ✅ `verified` |
 | PCI DSS 4.0 §12.3.3 | ⚠️ `needs-check` — secondary sources only, PCI SSC doc is gated |
 | CNSA 2.0 per-category timeline | ⚠️ `needs-check` — **blocked, see below** |
 | OMB M-23-02 submission format | ⚠️ `needs-check` |
@@ -48,6 +50,28 @@ The CISA factsheet *was* verified — via the NIST NCCoE-hosted copy of the same
 document, which is fetchable.
 
 ---
+
+## Corrections made in 0.3.0
+
+Verified against FIPS 186-5, SP 800-131A Rev 2, SP 800-38A and SP 800-38D by downloading each
+PDF and reading the relevant section. Two more citations were **wrong**:
+
+4. **MD5 was cited to SP 800-131A Rev 2.** MD5 appears **zero times** in that document. It was
+   never a NIST-approved hash, so it does not appear in a transition standard — the correct
+   framing is "not approved", not "deprecated", and there is no deadline to cite.
+5. **AES-ECB was cited to SP 800-38D.** "ECB" appears **zero times** in SP 800-38D, which is the
+   Galois/Counter Mode spec. ECB is defined in SP 800-38A as one of five **approved**
+   confidentiality modes. Presenting AES-ECB as a NIST violation would be a false compliance
+   claim; it is a best-practice finding.
+
+And two findings that change how results should be reported:
+
+- **DSA has been unapproved for signature generation since FIPS 186-5 (2023-02-03)** and its
+  specifications were removed from the standard. It is a present-tense compliance failure with
+  no runway, not a 2035 migration item. This is why it appears in no IR 8547 transition table.
+- **SHA-1's status is use-dependent**: disallowed for signature generation, legacy-use for
+  verification, and *acceptable* for non-signature applications that do not require collision
+  resistance — so HMAC-SHA1 is acceptable per NIST. A blanket SHA-1 alert is incorrect.
 
 ## Corrections made in 0.2.0
 

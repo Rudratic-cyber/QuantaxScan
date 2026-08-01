@@ -80,7 +80,7 @@ another silo.
 
 | # | Collector | Status | Pri | Notes |
 |---|---|---|---|---|
-| B1 | Source code (regex) | `built` | — | Exists. Needs to move behind A2 |
+| B1 | Source code (regex) | `built` | — | Exists. Needs to move behind A2. **Open gaps: no key-size extraction (G-05), no EdDSA pattern (G-06), no confidence score (G-11)** — see [09](09-open-gaps.md) |
 | B2 | Dependency / SBOM | `next` | **P0** | Biggest coverage jump. Parse lockfiles → map to known crypto libs + versions |
 | B3 | TLS / cipher suite prober | `planned` | **P1** | Active handshake against hosts. Records *negotiated* KEX, not configured |
 | B4 | Certificate / X.509 | `planned` | **P1** | Key type, size, expiry. Expiry-vs-Q-Day is the killer chart |
