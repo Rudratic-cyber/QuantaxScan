@@ -2523,7 +2523,7 @@ export function Scan() {
   const lk = getLangKey(language);
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col bg-[#ffffff]">
+    <div className="h-[calc(100dvh-56px)] md:h-[calc(100dvh-64px)] overflow-hidden flex flex-col bg-[#ffffff]">
 
       {/* ── Upload multi-file scan overlay ──────────────────────────────────── */}
       {spaceScanOverlay && (
