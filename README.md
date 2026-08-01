@@ -307,13 +307,19 @@ estate-wide, continuous and audit-facing use. See
 
 ## Naming
 
-The project appears under several names and this has not been consolidated:
+The project appears under several names and this is **not yet settled**:
 
 | Name | Where |
 |---|---|
-| **QuantaxScan** | repository, domain — **use this** |
-| Q-BITRON | UI branding, logo |
+| **QuantaxScan** | repository, domain (`quantaxscan.swotpam.com`) |
+| **qbitron** | README title on `main` as of 2026-08-01 |
+| Q-BITRON | UI branding, logo (`QBitronLogo.tsx`) |
 | Q-Vuln | `replit.md`, package names (`@workspace/q-vuln`) |
+
+This document uses **QuantaxScan** because that is the repository name and the domain users will
+type. If the intended product name is **Q-Bitron**, the repo and domain should move too —
+picking one and renaming everything else is a half-day of work that gets cheaper the sooner it
+happens.
 
 ---
 
