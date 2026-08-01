@@ -30,7 +30,7 @@ function ScannerCard({ onDone }: { onDone: () => void }) {
   const [scanDone, setScanDone]         = useState(false);
   const [cursor, setCursor]             = useState(true);
   const scrollRef                       = useRef<HTMLDivElement>(null);
-  const CMD = "q-vuln scan ./crypto_utils.py";
+  const CMD = "quantaxscan scan ./crypto_utils.py";
 
   useEffect(() => {
     const id = setInterval(() => setCursor(v => !v), 530);
@@ -93,7 +93,7 @@ function ScannerCard({ onDone }: { onDone: () => void }) {
 
   const prompt = (
     <span className="select-none">
-      <span className="font-semibold" style={{ color: "#4f46e5" }}>q-vuln</span>
+      <span className="font-semibold" style={{ color: "#4f46e5" }}>quantaxscan</span>
       <span style={{ color: "#9aa3b2" }}> ~ </span>
     </span>
   );
@@ -106,7 +106,7 @@ function ScannerCard({ onDone }: { onDone: () => void }) {
         <div className="h-3 w-3 rounded-full bg-[#febc2e]" />
         <div className="h-3 w-3 rounded-full bg-[#28c840]" />
         <span className="flex-1 text-center text-[11px] font-medium tracking-wide text-[#6b7280]">
-          Q-Vuln — cryptographic scanner
+          QuantaXscan — cryptographic scanner
         </span>
       </div>
 

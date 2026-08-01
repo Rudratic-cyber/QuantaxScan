@@ -1,5 +1,5 @@
 /**
- * Resizable Navbar — Q-Vuln clean light enterprise theme.
+ * Resizable Navbar — QuantaXscan clean light enterprise theme.
  * White surface, indigo primary, hairline borders.
  */
 import React, { useState } from "react";

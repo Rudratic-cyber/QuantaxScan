@@ -75,7 +75,7 @@ export function Footer() {
         </div>
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-[#e5e7eb] pt-6 text-xs text-[#9aa3b2] sm:flex-row sm:items-center">
-          <span>© {new Date().getFullYear()} Q-Vuln. Built to survive an audit.</span>
+          <span>© {new Date().getFullYear()} QuantaXscan. Built to survive an audit.</span>
           <span className="flex items-center gap-4">
             <span>NIST FIPS 203 · 204 · 205</span>
             <span>CycloneDX CBOM</span>

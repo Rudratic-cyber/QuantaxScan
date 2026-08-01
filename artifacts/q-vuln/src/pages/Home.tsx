@@ -56,7 +56,7 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 function ScannerPreview() {
   const [lines, setLines] = useState<{ text: string; tone?: "cmd"|"muted"|"crit"|"safe"|"map" }[]>([]);
   const SEQUENCE: { text: string; tone?: "cmd"|"muted"|"crit"|"safe"|"map" }[] = [
-    { text: "q-vuln scan ./service --recursive", tone: "cmd" },
+    { text: "quantaxscan scan ./service --recursive", tone: "cmd" },
     { text: "Building cryptographic inventory…", tone: "muted" },
     { text: "auth/tokens.py  RSA-2048            line 42", tone: "crit" },
     { text: "tls/handshake.go  ECDH-P256         line 91", tone: "crit" },
@@ -163,7 +163,7 @@ export function Home() {
               transition={{ duration: 0.6, delay: 0.14 }}
               className="mt-6 max-w-xl text-lg leading-relaxed text-[#475569]"
             >
-              Post-quantum migration starts with an inventory almost nobody has. Q-Vuln builds it
+              Post-quantum migration starts with an inventory almost nobody has. QuantaXscan builds it
               automatically — starting with your source code — and shows you which assets will still
               be exposed when the deadlines land.
             </motion.p>

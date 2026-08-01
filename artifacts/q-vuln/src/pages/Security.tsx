@@ -44,7 +44,7 @@ export function Security() {
       <section className="border-b border-[#eceef2] bg-[#f7f8fa]">
         <div className="container mx-auto max-w-3xl px-4 py-6">
           <p className="text-sm leading-relaxed text-[#475569]">
-            <span className="font-semibold text-[#0a0e1a]">Where we are today:</span> Q-Vuln is
+            <span className="font-semibold text-[#0a0e1a]">Where we are today:</span> QuantaXscan is
             pre-launch. The controls below ship before we handle any customer's real data — not
             "before general availability," but before the second organisation's data exists in the
             system. We track that work openly rather than implying a maturity we haven't reached yet.
