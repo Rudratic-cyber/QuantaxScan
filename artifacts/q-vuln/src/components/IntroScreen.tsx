@@ -119,10 +119,10 @@ function ScannerCard({ onDone, startDelay = 120 }: { onDone: () => void; startDe
   );
 
   return (
-    /* No outer rounded/shadow — the laptop bezel provides that */
-    <div className="bg-white">
+    /* fills the fixed 300 px screen area in the laptop bezel */
+    <div className="bg-white h-full flex flex-col">
       {/* macOS-style title bar */}
-      <div className="flex items-center gap-1.5 border-b border-[#eceef2] bg-[#f7f8fa] px-4 py-3">
+      <div className="flex items-center gap-1.5 border-b border-[#eceef2] bg-[#f7f8fa] px-4 py-3 shrink-0">
         <div className="h-3 w-3 rounded-full bg-[#ff5f57]" />
         <div className="h-3 w-3 rounded-full bg-[#febc2e]" />
         <div className="h-3 w-3 rounded-full bg-[#28c840]" />
@@ -131,7 +131,7 @@ function ScannerCard({ onDone, startDelay = 120 }: { onDone: () => void; startDe
         </span>
       </div>
 
-      <div ref={scrollRef} className="max-h-[320px] overflow-y-auto p-4 font-mono text-[12px] leading-relaxed">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 font-mono text-[12px] leading-relaxed">
         {phase !== "wait" && (
           <div className="mb-3">
             {prompt}
@@ -290,8 +290,8 @@ function LaptopShell({
             <div className="flex justify-center pb-2">
               <div className="h-[5px] w-[5px] rounded-full" style={{ background: "#2d3348" }} />
             </div>
-            {/* Screen content */}
-            <div className="overflow-hidden rounded-t-md">
+            {/* Screen content — fixed size so the lid never changes height */}
+            <div className="overflow-hidden rounded-t-md" style={{ height: 300, width: "100%" }}>
               {children}
             </div>
           </div>
