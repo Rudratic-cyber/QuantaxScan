@@ -1,0 +1,274 @@
+{
+  "schemaVersion": "1.0.0",
+  "dataVersion": "0.2.0",
+  "compiledAt": "2026-08-01",
+  "verifiedAt": "2026-08-01",
+  "verificationNote": "NIST entries verified against NIST IR 8547 ipd (November 2024) Tables 2-7 and the NIST PQC project page. CNSA 2.0 entries remain needs-check — nsa.gov and media.defense.gov return HTTP 403 to automated fetches and must be checked by hand. See README.md.",
+
+  "sources": {
+    "IR8547": { "document": "NIST IR 8547 ipd (Initial Public Draft)", "title": "Transition to Post-Quantum Cryptography Standards", "published": "2024-11-12", "status": "INITIAL PUBLIC DRAFT — comment period closed 2025-01-10, not yet final as of 2026-08-01", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "pdf": "https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf", "retrievedAt": "2026-08-01" },
+    "PQCPROJECT": { "document": "NIST Post-Quantum Cryptography Project", "url": "https://csrc.nist.gov/projects/post-quantum-cryptography", "retrievedAt": "2026-08-01" }
+  },
+
+  "criticalCaveat": "NIST IR 8547 is an INITIAL PUBLIC DRAFT. Its dates are NIST's stated intent, not binding final guidance. Any customer-facing use MUST say 'draft guidance' — presenting draft dates as final is the exact error that loses a technically literate buyer.",
+
+  "definitions": {
+    "deprecated": "The algorithm and key length/strength may be used, but there is some security risk. The data owner must examine this risk potential and decide whether to continue use. [IR8547 §4, quoting SP 800-131A]",
+    "disallowed": "The algorithm, key length/strength, parameter set, or scheme is no longer allowed for the stated purpose. [IR8547 §4]",
+    "legacyUse": "May only be used to process already-protected information (e.g. decrypt existing ciphertext, verify an existing signature). [IR8547 §4]"
+  },
+
+  "algorithms": [
+    {
+      "id": "rsa",
+      "canonicalName": "RSA",
+      "aliases": ["RSA", "PKCS1", "RSASSA-PSS", "RSAES-OAEP", "rsaEncryption"],
+      "family": "public-key",
+      "purposes": ["key-establishment", "signature", "encryption"],
+      "quantumVulnerable": true,
+      "quantumAttack": "Shor",
+      "baseEffortHours": 4,
+      "replacements": [
+        { "purpose": "key-establishment", "algorithm": "ML-KEM", "standard": "FIPS 203", "note": "Only approved post-quantum key-establishment scheme at present [IR8547 §4.1.2]. Hybrid (classical + ML-KEM) is a common transitional deployment." },
+        { "purpose": "signature", "algorithm": "ML-DSA", "standard": "FIPS 204" }
+      ],
+      "deadlines": [
+        { "framework": "NIST-IR-8547", "securityStrength": "112 bits", "type": "deprecated", "after": "2030", "source": "IR8547 Table 2 (signatures) and Table 4 (key establishment)", "confidence": "verified" },
+        { "framework": "NIST-IR-8547", "securityStrength": "112 bits", "type": "disallowed", "after": "2035", "source": "IR8547 Table 2 and Table 4", "confidence": "verified" },
+        { "framework": "NIST-IR-8547", "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "source": "IR8547 Table 2 and Table 4", "confidence": "verified", "note": "IMPORTANT: larger RSA keys do NOT buy extra time. RSA-3072 and above are disallowed after 2035 on the same schedule." }
+      ],
+      "citation": { "document": "NIST IR 8547 ipd", "section": "Tables 2 and 4", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified",
+      "explanation": "RSA security rests on integer factorisation, which Shor's algorithm solves in polynomial time on a cryptographically-relevant quantum computer."
+    },
+    {
+      "id": "ecdsa",
+      "canonicalName": "ECDSA",
+      "aliases": ["ECDSA", "secp256r1", "prime256v1", "secp256k1", "P-256", "P-384", "P-521"],
+      "family": "public-key",
+      "purposes": ["signature"],
+      "quantumVulnerable": true,
+      "quantumAttack": "Shor",
+      "baseEffortHours": 4,
+      "replacements": [
+        { "purpose": "signature", "algorithm": "ML-DSA", "standard": "FIPS 204" },
+        { "purpose": "signature", "algorithm": "SLH-DSA", "standard": "FIPS 205", "note": "Conservative hash-based alternative; larger signatures. Preferred where signature size is not constrained and long validity is required." }
+      ],
+      "deadlines": [
+        { "framework": "NIST-IR-8547", "securityStrength": "112 bits", "type": "deprecated", "after": "2030", "source": "IR8547 Table 2", "confidence": "verified" },
+        { "framework": "NIST-IR-8547", "securityStrength": "112 bits", "type": "disallowed", "after": "2035", "source": "IR8547 Table 2", "confidence": "verified" },
+        { "framework": "NIST-IR-8547", "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "source": "IR8547 Table 2", "confidence": "verified", "note": "P-256 and above are all disallowed after 2035. Curve size does not extend the deadline." }
+      ],
+      "citation": { "document": "NIST IR 8547 ipd", "section": "Table 2", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified",
+      "explanation": "ECDSA rests on the elliptic-curve discrete logarithm problem, broken by Shor's algorithm."
+    },
+    {
+      "id": "eddsa",
+      "canonicalName": "EdDSA",
+      "aliases": ["EdDSA", "Ed25519", "Ed448", "ed25519"],
+      "family": "public-key",
+      "purposes": ["signature"],
+      "quantumVulnerable": true,
+      "quantumAttack": "Shor",
+      "baseEffortHours": 4,
+      "replacements": [
+        { "purpose": "signature", "algorithm": "ML-DSA", "standard": "FIPS 204" }
+      ],
+      "deadlines": [
+        { "framework": "NIST-IR-8547", "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "source": "IR8547 Table 2", "confidence": "verified" }
+      ],
+      "citation": { "document": "NIST IR 8547 ipd", "section": "Table 2", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified",
+      "explanation": "EdDSA is elliptic-curve based and broken by Shor's algorithm. Listed explicitly in IR 8547 Table 2 — the current scanner does not detect it, which is a coverage gap worth closing.",
+      "detectionGap": true
+    },
+    {
+      "id": "ecdh",
+      "canonicalName": "ECDH/DH",
+      "aliases": ["ECDH", "ECDHE", "DH", "DHE", "MQV", "createECDH", "DiffieHellman", "X25519", "curve25519"],
+      "family": "key-agreement",
+      "purposes": ["key-establishment"],
+      "quantumVulnerable": true,
+      "quantumAttack": "Shor",
+      "baseEffortHours": 8,
+      "replacements": [
+        { "purpose": "key-establishment", "algorithm": "ML-KEM", "standard": "FIPS 203" }
+      ],
+      "deadlines": [
+        { "framework": "NIST-IR-8547", "securityStrength": "112 bits", "type": "deprecated", "after": "2030", "source": "IR8547 Table 4 (Finite Field DH and MQV; Elliptic Curve DH and MQV)", "confidence": "verified" },
+        { "framework": "NIST-IR-8547", "securityStrength": "112 bits", "type": "disallowed", "after": "2035", "source": "IR8547 Table 4", "confidence": "verified" },
+        { "framework": "NIST-IR-8547", "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "source": "IR8547 Table 4", "confidence": "verified" }
+      ],
+      "citation": { "document": "NIST IR 8547 ipd", "section": "Table 4 and §4.1.2", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified",
+      "explanation": "Diffie-Hellman key agreement is broken by Shor's algorithm. This is the primary harvest-now-decrypt-later exposure: recorded sessions can be decrypted retroactively once the key exchange is broken.",
+      "hndlCritical": true,
+      "hndlSourceQuote": "IR8547 §4.1.2: 'in order to mitigate the risk of \"harvest now, decrypt later\" attacks on network communications, application-specific guidance ... may require or recommend migration to quantum-resistant key establishment schemes before the classical schemes are generally disallowed.' — i.e. the 2035 date is a ceiling, not a target, for anything carrying long-lived secrets."
+    },
+    {
+      "id": "dsa",
+      "canonicalName": "DSA",
+      "aliases": ["DSA", "DSS"],
+      "family": "public-key",
+      "purposes": ["signature"],
+      "quantumVulnerable": true,
+      "quantumAttack": "Shor",
+      "baseEffortHours": 6,
+      "replacements": [
+        { "purpose": "signature", "algorithm": "ML-DSA", "standard": "FIPS 204" },
+        { "purpose": "signature", "algorithm": "SLH-DSA", "standard": "FIPS 205" }
+      ],
+      "deadlines": [],
+      "citation": { "document": "NIST IR 8547 ipd", "section": "Table 2", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "needs-check",
+      "verificationNote": "DSA does NOT appear as a separate row in IR 8547 Table 2 (which lists ECDSA, EdDSA, RSA). DSA was already withdrawn for signature generation in earlier FIPS 186 revisions. Confirm the correct citation before making deadline claims about DSA specifically — do not reuse the RSA/ECDSA dates by assumption.",
+      "explanation": "DSA rests on the discrete logarithm problem and is broken by Shor's algorithm. Already discouraged for new use independently of quantum concerns."
+    },
+    {
+      "id": "md5",
+      "canonicalName": "MD5",
+      "aliases": ["MD5", "md5", "hashlib.md5"],
+      "family": "hash",
+      "purposes": ["hashing"],
+      "quantumVulnerable": false,
+      "quantumAttack": null,
+      "baseEffortHours": 0.5,
+      "replacements": [
+        { "purpose": "hashing", "algorithm": "SHA-256", "standard": "FIPS 180-4" },
+        { "purpose": "hashing", "algorithm": "SHA3-256", "standard": "FIPS 202" }
+      ],
+      "deadlines": [],
+      "citation": { "document": "NIST SP 800-131A Rev 2", "url": "https://csrc.nist.gov/", "retrievedAt": null },
+      "confidence": "needs-check",
+      "explanation": "MD5 is classically broken by collision attacks. Not a quantum issue — already unfit for security use.",
+      "reportingNote": "MUST NOT count toward the post-quantum risk score. Classical hygiene finding — track in a separate panel so PQC metrics are not inflated."
+    },
+    {
+      "id": "sha1",
+      "canonicalName": "SHA-1",
+      "aliases": ["SHA1", "SHA-1", "sha1", "hashlib.sha1"],
+      "family": "hash",
+      "purposes": ["hashing"],
+      "quantumVulnerable": false,
+      "quantumAttack": "Grover (quadratic preimage speedup, not a break)",
+      "baseEffortHours": 0.5,
+      "replacements": [
+        { "purpose": "hashing", "algorithm": "SHA-256", "standard": "FIPS 180-4" },
+        { "purpose": "hashing", "algorithm": "SHA3-256", "standard": "FIPS 202" }
+      ],
+      "deadlines": [],
+      "citation": { "document": "NIST IR 8547 ipd", "section": "Table 7", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified",
+      "explanation": "IR 8547 Table 7 lists SHA-1 at 80 bits collision security (security category <1) and 160 bits preimage security (category 1). Classically deprecated due to collision attacks; the quantum impact on hashes is a parameter concern, not a break.",
+      "reportingNote": "Classical hygiene finding. Track separately from PQC risk."
+    },
+    {
+      "id": "aes-ecb",
+      "canonicalName": "AES-ECB",
+      "aliases": ["AES/ECB", "AES-ECB", "MODE_ECB", "Cipher.ECB"],
+      "family": "symmetric-mode",
+      "purposes": ["encryption"],
+      "quantumVulnerable": false,
+      "quantumAttack": null,
+      "baseEffortHours": 1,
+      "replacements": [
+        { "purpose": "encryption", "algorithm": "AES-GCM", "standard": "NIST SP 800-38D" }
+      ],
+      "deadlines": [],
+      "citation": { "document": "NIST SP 800-38D", "url": "https://csrc.nist.gov/", "retrievedAt": null },
+      "confidence": "needs-check",
+      "explanation": "ECB mode leaks plaintext structure — identical blocks produce identical ciphertext. A mode-of-operation flaw, unrelated to quantum computing.",
+      "reportingNote": "Classical hygiene finding. Track separately from PQC risk."
+    },
+    {
+      "id": "aes",
+      "canonicalName": "AES",
+      "aliases": ["AES", "AES-128", "AES-192", "AES-256", "Rijndael"],
+      "family": "symmetric",
+      "purposes": ["encryption"],
+      "quantumVulnerable": false,
+      "quantumAttack": "Grover (quadratic speedup)",
+      "baseEffortHours": 0,
+      "replacements": [],
+      "deadlines": [],
+      "citation": { "document": "NIST IR 8547 ipd", "section": "§4.1.3 and Table 6", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified",
+      "explanation": "IR 8547 §4.1.3: NIST's symmetric standards are 'significantly less vulnerable to known quantum attacks than the public-key cryptography standards', and all approved symmetric primitives providing at least 128 bits of classical security are believed to meet at least Category 1. Table 6: AES-128 = 128 bits / Category 1, AES-192 = 192 bits / Category 3, AES-256 = 256 bits / Category 5.",
+      "reportingNote": "DO NOT flag AES-128 as quantum-critical. NIST places it at security Category 1, i.e. adequate. Flagging it inflates the risk score and a knowledgeable buyer will notice. Note separately that CNSA 2.0 requires AES-256 for US national security systems — that is an NSS-specific requirement, not a general NIST one.",
+      "symmetricNote": "NIST has a few symmetric standards at the 112-bit security level (e.g. three-key TDEA) which IR 8547 §4.1.3 says will be disallowed in 2030."
+    }
+  ],
+
+  "pqcAlgorithms": [
+    {
+      "id": "ml-kem", "canonicalName": "ML-KEM", "standard": "FIPS 203", "formerName": "CRYSTALS-Kyber",
+      "status": "FINAL", "published": "2024-08",
+      "purpose": "key-establishment",
+      "parameterSets": [
+        { "name": "ML-KEM-512",  "securityStrength": "128 bits", "securityCategory": 1 },
+        { "name": "ML-KEM-768",  "securityStrength": "192 bits", "securityCategory": 3 },
+        { "name": "ML-KEM-1024", "securityStrength": "256 bits", "securityCategory": 5 }
+      ],
+      "note": "IR 8547 §4.1.2: ML-KEM is the ONLY approved post-quantum key-establishment scheme at present.",
+      "sourceErratum": "IR 8547 ipd Table 5 mislabels the 192- and 256-bit rows as 'ML-DSA-768' and 'ML-DSA-1024'. These are typographical errors in the draft; the correct names are ML-KEM-768 and ML-KEM-1024.",
+      "citation": { "document": "NIST IR 8547 ipd Table 5; FIPS 203", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified"
+    },
+    {
+      "id": "ml-dsa", "canonicalName": "ML-DSA", "standard": "FIPS 204", "formerName": "CRYSTALS-Dilithium",
+      "status": "FINAL", "published": "2024-08",
+      "purpose": "signature",
+      "parameterSets": [
+        { "name": "ML-DSA-44", "securityStrength": "128 bits", "securityCategory": 2 },
+        { "name": "ML-DSA-65", "securityStrength": "192 bits", "securityCategory": 3 },
+        { "name": "ML-DSA-87", "securityStrength": "256 bits", "securityCategory": 5 }
+      ],
+      "citation": { "document": "NIST IR 8547 ipd Table 3; FIPS 204", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified"
+    },
+    {
+      "id": "slh-dsa", "canonicalName": "SLH-DSA", "standard": "FIPS 205", "formerName": "SPHINCS+",
+      "status": "FINAL", "published": "2024-08",
+      "purpose": "signature",
+      "parameterSets": [
+        { "name": "SLH-DSA-SHA2-128[s/f] / SLH-DSA-SHAKE-128[s/f]", "securityStrength": "128 bits", "securityCategory": 1 },
+        { "name": "SLH-DSA-SHA2-192[s/f] / SLH-DSA-SHAKE-192[s/f]", "securityStrength": "192 bits", "securityCategory": 3 },
+        { "name": "SLH-DSA-SHA2-256[s/f] / SLH-DSA-SHAKE-256[s/f]", "securityStrength": "256 bits", "securityCategory": 5 }
+      ],
+      "note": "Stateless hash-based. Conservative security assumptions, large signatures. Suited to firmware/code signing with long validity.",
+      "citation": { "document": "NIST IR 8547 ipd Table 3; FIPS 205", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified"
+    },
+    {
+      "id": "lms-hss", "canonicalName": "LMS / HSS", "standard": "SP 800-208",
+      "status": "FINAL", "purpose": "signature",
+      "note": "Stateful hash-based signatures. IR 8547 Table 3 lists these as post-quantum signature options at 192 and 256 bits. Stateful — key management is unforgiving; suited to firmware signing.",
+      "citation": { "document": "NIST IR 8547 ipd Table 3; SP 800-208", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified"
+    },
+    {
+      "id": "xmss", "canonicalName": "XMSS / XMSS-MT", "standard": "SP 800-208",
+      "status": "FINAL", "purpose": "signature",
+      "note": "Stateful hash-based signatures, listed in IR 8547 Table 3 at 192 and 256 bits.",
+      "citation": { "document": "NIST IR 8547 ipd Table 3; SP 800-208", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
+      "confidence": "verified"
+    },
+    {
+      "id": "falcon", "canonicalName": "FN-DSA (Falcon)", "standard": null,
+      "status": "NOT YET PUBLISHED — selected for ongoing standardization, process underway",
+      "purpose": "signature",
+      "warning": "DO NOT cite 'FIPS 206' as an existing standard. As of 2026-08-01 the NIST PQC project page describes Falcon as selected for ongoing standardization with the process underway; no published FIPS number was confirmed. Verify before any customer-facing reference.",
+      "citation": { "document": "NIST PQC project page", "url": "https://csrc.nist.gov/projects/post-quantum-cryptography", "retrievedAt": "2026-08-01" },
+      "confidence": "verified-as-unpublished"
+    },
+    {
+      "id": "hqc", "canonicalName": "HQC", "standard": null,
+      "status": "Selected in the 4th round; standardization underway, not yet published",
+      "purpose": "key-establishment",
+      "note": "Backup KEM with different mathematical assumptions to ML-KEM. IR 8547 §4.1.2 notes NIST expects to select one or more alternatives to ML-KEM in future.",
+      "citation": { "document": "NIST PQC project page; IR 8547 ipd §4.1.2", "url": "https://csrc.nist.gov/projects/post-quantum-cryptography", "retrievedAt": "2026-08-01" },
+      "confidence": "verified-as-unpublished"
+    }
+  ]
+}
