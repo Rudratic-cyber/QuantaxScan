@@ -30,6 +30,9 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-12 | Security findings S1–S8 | Critical | Not started | See [08](08-security.md) |
 | G-13 | `.env` tracked in git | Low now, High later | One command | 2 min |
 | G-14 | No re-verification trigger for standards data | Medium | Process | Calendar + CI |
+| G-15 | Observation model not aligned to SP 1800-38B data elements | Medium | Design | A2 |
+| G-16 | Binary scanning deferred; NIST treats it as core | Medium | Roadmap call | Re-scope B10 |
+| G-17 | Competitive framing understates the field | High | Wrong assumption | Marketing rewrite |
 
 ---
 
@@ -265,17 +268,88 @@ presumably be finalised, at which point every date in the system needs revisitin
 
 ---
 
+## G-15 — Observation model not aligned to SP 1800-38B `Medium`
+
+NIST SP 1800-38B §4.1.4 defines descriptive data elements for normalised discovery output,
+including **CPE 2.3** (NIST IR 7695) for application software, operating system and device
+vendor, and IANA Service Names / TLS ALPN IDs for application-layer protocol.
+
+Our `locationDetail` is freeform `jsonb`. Free-text software identification cannot be joined
+against anything the customer already runs.
+
+**What closes it:** named fields on network-surface assets, CPE 2.3 for software/OS/vendor, and
+the discovery **modality** (passive capture / active scan / endpoint monitoring / configuration)
+carried on the observation alongside numeric confidence.
+
+**Why bother:** the same reason as CBOM export — interoperability over a private schema. CPE
+gives a join key into vulnerability tooling the customer already owns.
+
+---
+
+## G-16 — Binary scanning deferred, but NIST treats it as core `Medium`
+
+We have B10 (binaries/firmware) as `deferred`, `P3`, on the grounds that it is hard.
+
+SP 1800-38B §4.1.2 places binary scanning inside the core *Operational Systems and Applications*
+domain, specifically to find *"algorithms that there might not be a source code for, as, for
+example, in third-party"* components.
+
+That is the same argument we already make for prioritising the dependency collector — most
+enterprise crypto is not in your source. Binaries are where it lives when there is no manifest
+to parse either.
+
+**What closes it:** a roadmap decision, not code. Either re-scope B10 upward, or write down why
+we are deliberately diverging from the NIST discovery architecture. Either is defensible;
+silence is not.
+
+---
+
+## G-17 — Competitive framing understates the field `High`
+
+[marketing/01-positioning.md](marketing/01-positioning.md) says *"The incumbent is a
+spreadsheet"* and frames competitors as consultancies, SAST vendors and certificate managers.
+
+SP 1800-38B §5.1 lists the technology collaborators who contributed **cryptographic discovery
+tools** to the NCCoE lab:
+
+> Cisco · IBM · Infosec Global · ISARA · Keyfactor · Microsoft · SafeLogic · Samsung SDS ·
+> SandboxAQ · wolfSSL
+
+These are direct competitors in precisely this category, several with NIST-convened credibility
+we do not have. "The incumbent is a spreadsheet" is true for the *median* enterprise but false
+as a statement about the market, and any buyer who has read SP 1800-38 will know it.
+
+**What closes it:** rewrite the competitive section honestly. The differentiators that survive
+contact with this list are the ones grounded in specifics — Mosca risk arithmetic tied to data
+retention, crypto-agility scoring, and honest coverage reporting — not "nobody else is doing
+this."
+
+**Also worth noting:** Appendix C's eight-use-case functional demonstration plan is a plausible
+buyer evaluation rubric. Treat it as an acceptance-test suite for our collectors.
+
+---
+
 ## Suggested order
 
 1. **G-13** — two minutes, free today
-2. **G-06** — one pattern, closes a real detection hole
-3. **G-01** — 30 minutes, unblocks a whole customer segment
-4. **G-05, G-10, G-11** — land together with A2/A4; they are the same refactor
-5. **G-07, G-08, G-09** — reporting/copy changes, cheap once A4 exists
-6. **G-12** — before any pilot
-7. **G-14** — process, set up once
-8. **G-02, G-03** — when the relevant customer segment is actually in play
-9. **G-04** — with C9
+2. **G-17** — the positioning is wrong *now*, and it is a document edit
+3. **G-06** — one pattern, closes a real detection hole
+4. **G-01** — 30 minutes, unblocks a whole customer segment
+5. **G-16** — a roadmap decision to make before committing to A2's surface priorities
+6. **G-05, G-10, G-11, G-15** — land together with A2/A4; they are the same refactor
+7. **G-07, G-08, G-09** — reporting/copy changes, cheap once A4 exists
+8. **G-12** — before any pilot
+9. **G-14** — process, set up once
+10. **G-02, G-03** — when the relevant customer segment is actually in play
+11. **G-04** — with C9
+
+### Read SP 1800-38 properly before starting the A2 refactor
+
+Volume B is the NIST practice guide for our exact product category and we found it late. Before
+building the collector interface, someone should read it end to end — the architecture (§4),
+the normalisation scheme (§4.1.4) and the eight-use-case test plan (Appendix C). It is the
+closest thing to a specification that exists for this product, and a buyer may evaluate us
+against it.
 
 ---
 

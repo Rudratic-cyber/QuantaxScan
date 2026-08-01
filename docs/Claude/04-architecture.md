@@ -185,6 +185,55 @@ its pattern table because those now come from `mappings/`.
 **Acceptance for this seam:** adding the dependency collector requires zero edits to
 `scanner.ts` and zero edits to the API routes.
 
+### NIST reached the same conclusion — align with it
+
+**NIST SP 1800-38B** is the NCCoE practice guide for *cryptographic discovery tools*, i.e. our
+exact product category. Its §4.1.4 identifies the same normalisation problem this seam solves:
+
+> *"The reports produced by the discovery platforms in this demonstration are unique in that they
+> do not use a common format for representing the discovery results. In a contrived example, a
+> network discovery platform may identify a host system as `host.example.com:443`, whereas
+> another may omit the port number (`host.example.com`). Therefore, we identified the need for a
+> common format to represent normalized discovery reports."*
+
+That is `RawObservation`. The design is right — but NIST also specifies **data elements we do
+not currently carry**, and matching them is cheap interoperability:
+
+| Element | Representation |
+|---|---|
+| IP (v4/v6) address | String |
+| Destination port | Number |
+| Hostname | String |
+| Application layer protocol | IANA Service Name or TLS ALPN ID (RFC 6335 §5.1 / RFC 7301) |
+| Application software | **CPE 2.3** (NIST IR 7695) |
+| Operating system | **CPE 2.3** |
+| Device vendor | **CPE 2.3** |
+
+Our `locationDetail` is freeform `jsonb`. For network-surface assets it should carry these named
+fields, with **CPE 2.3** for software/OS/vendor identification rather than free text. CPE also
+gives us a join key against existing vulnerability tooling the customer already runs — which is
+the same argument as CBOM export, applied to identity instead of format.
+
+§4.1.4 explicitly *"does not define a schema, but instead defines descriptive data elements"* —
+so this is alignment guidance, not a serialisation target. CycloneDX CBOM remains the wire
+format. Tracked as [G-15](09-open-gaps.md).
+
+### Confidence should encode modality, not just a number
+
+SP 1800-38B names four ways discovery data is obtained: **passive network observations, active
+network scans, endpoint monitoring, and configuration information**. These have genuinely
+different evidential weight, and an auditor will ask which one produced a given finding.
+
+Carry the modality on the observation alongside the numeric confidence, rather than collapsing
+both into one float.
+
+### One reprioritisation signal
+
+§4.1.2 puts **binary scanning inside the core operational-systems domain**, specifically to
+catch *"algorithms that there might not be a source code for, as, for example, in third-party"*
+components. We have binaries as B10, `deferred`, `P3`. NIST treats it as central to discovery,
+not as an advanced extra. Worth revisiting — see [02-roadmap.md](02-roadmap.md).
+
 ### Confidence is not decoration
 
 A regex match on `\bDH\b` in a comment and a completed TLS handshake advertising

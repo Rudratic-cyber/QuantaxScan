@@ -109,17 +109,54 @@ auditor-facing buyer values most.
 
 ## Competitive framing
 
-**The incumbent is a spreadsheet.** Position and price against that, not against tools.
+> ⚠️ **Corrected 2026-08-01.** An earlier version of this document said *"the incumbent is a
+> spreadsheet"* and listed only consultancies, SAST vendors and certificate managers. That
+> understated the field badly.
+
+**There is a NIST-convened consortium of vendors building cryptographic discovery tools.**
+NIST SP 1800-38B §5.1 names the technology collaborators who contributed discovery tools to the
+NCCoE lab:
+
+> Cisco · IBM · Infosec Global · ISARA · Keyfactor · Microsoft · SafeLogic · Samsung SDS ·
+> SandboxAQ · wolfSSL
+
+Several are large, several are PQC-native, and all of them have NIST-convened credibility we do
+not have. Any buyer who has read SP 1800-38 knows this list. Claiming the category is empty
+would destroy credibility in the first meeting.
+
+**What is still true:** for the *median* enterprise, the current state of practice really is a
+spreadsheet or nothing. The market is early and largely unserved. But "we are the only ones
+doing this" is false, and we should never say it.
 
 | They might use | Their limitation | Our line |
 |---|---|---|
+| A discovery tool from the NCCoE consortium | Mature discovery; generally weaker on risk arithmetic and evidence-grade reporting | "Discovery is necessary and not sufficient. What ranks the results against *your* data retention?" |
 | Consultancy audit | Point-in-time, six figures, stale on delivery | "An inventory is a living thing. A PDF from March is already wrong." |
 | SAST + PQC rules | Source code only | "Most of your crypto is in dependencies and TLS. Source is one surface of ten." |
 | Certificate manager | Certificates only, no data-lifetime context | "Certificates matter — they are one input. Exposure needs the whole picture." |
 | Spreadsheet | Manual, stale, unauditable | "How old is it, and who signed off on it?" |
 | Nothing yet | — | "The first question you will be asked is what you have. Start there." |
 
-Never name a competitor in public content.
+### The differentiators that survive this list
+
+Coverage breadth alone will not distinguish us — several of those vendors have more of it today.
+What holds up:
+
+1. **Mosca risk arithmetic tied to data retention** — most discovery tools inventory; fewer
+   rank by the customer's own secrecy lifetime against published deadlines
+2. **Crypto-agility scoring** — how hard is this to change, not just how much of it is there
+3. **Honest coverage reporting** — blind spots shown as prominently as findings
+4. **Evidence-grade provenance** — citations, retrieval dates, pinned mapping versions,
+   reproducible reports
+
+All four are about *what happens after discovery*. That is the defensible position.
+
+### Treat Appendix C as our test suite
+
+SP 1800-38B Appendix C defines an eight-use-case functional demonstration plan for discovery
+platforms. A technical buyer may evaluate us against it. Build to it deliberately.
+
+Never name a competitor in public content — including anyone on the list above.
 
 ---
 

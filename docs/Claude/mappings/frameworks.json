@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "dataVersion": "0.2.0",
+  "dataVersion": "0.3.0",
   "compiledAt": "2026-08-01",
   "verifiedAt": "2026-08-01",
   "verificationNote": "NIST, CISA joint factsheet and CycloneDX entries verified against primary sources on 2026-08-01. CNSA 2.0 and OMB M-23-02 remain needs-check — nsa.gov, media.defense.gov and cisa.gov all return HTTP 403 to automated fetches and must be verified by hand.",
@@ -43,6 +43,65 @@
       "retrievedAt": "2026-08-01",
       "confidence": "verified",
       "customerFacingRule": "Because this is a DRAFT, every customer-facing use must be labelled 'NIST draft guidance (IR 8547 ipd, November 2024)'. Presenting these as final binding dates is a factual error."
+    },
+    {
+      "id": "NIST-SP-1800-38",
+      "name": "Migration to Post-Quantum Cryptography — Quantum Readiness: Cryptographic Discovery",
+      "publisher": "NIST NCCoE",
+      "documents": [
+        "SP 1800-38A — Executive Summary (preliminary draft, comment closed 2023-06-08)",
+        "SP 1800-38B — Approach, Architecture, and Security Characteristics of Public Key Application Discovery Tools (preliminary draft, December 2023)",
+        "SP 1800-38C — Quantum Readiness: Testing Draft Standards for Interoperability and Performance (preliminary draft, December 2023)"
+      ],
+      "status": "PRELIMINARY DRAFT — Volumes B and C comment period closed 2024-02-20. Additional volumes expected.",
+      "applicability": { "jurisdictions": ["*"], "sectors": ["*"], "systemTypes": ["*"] },
+
+      "role": "THE MOST DIRECTLY RELEVANT NIST PUBLICATION TO THIS PRODUCT. Volume B is a practice guide for cryptographic discovery TOOLS — i.e. the exact product category Q-Vuln is in. It defines a discovery architecture, a normalisation scheme for discovery output, and a functional test plan for evaluating discovery tools.",
+
+      "whyItMatters": "IR 8547 tells us WHICH algorithms must go and by when. The CISA factsheet tells us inventory comes first. SP 1800-38B tells us HOW a discovery tool should be built and what it should emit. It is the closest thing to a specification for our product, and a buyer evaluating us may well use its functional test plan (Appendix C, eight use cases) as an evaluation rubric.",
+
+      "discoveryArchitecture": {
+        "note": "SP 1800-38B §4.1 defines three discovery domains. Our collector roadmap should map onto these explicitly.",
+        "domains": [
+          { "section": "4.1.1", "name": "Protecting the Code Development Pipeline", "covers": "CI/CD pipeline software, SDLC software, repository components", "ourCollectors": ["B1 source", "B2 dependencies"] },
+          { "section": "4.1.2", "name": "Operational Systems and Applications", "covers": "Filesystem scanning sensors on end-user devices and servers; EDR integration; BINARY scanning for third-party code with no available source", "ourCollectors": ["B7 data-at-rest", "B10 binaries — NOTE: NIST treats binary scanning as core, not deferred"] },
+          { "section": "4.1.3", "name": "Transport Protocols and Network Services", "covers": "Real-time network scanning and passive discovery from historical packet captures, across cloud, on-premises and untrusted networks", "ourCollectors": ["B3 TLS", "B4 certificates", "B6 protocol config"] }
+        ]
+      },
+
+      "discoveryModalities": {
+        "note": "SP 1800-38B §4.1.4 names four ways discovery data is obtained. Our confidence model should distinguish them.",
+        "modalities": ["passive network observations", "active network scans", "endpoint monitoring", "configuration information"]
+      },
+
+      "normalisationRequirement": {
+        "note": "DIRECT VALIDATION of our collector/observation design — and a concrete schema requirement we do not currently meet.",
+        "problemQuote": "§4.1.4: 'The reports produced by the discovery platforms in this demonstration are unique in that they do not use a common format for representing the discovery results. In a contrived example, a network discovery platform may identify a host system as host.example.com:443, whereas another may omit the port number (host.example.com). Therefore, we identified the need for a common format to represent normalized discovery reports, ideally by leveraging existing normalization efforts to the extent possible.'",
+        "scopeNote": "§4.1.4 explicitly states it 'does not define a schema, but instead defines descriptive data elements'. So this is guidance to align with, not a format to serialise to — CycloneDX CBOM remains our wire format.",
+        "networkDataElements": [
+          { "element": "IP (v4 or v6) Address", "representation": "String" },
+          { "element": "Destination Port", "representation": "Number" },
+          { "element": "Hostname", "representation": "String" },
+          { "element": "Application Layer Protocol", "representation": "String — IANA Service Name or TLS ALPN ID (RFC 6335 §5.1 / RFC 7301)" },
+          { "element": "Application Software", "representation": "String — Common Platform Enumeration (CPE) 2.3, NIST IR 7695" },
+          { "element": "Operating System", "representation": "String — CPE 2.3, NIST IR 7695" },
+          { "element": "Device Vendor", "representation": "String — CPE 2.3, NIST IR 7695" }
+        ],
+        "actionRequired": "Our asset model uses a freeform jsonb locationDetail. To align, network-surface assets should carry these named elements with CPE 2.3 for software/OS/vendor identification. See open gap G-15."
+      },
+
+      "consortiumMembers": {
+        "note": "COMMERCIAL REALITY CHECK. SP 1800-38B §5.1 lists the technology collaborators who contributed discovery tools to the NCCoE lab. These are the credible competitors in this exact category — not a spreadsheet.",
+        "members": ["Cisco", "IBM", "Infosec Global (ISG)", "ISARA Corporation", "Keyfactor", "Microsoft", "SafeLogic", "Samsung SDS", "SandboxAQ", "wolfSSL"]
+      },
+
+      "functionalTestPlan": "Appendix C defines eight use cases for a Discovery Platform Lab Functional Demonstration. Worth treating as an acceptance-test suite for our own collectors, and as a likely buyer evaluation rubric.",
+
+      "url": "https://www.nccoe.nist.gov/crypto-agility-considerations-migrating-post-quantum-cryptographic-algorithms",
+      "volumeBPdf": "https://www.nccoe.nist.gov/sites/default/files/2023-12/pqc-migration-nist-sp-1800-38b-preliminary-draft.pdf",
+      "volumeCPdf": "https://www.nccoe.nist.gov/sites/default/files/2023-12/pqc-migration-nist-sp-1800-38c-preliminary-draft.pdf",
+      "retrievedAt": "2026-08-01",
+      "confidence": "verified"
     },
     {
       "id": "CISA-QR",

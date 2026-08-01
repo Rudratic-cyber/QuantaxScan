@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "dataVersion": "0.1.0-seed",
+  "dataVersion": "0.2.0-seed",
   "compiledAt": "2026-08-01",
   "warning": "SEED DATA — unverified. Control identifiers and clause numbers MUST be checked against the actual standard before appearing in any audit-facing output. See README.md.",
 
@@ -41,13 +41,24 @@
     },
     {
       "framework": "NIST CSF 2.0",
+      "CORRECTION": "Earlier versions of this file listed CSF 2.0 as if it were the relevant NIST framework for post-quantum work. THAT WAS WRONG. NIST's PQC-specific publications are NIST IR 8547 (transition timeline) and NIST SP 1800-38 (NCCoE cryptographic discovery practice guide) — both are first-class entries in frameworks.json. CSF is a generic cybersecurity framework and belongs here only as a control crosswalk, at the same level as ISO 27001 and SOC 2.",
+      "narrowerRole": "SP 1800-38B does reference CSF, but only in passing: identifying hardware and software assets as part of an inventory is noted as a core function of the Cybersecurity Framework. That is the correct, limited relationship — CSF describes asset management generally; SP 1800-38 describes cryptographic discovery specifically.",
       "controls": [
-        { "id": "ID.AM", "name": "Asset Management", "relevance": "primary", "evidencedBy": ["cryptographic-inventory"], "confidence": "needs-check" },
-        { "id": "ID.RA", "name": "Risk Assessment", "relevance": "primary", "evidencedBy": ["mosca-verdicts", "risk-scoring"], "confidence": "needs-check" },
-        { "id": "PR.DS", "name": "Data Security", "relevance": "primary", "evidencedBy": ["data-classification", "data-at-rest-coverage"], "confidence": "needs-check" }
+        { "id": "ID.AM", "name": "Asset Management", "relevance": "secondary", "evidencedBy": ["cryptographic-inventory"], "confidence": "needs-check" },
+        { "id": "ID.RA", "name": "Risk Assessment", "relevance": "secondary", "evidencedBy": ["mosca-verdicts", "risk-scoring"], "confidence": "needs-check" },
+        { "id": "PR.DS", "name": "Data Security", "relevance": "secondary", "evidencedBy": ["data-classification", "data-at-rest-coverage"], "confidence": "needs-check" }
       ]
     }
   ],
+
+  "primaryNistReferences": {
+    "note": "For post-quantum work these are the NIST documents that matter. They live in frameworks.json, not here, because they are not control crosswalks — they are the substantive guidance.",
+    "references": [
+      { "id": "NIST-IR-8547", "role": "WHICH algorithms must go, and by WHEN" },
+      { "id": "NIST-SP-1800-38", "role": "HOW to build and operate cryptographic discovery — the practice guide for our product category" },
+      { "id": "NIST-FIPS", "role": "WHAT to replace them with (FIPS 203/204/205)" }
+    ]
+  },
 
   "evidenceTypes": [
     { "id": "cryptographic-inventory",        "producedBy": "inventory export / CBOM" },

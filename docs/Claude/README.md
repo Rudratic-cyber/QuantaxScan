@@ -101,6 +101,23 @@ SP 800-38A/D, and found **two more wrong citations**:
 Plus: **DSA has been unapproved for signature generation since FIPS 186-5 (2023-02-03)** — it is
 a present-tense compliance failure, not a 2035 migration item.
 
+A third pass added the NIST publication these docs had been missing entirely:
+
+> **NIST SP 1800-38 (NCCoE) — "Migration to Post-Quantum Cryptography: Quantum Readiness,
+> Cryptographic Discovery"** is the practice guide for *cryptographic discovery tools* — our
+> exact product category. Volume B defines a discovery architecture, a normalisation scheme for
+> discovery output, and an eight-use-case functional test plan.
+
+Earlier drafts had listed **NIST CSF 2.0** as the relevant NIST framework. That was wrong — CSF
+is a generic cybersecurity framework and belongs only as a control crosswalk. The PQC-specific
+NIST publications are **IR 8547** (which algorithms, by when), **SP 1800-38** (how to build
+discovery), and **FIPS 203/204/205** (what to replace them with).
+
+Three consequences, all logged as gaps: our observation model should carry SP 1800-38B's data
+elements including **CPE 2.3** ([G-15](09-open-gaps.md)); NIST treats **binary scanning as core**
+where we deferred it ([G-16](09-open-gaps.md)); and the competitive framing was wrong — SP
+1800-38B names a **NIST-convened consortium of discovery-tool vendors** ([G-17](09-open-gaps.md)).
+
 Still `needs-check`: CNSA 2.0 per-category dates and OMB M-23-02 format — `nsa.gov`,
 `media.defense.gov` and `cisa.gov` all return HTTP 403 to automated fetches and need a human.
 Full register in [09-open-gaps.md](09-open-gaps.md); data status in
