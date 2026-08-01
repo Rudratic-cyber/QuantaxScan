@@ -17,15 +17,15 @@ import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { apiUrl } from "@/lib/api";
 
-// ── THEME: Quantum Void + Cyber Galaxy (clean mix) ──
+// ── THEME: Clean light enterprise ──
 const THEME = {
-  bg: { dark: "#0a0e1f", darker: "#050810" },
-  cyan: "#00d9ff",
-  pink: "#ff006e",
-  yellow: "#ffbe0b",
-  green: "#00ff88",
-  blue: "#3a86ff",
-  magenta: "#ff00ff",
+  bg: { dark: "#f7f8fa", darker: "#ffffff" },
+  cyan: "#4f46e5",   // accent indigo
+  pink: "#dc2626",   // critical
+  yellow: "#d97706", // alert
+  green: "#059669",  // safe
+  blue: "#4f46e5",
+  magenta: "#0d9488", // teal (2nd series)
 };
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ function RiskRing({ score }: { score: number }) {
       onMouseLeave={() => setIsHovering(false)}
     >
       <svg className="-rotate-90 absolute inset-0 w-full h-full">
-        <circle cx="70" cy="70" r={r} stroke="rgba(79,142,247,0.08)" strokeWidth="10" fill="none" />
+        <circle cx="70" cy="70" r={r} stroke="#e5e7eb" strokeWidth="10" fill="none" />
         <motion.circle
           cx="70" cy="70" r={r} stroke={color} strokeWidth="10" fill="none"
           strokeDasharray={circ}
@@ -91,7 +91,6 @@ function RiskRing({ score }: { score: number }) {
           animate={{ strokeDashoffset: offset }}
           transition={{ duration: 1.6, ease: "easeOut" }}
           strokeLinecap="round"
-          style={{ filter: `drop-shadow(0 0 8px ${color}77)` }}
         />
       </svg>
       <div className="relative flex flex-col items-center z-10">
@@ -101,7 +100,7 @@ function RiskRing({ score }: { score: number }) {
           className="text-3xl font-bold font-mono" style={{ color }}
         >{score}</motion.span>
         <span className="text-[8px] font-mono tracking-widest mt-0.5" style={{ color: color + "99" }}>{label}</span>
-        <span className="text-[8px] font-mono text-[#475569] tracking-widest">RISK</span>
+        <span className="text-[8px] font-mono text-[#6b7280] tracking-widest">RISK</span>
       </div>
 
       {/* Tooltip */}
@@ -112,15 +111,15 @@ function RiskRing({ score }: { score: number }) {
             animate={{ opacity: 1, y: -12, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="absolute top-full mt-3 bg-[#0a0e1f] rounded-lg border pointer-events-none whitespace-nowrap z-50 px-3 py-2"
+            className="absolute top-full mt-3 bg-white rounded-lg border pointer-events-none whitespace-nowrap z-50 px-3 py-2"
             style={{
-              borderColor: color + "44",
-              boxShadow: `0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px ${color}22`
+              borderColor: color + "33",
+              boxShadow: `0 8px 24px rgba(15,23,42,0.12)`
             }}
           >
-            <div className="text-[10px] font-mono text-[#f1f5f9] font-semibold">{score}% Risk Score</div>
+            <div className="text-[10px] font-mono text-[#0a0e1a] font-semibold">{score}% Risk Score</div>
             <div className="text-[9px] font-mono mt-1" style={{ color: color + "cc" }}>{label}</div>
-            <div className="text-[8px] font-mono text-[#475569] mt-1">{description}</div>
+            <div className="text-[8px] font-mono text-[#6b7280] mt-1">{description}</div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -137,10 +136,10 @@ function StatCard({
   const isNeon = [THEME.cyan, THEME.pink, THEME.yellow, THEME.green].includes(color);
   return (
     <Reveal delay={delay}>
-      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-[#0a0e1f] to-[#050810] p-5 h-full flex flex-col justify-between transition-all hover:shadow-xl"
+      <div className="relative overflow-hidden rounded-2xl border bg-white p-5 h-full flex flex-col justify-between transition-all hover:shadow-md"
         style={{
-          borderColor: color + "1a",
-          boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0px rgba(${color === THEME.cyan ? "0,217,255" : color === THEME.pink ? "255,0,110" : color === THEME.yellow ? "255,190,11" : "0,255,136"},0.1)`
+          borderColor: "#e5e7eb",
+          boxShadow: `0 8px 24px rgba(15,23,42,0.06)`
         }}>
         <div className="absolute -top-4 -right-4 opacity-[0.02]">
           <Icon className="h-20 w-20" style={{ color }} />
@@ -161,7 +160,7 @@ function StatCard({
   );
 }
 
-// severity donut — using neon theme colors
+// severity donut — using semantic theme colors
 const SEVERITY_COLORS = { critical: THEME.pink, alert: THEME.yellow, safe: THEME.green };
 
 function SeverityDonut({ critical, alert, safe }: { critical: number; alert: number; safe: number }) {
@@ -171,37 +170,37 @@ function SeverityDonut({ critical, alert, safe }: { critical: number; alert: num
     { name: "Safe", value: safe, fill: SEVERITY_COLORS.safe },
   ].filter(d => d.value > 0);
   const total = critical + alert + safe;
-  if (data.length === 0) return <div className="flex items-center justify-center h-full text-[#475569] text-xs font-mono">no data</div>;
+  if (data.length === 0) return <div className="flex items-center justify-center h-full text-[#6b7280] text-xs font-mono">no data</div>;
   return (
     <ResponsiveContainer width="100%" height="100%">
       <PieChart>
         <Pie data={data} cx="50%" cy="50%" innerRadius={48} outerRadius={68}
-          dataKey="value" paddingAngle={3} strokeWidth={1} stroke="#0a0e1f">
-          {data.map((entry, i) => <Cell key={i} fill={entry.fill} style={{ filter: `drop-shadow(0 0 8px ${entry.fill}88)` }} />)}
+          dataKey="value" paddingAngle={3} strokeWidth={1} stroke="#ffffff">
+          {data.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
         </Pie>
         <Tooltip
           contentStyle={{ 
-            backgroundColor: "#0a0e1f", 
-            borderColor: THEME.cyan + "44", 
-            borderRadius: 8, 
-            fontFamily: "monospace", 
-            fontSize: 10, 
-            color: "#f1f5f9",
+            backgroundColor: "#ffffff",
+            borderColor: THEME.cyan + "33",
+            borderRadius: 8,
+            fontFamily: "monospace",
+            fontSize: 10,
+            color: "#0a0e1a",
             padding: "8px 12px",
-            boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3)` 
+            boxShadow: `0 8px 24px rgba(15,23,42,0.12)`
           }}
           formatter={(value: number, name: string, props: any) => {
             const percentage = ((value / total) * 100).toFixed(1);
             return [
               <div key="content" className="space-y-1">
-                <div className="font-bold text-[#f1f5f9]">{name}</div>
-                <div className="text-[9px] font-semibold text-[#00d9ff]">{value} findings</div>
-                <div className="text-[9px] font-semibold text-[#00ff88]">{percentage}% of total</div>
+                <div className="font-bold text-[#0a0e1a]">{name}</div>
+                <div className="text-[9px] font-semibold text-[#4f46e5]">{value} findings</div>
+                <div className="text-[9px] font-semibold text-[#059669]">{percentage}% of total</div>
               </div>,
               ""
             ];
           }}
-          labelStyle={{ color: "#94a3b8", fontFamily: "monospace", fontSize: 9 }}
+          labelStyle={{ color: "#6b7280", fontFamily: "monospace", fontSize: 9 }}
         />
       </PieChart>
     </ResponsiveContainer>
@@ -215,56 +214,56 @@ function AlgoBar({ data }: { data: { name: string; count: number }[] }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} layout="vertical" margin={{ top: 12, right: 24, left: 95, bottom: 12 }}>
-        <CartesianGrid strokeDasharray="0" stroke="rgba(0,217,255,0.04)" horizontal={true} vertical={false} />
-        <XAxis 
-          type="number" 
-          stroke="rgba(0,217,255,0.1)" 
-          fontSize={10} 
-          tickLine={false} 
-          axisLine={false} 
-          tick={{ fill: "#475569", fontFamily: "monospace", fontSize: 9 }}
+        <CartesianGrid strokeDasharray="0" stroke="#e5e7eb" horizontal={true} vertical={false} />
+        <XAxis
+          type="number"
+          stroke="#e5e7eb"
+          fontSize={10}
+          tickLine={false}
+          axisLine={false}
+          tick={{ fill: "#6b7280", fontFamily: "monospace", fontSize: 9 }}
           domain={[0, 'dataMax + 100']}
         />
-        <YAxis 
-          dataKey="name" 
-          type="category" 
-          fontSize={11} 
-          tickLine={false} 
-          axisLine={false} 
-          width={95} 
-          tick={{ fill: "#94a3b8", fontFamily: "monospace", fontSize: 10, fontWeight: 500 }}
+        <YAxis
+          dataKey="name"
+          type="category"
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          width={95}
+          tick={{ fill: "#6b7280", fontFamily: "monospace", fontSize: 10, fontWeight: 500 }}
         />
         <Tooltip
-          contentStyle={{ 
-            backgroundColor: "#0a0e1f", 
-            borderColor: THEME.cyan + "22", 
+          contentStyle={{
+            backgroundColor: "#ffffff",
+            borderColor: THEME.cyan + "22",
             border: `1px solid ${THEME.cyan}22`,
-            borderRadius: 8, 
-            fontFamily: "monospace", 
-            fontSize: 11, 
-            color: "#f1f5f9",
-            boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3)`,
+            borderRadius: 8,
+            fontFamily: "monospace",
+            fontSize: 11,
+            color: "#0a0e1a",
+            boxShadow: `0 8px 24px rgba(15,23,42,0.12)`,
             padding: "8px 12px"
           }}
-          cursor={{ fill: "rgba(0,217,255,0.04)" }}
+          cursor={{ fill: "rgba(79,70,229,0.06)" }}
           formatter={(value: number, name: string, props: any) => {
             const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : "0";
             const algoName = props.payload.name;
             return [
               <div key="content" className="space-y-1">
-                <div className="font-bold text-[#f1f5f9]">{algoName}</div>
-                <div className="text-[9px] font-semibold text-[#ff006e]">{value.toLocaleString()} occurrences</div>
-                <div className="text-[9px] font-semibold text-[#ffbe0b]">{percentage}% of {total.toLocaleString()}</div>
+                <div className="font-bold text-[#0a0e1a]">{algoName}</div>
+                <div className="text-[9px] font-semibold text-[#dc2626]">{value.toLocaleString()} occurrences</div>
+                <div className="text-[9px] font-semibold text-[#d97706]">{percentage}% of {total.toLocaleString()}</div>
               </div>,
               ""
             ];
           }}
-          labelStyle={{ color: "#94a3b8", fontFamily: "monospace", fontSize: 9 }}
+          labelStyle={{ color: "#6b7280", fontFamily: "monospace", fontSize: 9 }}
         />
         <Bar dataKey="count" radius={[0, 6, 6, 0]} isAnimationActive={true} animationDuration={800}>
           {data.map((_, i) => {
             const color = barColors[i] || THEME.cyan;
-            return <Cell key={i} fill={color} style={{ filter: `drop-shadow(0 2px 4px ${color}44)` }} />;
+            return <Cell key={i} fill={color} />;
           })}
         </Bar>
       </BarChart>
@@ -280,18 +279,18 @@ function FileRiskRow({ name, critical, alert, score, onClick }: {
   const pct = Math.min(100, score);
   return (
     <button onClick={onClick}
-      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/4 transition-colors group text-left">
-      <FileCode2 className="h-3.5 w-3.5 text-[#475569] shrink-0 group-hover:text-cyan-400 transition-colors" />
-      <span className="flex-1 text-[11px] font-mono text-[#94a3b8] truncate group-hover:text-[#f1f5f9] transition-colors">
+      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-[#f1f3f7] transition-colors group text-left">
+      <FileCode2 className="h-3.5 w-3.5 text-[#6b7280] shrink-0 group-hover:text-[#4f46e5] transition-colors" />
+      <span className="flex-1 text-[11px] font-mono text-[#475569] truncate group-hover:text-[#0a0e1a] transition-colors">
         {name.split("/").pop()}
       </span>
-      <div className="w-24 h-1.5 rounded-full bg-white/8 overflow-hidden shrink-0 border border-white/10">
-        <motion.div className="h-full rounded-full" style={{ background: color, width: `${pct}%`, boxShadow: `0 0 8px ${color}66` }}
+      <div className="w-24 h-1.5 rounded-full bg-[#eceef2] overflow-hidden shrink-0 border border-[#e5e7eb]">
+        <motion.div className="h-full rounded-full" style={{ background: color, width: `${pct}%` }}
           initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8, ease: "easeOut" }} />
       </div>
       {critical > 0 && <span className="text-[10px] font-mono shrink-0 w-8 text-right" style={{ color: THEME.pink }}>{critical}C</span>}
       {alert > 0 && <span className="text-[10px] font-mono shrink-0 w-8 text-right" style={{ color: THEME.yellow }}>{alert}A</span>}
-      <ArrowUpRight className="h-3 w-3 text-[#475569] opacity-0 group-hover:opacity-100 transition-opacity" />
+      <ArrowUpRight className="h-3 w-3 text-[#6b7280] opacity-0 group-hover:opacity-100 transition-opacity" />
     </button>
   );
 }
@@ -373,13 +372,13 @@ function AISummaryPanel({ project, findings }: {
       const parts = line.split(/(\*\*[^*]+\*\*)/g);
       const rendered = parts.map((p, j) =>
         p.startsWith("**") && p.endsWith("**")
-          ? <strong key={j} className="text-[#f1f5f9] font-semibold">{p.slice(2, -2)}</strong>
+          ? <strong key={j} className="text-[#0a0e1a] font-semibold">{p.slice(2, -2)}</strong>
           : <span key={j}>{p}</span>
       );
       if (line.startsWith("- ") || line.startsWith("• ")) {
         return (
           <div key={i} className="flex items-start gap-2 mt-1.5">
-            <div className="h-1.5 w-1.5 rounded-full bg-[#4f8ef7] mt-[7px] shrink-0" />
+            <div className="h-1.5 w-1.5 rounded-full bg-[#4f46e5] mt-[7px] shrink-0" />
             <span>{rendered}</span>
           </div>
         );
@@ -389,7 +388,7 @@ function AISummaryPanel({ project, findings }: {
   }
 
   if (!project) return (
-    <div className="flex flex-col items-center justify-center h-64 text-[#475569] font-mono text-sm">
+    <div className="flex flex-col items-center justify-center h-64 text-[#6b7280] font-mono text-sm">
       <BrainCircuit className="h-8 w-8 mb-3 opacity-30" />
       <p>Select a project to generate AI analysis</p>
     </div>
@@ -404,13 +403,13 @@ function AISummaryPanel({ project, findings }: {
             <BrainCircuit className="h-4 w-4" style={{ color: THEME.cyan }} />
           </div>
           <div>
-            <p className="text-[9px] font-mono uppercase tracking-widest" style={{ color: THEME.cyan + "88" }}>// ai_analysis</p>
-            <h3 className="text-sm font-bold text-[#f1f5f9]">Q-Bitron Intelligence Report</h3>
+            <p className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: THEME.cyan + "cc" }}>AI Analysis</p>
+            <h3 className="text-sm font-bold text-[#0a0e1a]">Q-Bitron Intelligence Report</h3>
           </div>
         </div>
         <button onClick={() => { void run(); }}
           disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#4f8ef7]/30 text-[#4f8ef7]/70 text-[11px] font-mono hover:border-[#4f8ef7]/60 hover:text-[#4f8ef7] transition-colors disabled:opacity-40">
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#4f46e5]/30 text-[#4f46e5]/70 text-[11px] font-mono hover:border-[#4f46e5]/60 hover:text-[#4f46e5] transition-colors disabled:opacity-40">
           <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
           {loading ? "Analyzing…" : "Re-analyze"}
         </button>
@@ -418,45 +417,45 @@ function AISummaryPanel({ project, findings }: {
 
       {/* project context pill */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/8 bg-white/3 text-[10px] font-mono text-[#94a3b8]">
-          <Folder className="h-3 w-3 text-[#4f8ef7]" />{project.name}
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#e5e7eb] bg-[#f7f8fa] text-[10px] font-mono text-[#475569]">
+          <Folder className="h-3 w-3 text-[#4f46e5]" />{project.name}
         </span>
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/8 bg-white/3 text-[10px] font-mono text-[#94a3b8]">
-          <FileCode2 className="h-3 w-3 text-[#94a3b8]" />{project.language}
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#e5e7eb] bg-[#f7f8fa] text-[10px] font-mono text-[#475569]">
+          <FileCode2 className="h-3 w-3 text-[#475569]" />{project.language}
         </span>
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/8 bg-white/3 text-[10px] font-mono"
-          style={{ color: (project.riskScore ?? 0) > 75 ? "#f87171" : (project.riskScore ?? 0) > 40 ? "#fbbf24" : "#34d399" }}>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#e5e7eb] bg-[#f7f8fa] text-[10px] font-mono"
+          style={{ color: (project.riskScore ?? 0) > 75 ? "#dc2626" : (project.riskScore ?? 0) > 40 ? "#d97706" : "#059669" }}>
           <Activity className="h-3 w-3" />Risk {project.riskScore ?? 0}/100
         </span>
       </div>
 
       {/* output */}
-      <div className="rounded-2xl border border-white/6 bg-gradient-to-b from-[#0a0e1f] to-[#050810] p-5" style={{
-        boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0px rgba(0,217,255,0.08)`
+      <div className="rounded-2xl border border-[#e5e7eb] bg-white p-5" style={{
+        boxShadow: `0 8px 24px rgba(15,23,42,0.06)`
       }}>
         {loading && text.length === 0 ? (
-          <div className="flex items-center gap-3 text-[#475569] font-mono text-sm py-6">
+          <div className="flex items-center gap-3 text-[#6b7280] font-mono text-sm py-6">
             <div className="flex gap-1">
               {[0, 0.15, 0.3].map((d, i) => (
-                <motion.div key={i} className="h-1.5 w-1.5 rounded-full bg-[#4f8ef7]/60"
+                <motion.div key={i} className="h-1.5 w-1.5 rounded-full bg-[#4f46e5]/60"
                   animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1, delay: d, repeat: Infinity }} />
               ))}
             </div>
             <span>Analyzing security posture…</span>
           </div>
         ) : (
-          <div className="text-[12px] font-mono text-[#94a3b8] leading-relaxed space-y-0.5">
+          <div className="text-[12px] text-[#475569] leading-relaxed space-y-0.5">
             {renderMarkdown(text)}
             {loading && (
-              <motion.span className="inline-block h-3.5 w-0.5 bg-[#4f8ef7] ml-0.5 align-middle"
+              <motion.span className="inline-block h-3.5 w-0.5 bg-[#4f46e5] ml-0.5 align-middle"
                 animate={{ opacity: [1, 0] }} transition={{ duration: 0.6, repeat: Infinity }} />
             )}
           </div>
         )}
         {done && text.length > 0 && (
-          <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-white/5">
-            <Sparkles className="h-3 w-3 text-[#4f8ef7]/50" />
-            <span className="text-[9px] font-mono text-[#2d3f5c] uppercase tracking-widest">Powered by Q-Bitron AI</span>
+          <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-[#eceef2]">
+            <Sparkles className="h-3 w-3 text-[#4f46e5]/50" />
+            <span className="text-[9px] font-mono text-[#9aa3b2] uppercase tracking-widest">Powered by Q-Bitron AI</span>
           </div>
         )}
       </div>
@@ -464,16 +463,16 @@ function AISummaryPanel({ project, findings }: {
       {/* Quick actions */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Run New Scan", href: "/scan", icon: Terminal, color: "#4f8ef7" },
-          { label: "Full Report", href: "/community", icon: BarChart3, color: "#a78bfa" },
-          { label: "Community Help", href: "/community", icon: Users, color: "#34d399" },
+          { label: "Run New Scan", href: "/scan", icon: Terminal, color: "#4f46e5" },
+          { label: "Full Report", href: "/community", icon: BarChart3, color: "#4338ca" },
+          { label: "Community Help", href: "/community", icon: Users, color: "#059669" },
         ].map(({ label, href, icon: Icon, color }) => (
           <Link key={label} href={href}
-            className="flex flex-col items-center gap-2 p-3 rounded-2xl border border-white/6 bg-[#0a0e1e] hover:border-white/12 transition-all group text-center hover:shadow-lg" style={{ boxShadow: `0 2px 8px rgba(0, 0, 0, 0.2)` }}>
+            className="flex flex-col items-center gap-2 p-3 rounded-2xl border border-[#e5e7eb] bg-white hover:border-[#d1d5db] transition-all group text-center hover:shadow-lg" style={{ boxShadow: `0 4px 12px rgba(15,23,42,0.05)` }}>
             <div className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: color + "12", boxShadow: `inset 0 1px 2px ${color}22` }}>
               <Icon className="h-3.5 w-3.5" style={{ color }} />
             </div>
-            <span className="text-[10px] font-mono text-[#475569] group-hover:text-[#94a3b8] transition-colors">{label}</span>
+            <span className="text-[10px] font-mono text-[#6b7280] group-hover:text-[#475569] transition-colors">{label}</span>
           </Link>
         ))}
       </div>
@@ -516,9 +515,9 @@ function CommunityIntel({ project, findings }: {
   const shown = relevant.length > 0 ? relevant.slice(0, 8) : fallback;
 
   const TYPE_COLOR: Record<string, string> = {
-    article: "#4f8ef7",
-    question: "#fbbf24",
-    "migration-story": "#34d399",
+    article: "#4f46e5",
+    question: "#d97706",
+    "migration-story": "#059669",
   };
 
   return (
@@ -528,13 +527,13 @@ function CommunityIntel({ project, findings }: {
           <Users className="h-4 w-4" style={{ color: THEME.cyan }} />
         </div>
         <div>
-          <p className="text-[9px] font-mono uppercase tracking-widest" style={{ color: THEME.cyan + "88" }}>// community_intel</p>
-          <h3 className="text-sm font-bold text-[#f1f5f9]">
+          <p className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: THEME.cyan + "cc" }}>Community Intel</p>
+          <h3 className="text-sm font-bold text-[#0a0e1a]">
             {project ? `Posts relevant to ${project.name}` : "Community Discussions"}
           </h3>
         </div>
         {project && relevant.length > 0 && (
-          <span className="ml-auto text-[10px] font-mono text-[#4f8ef7]/60 border border-[#4f8ef7]/20 rounded-full px-2 py-0.5">
+          <span className="ml-auto text-[10px] font-mono text-[#4f46e5]/60 border border-[#4f46e5]/20 rounded-full px-2 py-0.5">
             {relevant.length} matched
           </span>
         )}
@@ -542,8 +541,8 @@ function CommunityIntel({ project, findings }: {
 
       {project && (
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[9px] font-mono text-[#475569] uppercase tracking-widest">Filtering by:</span>
-          <span className="px-2 py-0.5 rounded-full border border-[#4f8ef7]/25 bg-[#4f8ef7]/8 text-[9px] font-mono text-[#4f8ef7]">
+          <span className="text-[9px] font-mono text-[#6b7280] uppercase tracking-widest">Filtering by:</span>
+          <span className="px-2 py-0.5 rounded-full border border-[#4f46e5]/25 bg-[#4f46e5]/8 text-[9px] font-mono text-[#4f46e5]">
             lang:{project.language}
           </span>
           {[...projectAlgos].slice(0, 4).map(a => (
@@ -555,10 +554,10 @@ function CommunityIntel({ project, findings }: {
       )}
 
       {shown.length === 0 ? (
-        <div className="rounded-2xl border border-white/6 bg-gradient-to-br from-[#0a0e1f] to-[#050810] flex flex-col items-center justify-center py-16 text-center" style={{ boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3)` }}>
-          <MessageSquare className="h-8 w-8 text-[#2d3f5c] mb-3" />
-          <p className="text-sm font-mono text-[#475569]">// no_posts_found</p>
-          <p className="text-xs font-mono text-[#2d3f5c] mt-1">Be the first to share knowledge about this vulnerability type</p>
+        <div className="rounded-2xl border border-[#e5e7eb] bg-white flex flex-col items-center justify-center py-16 text-center" style={{ boxShadow: `0 8px 24px rgba(15,23,42,0.06)` }}>
+          <MessageSquare className="h-8 w-8 text-[#9aa3b2] mb-3" />
+          <p className="text-sm font-medium text-[#6b7280]">No posts found</p>
+          <p className="text-xs font-mono text-[#9aa3b2] mt-1">Be the first to share knowledge about this vulnerability type</p>
           <Link href="/community"
             className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-mono transition-all" style={{ background: THEME.cyan + "12", border: `1px solid ${THEME.cyan}33`, color: THEME.cyan }}>
             <MessageSquare className="h-3 w-3" /> Go to Community
@@ -567,7 +566,7 @@ function CommunityIntel({ project, findings }: {
       ) : (
         <div className="space-y-2">
           {shown.map((post, i) => {
-            const tagColor = TYPE_COLOR[post.type] ?? "#4f8ef7";
+            const tagColor = TYPE_COLOR[post.type] ?? "#4f46e5";
             const votes = post.upvotes - post.downvotes;
             return (
               <motion.div
@@ -575,14 +574,14 @@ function CommunityIntel({ project, findings }: {
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.04 }}
-                className="rounded-2xl border border-white/6 bg-gradient-to-br from-[#0a0e1f] to-[#050810] hover:border-white/12 transition-all overflow-hidden flex hover:shadow-lg" style={{ boxShadow: `0 2px 8px rgba(0, 0, 0, 0.2)` }}
+                className="rounded-2xl border border-[#e5e7eb] bg-white hover:border-[#d1d5db] transition-all overflow-hidden flex hover:shadow-lg" style={{ boxShadow: `0 4px 12px rgba(15,23,42,0.05)` }}
               >
                 {/* vote strip */}
-                <div className="flex flex-col items-center gap-1 px-2.5 py-3 border-r border-white/5 bg-[#050810]/50">
-                  <ThumbsUp className="h-3 w-3 text-[#2d3f5c] hover:text-[#4f8ef7] cursor-pointer transition-colors"
+                <div className="flex flex-col items-center gap-1 px-2.5 py-3 border-r border-[#eceef2] bg-[#f7f8fa]">
+                  <ThumbsUp className="h-3 w-3 text-[#9aa3b2] hover:text-[#4f46e5] cursor-pointer transition-colors"
                     onClick={() => votePost({ id: post.id, data: { direction: "up" } }, { onSuccess: () => void refetch() })} />
-                  <span className={cn("text-[11px] font-mono font-bold", votes > 0 ? "text-[#4f8ef7]" : "text-[#475569]")}>{votes}</span>
-                  <ThumbsDown className="h-3 w-3 text-[#2d3f5c] hover:text-red-400 cursor-pointer transition-colors"
+                  <span className={cn("text-[11px] font-mono font-bold", votes > 0 ? "text-[#4f46e5]" : "text-[#6b7280]")}>{votes}</span>
+                  <ThumbsDown className="h-3 w-3 text-[#9aa3b2] hover:text-[#dc2626] cursor-pointer transition-colors"
                     onClick={() => votePost({ id: post.id, data: { direction: "down" } }, { onSuccess: () => void refetch() })} />
                 </div>
                 {/* content */}
@@ -593,28 +592,28 @@ function CommunityIntel({ project, findings }: {
                       {post.type}
                     </span>
                     {post.language && (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono border border-white/8 text-[#475569]">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono border border-[#e5e7eb] text-[#6b7280]">
                         {post.language}
                       </span>
                     )}
                     {post.relevance > 5 && (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono border border-emerald-500/25 bg-emerald-500/8 text-emerald-500 flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono border border-[#059669]/25 bg-[#059669]/8 text-[#059669] flex items-center gap-1">
                         <Target className="h-2.5 w-2.5" /> relevant
                       </span>
                     )}
-                    <span className="text-[9px] font-mono text-[#2d3f5c] ml-auto">
+                    <span className="text-[9px] font-mono text-[#9aa3b2] ml-auto">
                       {formatDistanceToNow(new Date(post.createdAt))} ago
                     </span>
                   </div>
-                  <h4 className="text-[12px] font-bold text-[#f1f5f9] leading-tight mb-1">{post.title}</h4>
-                  <p className="text-[11px] font-mono text-[#475569] leading-relaxed line-clamp-2">{post.content}</p>
+                  <h4 className="text-[12px] font-bold text-[#0a0e1a] leading-tight mb-1">{post.title}</h4>
+                  <p className="text-[11px] text-[#6b7280] leading-relaxed line-clamp-2">{post.content}</p>
                 </div>
               </motion.div>
             );
           })}
           <div className="pt-1">
             <Link href="/community"
-              className="flex items-center justify-center gap-1.5 py-2 text-[11px] font-mono text-[#475569] hover:text-[#4f8ef7] transition-colors">
+              className="flex items-center justify-center gap-1.5 py-2 text-[11px] font-mono text-[#6b7280] hover:text-[#4f46e5] transition-colors">
               View all community posts <ChevronRight className="h-3 w-3" />
             </Link>
           </div>
@@ -917,17 +916,17 @@ export function Dashboard() {
   }, [project, riskScore, critical, alerts, safe, algoChart, fileRisk, effortChart, migrationItems]);
 
   const TABS: { key: DashTab; label: string; icon: React.ElementType }[] = [
-    { key: "overview", label: "// overview", icon: BarChart3 },
-    { key: "ai", label: "// ai_analysis", icon: BrainCircuit },
-    { key: "community", label: "// community_intel", icon: Users },
+    { key: "overview", label: "Overview", icon: BarChart3 },
+    { key: "ai", label: "AI Analysis", icon: BrainCircuit },
+    { key: "community", label: "Community Intel", icon: Users },
   ];
 
   return (
-    <div className="flex-1 bg-gradient-to-br from-[#0a0e1f] via-[#050810] to-[#0a0e1f] overflow-y-auto relative" onClick={() => setDropdownOpen(false)}>
-      {/* Animated background grid effect */}
-      <div className="fixed inset-0 opacity-5 pointer-events-none" style={{
-        backgroundImage: `linear-gradient(0deg, transparent 24%, rgba(0, 217, 255, 0.05) 25%, rgba(0, 217, 255, 0.05) 26%, transparent 27%, transparent 74%, rgba(0, 217, 255, 0.05) 75%, rgba(0, 217, 255, 0.05) 76%, transparent 77%, transparent),
-                          linear-gradient(90deg, transparent 24%, rgba(0, 217, 255, 0.05) 25%, rgba(0, 217, 255, 0.05) 26%, transparent 27%, transparent 74%, rgba(0, 217, 255, 0.05) 75%, rgba(0, 217, 255, 0.05) 76%, transparent 77%, transparent)`,
+    <div className="flex-1 bg-[#f7f8fa] overflow-y-auto relative" onClick={() => setDropdownOpen(false)}>
+      {/* Subtle background grid */}
+      <div className="fixed inset-0 opacity-60 pointer-events-none" style={{
+        backgroundImage: `linear-gradient(0deg, transparent 24%, rgba(15,23,42,0.03) 25%, rgba(15,23,42,0.03) 26%, transparent 27%, transparent 74%, rgba(15,23,42,0.03) 75%, rgba(15,23,42,0.03) 76%, transparent 77%, transparent),
+                          linear-gradient(90deg, transparent 24%, rgba(15,23,42,0.03) 25%, rgba(15,23,42,0.03) 26%, transparent 27%, transparent 74%, rgba(15,23,42,0.03) 75%, rgba(15,23,42,0.03) 76%, transparent 77%, transparent)`,
         backgroundSize: "50px 50px"
       }} />
       
@@ -937,9 +936,9 @@ export function Dashboard() {
         <Reveal>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
-              <p className="text-[9px] font-mono text-[#4f8ef7]/50 tracking-[0.2em] mb-1 uppercase">// q_bitron :: dashboard</p>
-              <h1 className="text-2xl font-bold text-[#f1f5f9] tracking-tight">Security Intelligence</h1>
-              <p className="text-[#475569] font-mono text-xs mt-1">
+              <p className="text-[9px] font-semibold text-[#4f46e5]/80 tracking-[0.2em] mb-1 uppercase">Q-Bitron Dashboard</p>
+              <h1 className="text-2xl font-bold text-[#0a0e1a] tracking-tight">Security Intelligence</h1>
+              <p className="text-[#6b7280] text-xs mt-1">
                 {sorted.length > 0
                   ? `${sorted.length} project${sorted.length !== 1 ? "s" : ""} in scope — ${globalStats?.totalVulnerabilitiesFound.toLocaleString() ?? "—"} total findings`
                   : "No scans yet — run your first scan"}
@@ -948,14 +947,14 @@ export function Dashboard() {
 
             <div className="flex items-center gap-2">
               <button onClick={e => { e.stopPropagation(); void refetchProjects(); }}
-                className="p-2 rounded-lg border border-white/8 text-[#475569] hover:text-[#f1f5f9] hover:border-white/16 transition-colors"
+                className="p-2 rounded-lg border border-[#e5e7eb] text-[#6b7280] hover:text-[#0a0e1a] hover:border-[#d1d5db] transition-colors"
                 title="Refresh projects">
                 <RefreshCw className="h-3.5 w-3.5" />
               </button>
 
               {sorted.length > 0 && project && (
                 <button onClick={e => { e.stopPropagation(); handleExportReport(); }}
-                  className="p-2 rounded-lg border border-white/8 text-[#475569] hover:text-[#f1f5f9] hover:border-white/16 transition-colors"
+                  className="p-2 rounded-lg border border-[#e5e7eb] text-[#6b7280] hover:text-[#0a0e1a] hover:border-[#d1d5db] transition-colors"
                   title="Export comprehensive report">
                   <Download className="h-3.5 w-3.5" />
                 </button>
@@ -965,31 +964,31 @@ export function Dashboard() {
                 <div className="relative" onClick={e => e.stopPropagation()}>
                   <button
                     onClick={() => setDropdownOpen(v => !v)}
-                    className="flex items-center gap-2 h-9 pl-3 pr-2.5 rounded-lg border border-white/10 bg-[#0d1224] text-[12px] text-[#f1f5f9] font-mono hover:border-white/20 transition-colors min-w-[180px] max-w-[260px]"
+                    className="flex items-center gap-2 h-9 pl-3 pr-2.5 rounded-lg border border-[#e5e7eb] bg-white text-[12px] text-[#0a0e1a] font-mono hover:border-[#d1d5db] transition-colors min-w-[180px] max-w-[260px]"
                   >
                     <div className="h-2 w-2 rounded-full shrink-0" style={{ background: riskScore > 75 ? THEME.pink : riskScore > 40 ? THEME.yellow : THEME.green }} />
                     <span className="flex-1 text-left truncate">{project?.name ?? "Select project"}</span>
-                    <ChevronDown className={cn("h-3 w-3 text-neutral-500 shrink-0 transition-transform", dropdownOpen && "rotate-180")} />
+                    <ChevronDown className={cn("h-3 w-3 text-[#6b7280] shrink-0 transition-transform", dropdownOpen && "rotate-180")} />
                   </button>
 
                   {dropdownOpen && (
-                    <div className="absolute right-0 top-10 z-50 w-72 rounded-lg border border-white/10 bg-[#0d1224] shadow-2xl overflow-hidden">
-                      <div className="px-3 py-2 border-b border-white/6">
-                        <p className="text-[9px] font-mono text-[#475569] uppercase tracking-widest">Projects — most recent first</p>
+                    <div className="absolute right-0 top-10 z-50 w-72 rounded-lg border border-[#e5e7eb] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.12)] overflow-hidden">
+                      <div className="px-3 py-2 border-b border-[#e5e7eb]">
+                        <p className="text-[9px] font-mono text-[#6b7280] uppercase tracking-widest">Projects — most recent first</p>
                       </div>
                       <div className="max-h-64 overflow-y-auto">
                         {sorted.map(p => (
                           <button key={p.id}
                             onClick={() => { setSelectedProjectId(p.id); setDropdownOpen(false); }}
-                            className={cn("w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors border-b border-white/4 last:border-0",
-                              p.id === project?.id && "bg-[#4f8ef7]/8"
+                            className={cn("w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-[#f7f8fa] transition-colors border-b border-[#eceef2] last:border-0",
+                              p.id === project?.id && "bg-[#4f46e5]/8"
                             )}>
                             <div className={cn("h-2 w-2 rounded-full shrink-0",
-                              (p.riskScore ?? 0) > 75 ? "bg-red-500" : (p.riskScore ?? 0) > 40 ? "bg-yellow-500" : "bg-emerald-500"
+                              (p.riskScore ?? 0) > 75 ? "bg-[#dc2626]" : (p.riskScore ?? 0) > 40 ? "bg-[#d97706]" : "bg-[#059669]"
                             )} />
                             <div className="flex-1 min-w-0">
-                              <p className={cn("text-[12px] font-mono truncate", p.id === project?.id ? "text-[#4f8ef7]" : "text-[#f1f5f9]")}>{p.name}</p>
-                              <p className="text-[10px] text-[#475569] font-mono">{p.language} · {p.criticalCount ?? 0}C {p.alertCount ?? 0}A · risk {p.riskScore ?? 0}</p>
+                              <p className={cn("text-[12px] font-mono truncate", p.id === project?.id ? "text-[#4f46e5]" : "text-[#0a0e1a]")}>{p.name}</p>
+                              <p className="text-[10px] text-[#6b7280] font-mono">{p.language} · {p.criticalCount ?? 0}C {p.alertCount ?? 0}A · risk {p.riskScore ?? 0}</p>
                             </div>
                           </button>
                         ))}
@@ -1004,14 +1003,14 @@ export function Dashboard() {
 
         {/* ── Tab bar ─────────────────────────────────────────── */}
         <Reveal delay={0.05}>
-          <div className="flex items-center gap-0 mb-6 border-b border-white/6">
+          <div className="flex items-center gap-0 mb-6 border-b border-[#e5e7eb]">
             {TABS.map(({ key, label, icon: Icon }) => (
               <button key={key} onClick={() => setDashTab(key)}
                 className={cn(
-                  "flex items-center gap-2 px-5 py-2.5 text-[11px] font-mono border-b-2 transition-all",
+                  "flex items-center gap-2 px-5 py-2.5 text-[12px] font-medium border-b-2 transition-all",
                   dashTab === key
-                    ? "border-[#4f8ef7] text-[#4f8ef7]"
-                    : "border-transparent text-[#475569] hover:text-[#94a3b8]"
+                    ? "border-[#4f46e5] text-[#4f46e5]"
+                    : "border-transparent text-[#6b7280] hover:text-[#334155]"
                 )}>
                 <Icon className="h-3.5 w-3.5" />
                 {label}
@@ -1023,17 +1022,17 @@ export function Dashboard() {
         {/* ── Empty state ─────────────────────────────────────── */}
         {sorted.length === 0 ? (
           <Reveal delay={0.1}>
-            <div className="rounded-2xl border border-white/6 bg-[#0a0e1e] flex flex-col items-center justify-center py-28 px-8 text-center" style={{ boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3)` }}>
-              <div className="h-20 w-20 rounded-2xl bg-[#4f8ef7]/8 border border-[#4f8ef7]/20 flex items-center justify-center mb-6" style={{ boxShadow: `0 4px 12px rgba(79,142,247,0.1)` }}>
-                <Shield className="h-10 w-10 text-[#4f8ef7]/50" />
+            <div className="rounded-2xl border border-[#e5e7eb] bg-white flex flex-col items-center justify-center py-28 px-8 text-center" style={{ boxShadow: `0 8px 24px rgba(15,23,42,0.06)` }}>
+              <div className="h-20 w-20 rounded-2xl bg-[#eef0fe] border border-[#4f46e5]/20 flex items-center justify-center mb-6">
+                <Shield className="h-10 w-10 text-[#4f46e5]/50" />
               </div>
-              <h2 className="text-lg font-bold text-[#f1f5f9] font-mono mb-2">No scans yet</h2>
-              <p className="text-sm text-[#475569] font-mono mb-8 max-w-sm leading-relaxed">
+              <h2 className="text-lg font-bold text-[#0a0e1a] mb-2">No scans yet</h2>
+              <p className="text-sm text-[#6b7280] mb-8 max-w-sm leading-relaxed">
                 Upload code or paste a GitHub URL in the scanner to run your first post-quantum security scan.
               </p>
               <Link href="/scan"
-                className="inline-flex items-center gap-2 rounded-lg border border-[#4f8ef7] bg-[#4f8ef7]/10 px-6 py-2.5 text-sm font-mono font-bold text-[#4f8ef7] shadow-[0_0_20px_rgba(79,142,247,0.25)] hover:bg-[#4f8ef7]/18 transition-all">
-                <Terminal className="h-4 w-4" /> ./scan --now
+                className="inline-flex items-center gap-2 rounded-lg border border-[#4f46e5] bg-[#4f46e5] px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#4338ca] transition-all">
+                <Terminal className="h-4 w-4" /> Run a scan
               </Link>
             </div>
           </Reveal>
@@ -1059,23 +1058,23 @@ export function Dashboard() {
 
                   {/* Risk gauge + donut */}
                   <Reveal delay={0.2}>
-                    <div className="rounded-2xl border border-white/6 bg-gradient-to-br from-[#0a0e1f] to-[#050810] p-5 flex flex-col h-full" style={{
-                      boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0px rgba(0,217,255,0.08)`
+                    <div className="rounded-2xl border border-[#e5e7eb] bg-white p-5 flex flex-col h-full" style={{
+                      boxShadow: `0 8px 24px rgba(15,23,42,0.06)`
                     }}>
-                      <p className="text-[9px] font-mono text-[#00d9ff] uppercase tracking-widest mb-4">Current Exposure</p>
+                      <p className="text-[9px] font-mono text-[#4f46e5] uppercase tracking-widest mb-4">Current Exposure</p>
                       <div className="flex items-center justify-center py-4">
                         <RiskRing score={riskScore} />
                       </div>
-                      <div className="mt-4 pt-4 border-t border-white/5">
-                        <p className="text-[9px] font-mono text-[#00d9ff] uppercase tracking-widest mb-3">Severity Split</p>
+                      <div className="mt-4 pt-4 border-t border-[#eceef2]">
+                        <p className="text-[9px] font-mono text-[#4f46e5] uppercase tracking-widest mb-3">Severity Split</p>
                         <div className="h-36">
                           <SeverityDonut critical={critical} alert={alerts} safe={safe} />
                         </div>
                         <div className="flex items-center justify-center gap-4 mt-1">
                           {[[THEME.pink, "Critical", critical], [THEME.yellow, "Alert", alerts], [THEME.green, "Safe", safe]].map(([c, l, v]) => (
                             <div key={l as string} className="flex items-center gap-1.5">
-                              <div className="h-2 w-2 rounded-full" style={{ background: c as string, boxShadow: `0 2px 4px ${c}44` }} />
-                              <span className="text-[10px] font-mono text-[#475569]">{l} <span style={{ color: c as string }}>{v}</span></span>
+                              <div className="h-2 w-2 rounded-full" style={{ background: c as string }} />
+                              <span className="text-[10px] font-mono text-[#6b7280]">{l} <span style={{ color: c as string }}>{v}</span></span>
                             </div>
                           ))}
                         </div>
@@ -1085,22 +1084,22 @@ export function Dashboard() {
 
                   {/* Algorithm breakdown */}
                   <Reveal delay={0.22}>
-                    <div className="lg:col-span-2 rounded-2xl border border-white/6 bg-gradient-to-br from-[#0a0e1f] to-[#050810] p-5 flex flex-col h-full" style={{
-                      boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0px rgba(0,217,255,0.08)`
+                    <div className="lg:col-span-2 rounded-2xl border border-[#e5e7eb] bg-white p-5 flex flex-col h-full" style={{
+                      boxShadow: `0 8px 24px rgba(15,23,42,0.06)`
                     }}>
                       <div className="flex items-center gap-2 mb-4">
-                        <p className="text-[9px] font-mono text-[#00d9ff] uppercase tracking-widest flex-1">
+                        <p className="text-[9px] font-mono text-[#4f46e5] uppercase tracking-widest flex-1">
                           Vulnerable Algorithms
-                          {project && <span className="text-[#2d3f5c] ml-2">— {project.name}</span>}
+                          {project && <span className="text-[#9aa3b2] ml-2">— {project.name}</span>}
                         </p>
-                        {findingsLoading && <span className="h-3 w-3 border-2 border-[#4f8ef7]/50 border-t-transparent rounded-full animate-spin" />}
+                        {findingsLoading && <span className="h-3 w-3 border-2 border-[#4f46e5]/50 border-t-transparent rounded-full animate-spin" />}
                       </div>
                       {algoChart.length > 0 ? (
                         <div className="flex-1 min-h-[220px]">
                           <AlgoBar data={algoChart} />
                         </div>
                       ) : (
-                        <div className="flex-1 flex items-center justify-center text-[#2d3f5c] font-mono text-xs">
+                        <div className="flex-1 flex items-center justify-center text-[#9aa3b2] font-mono text-xs">
                           {findingsLoading ? "Loading findings…" : "No algorithm data — run a scan first"}
                         </div>
                       )}
@@ -1109,14 +1108,14 @@ export function Dashboard() {
 
                   {/* Effort breakdown per file */}
                   <Reveal delay={0.24}>
-                    <div className="rounded-2xl border border-white/6 bg-gradient-to-br from-[#0a0e1f] to-[#050810] p-5 flex flex-col h-full" style={{
-                      boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0px rgba(0,217,255,0.08)`
+                    <div className="rounded-2xl border border-[#e5e7eb] bg-white p-5 flex flex-col h-full" style={{
+                      boxShadow: `0 8px 24px rgba(15,23,42,0.06)`
                     }}>
                       <div className="flex items-center gap-2 mb-4">
-                        <p className="text-[9px] font-mono text-[#00d9ff] uppercase tracking-widest flex-1">
+                        <p className="text-[9px] font-mono text-[#4f46e5] uppercase tracking-widest flex-1">
                           Effort Breakdown — Hours Per File
                         </p>
-                        {findingsLoading && <span className="h-3 w-3 border-2 border-[#4f8ef7]/50 border-t-transparent rounded-full animate-spin" />}
+                        {findingsLoading && <span className="h-3 w-3 border-2 border-[#4f46e5]/50 border-t-transparent rounded-full animate-spin" />}
                       </div>
                       {effortChart.length > 0 ? (
                         <div className="flex-1 overflow-x-auto min-h-[220px] pb-2">
@@ -1126,20 +1125,19 @@ export function Dashboard() {
                               const barColor = percentage > 70 ? THEME.pink : percentage > 40 ? THEME.yellow : THEME.green;
                               return (
                                 <div key={item.name} className="flex items-center gap-3">
-                                  <span className="text-[9px] font-mono text-[#94a3b8] w-32 truncate">{item.name}</span>
-                                  <div className="flex-1 h-6 bg-white/3 rounded-lg overflow-hidden border border-white/6">
+                                  <span className="text-[9px] font-mono text-[#475569] w-32 truncate">{item.name}</span>
+                                  <div className="flex-1 h-6 bg-[#f7f8fa] rounded-lg overflow-hidden border border-[#e5e7eb]">
                                     <motion.div
                                       initial={{ width: 0 }}
                                       animate={{ width: `${percentage}%` }}
                                       transition={{ duration: 0.8, ease: "easeOut", delay: i * 0.05 }}
                                       className="h-full rounded-lg"
                                       style={{
-                                        background: `linear-gradient(90deg, ${barColor}20, ${barColor})`,
-                                        boxShadow: `0 0 12px ${barColor}44`
+                                        background: `linear-gradient(90deg, ${barColor}33, ${barColor})`
                                       }}
                                     />
                                   </div>
-                                  <span className="text-[9px] font-mono font-semibold text-[#f1f5f9] min-w-[40px] text-right" style={{ color: barColor }}>
+                                  <span className="text-[9px] font-mono font-semibold text-[#0a0e1a] min-w-[40px] text-right" style={{ color: barColor }}>
                                     {item.hours.toFixed(0)}h
                                   </span>
                                 </div>
@@ -1148,7 +1146,7 @@ export function Dashboard() {
                           </div>
                         </div>
                       ) : (
-                        <div className="flex-1 flex items-center justify-center text-[#2d3f5c] font-mono text-xs">
+                        <div className="flex-1 flex items-center justify-center text-[#9aa3b2] font-mono text-xs">
                           {findingsLoading ? "Computing effort…" : "Run a scan to see effort breakdown"}
                         </div>
                       )}
@@ -1161,12 +1159,12 @@ export function Dashboard() {
 
                   {/* File risk heatmap */}
                   <Reveal delay={0.26}>
-                    <div className="rounded-2xl border border-white/6 bg-gradient-to-br from-[#0a0e1f] to-[#050810] p-5" style={{
-                      boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0px rgba(0,217,255,0.08)`
+                    <div className="rounded-2xl border border-[#e5e7eb] bg-white p-5" style={{
+                      boxShadow: `0 8px 24px rgba(15,23,42,0.06)`
                     }}>
                       <div className="flex items-center gap-2 mb-3">
-                        <Layers className="h-3.5 w-3.5 text-[#4f8ef7]" />
-                        <p className="text-[9px] font-mono text-[#00d9ff] uppercase tracking-widest">File Risk Heatmap</p>
+                        <Layers className="h-3.5 w-3.5 text-[#4f46e5]" />
+                        <p className="text-[9px] font-mono text-[#4f46e5] uppercase tracking-widest">File Risk Heatmap</p>
                       </div>
                       {fileRisk.length > 0 ? (
                         <div className="space-y-0.5">
@@ -1176,7 +1174,7 @@ export function Dashboard() {
                           ))}
                         </div>
                       ) : (
-                        <div className="flex flex-col items-center justify-center py-12 text-[#2d3f5c] font-mono text-xs">
+                        <div className="flex flex-col items-center justify-center py-12 text-[#9aa3b2] font-mono text-xs">
                           <FileCode2 className="h-6 w-6 mb-2 opacity-30" />
                           {findingsLoading ? "Loading file data…" : "Run a project scan to see file risk breakdown"}
                         </div>
@@ -1186,31 +1184,31 @@ export function Dashboard() {
 
                   {/* NIST Migration Path */}
                   <Reveal delay={0.28}>
-                    <div className="rounded-2xl border border-white/6 bg-gradient-to-br from-[#0a0e1f] to-[#050810] p-5" style={{
-                      boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0px rgba(0,217,255,0.08)`
+                    <div className="rounded-2xl border border-[#e5e7eb] bg-white p-5" style={{
+                      boxShadow: `0 8px 24px rgba(15,23,42,0.06)`
                     }}>
                       <div className="flex items-center gap-2 mb-3">
-                        <ShieldCheck className="h-3.5 w-3.5 text-[#4f8ef7]" />
-                        <p className="text-[9px] font-mono text-[#00d9ff] uppercase tracking-widest">NIST Migration Path</p>
+                        <ShieldCheck className="h-3.5 w-3.5 text-[#4f46e5]" />
+                        <p className="text-[9px] font-mono text-[#4f46e5] uppercase tracking-widest">NIST Migration Path</p>
                       </div>
                       {migrationItems.length > 0 ? (
                         <div className="space-y-2">
                           {migrationItems.map((item) => {
-                            const effortColor = item.effort === "High" ? "#f87171" : item.effort === "Medium" ? "#fbbf24" : "#34d399";
+                            const effortColor = item.effort === "High" ? "#dc2626" : item.effort === "Medium" ? "#d97706" : "#059669";
                             return (
-                              <div key={item.algo} className="rounded-lg border border-white/5 bg-[#050810]/60 p-3 flex items-start gap-3">
+                              <div key={item.algo} className="rounded-lg border border-[#eceef2] bg-[#f7f8fa] p-3 flex items-start gap-3">
                                 <div className="h-6 w-6 rounded-md border-2 shrink-0 mt-0.5 flex items-center justify-center"
                                   style={{ borderColor: effortColor + "60", background: effortColor + "10" }}>
                                   <ChevronRight className="h-3 w-3" style={{ color: effortColor }} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-[11px] font-mono font-bold text-[#f1f5f9] truncate">{item.algo}</span>
-                                    <span className="text-[9px] font-mono text-[#475569]">→</span>
-                                    <span className="text-[11px] font-mono text-[#4f8ef7] truncate">{item.replacement}</span>
+                                    <span className="text-[11px] font-mono font-bold text-[#0a0e1a] truncate">{item.algo}</span>
+                                    <span className="text-[9px] font-mono text-[#6b7280]">→</span>
+                                    <span className="text-[11px] font-mono text-[#4f46e5] truncate">{item.replacement}</span>
                                   </div>
                                   <div className="flex items-center gap-3 mt-1">
-                                    <span className="text-[9px] font-mono text-[#2d3f5c]">{item.standard}</span>
+                                    <span className="text-[9px] font-mono text-[#9aa3b2]">{item.standard}</span>
                                     <span className="text-[9px] font-mono flex items-center gap-1" style={{ color: effortColor + "99" }}>
                                       <Clock className="h-2.5 w-2.5" /> ~{item.hours}h
                                     </span>
@@ -1222,9 +1220,9 @@ export function Dashboard() {
                           })}
                         </div>
                       ) : (
-                        <div className="rounded-lg border border-white/5 bg-[#050810]/60 p-5 flex flex-col items-center text-center">
-                          <ShieldCheck className="h-7 w-7 text-emerald-500/40 mb-2" />
-                          <p className="text-[11px] font-mono text-[#475569]">
+                        <div className="rounded-lg border border-[#eceef2] bg-[#f7f8fa] p-5 flex flex-col items-center text-center">
+                          <ShieldCheck className="h-7 w-7 text-[#059669]/40 mb-2" />
+                          <p className="text-[11px] font-mono text-[#6b7280]">
                             {findings.length === 0 && !findingsLoading
                               ? "Run a project scan to see NIST migration recommendations"
                               : "No critical algorithms detected — good posture!"}
@@ -1238,20 +1236,20 @@ export function Dashboard() {
                 {/* Global platform stats */}
                 {globalStats && (
                   <Reveal delay={0.3}>
-                    <div className="rounded-2xl border border-white/6 bg-gradient-to-br from-[#0a0e1f] to-[#050810] p-5 mb-5" style={{
-                      boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0px rgba(0,217,255,0.08)`
+                    <div className="rounded-2xl border border-[#e5e7eb] bg-white p-5 mb-5" style={{
+                      boxShadow: `0 8px 24px rgba(15,23,42,0.06)`
                     }}>
-                      <p className="text-[9px] font-mono text-[#475569] uppercase tracking-widest mb-4">Platform Intelligence</p>
+                      <p className="text-[9px] font-mono text-[#6b7280] uppercase tracking-widest mb-4">Platform Intelligence</p>
                       <div className="grid grid-cols-3 gap-4">
                         {[
-                          { label: "Repos Scanned", value: globalStats.totalReposScanned.toLocaleString(), icon: Folder, color: "#4f8ef7" },
-                          { label: "Vulnerabilities Found", value: globalStats.totalVulnerabilitiesFound.toLocaleString(), icon: AlertTriangle, color: "#f87171" },
-                          { label: "Lines Analyzed", value: globalStats.totalLinesScanned.toLocaleString(), icon: FileCode2, color: "#a78bfa" },
+                          { label: "Repos Scanned", value: globalStats.totalReposScanned.toLocaleString(), icon: Folder, color: "#4f46e5" },
+                          { label: "Vulnerabilities Found", value: globalStats.totalVulnerabilitiesFound.toLocaleString(), icon: AlertTriangle, color: "#dc2626" },
+                          { label: "Lines Analyzed", value: globalStats.totalLinesScanned.toLocaleString(), icon: FileCode2, color: "#4338ca" },
                         ].map(({ label, value, icon: Icon, color }) => (
-                          <div key={label} className="flex flex-col items-center gap-2 py-4 px-3 rounded-xl border border-white/5 bg-[#050810]/50">
+                          <div key={label} className="flex flex-col items-center gap-2 py-4 px-3 rounded-xl border border-[#eceef2] bg-[#f7f8fa]">
                             <Icon className="h-5 w-5" style={{ color }} />
                             <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
-                            <div className="text-[9px] font-mono text-[#475569] uppercase tracking-widest text-center">{label}</div>
+                            <div className="text-[9px] font-mono text-[#6b7280] uppercase tracking-widest text-center">{label}</div>
                           </div>
                         ))}
                       </div>
@@ -1261,32 +1259,32 @@ export function Dashboard() {
 
                 {/* All projects table */}
                 <Reveal delay={0.32}>
-                  <div className="rounded-2xl border border-white/6 bg-gradient-to-br from-[#0a0e1f] to-[#050810] p-5 mb-5" style={{
-                    boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0px rgba(0,217,255,0.08)`
+                  <div className="rounded-2xl border border-[#e5e7eb] bg-white p-5 mb-5" style={{
+                    boxShadow: `0 8px 24px rgba(15,23,42,0.06)`
                   }}>
                     <div className="flex items-center gap-2 mb-3">
-                      <Folder className="h-3.5 w-3.5 text-[#4f8ef7]" />
-                      <p className="text-[9px] font-mono text-[#475569] uppercase tracking-widest">All Projects</p>
-                      <span className="ml-auto text-[9px] font-mono text-[#2d3f5c] border border-white/6 rounded-full px-2 py-0.5">{sorted.length}</span>
+                      <Folder className="h-3.5 w-3.5 text-[#4f46e5]" />
+                      <p className="text-[9px] font-mono text-[#6b7280] uppercase tracking-widest">All Projects</p>
+                      <span className="ml-auto text-[9px] font-mono text-[#9aa3b2] border border-[#e5e7eb] rounded-full px-2 py-0.5">{sorted.length}</span>
                     </div>
                     <div className="space-y-1">
                       {sorted.map(p => {
                         const rs = p.riskScore ?? 0;
-                        const rc = rs > 75 ? "#f87171" : rs > 40 ? "#fbbf24" : "#34d399";
+                        const rc = rs > 75 ? "#dc2626" : rs > 40 ? "#d97706" : "#059669";
                         return (
                           <button key={p.id} onClick={() => setSelectedProjectId(p.id)}
                             className={cn(
                               "w-full flex items-center gap-4 px-3 py-2.5 rounded-lg border transition-all text-left",
-                              p.id === project?.id ? "border-[#4f8ef7]/30 bg-[#4f8ef7]/5" : "border-transparent hover:border-white/8 hover:bg-white/3"
+                              p.id === project?.id ? "border-[#4f46e5]/30 bg-[#4f46e5]/5" : "border-transparent hover:border-[#e5e7eb] hover:bg-[#f7f8fa]"
                             )}>
-                            <div className="h-2 w-2 rounded-full shrink-0" style={{ background: rc, boxShadow: `0 2px 4px ${rc}44` }} />
-                            <span className={cn("flex-1 text-[12px] font-mono truncate", p.id === project?.id ? "text-[#4f8ef7]" : "text-[#f1f5f9]")}>{p.name}</span>
-                            <span className="text-[10px] font-mono text-[#475569] shrink-0">{p.language}</span>
+                            <div className="h-2 w-2 rounded-full shrink-0" style={{ background: rc }} />
+                            <span className={cn("flex-1 text-[12px] font-mono truncate", p.id === project?.id ? "text-[#4f46e5]" : "text-[#0a0e1a]")}>{p.name}</span>
+                            <span className="text-[10px] font-mono text-[#6b7280] shrink-0">{p.language}</span>
                             <div className="flex items-center gap-1.5">
-                              {(p.criticalCount ?? 0) > 0 && <span className="text-[10px] font-mono text-red-400">{p.criticalCount}C</span>}
-                              {(p.alertCount ?? 0) > 0 && <span className="text-[10px] font-mono text-yellow-400">{p.alertCount}A</span>}
+                              {(p.criticalCount ?? 0) > 0 && <span className="text-[10px] font-mono text-[#dc2626]">{p.criticalCount}C</span>}
+                              {(p.alertCount ?? 0) > 0 && <span className="text-[10px] font-mono text-[#d97706]">{p.alertCount}A</span>}
                             </div>
-                            <div className="w-16 h-1 rounded-full bg-white/5 overflow-hidden shrink-0">
+                            <div className="w-16 h-1 rounded-full bg-[#f7f8fa] overflow-hidden shrink-0">
                               <div className="h-full rounded-full" style={{ width: `${rs}%`, background: rc }} />
                             </div>
                             <span className="text-[10px] font-mono shrink-0 w-8 text-right" style={{ color: rc }}>{rs}</span>
@@ -1301,8 +1299,8 @@ export function Dashboard() {
                 <Reveal delay={0.36}>
                   <div className="flex items-center justify-center gap-4">
                     <Link href="/scan"
-                      className="inline-flex items-center gap-2 rounded-lg border border-[#4f8ef7] bg-[#4f8ef7]/10 px-6 py-2.5 text-sm font-mono font-bold text-[#4f8ef7] shadow-[0_0_20px_rgba(79,142,247,0.2)] hover:bg-[#4f8ef7]/18 hover:shadow-[0_0_32px_rgba(79,142,247,0.4)] transition-all">
-                      <Terminal className="h-4 w-4" /> ./scan --new-repo
+                      className="inline-flex items-center gap-2 rounded-lg border border-[#4f46e5] bg-[#4f46e5] px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#4338ca] hover:shadow-md transition-all">
+                      <Terminal className="h-4 w-4" /> Start a new scan
                     </Link>
                   </div>
                 </Reveal>
@@ -1316,7 +1314,7 @@ export function Dashboard() {
               <motion.div key="ai" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
                 <div className="max-w-3xl">
                   <Reveal delay={0.06}>
-                    <div className="rounded-2xl border border-white/6 bg-[#0a0e1e] p-6" style={{ boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3)` }}>
+                    <div className="rounded-2xl border border-[#e5e7eb] bg-white p-6" style={{ boxShadow: `0 8px 24px rgba(15,23,42,0.06)` }}>
                       <AISummaryPanel project={project} findings={findings} />
                     </div>
                   </Reveal>
@@ -1325,17 +1323,17 @@ export function Dashboard() {
                   {project && (
                     <Reveal delay={0.12}>
                       <div className="grid grid-cols-3 gap-3 mt-5">
-                        <div className="rounded-2xl border border-white/6 bg-[#0a0e1e] p-4 text-center" style={{ boxShadow: `0 2px 8px rgba(0, 0, 0, 0.2)` }}>
-                          <div className="text-2xl font-bold font-mono text-red-400">{critical}</div>
-                          <div className="text-[9px] font-mono text-[#475569] uppercase tracking-widest mt-1">Critical</div>
+                        <div className="rounded-2xl border border-[#e5e7eb] bg-white p-4 text-center" style={{ boxShadow: `0 4px 12px rgba(15,23,42,0.05)` }}>
+                          <div className="text-2xl font-bold font-mono text-[#dc2626]">{critical}</div>
+                          <div className="text-[9px] font-mono text-[#6b7280] uppercase tracking-widest mt-1">Critical</div>
                         </div>
-                        <div className="rounded-2xl border border-white/6 bg-[#0a0e1e] p-4 text-center" style={{ boxShadow: `0 2px 8px rgba(0, 0, 0, 0.2)` }}>
-                          <div className="text-2xl font-bold font-mono text-yellow-400">{alerts}</div>
-                          <div className="text-[9px] font-mono text-[#475569] uppercase tracking-widest mt-1">Alerts</div>
+                        <div className="rounded-2xl border border-[#e5e7eb] bg-white p-4 text-center" style={{ boxShadow: `0 4px 12px rgba(15,23,42,0.05)` }}>
+                          <div className="text-2xl font-bold font-mono text-[#d97706]">{alerts}</div>
+                          <div className="text-[9px] font-mono text-[#6b7280] uppercase tracking-widest mt-1">Alerts</div>
                         </div>
-                        <div className="rounded-2xl border border-white/6 bg-[#0a0e1e] p-4 text-center" style={{ boxShadow: `0 2px 8px rgba(0, 0, 0, 0.2)` }}>
-                          <div className="text-2xl font-bold font-mono" style={{ color: riskScore > 75 ? "#f87171" : riskScore > 40 ? "#fbbf24" : "#34d399" }}>{riskScore}</div>
-                          <div className="text-[9px] font-mono text-[#475569] uppercase tracking-widest mt-1">Risk Score</div>
+                        <div className="rounded-2xl border border-[#e5e7eb] bg-white p-4 text-center" style={{ boxShadow: `0 4px 12px rgba(15,23,42,0.05)` }}>
+                          <div className="text-2xl font-bold font-mono" style={{ color: riskScore > 75 ? "#dc2626" : riskScore > 40 ? "#d97706" : "#059669" }}>{riskScore}</div>
+                          <div className="text-[9px] font-mono text-[#6b7280] uppercase tracking-widest mt-1">Risk Score</div>
                         </div>
                       </div>
                     </Reveal>
@@ -1350,7 +1348,7 @@ export function Dashboard() {
             {dashTab === "community" && (
               <motion.div key="community" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
                 <Reveal delay={0.06}>
-                  <div className="rounded-2xl border border-white/6 bg-[#0a0e1e] p-6" style={{ boxShadow: `0 4px 12px rgba(0, 0, 0, 0.3)` }}>
+                  <div className="rounded-2xl border border-[#e5e7eb] bg-white p-6" style={{ boxShadow: `0 8px 24px rgba(15,23,42,0.06)` }}>
                     <CommunityIntel project={project ? { name: project.name, language: project.language } : null} findings={findings} />
                   </div>
                 </Reveal>

@@ -29,7 +29,7 @@ interface SharedReport {
 }
 
 function RiskGauge({ score }: { score: number }) {
-  const color = score >= 70 ? "#ef4444" : score >= 40 ? "#f59e0b" : "#22c55e";
+  const color = score >= 70 ? "#dc2626" : score >= 40 ? "#d97706" : "#059669";
   const label = score >= 70 ? "CRITICAL RISK" : score >= 40 ? "MODERATE RISK" : "LOW RISK";
   const circumference = 2 * Math.PI * 40;
   const dashOffset = circumference * (1 - score / 100);
@@ -37,14 +37,14 @@ function RiskGauge({ score }: { score: number }) {
     <div className="flex flex-col items-center gap-2">
       <div className="relative w-28 h-28">
         <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+          <circle cx="50" cy="50" r="40" fill="none" stroke="rgba(15,23,42,0.08)" strokeWidth="8" />
           <circle cx="50" cy="50" r="40" fill="none" stroke={color} strokeWidth="8"
             strokeDasharray={circumference} strokeDashoffset={dashOffset}
             strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s ease" }} />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-2xl font-bold font-mono" style={{ color }}>{score}</span>
-          <span className="text-[9px] text-neutral-500 font-mono">/100</span>
+          <span className="text-[9px] text-[#6b7280] font-mono">/100</span>
         </div>
       </div>
       <span className="text-[10px] font-bold tracking-widest font-mono" style={{ color }}>{label}</span>
@@ -54,17 +54,17 @@ function RiskGauge({ score }: { score: number }) {
 
 function SeverityBadge({ severity }: { severity: string }) {
   if (severity === "critical") return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/15 text-red-400 border border-red-500/25">
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#fef2f2] text-[#dc2626] border border-[#fecaca]">
       <AlertTriangle className="h-2.5 w-2.5" /> CRITICAL
     </span>
   );
   if (severity === "alert") return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-500/15 text-yellow-400 border border-yellow-500/25">
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#fffbeb] text-[#d97706] border border-[#fde68a]">
       <AlertTriangle className="h-2.5 w-2.5" /> ALERT
     </span>
   );
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#ecfdf5] text-[#059669] border border-[#a7f3d0]">
       <CheckCircle2 className="h-2.5 w-2.5" /> SAFE
     </span>
   );
@@ -74,29 +74,29 @@ function FindingCard({ finding, index }: { finding: GithubFinding; index: number
   const [open, setOpen] = useState(false);
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }}
-      className={cn("rounded-lg border overflow-hidden", finding.severity === "critical" ? "border-red-500/20 bg-red-500/4" : "border-yellow-500/20 bg-yellow-500/4")}>
-      <button onClick={() => setOpen(o => !o)} className="w-full flex items-start gap-3 p-3 text-left hover:bg-white/3 transition-colors">
+      className={cn("rounded-lg border overflow-hidden", finding.severity === "critical" ? "border-[#fecaca] bg-[#fef2f2]" : "border-[#fde68a] bg-[#fffbeb]")}>
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-start gap-3 p-3 text-left hover:bg-black/[0.02] transition-colors">
         <SeverityBadge severity={finding.severity} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <span className="font-mono text-[11px] font-bold text-white">{finding.algorithm}</span>
-            <span className="text-[10px] text-neutral-500 font-mono truncate">{finding.fileName}:{finding.lineNumber}</span>
+            <span className="font-mono text-[11px] font-bold text-[#0a0e1a]">{finding.algorithm}</span>
+            <span className="text-[10px] text-[#6b7280] font-mono truncate">{finding.fileName}:{finding.lineNumber}</span>
           </div>
-          <p className="text-[11px] text-neutral-400 line-clamp-2">{finding.explanation}</p>
+          <p className="text-[11px] text-[#475569] line-clamp-2">{finding.explanation}</p>
         </div>
-        <ChevronRight className={cn("h-3.5 w-3.5 text-neutral-600 shrink-0 transition-transform mt-0.5", open && "rotate-90")} />
+        <ChevronRight className={cn("h-3.5 w-3.5 text-[#9aa3b2] shrink-0 transition-transform mt-0.5", open && "rotate-90")} />
       </button>
       {open && (
-        <div className="px-3 pb-3 space-y-2 border-t border-white/5 pt-2">
-          <pre className="bg-black/40 rounded px-2.5 py-2 text-[10px] font-mono text-neutral-300 overflow-x-auto border border-white/8">{finding.codeSnippet}</pre>
+        <div className="px-3 pb-3 space-y-2 border-t border-[#e5e7eb] pt-2">
+          <pre className="bg-[#f7f8fa] rounded px-2.5 py-2 text-[10px] font-mono text-[#334155] overflow-x-auto border border-[#e5e7eb]">{finding.codeSnippet}</pre>
           {finding.nistReplacement && (
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-neutral-500">Replace with:</span>
-              <code className="text-[10px] font-mono text-[#4f8ef7] bg-[#4f8ef7]/10 px-1.5 py-0.5 rounded">{finding.nistReplacement}</code>
-              {finding.nistStandard && <span className="text-[10px] text-neutral-600">({finding.nistStandard})</span>}
+              <span className="text-[10px] text-[#6b7280]">Replace with:</span>
+              <code className="text-[10px] font-mono text-[#4f46e5] bg-[#eef0fe] px-1.5 py-0.5 rounded">{finding.nistReplacement}</code>
+              {finding.nistStandard && <span className="text-[10px] text-[#9aa3b2]">({finding.nistStandard})</span>}
             </div>
           )}
-          <div className="flex items-center gap-1 text-[10px] text-neutral-500">
+          <div className="flex items-center gap-1 text-[10px] text-[#6b7280]">
             <Clock className="h-3 w-3" /> Est. {finding.effortHours}h remediation effort
           </div>
         </div>
@@ -160,22 +160,22 @@ export function Report() {
   };
 
   if (loading) return (
-    <div className="min-h-screen bg-[#050810] flex items-center justify-center" style={{ background: "radial-gradient(ellipse at 50% 0%, #0d1424 0%, #050810 70%)" }}>
+    <div className="min-h-screen bg-[#f7f8fa] flex items-center justify-center" style={{ background: "radial-gradient(ellipse at 50% 0%, #ffffff 0%, #f7f8fa 70%)" }}>
       <div className="flex flex-col items-center gap-4">
-        <div className="w-10 h-10 border-2 border-[#4f8ef7]/50 border-t-[#4f8ef7] rounded-full animate-spin" />
-        <p className="text-[13px] text-neutral-500 font-mono">Loading report…</p>
+        <div className="w-10 h-10 border-2 border-[#4f46e5]/30 border-t-[#4f46e5] rounded-full animate-spin" />
+        <p className="text-[13px] text-[#6b7280] font-mono">Loading report…</p>
       </div>
     </div>
   );
 
   if (error || !report) return (
-    <div className="min-h-screen bg-[#050810] flex items-center justify-center" style={{ background: "radial-gradient(ellipse at 50% 0%, #0d1424 0%, #050810 70%)" }}>
+    <div className="min-h-screen bg-[#f7f8fa] flex items-center justify-center" style={{ background: "radial-gradient(ellipse at 50% 0%, #ffffff 0%, #f7f8fa 70%)" }}>
       <div className="text-center space-y-4">
-        <Shield className="h-12 w-12 text-neutral-700 mx-auto" />
-        <p className="text-white font-semibold">Report not found</p>
-        <p className="text-[13px] text-neutral-500">{error}</p>
+        <Shield className="h-12 w-12 text-[#9aa3b2] mx-auto" />
+        <p className="text-[#0a0e1a] font-semibold">Report not found</p>
+        <p className="text-[13px] text-[#6b7280]">{error}</p>
         <button onClick={() => setLocation("/scan")}
-          className="px-4 py-2 bg-[#4f8ef7]/15 border border-[#4f8ef7]/30 text-[#4f8ef7] text-[13px] rounded-lg hover:bg-[#4f8ef7]/25 transition-colors">
+          className="px-4 py-2 bg-[#eef0fe] border border-[#4f46e5]/25 text-[#4f46e5] text-[13px] rounded-lg hover:bg-[#e0e3fc] transition-colors">
           Run a new scan
         </button>
       </div>
@@ -188,33 +188,33 @@ export function Report() {
   const totalEffort      = d.totalEffortHours ?? d.findings.reduce((s, f) => s + f.effortHours, 0);
 
   return (
-    <div className="min-h-screen bg-[#050810] text-white" style={{ background: "radial-gradient(ellipse at 50% 0%, #0d1830 0%, #050810 60%)" }}>
+    <div className="min-h-screen bg-[#f7f8fa] text-[#0a0e1a]" style={{ background: "radial-gradient(ellipse at 50% 0%, #ffffff 0%, #f7f8fa 60%)" }}>
 
       {/* ── Header ── */}
-      <div className="relative z-10 border-b border-white/8 bg-[#0a0a0f]/80 backdrop-blur-sm sticky top-0">
+      <div className="relative z-10 border-b border-[#e5e7eb] bg-white/85 backdrop-blur-sm sticky top-0">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
           <button onClick={() => setLocation("/")} className="flex items-center gap-2 shrink-0">
-            <Shield className="h-5 w-5 text-[#4f8ef7]" />
-            <span className="font-bold text-[15px] tracking-tight">Q-Bitron</span>
+            <Shield className="h-5 w-5 text-[#4f46e5]" />
+            <span className="font-bold text-[15px] tracking-tight text-[#0a0e1a]">Q-Bitron</span>
           </button>
           <div className="flex items-center gap-1.5 min-w-0">
-            <Github className="h-3.5 w-3.5 text-neutral-500 shrink-0" />
+            <Github className="h-3.5 w-3.5 text-[#6b7280] shrink-0" />
             <a href={d.repoUrl} target="_blank" rel="noreferrer"
-              className="font-mono text-[13px] text-neutral-300 hover:text-white truncate flex items-center gap-1">
-              {d.owner}/{d.repo} <ExternalLink className="h-3 w-3 text-neutral-600 shrink-0" />
+              className="font-mono text-[13px] text-[#475569] hover:text-[#0a0e1a] truncate flex items-center gap-1">
+              {d.owner}/{d.repo} <ExternalLink className="h-3 w-3 text-[#9aa3b2] shrink-0" />
             </a>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button onClick={copyLink}
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded border border-white/10 bg-white/4 hover:bg-white/8 text-[11px] text-neutral-400 hover:text-white transition-colors">
-              {copied ? <><CheckCircle2 className="h-3 w-3 text-emerald-400" /> Copied!</> : <><ExternalLink className="h-3 w-3" /> Copy link</>}
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded border border-[#e5e7eb] bg-white hover:bg-[#f1f3f7] text-[11px] text-[#475569] hover:text-[#0a0e1a] transition-colors">
+              {copied ? <><CheckCircle2 className="h-3 w-3 text-[#059669]" /> Copied!</> : <><ExternalLink className="h-3 w-3" /> Copy link</>}
             </button>
             <button onClick={downloadMarkdown}
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded border border-white/10 bg-white/4 hover:bg-white/8 text-[11px] text-neutral-400 hover:text-white transition-colors">
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded border border-[#e5e7eb] bg-white hover:bg-[#f1f3f7] text-[11px] text-[#475569] hover:text-[#0a0e1a] transition-colors">
               <Download className="h-3 w-3" /> Download
             </button>
             <button onClick={() => setLocation("/scan")}
-              className="flex items-center gap-1.5 h-7 px-2.5 rounded bg-[#4f8ef7]/15 border border-[#4f8ef7]/30 text-[11px] text-[#4f8ef7] hover:bg-[#4f8ef7]/25 transition-colors">
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded bg-[#eef0fe] border border-[#4f46e5]/25 text-[11px] text-[#4f46e5] hover:bg-[#e0e3fc] transition-colors">
               <Zap className="h-3 w-3" /> New scan
             </button>
           </div>
@@ -227,24 +227,24 @@ export function Report() {
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
           className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6">
           {/* Gauge */}
-          <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-white/3 border border-white/8">
+          <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-white border border-[#e5e7eb] shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
             <RiskGauge score={d.riskScore} />
-            <p className="text-[10px] text-neutral-600 mt-3 font-mono">POST-QUANTUM RISK SCORE</p>
+            <p className="text-[10px] text-[#9aa3b2] mt-3 font-mono">POST-QUANTUM RISK SCORE</p>
           </div>
           {/* Stats grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {[
-              { label: "Critical", value: d.criticalCount, color: "#ef4444", icon: <AlertTriangle className="h-4 w-4" /> },
-              { label: "Alert",    value: d.alertCount,    color: "#f59e0b", icon: <AlertTriangle className="h-4 w-4" /> },
-              { label: "Clean",    value: d.cleanCount,    color: "#22c55e", icon: <CheckCircle2 className="h-4 w-4" /> },
-              { label: "Files",    value: d.totalFiles,    color: "#4f8ef7", icon: <Shield className="h-4 w-4" /> },
-              { label: "Lines",    value: d.totalLines.toLocaleString(), color: "#a78bfa", icon: <Zap className="h-4 w-4" /> },
-              { label: "Est. Effort", value: `${Math.round(totalEffort)}h`, color: "#94a3b8", icon: <Clock className="h-4 w-4" /> },
+              { label: "Critical", value: d.criticalCount, color: "#dc2626", icon: <AlertTriangle className="h-4 w-4" /> },
+              { label: "Alert",    value: d.alertCount,    color: "#d97706", icon: <AlertTriangle className="h-4 w-4" /> },
+              { label: "Clean",    value: d.cleanCount,    color: "#059669", icon: <CheckCircle2 className="h-4 w-4" /> },
+              { label: "Files",    value: d.totalFiles,    color: "#4f46e5", icon: <Shield className="h-4 w-4" /> },
+              { label: "Lines",    value: d.totalLines.toLocaleString(), color: "#0d9488", icon: <Zap className="h-4 w-4" /> },
+              { label: "Est. Effort", value: `${Math.round(totalEffort)}h`, color: "#6b7280", icon: <Clock className="h-4 w-4" /> },
             ].map(stat => (
-              <div key={stat.label} className="p-4 rounded-xl bg-white/3 border border-white/8 flex flex-col gap-1">
+              <div key={stat.label} className="p-4 rounded-xl bg-white border border-[#e5e7eb] shadow-sm flex flex-col gap-1">
                 <div className="flex items-center gap-1.5" style={{ color: stat.color }}>
                   {stat.icon}
-                  <span className="text-[10px] font-bold tracking-wider uppercase text-neutral-500">{stat.label}</span>
+                  <span className="text-[10px] font-bold tracking-wider uppercase text-[#6b7280]">{stat.label}</span>
                 </div>
                 <span className="text-2xl font-bold font-mono" style={{ color: stat.color }}>{stat.value}</span>
               </div>
@@ -255,9 +255,9 @@ export function Report() {
         {/* ── Executive summary ── */}
         {d.executiveSummary && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-            className="p-5 rounded-2xl bg-[#4f8ef7]/5 border border-[#4f8ef7]/15">
-            <h2 className="text-[11px] font-bold text-[#4f8ef7] tracking-widest uppercase mb-2">Executive Summary</h2>
-            <p className="text-[13px] text-neutral-300 leading-relaxed">{d.executiveSummary}</p>
+            className="p-5 rounded-2xl bg-[#eef0fe] border border-[#4f46e5]/25">
+            <h2 className="text-[11px] font-bold text-[#4f46e5] tracking-widest uppercase mb-2">Executive Summary</h2>
+            <p className="text-[13px] text-[#334155] leading-relaxed">{d.executiveSummary}</p>
           </motion.div>
         )}
 
@@ -266,7 +266,7 @@ export function Report() {
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="space-y-4">
             {criticalFindings.length > 0 && (
               <div>
-                <h2 className="text-[11px] font-bold text-red-400 tracking-widest uppercase mb-3 flex items-center gap-2">
+                <h2 className="text-[11px] font-bold text-[#dc2626] tracking-widest uppercase mb-3 flex items-center gap-2">
                   <AlertTriangle className="h-3.5 w-3.5" /> Critical Findings ({criticalFindings.length})
                 </h2>
                 <div className="space-y-2">
@@ -276,7 +276,7 @@ export function Report() {
             )}
             {alertFindings.length > 0 && (
               <div>
-                <h2 className="text-[11px] font-bold text-yellow-400 tracking-widest uppercase mb-3 flex items-center gap-2">
+                <h2 className="text-[11px] font-bold text-[#d97706] tracking-widest uppercase mb-3 flex items-center gap-2">
                   <AlertTriangle className="h-3.5 w-3.5" /> Alert Findings ({alertFindings.length})
                 </h2>
                 <div className="space-y-2">
@@ -290,35 +290,35 @@ export function Report() {
         {/* ── File breakdown ── */}
         {d.fileResults.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-            <h2 className="text-[11px] font-bold text-neutral-500 tracking-widest uppercase mb-3">Files Scanned</h2>
-            <div className="rounded-xl border border-white/8 overflow-hidden">
+            <h2 className="text-[11px] font-bold text-[#6b7280] tracking-widest uppercase mb-3">Files Scanned</h2>
+            <div className="rounded-xl border border-[#e5e7eb] bg-white overflow-hidden shadow-sm">
               <table className="w-full text-[12px]">
                 <thead>
-                  <tr className="bg-white/3 border-b border-white/8">
-                    <th className="text-left px-4 py-2.5 text-[10px] text-neutral-500 font-semibold tracking-wider">File</th>
-                    <th className="text-center px-3 py-2.5 text-[10px] text-neutral-500 font-semibold tracking-wider">Lang</th>
-                    <th className="text-center px-3 py-2.5 text-[10px] text-neutral-500 font-semibold tracking-wider">Lines</th>
-                    <th className="text-center px-3 py-2.5 text-[10px] text-red-400 font-semibold tracking-wider">Critical</th>
-                    <th className="text-center px-3 py-2.5 text-[10px] text-yellow-400 font-semibold tracking-wider">Alert</th>
+                  <tr className="bg-[#f7f8fa] border-b border-[#e5e7eb]">
+                    <th className="text-left px-4 py-2.5 text-[10px] text-[#6b7280] font-semibold tracking-wider">File</th>
+                    <th className="text-center px-3 py-2.5 text-[10px] text-[#6b7280] font-semibold tracking-wider">Lang</th>
+                    <th className="text-center px-3 py-2.5 text-[10px] text-[#6b7280] font-semibold tracking-wider">Lines</th>
+                    <th className="text-center px-3 py-2.5 text-[10px] text-[#dc2626] font-semibold tracking-wider">Critical</th>
+                    <th className="text-center px-3 py-2.5 text-[10px] text-[#d97706] font-semibold tracking-wider">Alert</th>
                   </tr>
                 </thead>
                 <tbody>
                   {d.fileResults.map((f, i) => (
-                    <tr key={i} className="border-b border-white/5 last:border-0 hover:bg-white/2 transition-colors">
-                      <td className="px-4 py-2.5 font-mono text-[11px] text-neutral-300 truncate max-w-[200px]">{f.path}</td>
+                    <tr key={i} className="border-b border-[#eceef2] last:border-0 hover:bg-[#f7f8fa] transition-colors">
+                      <td className="px-4 py-2.5 font-mono text-[11px] text-[#334155] truncate max-w-[200px]">{f.path}</td>
                       <td className="px-3 py-2.5 text-center">
-                        <span className="text-[9px] font-mono bg-white/5 text-neutral-400 px-1.5 py-0.5 rounded">{f.language}</span>
+                        <span className="text-[9px] font-mono bg-[#f1f3f7] text-[#475569] px-1.5 py-0.5 rounded">{f.language}</span>
                       </td>
-                      <td className="px-3 py-2.5 text-center font-mono text-neutral-400">{f.lines.toLocaleString()}</td>
+                      <td className="px-3 py-2.5 text-center font-mono text-[#475569]">{f.lines.toLocaleString()}</td>
                       <td className="px-3 py-2.5 text-center">
                         {f.criticalCount > 0
-                          ? <span className="font-mono font-bold text-red-400">{f.criticalCount}</span>
-                          : <span className="text-neutral-700">—</span>}
+                          ? <span className="font-mono font-bold text-[#dc2626]">{f.criticalCount}</span>
+                          : <span className="text-[#9aa3b2]">—</span>}
                       </td>
                       <td className="px-3 py-2.5 text-center">
                         {f.alertCount > 0
-                          ? <span className="font-mono font-bold text-yellow-400">{f.alertCount}</span>
-                          : <span className="text-neutral-700">—</span>}
+                          ? <span className="font-mono font-bold text-[#d97706]">{f.alertCount}</span>
+                          : <span className="text-[#9aa3b2]">—</span>}
                       </td>
                     </tr>
                   ))}
@@ -330,8 +330,8 @@ export function Report() {
 
         {/* ── Footer ── */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
-          className="pt-4 border-t border-white/6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-neutral-600">
-          <span>Generated by <span className="text-[#4f8ef7]">Q-Bitron</span> · Post-Quantum Security Scanner</span>
+          className="pt-4 border-t border-[#e5e7eb] flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-[#6b7280]">
+          <span>Generated by <span className="text-[#4f46e5] font-medium">Q-Bitron</span> · Post-Quantum Security Scanner</span>
           <span className="font-mono">{new Date(report.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</span>
         </motion.div>
       </div>
