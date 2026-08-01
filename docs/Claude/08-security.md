@@ -19,13 +19,37 @@ SaaS, and buyers in this category will run a security review before a pilot, not
 Fine for a Replit demo; disqualifying for an enterprise pilot. Listed with severity **for the
 enterprise context**, not for the demo it is today.
 
-### 🔴 S1 — No authentication anywhere
+### 🔴 S1 — No authentication anywhere — **AND IT IS LIVE**
 
 Every route in `artifacts/api-server/src/routes/` is unauthenticated. Anyone who can reach the
 API can read every project, scan, and finding, and create new ones.
 
-**Fix:** authentication + org-scoped authorisation before a second organisation's data exists in
-the system. Not "before GA" — before the *second tenant*.
+> **Escalated 2026-08-01.** This is no longer a hypothetical. The application is deployed at
+> **https://quantaxscan.swotpam.com** and the unauthenticated API is reachable from the public
+> internet. Verified read-only:
+>
+> ```
+> $ curl https://quantaxscan.swotpam.com/api/projects
+> [{"id":1,"name":"Kodela-website-sam", ...}]
+> ```
+>
+> Every project in the production database is publicly listable, including real internal project
+> names. `DELETE /api/projects/:id` is equally open, so any passer-by can destroy production
+> data. `scans.code` holds the full source of everything ever submitted, retrievable through
+> `GET /api/scans/:id`.
+
+**Fix:** authentication + org-scoped authorisation. Previously scoped as "before the second
+tenant" — that framing is now too generous. There is production data exposed today.
+
+**Interim mitigations, in order of how fast they can ship:**
+
+1. Put the API behind auth at the edge (the deployment is fronted by Google infrastructure —
+   IAP, an API gateway, or basic auth on `/api/*` would take minutes)
+2. Or restrict destructive verbs — `DELETE /api/projects/:id` should not be reachable anonymously
+3. Purge real project names from the production database; treat it as a demo dataset only
+4. Then implement F1 properly
+
+Whatever else is true, **the demo should not be sharing a database with anything real.**
 
 ### 🔴 S2 — Predictable share-link IDs
 

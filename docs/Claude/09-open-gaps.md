@@ -232,13 +232,20 @@ before.
 
 ---
 
-## G-12 — Security findings S1–S8 `Critical`
+## G-12 — Security findings S1–S8 `Critical` — **LIVE EXPOSURE**
 
 Full detail in [08-security.md](08-security.md). Headline: no authentication anywhere,
 share-link IDs from `Math.random()`, full customer source persisted, `cors({ origin: true })`
 with credentials.
 
-**Blocks:** the first pilot with real customer data. Not "before GA" — before the second tenant.
+> **Escalated 2026-08-01.** The application is deployed at **https://quantaxscan.swotpam.com**
+> with the unauthenticated API publicly reachable. `GET /api/projects` returns every project in
+> the production database, including real internal names. `DELETE /api/projects/:id` is equally
+> open. This is not a future risk — it is current.
+
+**Blocks:** the first pilot with real customer data — and it now also needs an *immediate*
+interim mitigation independent of the roadmap. Edge auth on `/api/*` is a minutes-long change
+and should not wait for F1.
 
 ---
 
