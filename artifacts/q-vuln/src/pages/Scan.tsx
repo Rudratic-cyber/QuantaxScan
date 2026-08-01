@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback, type DragEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
 import JSZip from "jszip";
 import {
@@ -1244,14 +1245,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
   const [showSessions, setShowSessions]  = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const sendFnRef = useRef<(overrideText?: string, overrideCtx?: string) => Promise<void>>();
-  const formatAssistantText = useCallback((content: string) => {
-    const lines = content
-      .split(/\n+/)
-      .map(line => line.trim())
-      .filter(Boolean)
-      .filter(line => !/^here’s a simple breakdown|^here is a simple breakdown|^summary:/i.test(line));
-    return lines.slice(0, 5).join("\n");
-  }, []);
+  const formatAssistantText = useCallback((content: string) => content, []);
 
   // Load sessions from localStorage on mount
   useEffect(() => {
@@ -1510,57 +1504,244 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
 function SpaceScanOverlay({ current, total, currentFile, projectName }: {
   current: number; total: number; currentFile: string; projectName: string;
 }) {
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center select-none overflow-hidden backdrop-blur-sm"
-      style={{ background: "radial-gradient(ellipse 90% 70% at 50% 20%, rgba(238,240,254,0.9) 0%, rgba(255,255,255,0.94) 60%)" }}
+  const pct      = total > 0 ? Math.round((current / total) * 100) : 0;
+  const sweepRef = useRef<HTMLDivElement>(null);
+
+  /* ── dot-grid SVG background ──────────────────────────────────────── */
+  const dotGrid =
+    "url(\"data:image/svg+xml,%3Csvg width='28' height='28' viewBox='0 0 28 28' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1' fill='%234f46e5' fill-opacity='0.09'/%3E%3C/svg%3E\")";
+
+  /* ── last few files to show as ticker ────────────────────────────── */
+  const [ticker, setTicker] = useState<string[]>([]);
+  useEffect(() => {
+    if (!currentFile) return;
+    setTicker(prev => {
+      const next = [currentFile, ...prev.filter(f => f !== currentFile)].slice(0, 6);
+      return next;
+    });
+  }, [currentFile]);
+
+  const overlay = (
+    <motion.div
+      key="scan-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center select-none overflow-hidden"
+      style={{
+        background: "radial-gradient(ellipse 110% 90% at 50% 10%, #eef0fe 0%, #f4f6ff 35%, #ffffff 70%)",
+        backgroundImage: dotGrid,
+      }}
     >
-      {/* Center card */}
-      <div className="relative z-10 flex flex-col items-center gap-6 max-w-sm w-full mx-6 text-center">
-        {/* Orbiting scanner */}
-        <div className="relative flex items-center justify-center">
-          <div className="absolute h-36 w-36 rounded-full border border-[#4f46e5]/10 animate-pulse" />
-          <div className="absolute h-28 w-28 rounded-full border-2 border-transparent border-t-[#4f46e5] border-r-[#4f46e5]/25 animate-spin" style={{ animationDuration: "1.6s" }} />
-          <div className="absolute h-20 w-20 rounded-full border border-[#4f46e5]/20 animate-spin" style={{ animationDuration: "3.2s", animationDirection: "reverse" }} />
-          <div className="h-16 w-16 rounded-full bg-[#eef0fe] border border-[#4f46e5]/25 flex items-center justify-center">
-            <Shield className="h-7 w-7 text-[#4f46e5]" />
-          </div>
-        </div>
-        {/* Labels */}
-        <div>
-          <p className="text-[10px] font-medium text-[#4f46e5] tracking-[0.2em] uppercase mb-1.5">Quantum Scanner</p>
-          <h2 className="text-[20px] font-bold text-[#0a0e1a] tracking-tight">Scanning in progress</h2>
-          <p className="text-xs text-[#6b7280] mt-1 truncate max-w-[260px]">{projectName}</p>
-        </div>
-        {/* Current file pill */}
-        <div className="w-full rounded-lg bg-white border border-[#e5e7eb] shadow-[0_8px_24px_rgba(15,23,42,0.06)] px-4 py-3 text-left">
-          <p className="text-[9px] font-medium text-[#6b7280] uppercase tracking-widest mb-1">Analyzing</p>
-          <p className="text-[13px] text-[#0a0e1a] font-mono truncate">{currentFile || "Initializing scanner…"}</p>
-        </div>
-        {/* Progress bar */}
-        <div className="w-full">
-          <div className="flex justify-between text-[10px] font-mono mb-2">
-            <span className="text-[#6b7280]">{current} / {total} files</span>
-            <span className="text-[#4f46e5] font-semibold">{pct}%</span>
-          </div>
-          <div className="h-1.5 bg-[#f1f3f7] rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${pct}%`, background: "linear-gradient(90deg, #4f46e5, #4338ca)" }} />
-          </div>
-        </div>
-        {/* Dot grid for small counts */}
-        {total > 0 && total <= 32 && (
-          <div className="flex flex-wrap justify-center gap-1.5 max-w-[260px]">
-            {Array.from({ length: total }, (_, i) => (
-              <div key={i} className="h-1.5 w-1.5 rounded-full transition-all duration-300"
-                style={{ background: i < current ? "#4f46e5" : i === current ? "#4338ca" : "#e5e7eb" }} />
-            ))}
-          </div>
-        )}
+      {/* ── ambient glow blobs ─────────────────────────────────────── */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <motion.div
+          animate={{ scale: [1, 1.15, 1], opacity: [0.22, 0.38, 0.22] }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute -top-32 left-1/2 -translate-x-1/2 h-[420px] w-[420px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(79,70,229,0.18) 0%, transparent 70%)" }}
+        />
+        <motion.div
+          animate={{ scale: [1, 1.08, 1], opacity: [0.14, 0.25, 0.14] }}
+          transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+          className="absolute bottom-0 right-1/4 h-[300px] w-[300px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(13,148,136,0.15) 0%, transparent 70%)" }}
+        />
       </div>
-    </div>
+
+      {/* ── main card ─────────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+        className="relative z-10 flex flex-col items-center gap-7 max-w-[420px] w-full mx-6 text-center"
+      >
+        {/* ── radar ring assembly ────────────────────────────────── */}
+        <div className="relative flex items-center justify-center" style={{ width: 180, height: 180 }}>
+
+          {/* outermost pulse ring */}
+          <motion.div
+            animate={{ scale: [1, 1.18, 1], opacity: [0.25, 0, 0.25] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeOut" }}
+            className="absolute rounded-full border border-[#4f46e5]/30"
+            style={{ width: 180, height: 180 }}
+          />
+          {/* secondary pulse */}
+          <motion.div
+            animate={{ scale: [1, 1.12, 1], opacity: [0.35, 0.05, 0.35] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeOut", delay: 0.6 }}
+            className="absolute rounded-full border border-[#4f46e5]/25"
+            style={{ width: 148, height: 148 }}
+          />
+
+          {/* static outer track */}
+          <div
+            className="absolute rounded-full border border-[#4f46e5]/12"
+            style={{ width: 148, height: 148 }}
+          />
+
+          {/* spinning dashed ring */}
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+            className="absolute rounded-full"
+            style={{
+              width: 148, height: 148,
+              border: "1.5px dashed rgba(79,70,229,0.2)",
+            }}
+          />
+
+          {/* spinning solid arc (scanner beam boundary) */}
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "linear" }}
+            className="absolute rounded-full"
+            style={{
+              width: 118, height: 118,
+              border: "2px solid transparent",
+              borderTop: "2px solid #4f46e5",
+              borderRight: "2px solid rgba(79,70,229,0.35)",
+            }}
+          />
+
+          {/* counter-spinning inner arc */}
+          <motion.div
+            animate={{ rotate: -360 }}
+            transition={{ duration: 3.6, repeat: Infinity, ease: "linear" }}
+            className="absolute rounded-full"
+            style={{
+              width: 88, height: 88,
+              border: "1.5px solid transparent",
+              borderBottom: "1.5px solid rgba(13,148,136,0.55)",
+              borderLeft: "1.5px solid rgba(13,148,136,0.2)",
+            }}
+          />
+
+          {/* radar sweep — conic gradient rotating */}
+          <motion.div
+            ref={sweepRef}
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "linear" }}
+            className="absolute rounded-full overflow-hidden"
+            style={{ width: 118, height: 118 }}
+          >
+            <div
+              className="absolute inset-0 rounded-full"
+              style={{
+                background:
+                  "conic-gradient(from 270deg, rgba(79,70,229,0.0) 0deg, rgba(79,70,229,0.18) 60deg, rgba(79,70,229,0.38) 90deg, rgba(79,70,229,0.0) 91deg)",
+              }}
+            />
+          </motion.div>
+
+          {/* center icon */}
+          <motion.div
+            animate={{ boxShadow: ["0 0 0 0 rgba(79,70,229,0.15)", "0 0 0 12px rgba(79,70,229,0)", "0 0 0 0 rgba(79,70,229,0.15)"] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="relative z-10 h-14 w-14 rounded-full bg-white border border-[#4f46e5]/20 flex items-center justify-center shadow-[0_4px_16px_rgba(79,70,229,0.18)]"
+          >
+            <Shield className="h-6 w-6 text-[#4f46e5]" />
+          </motion.div>
+        </div>
+
+        {/* ── title ─────────────────────────────────────────────────── */}
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-[#4f46e5] tracking-[0.22em] uppercase">
+            QuantaXscan · Quantum Analysis
+          </p>
+          <h2 className="text-[22px] font-bold text-[#0a0e1a] tracking-tight leading-snug">
+            Scanning cryptographic primitives
+          </h2>
+          <p className="text-[12px] text-[#6b7280] truncate max-w-[340px]">{projectName}</p>
+        </div>
+
+        {/* ── live file ticker ──────────────────────────────────────── */}
+        <div className="w-full rounded-xl bg-white border border-[#e5e7eb] shadow-[0_8px_32px_rgba(15,23,42,0.07)] overflow-hidden">
+          {/* active file */}
+          <div className="px-4 py-3 border-b border-[#f1f3f7]">
+            <p className="text-[9px] font-semibold text-[#4f46e5] uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+              <motion.span
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ duration: 1.1, repeat: Infinity }}
+                className="h-1.5 w-1.5 rounded-full bg-[#4f46e5] inline-block"
+              />
+              Analyzing
+            </p>
+            <p className="text-[13px] text-[#0a0e1a] font-mono truncate">
+              {currentFile || "Initializing scanner…"}
+            </p>
+          </div>
+
+          {/* recent files */}
+          {ticker.slice(1, 4).length > 0 && (
+            <div className="divide-y divide-[#f7f8fa]">
+              {ticker.slice(1, 4).map((f, i) => (
+                <motion.div
+                  key={f}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1 - i * 0.25, x: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="px-4 py-1.5 flex items-center gap-2"
+                >
+                  <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                  <span className="text-[11px] text-[#9aa3b2] font-mono truncate">{f}</span>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── progress ──────────────────────────────────────────────── */}
+        <div className="w-full space-y-2.5">
+          <div className="flex items-center justify-between text-[11px] font-mono">
+            <span className="text-[#6b7280]">{current} of {total} file{total !== 1 ? "s" : ""}</span>
+            <motion.span
+              key={pct}
+              initial={{ scale: 1.2, color: "#4f46e5" }}
+              animate={{ scale: 1, color: "#4338ca" }}
+              className="font-bold tabular-nums"
+            >
+              {pct}%
+            </motion.span>
+          </div>
+
+          {/* segmented bar */}
+          {total > 0 && total <= 40 ? (
+            <div className="flex gap-[3px] h-2">
+              {Array.from({ length: total }, (_, i) => (
+                <motion.div
+                  key={i}
+                  initial={false}
+                  animate={{
+                    background: i < current
+                      ? "linear-gradient(90deg,#4f46e5,#4338ca)"
+                      : i === current
+                      ? "rgba(79,70,229,0.45)"
+                      : "#eceef2",
+                  }}
+                  transition={{ duration: 0.3 }}
+                  className="flex-1 rounded-full"
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="h-2 bg-[#f1f3f7] rounded-full overflow-hidden">
+              <motion.div
+                className="h-full rounded-full"
+                initial={{ width: "0%" }}
+                animate={{ width: `${pct}%` }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                style={{ background: "linear-gradient(90deg,#4f46e5,#4338ca,#0d9488)" }}
+              />
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
   );
+
+  return createPortal(overlay, document.body);
 }
 
 // ── Upload file tree (ZIP / multi-file uploads) ────────────────────────────────
@@ -2526,24 +2707,30 @@ export function Scan() {
     <div className="h-[calc(100dvh-56px)] md:h-[calc(100dvh-64px)] overflow-hidden flex flex-col bg-[#ffffff]">
 
       {/* ── Upload multi-file scan overlay ──────────────────────────────────── */}
-      {spaceScanOverlay && (
-        <SpaceScanOverlay
-          current={spaceScanOverlay.current}
-          total={spaceScanOverlay.total}
-          currentFile={spaceScanOverlay.currentFile}
-          projectName={projectName}
-        />
-      )}
+      <AnimatePresence>
+        {spaceScanOverlay && (
+          <SpaceScanOverlay
+            key="upload-overlay"
+            current={spaceScanOverlay.current}
+            total={spaceScanOverlay.total}
+            currentFile={spaceScanOverlay.currentFile}
+            projectName={projectName}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ── GitHub scan overlay ─────────────────────────────────────────────── */}
-      {githubPhase === "scanning" && (
-        <SpaceScanOverlay
-          current={scannedFileCount}
-          total={fetchedRepo?.fetchedFiles?.length ?? Math.max(scannedFileCount + 1, 1)}
-          currentFile={scanningFileName}
-          projectName={fetchedRepo?.repo ?? githubUrl}
-        />
-      )}
+      <AnimatePresence>
+        {githubPhase === "scanning" && (
+          <SpaceScanOverlay
+            key="github-overlay"
+            current={scannedFileCount}
+            total={fetchedRepo?.fetchedFiles?.length ?? Math.max(scannedFileCount + 1, 1)}
+            currentFile={scanningFileName}
+            projectName={fetchedRepo?.repo ?? githubUrl}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ── Top toolbar ─────────────────────────────────────────────────────── */}
       <div className="h-10 bg-[#f7f8fa] border-b border-[#e5e7eb] flex items-center px-3 gap-2 shrink-0">

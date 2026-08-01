@@ -125,7 +125,7 @@ export function QBitronLogo({
         className={`font-bold tracking-tight ${s.text} ${className}`}
         style={{ color: "#0a0e1a", letterSpacing: "-0.02em" }}
       >
-        Q-<span style={{ color: "#4f46e5" }}>Vuln</span>
+        Quanta<span style={{ color: "#4f46e5" }}>Xscan</span>
       </span>
     );
   }
@@ -137,7 +137,7 @@ export function QBitronLogo({
         className={`font-bold tracking-tight ${s.text}`}
         style={{ color: "#0a0e1a", letterSpacing: "-0.02em" }}
       >
-        Q-<span style={{ color: "#4f46e5" }}>Vuln</span>
+        Quanta<span style={{ color: "#4f46e5" }}>Xscan</span>
       </span>
     </div>
   );

@@ -89,7 +89,7 @@ function NavLogo() {
           className="font-bold tracking-tight text-base text-[#0a0e1a] leading-none"
           style={{ letterSpacing: "-0.02em" }}
         >
-          Q-<span style={{ color: "#4f46e5" }}>Vuln</span>
+          Quanta<span style={{ color: "#4f46e5" }}>Xscan</span>
         </span>
       </a>
     </TerminalHint>
