@@ -107,9 +107,11 @@ Verified by storing a deliberately legacy-shaped payload and loading its share U
 9. **Report header logo.** Swapped the lone `Shield` glyph for the hexagon mark and `QuantaXscan`
    wordmark used everywhere else. `Shield` is still used elsewhere on the page and stays imported.
 10. **Create Post error toast overlapped the footer.** The toast viewport was anchored bottom-right
-    and landed squarely on the footer links. It now sits below the fixed navbar (`top-14` /
-    `md:top-16`) and is `pointer-events-none`, so whatever is underneath stays clickable — the
-    toasts themselves already re-enable pointer events.
+    and landed squarely on the footer links. It now sits below the fixed navbar (`top-16` /
+    `md:top-24`) and is `pointer-events-none`, so whatever is underneath stays clickable — the
+    toasts themselves already re-enable pointer events. The first attempt used `md:top-16`, which
+    covered the Scan page's IDE toolbar (measured bottom 98px) including "Fetch Repo"; `md:top-24`
+    starts the toast at 112px, clear of it. Don't lower it back.
 
 ---
 

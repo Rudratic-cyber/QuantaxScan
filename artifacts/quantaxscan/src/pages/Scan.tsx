@@ -672,7 +672,7 @@ const GITHUB_AUTH_ERROR = {
   short: "Not authorised — the scanner API rejected this request.",
 };
 const GITHUB_RATE_LIMIT_ERROR = {
-  long: "GitHub's unauthenticated rate limit was reached. The URL is fine — see the panel on the left.",
+  long: "GitHub's unauthenticated rate limit was reached. The URL is fine — try again after the quota resets, or upload a .zip of the repo instead.",
   short: "GitHub rate limit reached — try again after the reset.",
 };
 const GITHUB_BAD_URL_ERROR = {
@@ -2295,8 +2295,10 @@ export function Scan() {
   // Open file in a new tab (or switch if already open).
   // Opening a *user* file drops the shipped demo-project tabs — otherwise the demo files stay in
   // the project and get scanned alongside the upload, inflating the file count and the findings.
+  // A demo tab never counts as "already open" for a user file: `main.py` / `main.go` collide with
+  // the shipped samples by name, and switching to the demo tab would scan demo code as the upload.
   const openFileInTab = useCallback((name: string, content: string, lk: string, path?: string, isSample = false) => {
-    const existing = tabs.find(t => t.path === path || t.label === name);
+    const existing = tabs.find(t => (isSample || !t.sample) && (t.path === path || t.label === name));
     if (existing) { setActiveTabId(existing.id); return; }
     const id = nextTabId();
     const ext = getExt(name);
@@ -2563,6 +2565,15 @@ export function Scan() {
       setGithubError({ long: `Fetch failed — ${detail}`, short: "Fetch failed." });
       toast({ title: "Fetch Failed", description: detail, variant: "destructive" });
     }
+  };
+
+  // Picking one of the suggested repos is a fresh start, not a retry of the failed one: clear the
+  // previous failure so no stale error copy survives the selection.
+  const selectQuickRepo = (url: string) => {
+    setGithubUrl(url);
+    setRateLimitHit(false);
+    setGithubError(null);
+    setGithubPhase("idle");
   };
 
   // PHASE 2: scan the pre-fetched files (no further GitHub API calls)
@@ -2868,7 +2879,7 @@ export function Scan() {
             {(githubPhase === "idle" || githubPhase === "error") && (
               <div className="flex gap-1.5 ml-2 shrink-0">
                 {QUICK_REPOS.map(r => (
-                  <button key={r.url} onClick={() => setGithubUrl(r.url)}
+                  <button key={r.url} onClick={() => selectQuickRepo(r.url)}
                     className="h-7 px-2 bg-[#ffffff] border border-[#4f46e5]/12 hover:border-[#4f46e5]/40 rounded text-[10px] text-[#6b7280] hover:text-[#4f46e5] transition-colors font-mono">
                     {r.label.split("/")[1]}
                   </button>
@@ -3099,7 +3110,7 @@ export function Scan() {
                           <div className="space-y-1 pt-1">
                             <p className="text-[10px] text-[#9aa3b2] uppercase tracking-wider mb-1">Quick repos to try later</p>
                             {QUICK_REPOS.map(r => (
-                              <button key={r.url} onClick={() => { setGithubUrl(r.url); setRateLimitHit(false); }}
+                              <button key={r.url} onClick={() => selectQuickRepo(r.url)}
                                 className="w-full text-left px-2 py-1.5 rounded text-[11px] text-[#6b7280] hover:text-[#334155] hover:bg-[#f1f3f7] font-mono transition-colors">
                                 {r.label}
                               </button>
@@ -3117,7 +3128,7 @@ export function Scan() {
                           </p>
                           <div className="mt-4 space-y-1">
                             {QUICK_REPOS.map(r => (
-                              <button key={r.url} onClick={() => setGithubUrl(r.url)}
+                              <button key={r.url} onClick={() => selectQuickRepo(r.url)}
                                 className="w-full text-left px-2 py-1.5 rounded text-[11px] text-[#6b7280] hover:text-[#334155] hover:bg-[#f1f3f7] font-mono transition-colors">
                                 {r.label}
                               </button>
