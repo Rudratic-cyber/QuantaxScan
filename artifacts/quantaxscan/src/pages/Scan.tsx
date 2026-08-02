@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback, type DragEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useLocation } from "wouter";
 import JSZip from "jszip";
 import {
@@ -118,22 +119,22 @@ function makeResizeMD(
   };
 }
 
-// ── VS Code Dark+ color palette ────────────────────────────────────────────────
+// ── VS Code Light+ color palette (light editor theme) ──────────────────────────
 const C = {
-  blue:     "#569cd6",  // Java/C# keywords, type modifiers, declarations
-  purple:   "#c586c0",  // JS/TS/Python/Go control flow keywords
-  teal:     "#4ec9b0",  // class / type names (CamelCase)
-  yellow:   "#dcdcaa",  // function / method calls, decorators
-  lblue:    "#9cdcfe",  // variables, parameters, properties, identifiers
-  orange:   "#ce9178",  // string literals
-  green:    "#b5cea8",  // numeric literals
-  comment:  "#6a9955",  // comments
-  lit:      "#569cd6",  // true / false / null / None / nil / undefined
-  op:       "#d4d4d4",  // operators, punctuation, default text
-  heading:  "#569cd6",  // markdown headings
-  mdCode:   "#ce9178",  // markdown inline code / fenced
-  mdBold:   "#ffffff",  // markdown bold
-  jsonKey:  "#9cdcfe",  // JSON object keys
+  blue:     "#0000ff",  // Java/C# keywords, type modifiers, declarations
+  purple:   "#af00db",  // JS/TS/Python/Go control flow keywords
+  teal:     "#267f99",  // class / type names (CamelCase)
+  yellow:   "#795e26",  // function / method calls, decorators
+  lblue:    "#001080",  // variables, parameters, properties, identifiers
+  orange:   "#a31515",  // string literals
+  green:    "#098658",  // numeric literals
+  comment:  "#008000",  // comments
+  lit:      "#0000ff",  // true / false / null / None / nil / undefined
+  op:       "#0a0e1a",  // operators, punctuation, default text
+  heading:  "#800000",  // markdown headings
+  mdCode:   "#a31515",  // markdown inline code / fenced
+  mdBold:   "#0a0e1a",  // markdown bold
+  jsonKey:  "#0451a5",  // JSON object keys
 } as const;
 
 // ── Per-language keyword tables ────────────────────────────────────────────────
@@ -757,19 +758,19 @@ function FullTreeItem({ node, depth, selectedPath, onSelect, collapsed, onToggle
         onClick={() => isFolder ? onToggle(node.path) : onSelect(node)}
         className={cn(
           "flex items-center gap-1.5 py-[3px] pr-2 cursor-pointer text-[12px] select-none rounded-sm",
-          isActive ? "bg-white/10 text-white" : notFetched ? "text-neutral-600 hover:text-neutral-500 hover:bg-white/3" : "text-neutral-400 hover:text-neutral-200 hover:bg-white/5",
+          isActive ? "bg-[#eef0fe] text-[#0a0e1a]" : notFetched ? "text-[#9aa3b2] hover:text-[#6b7280] hover:bg-[#f7f8fa]" : "text-[#475569] hover:text-[#0a0e1a] hover:bg-[#f1f3f7]",
         )}
         style={{ paddingLeft: 8 + depth * 12 }}
       >
         {isFolder
-          ? <>{isOpen ? <ChevronDown className="h-3 w-3 shrink-0 text-neutral-600" /> : <ChevronRight className="h-3 w-3 shrink-0 text-neutral-600" />}<FolderSvg open={isOpen} /></>
+          ? <>{isOpen ? <ChevronDown className="h-3 w-3 shrink-0 text-[#9aa3b2]" /> : <ChevronRight className="h-3 w-3 shrink-0 text-[#9aa3b2]" />}<FolderSvg open={isOpen} /></>
           : <><span className="w-3 shrink-0" /><FileIcon ext={ext} /></>}
         <span className={cn("truncate flex-1 font-mono", notFetched && "opacity-40")}>{node.name}</span>
         <div className="flex gap-0.5 shrink-0 ml-auto items-center">
           {phase === "scanned" && hasCrit  && <div className="h-1.5 w-1.5 rounded-full bg-red-500" />}
           {phase === "scanned" && hasAlert && <div className="h-1.5 w-1.5 rounded-full bg-yellow-500" />}
           {phase === "fetched" && node.scannable && node.content && (
-            <div className="h-1.5 w-1.5 rounded-full bg-[#4f8ef7]/40" />
+            <div className="h-1.5 w-1.5 rounded-full bg-[#4f46e5]/40" />
           )}
         </div>
       </div>
@@ -798,12 +799,12 @@ function FileTreeItem({ node, depth, selectedPath, onSelect, collapsed, onToggle
         onClick={() => isFolder ? onToggle(node.path) : onSelect(node)}
         className={cn(
           "flex items-center gap-1.5 py-[3px] pr-2 cursor-pointer text-[12px] select-none rounded-sm",
-          isActive ? "bg-white/10 text-white" : "text-neutral-400 hover:text-neutral-200 hover:bg-white/5",
+          isActive ? "bg-[#eef0fe] text-[#0a0e1a]" : "text-[#475569] hover:text-[#0a0e1a] hover:bg-[#f1f3f7]",
         )}
         style={{ paddingLeft: 8 + depth * 12 }}
       >
         {isFolder
-          ? <>{isOpen ? <ChevronDown className="h-3 w-3 shrink-0 text-neutral-600" /> : <ChevronRight className="h-3 w-3 shrink-0 text-neutral-600" />}<FolderSvg open={isOpen} /></>
+          ? <>{isOpen ? <ChevronDown className="h-3 w-3 shrink-0 text-[#9aa3b2]" /> : <ChevronRight className="h-3 w-3 shrink-0 text-[#9aa3b2]" />}<FolderSvg open={isOpen} /></>
           : <><span className="w-3 shrink-0" /><FileIcon ext={ext} /></>}
         <span className="truncate flex-1 font-mono">{node.name}</span>
         {(hasCrit || hasAlert) && (
@@ -829,14 +830,14 @@ function TabBar({ tabs, activeId, onSelect, onClose, onNew }: {
   onNew: () => void;
 }) {
   return (
-    <div className="flex items-end h-9 bg-[#111118] border-b border-white/8 overflow-x-auto shrink-0">
+    <div className="flex items-end h-9 bg-[#f7f8fa] border-b border-[#e5e7eb] overflow-x-auto shrink-0">
       {tabs.map(tab => (
         <button key={tab.id} onClick={() => onSelect(tab.id)}
           className={cn(
-            "group flex items-center gap-1.5 h-9 px-3 text-[12px] font-mono border-r border-white/8 shrink-0 transition-colors",
+            "group flex items-center gap-1.5 h-9 px-3 text-[12px] font-mono border-r border-[#e5e7eb] shrink-0 transition-colors",
             tab.id === activeId
-              ? "bg-[#0d1224] text-[#4f8ef7] border-t-2 border-t-[#4f8ef7]"
-              : "bg-[#050810] text-[#475569] hover:text-[#f1f5f9]",
+              ? "bg-[#ffffff] text-[#4f46e5] border-t-2 border-t-[#4f46e5]"
+              : "bg-[#f1f3f7] text-[#6b7280] hover:text-[#0a0e1a]",
           )}
         >
           <FileIcon ext={tab.ext} />
@@ -844,13 +845,13 @@ function TabBar({ tabs, activeId, onSelect, onClose, onNew }: {
           {tab.dirty && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 ml-0.5" />}
           {tabs.length > 1 && (
             <span onClick={e => { e.stopPropagation(); onClose(tab.id); }}
-              className="ml-1 opacity-0 group-hover:opacity-100 hover:text-white transition-opacity">
+              className="ml-1 opacity-0 group-hover:opacity-100 hover:text-[#0a0e1a] transition-opacity">
               <X className="h-3 w-3" />
             </span>
           )}
         </button>
       ))}
-      <button onClick={onNew} className="h-9 px-2.5 text-neutral-600 hover:text-neutral-300 hover:bg-white/5 transition-colors shrink-0">
+      <button onClick={onNew} className="h-9 px-2.5 text-[#9aa3b2] hover:text-[#334155] hover:bg-[#f1f3f7] transition-colors shrink-0">
         <Plus className="h-3.5 w-3.5" />
       </button>
     </div>
@@ -878,7 +879,7 @@ function CodeEditorView({
 
   return (
     <div
-      className="flex-1 overflow-hidden flex flex-col bg-[#1e1e2e]"
+      className="flex-1 overflow-hidden flex flex-col bg-[#ffffff]"
       style={{ fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace" }}
       onDrop={onDrop}
       onDragOver={handleDragOver}
@@ -886,9 +887,9 @@ function CodeEditorView({
       {editable ? (
         <div className="flex flex-1 overflow-hidden">
           {/* Line numbers — stay in sync via shared scroll container */}
-          <div className="w-12 shrink-0 bg-[#1e1e2e] border-r border-white/5 overflow-hidden select-none pt-2" aria-hidden>
+          <div className="w-12 shrink-0 bg-[#ffffff] border-r border-[#eceef2] overflow-hidden select-none pt-2" aria-hidden>
             {lines.map((_, i) => (
-              <div key={i} className="text-right pr-3 text-[12px] text-[#4a4a6a] leading-[21px]">{i + 1}</div>
+              <div key={i} className="text-right pr-3 text-[12px] text-[#9aa3b2] leading-[21px]">{i + 1}</div>
             ))}
           </div>
           {/* CSS-grid overlay: highlighted backdrop + transparent textarea share the same cell */}
@@ -917,7 +918,7 @@ function CodeEditorView({
                   fontFamily: "inherit",
                   padding: "8px 16px 48px 16px",
                   color: "transparent",
-                  caretColor: "#d4d4d4",
+                  caretColor: "#0a0e1a",
                   background: "transparent",
                 }}
               />
@@ -927,13 +928,13 @@ function CodeEditorView({
       ) : (
         <ScrollArea className="flex-1">
           <div className="flex min-w-0 pt-2 pb-12">
-            <div className="w-12 shrink-0 select-none border-r border-white/5">
+            <div className="w-12 shrink-0 select-none border-r border-[#eceef2]">
               {lines.map((_, i) => {
                 const f = findingMap.get(i + 1);
                 return (
                   <div key={i} className={cn("text-right pr-3 text-[12px] leading-[21px]",
                     f?.severity === "critical" ? "text-red-500/80" :
-                    f?.severity === "alert" ? "text-yellow-500/80" : "text-[#4a4a6a]"
+                    f?.severity === "alert" ? "text-amber-600/80" : "text-[#9aa3b2]"
                   )}>{i + 1}</div>
                 );
               })}
@@ -947,15 +948,15 @@ function CodeEditorView({
                   <div key={i} title={f ? `${f.algorithm}: ${f.explanation}` : undefined}
                     className={cn(
                       "flex items-start leading-[21px] text-[13px] border-l-2",
-                      isScanning && "bg-[#4f8ef7]/8 border-[#4f8ef7]",
+                      isScanning && "bg-[#4f46e5]/8 border-[#4f46e5]",
                       f?.severity === "critical" && !isScanning && "bg-red-500/8 border-red-500",
                       f?.severity === "alert"    && !isScanning && "bg-yellow-500/8 border-yellow-500",
-                      !f && !isScanning && "border-transparent hover:bg-white/[0.02]",
+                      !f && !isScanning && "border-transparent hover:bg-[#f7f8fa]",
                     )}
                   >
                     <div className="w-5 shrink-0 flex items-center justify-center mt-[2px]">
                       {f?.severity === "critical" && <AlertTriangle className="h-2.5 w-2.5 text-red-500" />}
-                      {f?.severity === "alert"    && <Zap className="h-2.5 w-2.5 text-yellow-500" />}
+                      {f?.severity === "alert"    && <Zap className="h-2.5 w-2.5 text-amber-600" />}
                     </div>
                     <div className="flex-1 pl-1 pr-6 whitespace-pre overflow-hidden">
                       <HighlightedLine text={lineText} langKey={langKey} />
@@ -1054,20 +1055,20 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
     }
   };
   return (
-    <div className={cn("border-t border-white/8 bg-[#111118] flex flex-col shrink-0 relative")}
+    <div className={cn("border-t border-[#e5e7eb] bg-[#f7f8fa] flex flex-col shrink-0 relative")}
       style={{ height: open ? height : 32 }}>
       {open && (
         <div onMouseDown={onResizeMD}
-          className="absolute top-0 left-0 right-0 h-1.5 cursor-row-resize hover:bg-[#4f8ef7]/30 transition-colors z-20"
+          className="absolute top-0 left-0 right-0 h-1.5 cursor-row-resize hover:bg-[#4f46e5]/30 transition-colors z-20"
           title="Drag to resize panel" />
       )}
-      <div className="h-8 flex items-center shrink-0 bg-[#111118]">
+      <div className="h-8 flex items-center shrink-0 bg-[#f7f8fa]">
         <div className="flex items-center flex-1 overflow-x-auto">
           {(["problems","output","debug"] as BottomTab[]).map(tab => (
             <button key={tab} onClick={() => { onTabChange(tab); if (!open) onToggle(); }}
               className={cn(
                 "h-8 px-4 text-[11px] font-medium uppercase tracking-wide shrink-0 flex items-center gap-1.5 border-b-2 transition-colors",
-                activeTab === tab && open ? "border-[#4f8ef7] text-[#4f8ef7]" : "border-transparent text-[#475569] hover:text-[#f1f5f9]",
+                activeTab === tab && open ? "border-[#4f46e5] text-[#4f46e5]" : "border-transparent text-[#6b7280] hover:text-[#0a0e1a]",
               )}
             >
               {tab === "problems" && <AlertTriangle className="h-3 w-3" />}
@@ -1075,7 +1076,7 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
               {tab === "debug"    && <Bug className="h-3 w-3" />}
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === "problems" && critCount + alertCount > 0 && (
-                <span className="ml-1 bg-red-500/20 text-red-400 text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-red-500/30">
+                <span className="ml-1 bg-red-500/20 text-red-600 text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-red-500/30">
                   {critCount + alertCount}
                 </span>
               )}
@@ -1083,13 +1084,13 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
           ))}
         </div>
         <div className="flex items-center gap-1 px-2">
-          <button onClick={onToggle} className="p-1 text-neutral-500 hover:text-neutral-300 transition-colors">
+          <button onClick={onToggle} className="p-1 text-[#6b7280] hover:text-[#334155] transition-colors">
             {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
           </button>
-          <button className="p-1 text-neutral-500 hover:text-neutral-300 transition-colors">
+          <button className="p-1 text-[#6b7280] hover:text-[#334155] transition-colors">
             <Maximize2 className="h-3 w-3" />
           </button>
-          <button onClick={onToggle} className="p-1 text-neutral-500 hover:text-neutral-300 transition-colors">
+          <button onClick={onToggle} className="p-1 text-[#6b7280] hover:text-[#334155] transition-colors">
             <X className="h-3 w-3" />
           </button>
         </div>
@@ -1099,7 +1100,7 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
           <div className="p-2 font-mono text-[11px]">
             {activeTab === "problems" && (
               findings.length === 0
-                ? <div className="flex items-center gap-2 text-neutral-500 p-2">
+                ? <div className="flex items-center gap-2 text-[#6b7280] p-2">
                     <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                     {scanState === "idle" ? "Run a scan to detect problems." : "No problems found."}
                   </div>
@@ -1114,25 +1115,25 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
                           className={cn(
                             "flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[10px] font-semibold border transition-colors",
                             sev === "all"
-                              ? isActive ? "bg-white/10 border-white/20 text-neutral-200" : "bg-transparent border-white/8 text-neutral-500 hover:text-neutral-300"
+                              ? isActive ? "bg-[#eef0fe] border-[#d5d9e0] text-[#0a0e1a]" : "bg-transparent border-[#e5e7eb] text-[#6b7280] hover:text-[#334155]"
                               : sev === "critical"
-                              ? isActive ? "bg-red-500/20 border-red-500/40 text-red-300"    : "bg-transparent border-red-500/15 text-red-500/60 hover:text-red-400"
-                              : isActive ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-300" : "bg-transparent border-yellow-500/15 text-yellow-500/60 hover:text-yellow-400",
+                              ? isActive ? "bg-red-500/20 border-red-500/40 text-red-600"    : "bg-transparent border-red-500/15 text-red-500/60 hover:text-red-600"
+                              : isActive ? "bg-yellow-500/20 border-yellow-500/40 text-amber-700" : "bg-transparent border-yellow-500/15 text-amber-600/60 hover:text-amber-600",
                           )}>
                           {sev === "critical" && <AlertTriangle className="h-2.5 w-2.5" />}
                           {sev === "alert"    && <Zap           className="h-2.5 w-2.5" />}
                           {sev === "all" ? "All" : sev.charAt(0).toUpperCase() + sev.slice(1)}
                           <span className={cn(
                             "ml-0.5 px-1 rounded-full text-[9px] font-bold",
-                            sev === "all"      ? "bg-white/10 text-neutral-400"
-                            : sev === "critical" ? "bg-red-500/20 text-red-400"
-                            : "bg-yellow-500/20 text-yellow-400",
+                            sev === "all"      ? "bg-[#eef0fe] text-[#475569]"
+                            : sev === "critical" ? "bg-red-500/20 text-red-600"
+                            : "bg-yellow-500/20 text-amber-600",
                           )}>{count}</span>
                         </button>
                       );
                     })}
                     {filterSev !== "all" && (
-                      <span className="text-[10px] text-neutral-600 ml-1 font-mono">
+                      <span className="text-[10px] text-[#9aa3b2] ml-1 font-mono">
                         showing {filteredFindings.length} of {findings.length}
                       </span>
                     )}
@@ -1150,18 +1151,18 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
                       <div className="flex items-center gap-2 px-2.5 pt-2 pb-1 flex-wrap">
                         {f.severity === "critical"
                           ? <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                          : <Zap className="h-3.5 w-3.5 text-yellow-500 shrink-0" />}
-                        <span className="text-neutral-500 font-mono text-[10px] shrink-0">L{f.lineNumber}</span>
+                          : <Zap className="h-3.5 w-3.5 text-amber-600 shrink-0" />}
+                        <span className="text-[#6b7280] font-mono text-[10px] shrink-0">L{f.lineNumber}</span>
                         <span className={cn(
                           "text-[9px] font-bold tracking-wider px-1.5 py-px rounded shrink-0",
-                          f.severity === "critical" ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400",
+                          f.severity === "critical" ? "bg-red-500/20 text-red-600" : "bg-yellow-500/20 text-amber-600",
                         )}>{f.severity.toUpperCase()}</span>
                         <span className="text-[11px] flex-1 min-w-0">
-                          <span className="font-mono text-white">{f.algorithm}</span>
-                          <span className="text-neutral-400"> is quantum-vulnerable</span>
+                          <span className="font-mono text-[#0a0e1a]">{f.algorithm}</span>
+                          <span className="text-[#475569]"> is quantum-vulnerable</span>
                         </span>
                         {f.nistReplacement && (
-                          <span className="text-emerald-400 text-[10px] font-mono shrink-0">→ {f.nistReplacement}</span>
+                          <span className="text-emerald-600 text-[10px] font-mono shrink-0">→ {f.nistReplacement}</span>
                         )}
                       </div>
                       {/* Action buttons */}
@@ -1169,19 +1170,19 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
                         <button
                           onClick={() => explain(f)}
                           disabled={expl?.loading}
-                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-[#4f8ef7]/8 border border-[#4f8ef7]/25 text-[#4f8ef7] hover:bg-[#4f8ef7]/15 transition-colors disabled:opacity-50 shrink-0"
+                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-[#4f46e5]/8 border border-[#4f46e5]/25 text-[#4f46e5] hover:bg-[#4f46e5]/15 transition-colors disabled:opacity-50 shrink-0"
                         >
                           <Sparkles className="h-2.5 w-2.5" />
                           {expl?.loading ? "Thinking…" : expl?.text ? "Re-explain" : "Explain with AI"}
                         </button>
                         <a href={ref.url} target="_blank" rel="noopener noreferrer"
-                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-white/5 border border-white/8 text-neutral-400 hover:text-neutral-200 hover:border-white/15 transition-colors shrink-0"
+                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-[#f1f3f7] border border-[#e5e7eb] text-[#475569] hover:text-[#0a0e1a] hover:border-[#d5d9e0] transition-colors shrink-0"
                         >
                           <ExternalLink className="h-2.5 w-2.5" />
                           {ref.label}
                         </a>
                         <button onClick={() => onAskAI(f)}
-                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-white/5 border border-white/8 text-neutral-400 hover:text-[#4f8ef7] hover:border-[#4f8ef7]/25 transition-colors shrink-0 ml-auto"
+                          className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-[#f1f3f7] border border-[#e5e7eb] text-[#475569] hover:text-[#4f46e5] hover:border-[#4f46e5]/25 transition-colors shrink-0 ml-auto"
                         >
                           <MessageSquare className="h-2.5 w-2.5" />
                           Ask AI
@@ -1189,10 +1190,10 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
                       </div>
                       {/* Inline explanation */}
                       {(expl?.loading || expl?.text) && (
-                        <div className="px-3 pt-1.5 pb-2.5 border-t border-white/8 bg-black/20 text-[11px] text-neutral-300 leading-relaxed">
+                        <div className="px-3 pt-1.5 pb-2.5 border-t border-[#e5e7eb] bg-[#f7f8fa] text-[11px] text-[#334155] leading-relaxed">
                           {expl.loading && !expl.text
-                            ? <span className="flex items-center gap-2 text-neutral-500">
-                                <span className="h-2 w-2 rounded-full bg-[#4f8ef7] animate-pulse shrink-0" />
+                            ? <span className="flex items-center gap-2 text-[#6b7280]">
+                                <span className="h-2 w-2 rounded-full bg-[#4f46e5] animate-pulse shrink-0" />
                                 Generating explanation…
                               </span>
                             : expl.text}
@@ -1205,19 +1206,19 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
             )}
             {activeTab === "output" && (
               outputLogs.length === 0
-                ? <span className="text-neutral-500 p-2 block">No output. Run a scan.</span>
-                : outputLogs.map((log, i) => <div key={i} className="py-0.5 text-neutral-300 leading-relaxed">{log}</div>)
+                ? <span className="text-[#6b7280] p-2 block">No output. Run a scan.</span>
+                : outputLogs.map((log, i) => <div key={i} className="py-0.5 text-[#334155] leading-relaxed">{log}</div>)
             )}
             {activeTab === "debug" && (
               findings.length === 0
-                ? <span className="text-neutral-500 p-2 block">Debug output appears here after a scan.</span>
+                ? <span className="text-[#6b7280] p-2 block">Debug output appears here after a scan.</span>
                 : findings.map((f, i) => (
-                  <div key={i} className="py-1 border-b border-white/5">
-                    <span style={{ color: "#4f8ef7" }}>quantaxscan</span><span className="text-neutral-600"> &gt; </span>
-                    <span className="text-neutral-300">algorithm=</span><span className="text-amber-300">{f.algorithm}</span>
-                    <span className="text-neutral-300"> line=</span><span className="text-cyan-300">{f.lineNumber}</span>
-                    <span className="text-neutral-300"> effort=</span><span className="text-cyan-300">{f.effortHours}h</span>
-                    {f.nistReplacement && <span className="text-neutral-300"> fix=<span className="text-emerald-400">{f.nistReplacement}</span></span>}
+                  <div key={i} className="py-1 border-b border-[#eceef2]">
+                    <span style={{ color: "#4f46e5" }}>quantaxscan</span><span className="text-[#9aa3b2]"> &gt; </span>
+                    <span className="text-[#334155]">algorithm=</span><span className="text-amber-600">{f.algorithm}</span>
+                    <span className="text-[#334155]"> line=</span><span className="text-cyan-700">{f.lineNumber}</span>
+                    <span className="text-[#334155]"> effort=</span><span className="text-cyan-700">{f.effortHours}h</span>
+                    {f.nistReplacement && <span className="text-[#334155]"> fix=<span className="text-emerald-600">{f.nistReplacement}</span></span>}
                   </div>
                 ))
             )}
@@ -1244,14 +1245,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
   const [showSessions, setShowSessions]  = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const sendFnRef = useRef<(overrideText?: string, overrideCtx?: string) => Promise<void>>();
-  const formatAssistantText = useCallback((content: string) => {
-    const lines = content
-      .split(/\n+/)
-      .map(line => line.trim())
-      .filter(Boolean)
-      .filter(line => !/^here’s a simple breakdown|^here is a simple breakdown|^summary:/i.test(line));
-    return lines.slice(0, 5).join("\n");
-  }, []);
+  const formatAssistantText = useCallback((content: string) => content, []);
 
   // Load sessions from localStorage on mount
   useEffect(() => {
@@ -1375,23 +1369,23 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
   if (!open) {
     return (
       <button onClick={onToggle}
-        className="w-10 border-l border-white/8 bg-[#111118] flex flex-col items-center pt-3 shrink-0 hover:bg-white/5 transition-colors">
-        <MessageSquare className="h-4 w-4 text-neutral-500" />
+        className="w-10 border-l border-[#e5e7eb] bg-[#f7f8fa] flex flex-col items-center pt-3 shrink-0 hover:bg-[#f1f3f7] transition-colors">
+        <MessageSquare className="h-4 w-4 text-[#6b7280]" />
       </button>
     );
   }
 
   return (
-    <div className="border-l border-white/8 bg-[#111118] flex flex-col shrink-0 relative" style={{ width }}>
+    <div className="border-l border-[#e5e7eb] bg-[#f7f8fa] flex flex-col shrink-0 relative" style={{ width }}>
       <div onMouseDown={onResizeMD}
-        className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[#4f8ef7]/30 transition-colors z-20"
+        className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-[#4f46e5]/30 transition-colors z-20"
         title="Drag to resize chat" />
       {/* Header */}
-      <div className="h-9 flex items-center justify-between px-3 border-b border-white/8 shrink-0">
-        <span className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">Chat — QuantaXscan AI</span>
+      <div className="h-9 flex items-center justify-between px-3 border-b border-[#e5e7eb] shrink-0">
+        <span className="text-[11px] font-semibold tracking-wider text-[#475569] uppercase">Chat — QuantaXscan AI</span>
         <div className="flex gap-1">
-          <button onClick={newSession} title="New chat" className="p-1 hover:bg-white/8 rounded transition-colors"><Plus className="h-3.5 w-3.5 text-neutral-500" /></button>
-          <button onClick={onToggle} className="p-1 hover:bg-white/8 rounded transition-colors"><X className="h-3.5 w-3.5 text-neutral-500" /></button>
+          <button onClick={newSession} title="New chat" className="p-1 hover:bg-[#eef0fe] rounded transition-colors"><Plus className="h-3.5 w-3.5 text-[#6b7280]" /></button>
+          <button onClick={onToggle} className="p-1 hover:bg-[#eef0fe] rounded transition-colors"><X className="h-3.5 w-3.5 text-[#6b7280]" /></button>
         </div>
       </div>
 
@@ -1399,33 +1393,33 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
       {!activeSessionId && (
         <div className="flex-1 flex flex-col overflow-hidden">
           <button onClick={() => setShowSessions(v => !v)}
-            className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold tracking-wider text-neutral-500 hover:text-neutral-300 uppercase shrink-0">
+            className="w-full flex items-center gap-2 px-3 py-2 text-[10px] font-semibold tracking-wider text-[#6b7280] hover:text-[#334155] uppercase shrink-0">
             {showSessions ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             Sessions
-            {sessions.length > 0 && <span className="ml-auto text-neutral-600">{sessions.length}</span>}
+            {sessions.length > 0 && <span className="ml-auto text-[#9aa3b2]">{sessions.length}</span>}
           </button>
           {showSessions && (
             <ScrollArea className="flex-1">
               {sessions.length === 0 ? (
                 <div className="flex flex-col items-center text-center px-4 pt-8">
-                    <div className="h-10 w-10 rounded-xl bg-[#4f8ef7]/10 border border-[#4f8ef7]/25 flex items-center justify-center mb-3">
-                      <Atom className="h-5 w-5 text-[#4f8ef7]" />
+                    <div className="h-10 w-10 rounded-xl bg-[#4f46e5]/10 border border-[#4f46e5]/25 flex items-center justify-center mb-3">
+                      <Atom className="h-5 w-5 text-[#4f46e5]" />
                   </div>
-                  <p className="text-[11px] text-neutral-500 leading-relaxed">
+                  <p className="text-[11px] text-[#6b7280] leading-relaxed">
                     No sessions yet. Start a conversation about your scan results.
                   </p>
                 </div>
               ) : (
                 <div className="pb-2">
                   {sessions.map(s => (
-                    <div key={s.id} className="group flex items-start gap-2 px-3 py-2 hover:bg-white/5 transition-colors cursor-pointer" onClick={() => setActiveSessionId(s.id)}>
-                      <div className="h-1.5 w-1.5 rounded-full bg-[#4f8ef7] mt-2 shrink-0" />
+                    <div key={s.id} className="group flex items-start gap-2 px-3 py-2 hover:bg-[#f1f3f7] transition-colors cursor-pointer" onClick={() => setActiveSessionId(s.id)}>
+                      <div className="h-1.5 w-1.5 rounded-full bg-[#4f46e5] mt-2 shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-[11px] text-neutral-300 truncate font-mono">{s.title}</p>
-                        <p className="text-[10px] text-neutral-600">{new Date(s.createdAt).toLocaleDateString()}</p>
+                        <p className="text-[11px] text-[#334155] truncate font-mono">{s.title}</p>
+                        <p className="text-[10px] text-[#9aa3b2]">{new Date(s.createdAt).toLocaleDateString()}</p>
                       </div>
                       <button onClick={e => { e.stopPropagation(); deleteSession(s.id); }}
-                        className="p-1 opacity-0 group-hover:opacity-100 text-neutral-600 hover:text-red-400 transition-all">
+                        className="p-1 opacity-0 group-hover:opacity-100 text-[#9aa3b2] hover:text-red-600 transition-all">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
@@ -1442,7 +1436,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
         <>
           {/* Back + session title */}
           <button onClick={() => setActiveSessionId(null)}
-            className="flex items-center gap-2 px-3 py-2 text-[11px] text-neutral-500 hover:text-neutral-300 border-b border-white/8 transition-colors shrink-0">
+            className="flex items-center gap-2 px-3 py-2 text-[11px] text-[#6b7280] hover:text-[#334155] border-b border-[#e5e7eb] transition-colors shrink-0">
             <ChevronRight className="h-3 w-3 rotate-180" />
             <span className="truncate font-mono">{activeSession.title}</span>
           </button>
@@ -1451,15 +1445,15 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
               <div key={m.id} className={cn("mb-3", m.role === "user" && "flex justify-end")}>
                 {m.role === "assistant" && (
                   <div className="flex items-start gap-2">
-                    <div className="h-5 w-5 rounded bg-[#4f8ef7]/15 border border-[#4f8ef7]/35 flex items-center justify-center shrink-0 mt-0.5">
-                      <Atom className="h-3 w-3 text-[#4f8ef7]" />
+                    <div className="h-5 w-5 rounded bg-[#4f46e5]/15 border border-[#4f46e5]/35 flex items-center justify-center shrink-0 mt-0.5">
+                      <Atom className="h-3 w-3 text-[#4f46e5]" />
                     </div>
-                    <div className="flex-1 bg-white/5 rounded-lg p-2.5 text-[11px] text-neutral-300 leading-relaxed">
+                    <div className="flex-1 bg-[#f1f3f7] rounded-lg p-2.5 text-[11px] text-[#334155] leading-relaxed">
                       {m.content === "" && isStreaming && i === activeSession.messages.length - 1
-                        ? <span className="inline-block h-3 w-3 rounded-full bg-[#4f8ef7] animate-pulse" />
+                        ? <span className="inline-block h-3 w-3 rounded-full bg-[#4f46e5] animate-pulse" />
                         : m.content.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => {
-                            if (part.startsWith("**") && part.endsWith("**")) return <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
-                            if (part.startsWith("`") && part.endsWith("`")) return <code key={j} className="bg-black/40 text-emerald-300 px-1 rounded text-[10px] font-mono">{part.slice(1, -1)}</code>;
+                            if (part.startsWith("**") && part.endsWith("**")) return <strong key={j} className="text-[#0a0e1a] font-semibold">{part.slice(2, -2)}</strong>;
+                            if (part.startsWith("`") && part.endsWith("`")) return <code key={j} className="bg-[#f1f3f7] text-emerald-600 px-1 rounded text-[10px] font-mono">{part.slice(1, -1)}</code>;
                             return <span key={j}>{part}</span>;
                           })
                       }
@@ -1467,7 +1461,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
                   </div>
                 )}
                 {m.role === "user" && (
-                  <div className="bg-[#4f8ef7]/10 border border-[#4f8ef7]/25 rounded-lg px-3 py-2 text-[11px] text-[#f1f5f9] max-w-[85%]">
+                  <div className="bg-[#4f46e5]/10 border border-[#4f46e5]/25 rounded-lg px-3 py-2 text-[11px] text-[#0a0e1a] max-w-[85%]">
                     {m.content}
                   </div>
                 )}
@@ -1479,26 +1473,26 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
       )}
 
       {/* Input */}
-      <div className="border-t border-white/8 p-2 shrink-0">
-        <div className="flex items-end gap-1.5 bg-[#050810] border border-[#4f8ef7]/12 rounded-lg px-2.5 py-2 focus-within:border-[#4f8ef7]/35 transition-colors">
+      <div className="border-t border-[#e5e7eb] p-2 shrink-0">
+        <div className="flex items-end gap-1.5 bg-[#f1f3f7] border border-[#4f46e5]/12 rounded-lg px-2.5 py-2 focus-within:border-[#4f46e5]/35 transition-colors">
           <textarea
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }}}
             placeholder="Ask about your scan…"
             rows={1}
-            className="flex-1 bg-transparent text-[11px] text-neutral-200 placeholder-neutral-600 resize-none focus:outline-none font-sans leading-relaxed"
+            className="flex-1 bg-transparent text-[11px] text-[#0a0e1a] placeholder-[#9aa3b2] resize-none focus:outline-none font-sans leading-relaxed"
             style={{ maxHeight: 80 }}
             disabled={isStreaming}
           />
           <button onClick={sendMessage} disabled={!input.trim() || isStreaming}
-            className="p-1 text-[#4f8ef7]/70 hover:text-[#4f8ef7] disabled:opacity-30 transition-colors shrink-0">
+            className="p-1 text-[#4f46e5]/70 hover:text-[#4f46e5] disabled:opacity-30 transition-colors shrink-0">
             <Send className="h-3.5 w-3.5" />
           </button>
         </div>
         <p className="text-[9px] text-right mt-1">
-          <span className="font-mono text-[#4f8ef7]/40 tracking-wide">
-            // powered by quantaxscan ai
+          <span className="text-[#9aa3b2] tracking-wide">
+            Powered by QuantaXscan AI
           </span>
         </p>
       </div>
@@ -1506,84 +1500,248 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
   );
 }
 
-// ── Space-themed scan loading overlay ─────────────────────────────────────────
+// ── Clean light scan progress overlay ─────────────────────────────────────────
 function SpaceScanOverlay({ current, total, currentFile, projectName }: {
   current: number; total: number; currentFile: string; projectName: string;
 }) {
-  const stars = useMemo(() =>
-    Array.from({ length: 110 }, (_, i) => ({
-      id: i,
-      x: Math.random() * 100, y: Math.random() * 100,
-      size: Math.random() * 2.5 + 0.4,
-      opacity: Math.random() * 0.55 + 0.2,
-      dur: (Math.random() * 3 + 1.5).toFixed(1),
-    })), []);
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center select-none overflow-hidden"
-      style={{ background: "radial-gradient(ellipse 90% 70% at 50% 20%, #061230 0%, #030712 55%, #020408 100%)" }}
+  const pct      = total > 0 ? Math.round((current / total) * 100) : 0;
+  const sweepRef = useRef<HTMLDivElement>(null);
+
+  /* ── dot-grid SVG background ──────────────────────────────────────── */
+  const dotGrid =
+    "url(\"data:image/svg+xml,%3Csvg width='28' height='28' viewBox='0 0 28 28' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1' fill='%234f46e5' fill-opacity='0.09'/%3E%3C/svg%3E\")";
+
+  /* ── last few files to show as ticker ────────────────────────────── */
+  const [ticker, setTicker] = useState<string[]>([]);
+  useEffect(() => {
+    if (!currentFile) return;
+    setTicker(prev => {
+      const next = [currentFile, ...prev.filter(f => f !== currentFile)].slice(0, 6);
+      return next;
+    });
+  }, [currentFile]);
+
+  const overlay = (
+    <motion.div
+      key="scan-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="fixed inset-0 z-[9999] flex items-center justify-center select-none overflow-hidden"
+      style={{
+        background: "radial-gradient(ellipse 110% 90% at 50% 10%, #eef0fe 0%, #f4f6ff 35%, #ffffff 70%)",
+        backgroundImage: dotGrid,
+      }}
     >
-      {/* Stars */}
-      {stars.map(s => (
-        <span key={s.id} className="absolute rounded-full bg-white animate-pulse"
-          style={{ left: `${s.x}%`, top: `${s.y}%`, width: s.size, height: s.size, opacity: s.opacity, animationDuration: `${s.dur}s` }} />
-      ))}
-      {/* Scanning beam */}
-      <div className="absolute left-0 right-0 h-px pointer-events-none transition-all duration-700"
-        style={{
-          top: `${8 + (pct / 100) * 84}%`,
-          background: "linear-gradient(90deg, transparent 5%, rgba(79,142,247,0.2) 25%, rgba(79,142,247,0.5) 50%, rgba(79,142,247,0.2) 75%, transparent 95%)",
-          boxShadow: "0 0 14px 3px rgba(79,142,247,0.12)",
-        }} />
-      {/* Grid */}
-      <div className="absolute inset-0 pointer-events-none opacity-[0.04]"
-        style={{ backgroundImage: "linear-gradient(rgba(79,142,247,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(79,142,247,0.6) 1px, transparent 1px)", backgroundSize: "60px 60px" }} />
-      {/* Center card */}
-      <div className="relative z-10 flex flex-col items-center gap-6 max-w-sm w-full mx-6 text-center">
-        {/* Orbiting scanner */}
-        <div className="relative flex items-center justify-center">
-          <div className="absolute h-36 w-36 rounded-full border border-[#4f8ef7]/8 animate-pulse" />
-          <div className="absolute h-28 w-28 rounded-full border-2 border-transparent border-t-[#4f8ef7]/70 border-r-[#4f8ef7]/20 animate-spin" style={{ animationDuration: "1.6s" }} />
-          <div className="absolute h-20 w-20 rounded-full border border-[#4f8ef7]/15 animate-spin" style={{ animationDuration: "3.2s", animationDirection: "reverse" }} />
-          <div className="h-16 w-16 rounded-full bg-[#4f8ef7]/8 border border-[#4f8ef7]/20 flex items-center justify-center">
-            <Shield className="h-7 w-7 text-[#4f8ef7]" style={{ filter: "drop-shadow(0 0 8px rgba(79,142,247,0.9))" }} />
-          </div>
-        </div>
-        {/* Labels */}
-        <div>
-          <p className="text-[9px] font-mono text-[#4f8ef7]/40 tracking-[0.25em] uppercase mb-1.5">// quantum_scanner</p>
-          <h2 className="text-[20px] font-bold text-white font-mono tracking-tight">SCANNING IN PROGRESS</h2>
-          <p className="text-xs text-neutral-500 font-mono mt-1 truncate max-w-[260px]">{projectName}</p>
-        </div>
-        {/* Current file pill */}
-        <div className="w-full rounded-lg bg-[#0d1224] border border-[#4f8ef7]/15 px-4 py-3 text-left">
-          <p className="text-[9px] font-mono text-[#4f8ef7]/50 uppercase tracking-widest mb-1">analyzing</p>
-          <p className="text-[13px] text-[#f1f5f9] font-mono truncate">{currentFile || "Initializing scanner…"}</p>
-        </div>
-        {/* Progress bar */}
-        <div className="w-full">
-          <div className="flex justify-between text-[10px] font-mono mb-2">
-            <span className="text-neutral-600">{current} / {total} files</span>
-            <span className="text-[#4f8ef7]">{pct}%</span>
-          </div>
-          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${pct}%`, background: "linear-gradient(90deg, #4f8ef7, #818cf8)", boxShadow: "0 0 10px rgba(79,142,247,0.7)" }} />
-          </div>
-        </div>
-        {/* Dot grid for small counts */}
-        {total > 0 && total <= 32 && (
-          <div className="flex flex-wrap justify-center gap-1.5 max-w-[260px]">
-            {Array.from({ length: total }, (_, i) => (
-              <div key={i} className="h-1.5 w-1.5 rounded-full transition-all duration-300"
-                style={{ background: i < current ? "#4f8ef7" : i === current ? "#818cf8" : "rgba(255,255,255,0.07)", boxShadow: i < current ? "0 0 4px rgba(79,142,247,0.5)" : "none" }} />
-            ))}
-          </div>
-        )}
+      {/* ── ambient glow blobs ─────────────────────────────────────── */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <motion.div
+          animate={{ scale: [1, 1.15, 1], opacity: [0.22, 0.38, 0.22] }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute -top-32 left-1/2 -translate-x-1/2 h-[420px] w-[420px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(79,70,229,0.18) 0%, transparent 70%)" }}
+        />
+        <motion.div
+          animate={{ scale: [1, 1.08, 1], opacity: [0.14, 0.25, 0.14] }}
+          transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+          className="absolute bottom-0 right-1/4 h-[300px] w-[300px] rounded-full"
+          style={{ background: "radial-gradient(circle, rgba(13,148,136,0.15) 0%, transparent 70%)" }}
+        />
       </div>
-    </div>
+
+      {/* ── main card ─────────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+        className="relative z-10 flex flex-col items-center gap-7 max-w-[420px] w-full mx-6 text-center"
+      >
+        {/* ── radar ring assembly ────────────────────────────────── */}
+        <div className="relative flex items-center justify-center" style={{ width: 180, height: 180 }}>
+
+          {/* outermost pulse ring */}
+          <motion.div
+            animate={{ scale: [1, 1.18, 1], opacity: [0.25, 0, 0.25] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeOut" }}
+            className="absolute rounded-full border border-[#4f46e5]/30"
+            style={{ width: 180, height: 180 }}
+          />
+          {/* secondary pulse */}
+          <motion.div
+            animate={{ scale: [1, 1.12, 1], opacity: [0.35, 0.05, 0.35] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeOut", delay: 0.6 }}
+            className="absolute rounded-full border border-[#4f46e5]/25"
+            style={{ width: 148, height: 148 }}
+          />
+
+          {/* static outer track */}
+          <div
+            className="absolute rounded-full border border-[#4f46e5]/12"
+            style={{ width: 148, height: 148 }}
+          />
+
+          {/* spinning dashed ring */}
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+            className="absolute rounded-full"
+            style={{
+              width: 148, height: 148,
+              border: "1.5px dashed rgba(79,70,229,0.2)",
+            }}
+          />
+
+          {/* spinning solid arc (scanner beam boundary) */}
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "linear" }}
+            className="absolute rounded-full"
+            style={{
+              width: 118, height: 118,
+              border: "2px solid transparent",
+              borderTop: "2px solid #4f46e5",
+              borderRight: "2px solid rgba(79,70,229,0.35)",
+            }}
+          />
+
+          {/* counter-spinning inner arc */}
+          <motion.div
+            animate={{ rotate: -360 }}
+            transition={{ duration: 3.6, repeat: Infinity, ease: "linear" }}
+            className="absolute rounded-full"
+            style={{
+              width: 88, height: 88,
+              border: "1.5px solid transparent",
+              borderBottom: "1.5px solid rgba(13,148,136,0.55)",
+              borderLeft: "1.5px solid rgba(13,148,136,0.2)",
+            }}
+          />
+
+          {/* radar sweep — conic gradient rotating */}
+          <motion.div
+            ref={sweepRef}
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "linear" }}
+            className="absolute rounded-full overflow-hidden"
+            style={{ width: 118, height: 118 }}
+          >
+            <div
+              className="absolute inset-0 rounded-full"
+              style={{
+                background:
+                  "conic-gradient(from 270deg, rgba(79,70,229,0.0) 0deg, rgba(79,70,229,0.18) 60deg, rgba(79,70,229,0.38) 90deg, rgba(79,70,229,0.0) 91deg)",
+              }}
+            />
+          </motion.div>
+
+          {/* center icon */}
+          <motion.div
+            animate={{ boxShadow: ["0 0 0 0 rgba(79,70,229,0.15)", "0 0 0 12px rgba(79,70,229,0)", "0 0 0 0 rgba(79,70,229,0.15)"] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="relative z-10 h-14 w-14 rounded-full bg-white border border-[#4f46e5]/20 flex items-center justify-center shadow-[0_4px_16px_rgba(79,70,229,0.18)]"
+          >
+            <Shield className="h-6 w-6 text-[#4f46e5]" />
+          </motion.div>
+        </div>
+
+        {/* ── title ─────────────────────────────────────────────────── */}
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-[#4f46e5] tracking-[0.22em] uppercase">
+            QuantaXscan · Quantum Analysis
+          </p>
+          <h2 className="text-[22px] font-bold text-[#0a0e1a] tracking-tight leading-snug">
+            Scanning cryptographic primitives
+          </h2>
+          <p className="text-[12px] text-[#6b7280] truncate max-w-[340px]">{projectName}</p>
+        </div>
+
+        {/* ── live file ticker ──────────────────────────────────────── */}
+        <div className="w-full rounded-xl bg-white border border-[#e5e7eb] shadow-[0_8px_32px_rgba(15,23,42,0.07)] overflow-hidden">
+          {/* active file */}
+          <div className="px-4 py-3 border-b border-[#f1f3f7]">
+            <p className="text-[9px] font-semibold text-[#4f46e5] uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+              <motion.span
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ duration: 1.1, repeat: Infinity }}
+                className="h-1.5 w-1.5 rounded-full bg-[#4f46e5] inline-block"
+              />
+              Analyzing
+            </p>
+            <p className="text-[13px] text-[#0a0e1a] font-mono truncate">
+              {currentFile || "Initializing scanner…"}
+            </p>
+          </div>
+
+          {/* recent files */}
+          {ticker.slice(1, 4).length > 0 && (
+            <div className="divide-y divide-[#f7f8fa]">
+              {ticker.slice(1, 4).map((f, i) => (
+                <motion.div
+                  key={f}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1 - i * 0.25, x: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="px-4 py-1.5 flex items-center gap-2"
+                >
+                  <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                  <span className="text-[11px] text-[#9aa3b2] font-mono truncate">{f}</span>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── progress ──────────────────────────────────────────────── */}
+        <div className="w-full space-y-2.5">
+          <div className="flex items-center justify-between text-[11px] font-mono">
+            <span className="text-[#6b7280]">{current} of {total} file{total !== 1 ? "s" : ""}</span>
+            <motion.span
+              key={pct}
+              initial={{ scale: 1.2, color: "#4f46e5" }}
+              animate={{ scale: 1, color: "#4338ca" }}
+              className="font-bold tabular-nums"
+            >
+              {pct}%
+            </motion.span>
+          </div>
+
+          {/* segmented bar */}
+          {total > 0 && total <= 40 ? (
+            <div className="flex gap-[3px] h-2">
+              {Array.from({ length: total }, (_, i) => (
+                <motion.div
+                  key={i}
+                  initial={false}
+                  animate={{
+                    background: i < current
+                      ? "linear-gradient(90deg,#4f46e5,#4338ca)"
+                      : i === current
+                      ? "rgba(79,70,229,0.45)"
+                      : "#eceef2",
+                  }}
+                  transition={{ duration: 0.3 }}
+                  className="flex-1 rounded-full"
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="h-2 bg-[#f1f3f7] rounded-full overflow-hidden">
+              <motion.div
+                className="h-full rounded-full"
+                initial={{ width: "0%" }}
+                animate={{ width: `${pct}%` }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                style={{ background: "linear-gradient(90deg,#4f46e5,#4338ca,#0d9488)" }}
+              />
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
   );
+
+  return createPortal(overlay, document.body);
 }
 
 // ── Upload file tree (ZIP / multi-file uploads) ────────────────────────────────
@@ -1643,19 +1801,19 @@ function UploadedTreeNode({ node, depth, activeTabId, collapsed, onToggle, onSel
 
     const colorClass = hasCritical
       ? isActive
-        ? "bg-red-500/12 border-red-400 text-red-200"
-        : "bg-red-500/7 border-red-500/50 text-red-300 hover:bg-red-500/14"
+        ? "bg-red-500/12 border-red-400 text-red-700"
+        : "bg-red-500/7 border-red-500/50 text-red-600 hover:bg-red-500/14"
       : hasAlert
       ? isActive
-        ? "bg-yellow-500/12 border-yellow-400 text-yellow-200"
-        : "bg-yellow-500/7 border-yellow-500/50 text-yellow-300 hover:bg-yellow-500/14"
+        ? "bg-yellow-500/12 border-yellow-400 text-amber-700"
+        : "bg-yellow-500/7 border-yellow-500/50 text-amber-700 hover:bg-yellow-500/14"
       : isClean
       ? isActive
-        ? "bg-emerald-500/10 border-emerald-400 text-emerald-300"
+        ? "bg-emerald-500/10 border-emerald-400 text-emerald-600"
         : "bg-emerald-500/5 border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10"
       : isActive
-        ? "bg-[#4f8ef7]/8 text-[#4f8ef7] border-[#4f8ef7]"
-        : "text-[#475569] hover:text-[#f1f5f9] hover:bg-white/5 border-transparent";
+        ? "bg-[#4f46e5]/8 text-[#4f46e5] border-[#4f46e5]"
+        : "text-[#6b7280] hover:text-[#0a0e1a] hover:bg-[#f1f3f7] border-transparent";
 
     return (
       <button
@@ -1671,7 +1829,7 @@ function UploadedTreeNode({ node, depth, activeTabId, collapsed, onToggle, onSel
         {hasFinds && (
           <span className={cn(
             "shrink-0 mr-1 text-[10px] font-bold tabular-nums px-1 rounded",
-            hasCritical ? "bg-red-500/20 text-red-400" : "bg-yellow-500/20 text-yellow-400",
+            hasCritical ? "bg-red-500/20 text-red-600" : "bg-yellow-500/20 text-amber-600",
           )}>
             {nodeFinds.length}
           </span>
@@ -1687,12 +1845,12 @@ function UploadedTreeNode({ node, depth, activeTabId, collapsed, onToggle, onSel
     <>
       <button
         onClick={() => onToggle(node.folderKey)}
-        className="flex items-center gap-1.5 w-full py-[3px] text-[12px] text-neutral-400 hover:bg-white/5 hover:text-neutral-200 font-mono"
+        className="flex items-center gap-1.5 w-full py-[3px] text-[12px] text-[#475569] hover:bg-[#f1f3f7] hover:text-[#0a0e1a] font-mono"
         style={{ paddingLeft: 16 + depth * 12 }}
       >
         {isOpen
-          ? <ChevronDown  className="h-3 w-3 text-neutral-600 shrink-0" />
-          : <ChevronRight className="h-3 w-3 text-neutral-600 shrink-0" />}
+          ? <ChevronDown  className="h-3 w-3 text-[#9aa3b2] shrink-0" />
+          : <ChevronRight className="h-3 w-3 text-[#9aa3b2] shrink-0" />}
         <FolderSvg open={isOpen} />
         <span className="ml-0.5 truncate">{node.name}</span>
       </button>
@@ -1714,19 +1872,19 @@ function ActivityBar({ explorerOpen, chatOpen, onExplorer, onChat }: {
   onExplorer: () => void; onChat: () => void;
 }) {
   return (
-    <div className="w-10 bg-[#0c0c14] border-r border-white/5 flex flex-col items-center py-1 gap-0.5 shrink-0">
+    <div className="w-10 bg-[#f1f3f7] border-r border-[#eceef2] flex flex-col items-center py-1 gap-0.5 shrink-0">
       <button title="Explorer" onClick={onExplorer}
         className={cn("h-10 w-full flex items-center justify-center border-l-2 transition-colors",
-          explorerOpen ? "border-[#4f8ef7] text-[#4f8ef7] bg-[#4f8ef7]/5" : "border-transparent text-[#475569] hover:text-[#f1f5f9]")}>
+          explorerOpen ? "border-[#4f46e5] text-[#4f46e5] bg-[#4f46e5]/5" : "border-transparent text-[#6b7280] hover:text-[#0a0e1a]")}>
         <Files className="h-5 w-5" />
       </button>
       <div className="flex-1" />
       <button title="Chat" onClick={onChat}
         className={cn("h-10 w-full flex items-center justify-center border-l-2 transition-colors",
-          chatOpen ? "border-[#4f8ef7] text-[#4f8ef7] bg-[#4f8ef7]/5" : "border-transparent text-[#475569] hover:text-[#f1f5f9]")}>
+          chatOpen ? "border-[#4f46e5] text-[#4f46e5] bg-[#4f46e5]/5" : "border-transparent text-[#6b7280] hover:text-[#0a0e1a]")}>
         <Atom className="h-5 w-5" />
       </button>
-      <button title="Settings" className="h-10 w-full flex items-center justify-center text-neutral-600 hover:text-neutral-300 transition-colors">
+      <button title="Settings" className="h-10 w-full flex items-center justify-center text-[#9aa3b2] hover:text-[#334155] transition-colors">
         <Settings className="h-5 w-5" />
       </button>
     </div>
@@ -1755,16 +1913,16 @@ function SummaryPill({
       <button
         onClick={onToggle}
         className={cn(
-          "flex items-center gap-1.5 px-3 py-2 border-r border-white/8 hover:bg-white/4 transition-colors",
-          isOpen && "bg-white/5",
+          "flex items-center gap-1.5 px-3 py-2 border-r border-[#e5e7eb] hover:bg-[#f7f8fa] transition-colors",
+          isOpen && "bg-[#f1f3f7]",
         )}
       >
         {!noDot && dotColor && (
           <div className={cn("h-2 w-2 rounded-full shrink-0", dotColor)} />
         )}
         <span className={cn("font-semibold", textColor)}>{label}</span>
-        {labelColor && <span className={cn("text-neutral-600", labelColor)} />}
-        <ChevronDown className={cn("h-3 w-3 text-neutral-600 transition-transform", isOpen && "rotate-180")} />
+        {labelColor && <span className={cn("text-[#9aa3b2]", labelColor)} />}
+        <ChevronDown className={cn("h-3 w-3 text-[#9aa3b2] transition-transform", isOpen && "rotate-180")} />
       </button>
     </div>
   );
@@ -1847,14 +2005,14 @@ function SummaryBar({ tabFindings, tabs, setActiveTabId }: {
   const dropdownStyle = { top: dropdownPos.top, left: dropdownPos.left, width: 320 } as React.CSSProperties;
 
   return (
-    <div className="shrink-0 bg-[#0b0d18] border-b border-white/8 flex items-center px-4 gap-0 font-mono text-[11px] overflow-x-auto relative z-20">
-      <span className="text-[9px] tracking-[0.18em] text-neutral-600 uppercase mr-4 shrink-0">Project Scan</span>
+    <div className="shrink-0 bg-[#f7f8fa] border-b border-[#e5e7eb] flex items-center px-4 gap-0 font-mono text-[11px] overflow-x-auto relative z-20">
+      <span className="text-[9px] tracking-[0.18em] text-[#9aa3b2] uppercase mr-4 shrink-0">Project Scan</span>
 
       {/* Critical */}
       {totalCritical > 0 && (
         <div ref={el => { pillRefs.current.critical = el; }} className="shrink-0">
           <SummaryPill id="critical" label={`${totalCritical} critical`}
-            dotColor="bg-red-500" textColor="text-red-400"
+            dotColor="bg-red-500" textColor="text-red-600"
             isOpen={openDropdown === "critical"} onToggle={() => toggle("critical")} />
         </div>
       )}
@@ -1863,7 +2021,7 @@ function SummaryBar({ tabFindings, tabs, setActiveTabId }: {
       {totalAlert > 0 && (
         <div ref={el => { pillRefs.current.alert = el; }} className="shrink-0">
           <SummaryPill id="alert" label={`${totalAlert} alerts`}
-            dotColor="bg-yellow-500" textColor="text-yellow-400"
+            dotColor="bg-yellow-500" textColor="text-amber-600"
             isOpen={openDropdown === "alert"} onToggle={() => toggle("alert")} />
         </div>
       )}
@@ -1880,7 +2038,7 @@ function SummaryBar({ tabFindings, tabs, setActiveTabId }: {
       {/* High Risk */}
       {rankedFiles.length > 0 && (
         <div ref={el => { pillRefs.current.highrisk = el; }} className="shrink-0">
-          <SummaryPill id="highrisk" label="High Risk" textColor="text-[#4f8ef7]" noDot
+          <SummaryPill id="highrisk" label="High Risk" textColor="text-[#4f46e5]" noDot
             isOpen={openDropdown === "highrisk"} onToggle={() => toggle("highrisk")} />
         </div>
       )}
@@ -1888,7 +2046,7 @@ function SummaryBar({ tabFindings, tabs, setActiveTabId }: {
       {/* Effort */}
       {totalEffort > 0 && (
         <div ref={el => { pillRefs.current.effort = el; }} className="shrink-0">
-          <SummaryPill id="effort" label={`~${Math.ceil(totalEffort)}h effort`} textColor="text-purple-400" noDot
+          <SummaryPill id="effort" label={`~${Math.ceil(totalEffort)}h effort`} textColor="text-teal-600" noDot
             isOpen={openDropdown === "effort"} onToggle={() => toggle("effort")} />
         </div>
       )}
@@ -1896,90 +2054,90 @@ function SummaryBar({ tabFindings, tabs, setActiveTabId }: {
       {openDropdown && (
         <div className="fixed inset-0 z-[9998]" onMouseDown={() => setOpenDropdown(null)}>
           <div
-            className="absolute z-[9999] min-w-[240px] max-w-[360px] bg-[#13141f] border border-white/10 rounded-lg shadow-2xl overflow-hidden"
+            className="absolute z-[9999] min-w-[240px] max-w-[360px] bg-[#ffffff] border border-[#e5e7eb] rounded-lg shadow-[0_8px_24px_rgba(15,23,42,0.12)] overflow-hidden"
             style={{ top: dropdownPos.top, left: dropdownPos.left, width: 320 }}
             onMouseDown={e => e.stopPropagation()}
           >
             <div className="max-h-[320px] overflow-y-auto">
               {openDropdown === "critical" && (
                 <>
-                  <div className="px-3 py-1.5 border-b border-white/8">
-                    <span className="text-[9px] text-neutral-600 uppercase tracking-wider">Files with critical findings</span>
+                  <div className="px-3 py-1.5 border-b border-[#e5e7eb]">
+                    <span className="text-[9px] text-[#9aa3b2] uppercase tracking-wider">Files with critical findings</span>
                   </div>
                   {criticalFiles.map(f => (
                     <button key={f.name} onClick={() => openTab(f.name)}
                       className="flex items-center gap-2 px-3 py-2 hover:bg-red-500/8 w-full text-left transition-colors group">
                       <div className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />
-                      <span className="text-[11px] text-neutral-300 truncate flex-1 group-hover:text-neutral-100">{f.name.split("/").pop()}</span>
-                      <span className="text-[10px] text-red-400 font-semibold shrink-0">{f.count}</span>
+                      <span className="text-[11px] text-[#334155] truncate flex-1 group-hover:text-[#0a0e1a]">{f.name.split("/").pop()}</span>
+                      <span className="text-[10px] text-red-600 font-semibold shrink-0">{f.count}</span>
                     </button>
                   ))}
                 </>
               )}
               {openDropdown === "alert" && (
                 <>
-                  <div className="px-3 py-1.5 border-b border-white/8">
-                    <span className="text-[9px] text-neutral-600 uppercase tracking-wider">Files with alert findings</span>
+                  <div className="px-3 py-1.5 border-b border-[#e5e7eb]">
+                    <span className="text-[9px] text-[#9aa3b2] uppercase tracking-wider">Files with alert findings</span>
                   </div>
                   {alertFiles.map(f => (
                     <button key={f.name} onClick={() => openTab(f.name)}
                       className="flex items-center gap-2 px-3 py-2 hover:bg-yellow-500/8 w-full text-left transition-colors group">
                       <div className="h-1.5 w-1.5 rounded-full bg-yellow-500 shrink-0" />
-                      <span className="text-[11px] text-neutral-300 truncate flex-1 group-hover:text-neutral-100">{f.name.split("/").pop()}</span>
-                      <span className="text-[10px] text-yellow-400 font-semibold shrink-0">{f.count}</span>
+                      <span className="text-[11px] text-[#334155] truncate flex-1 group-hover:text-[#0a0e1a]">{f.name.split("/").pop()}</span>
+                      <span className="text-[10px] text-amber-600 font-semibold shrink-0">{f.count}</span>
                     </button>
                   ))}
                 </>
               )}
               {openDropdown === "clean" && (
                 <>
-                  <div className="px-3 py-1.5 border-b border-white/8">
-                    <span className="text-[9px] text-neutral-600 uppercase tracking-wider">Clean files — no findings</span>
+                  <div className="px-3 py-1.5 border-b border-[#e5e7eb]">
+                    <span className="text-[9px] text-[#9aa3b2] uppercase tracking-wider">Clean files — no findings</span>
                   </div>
                   {cleanFiles.map(f => (
                     <button key={f.name} onClick={() => openTab(f.name)}
                       className="flex items-center gap-2 px-3 py-2 hover:bg-emerald-500/8 w-full text-left transition-colors group">
                       <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
-                      <span className="text-[11px] text-neutral-300 truncate flex-1 group-hover:text-neutral-100">{f.name.split("/").pop()}</span>
+                      <span className="text-[11px] text-[#334155] truncate flex-1 group-hover:text-[#0a0e1a]">{f.name.split("/").pop()}</span>
                     </button>
                   ))}
                 </>
               )}
               {openDropdown === "highrisk" && (
                 <>
-                  <div className="px-3 py-1.5 border-b border-white/8 flex items-center justify-between">
-                    <span className="text-[9px] text-neutral-600 uppercase tracking-wider">Top 5 riskiest files</span>
-                    <span className="text-[9px] text-neutral-700">score = crit×3 + alerts</span>
+                  <div className="px-3 py-1.5 border-b border-[#e5e7eb] flex items-center justify-between">
+                    <span className="text-[9px] text-[#9aa3b2] uppercase tracking-wider">Top 5 riskiest files</span>
+                    <span className="text-[9px] text-[#9aa3b2]">score = crit×3 + alerts</span>
                   </div>
                   {rankedFiles.map((f, i) => (
                     <button key={f.name} onClick={() => openTab(f.name)}
-                      className="flex items-center gap-2 px-3 py-2 hover:bg-[#4f8ef7]/6 w-full text-left transition-colors group">
-                      <span className="text-[10px] text-neutral-700 font-mono w-5 shrink-0 text-right">#{i + 1}</span>
-                      <span className="text-[11px] text-neutral-300 truncate flex-1 group-hover:text-neutral-100">{f.shortName}</span>
-                      {f.critical > 0 && <span className="text-[10px] text-red-400 font-mono shrink-0">{f.critical}C</span>}
-                      {f.alert > 0 && <span className="text-[10px] text-yellow-400 font-mono shrink-0">{f.alert}A</span>}
-                      <span className="text-[9px] text-neutral-700 font-mono shrink-0">score:{f.score}</span>
+                      className="flex items-center gap-2 px-3 py-2 hover:bg-[#4f46e5]/6 w-full text-left transition-colors group">
+                      <span className="text-[10px] text-[#9aa3b2] font-mono w-5 shrink-0 text-right">#{i + 1}</span>
+                      <span className="text-[11px] text-[#334155] truncate flex-1 group-hover:text-[#0a0e1a]">{f.shortName}</span>
+                      {f.critical > 0 && <span className="text-[10px] text-red-600 font-mono shrink-0">{f.critical}C</span>}
+                      {f.alert > 0 && <span className="text-[10px] text-amber-600 font-mono shrink-0">{f.alert}A</span>}
+                      <span className="text-[9px] text-[#9aa3b2] font-mono shrink-0">score:{f.score}</span>
                     </button>
                   ))}
                 </>
               )}
               {openDropdown === "effort" && (
                 <>
-                  <div className="px-3 py-1.5 border-b border-white/8 flex items-center justify-between">
-                    <span className="text-[9px] text-neutral-600 uppercase tracking-wider">Per-file migration effort</span>
-                    <span className="text-[9px] text-neutral-700">total: ~{Math.ceil(totalEffort)}h</span>
+                  <div className="px-3 py-1.5 border-b border-[#e5e7eb] flex items-center justify-between">
+                    <span className="text-[9px] text-[#9aa3b2] uppercase tracking-wider">Per-file migration effort</span>
+                    <span className="text-[9px] text-[#9aa3b2]">total: ~{Math.ceil(totalEffort)}h</span>
                   </div>
                   {effortByFile.map(f => (
                     <button key={f.name} onClick={() => openTab(f.name)}
-                      className="flex items-center gap-2 px-3 py-2 hover:bg-purple-500/6 w-full text-left transition-colors group">
-                      <Clock className="h-3 w-3 text-purple-500/60 shrink-0" />
-                      <span className="text-[11px] text-neutral-300 truncate flex-1 group-hover:text-neutral-100">{f.shortName}</span>
-                      <span className="text-[10px] text-purple-400 font-mono shrink-0">~{Math.ceil(f.effort)}h</span>
-                      {f.topAlgo && <span className="text-[9px] text-neutral-600 truncate max-w-[90px] shrink-0">{f.topAlgo}</span>}
+                      className="flex items-center gap-2 px-3 py-2 hover:bg-teal-500/10 w-full text-left transition-colors group">
+                      <Clock className="h-3 w-3 text-teal-600/60 shrink-0" />
+                      <span className="text-[11px] text-[#334155] truncate flex-1 group-hover:text-[#0a0e1a]">{f.shortName}</span>
+                      <span className="text-[10px] text-teal-600 font-mono shrink-0">~{Math.ceil(f.effort)}h</span>
+                      {f.topAlgo && <span className="text-[9px] text-[#9aa3b2] truncate max-w-[90px] shrink-0">{f.topAlgo}</span>}
                     </button>
                   ))}
-                  <div className="px-3 py-2 border-t border-white/6 mt-0.5">
-                    <p className="text-[9px] text-neutral-700 leading-relaxed">
+                  <div className="px-3 py-2 border-t border-[#eceef2] mt-0.5">
+                    <p className="text-[9px] text-[#9aa3b2] leading-relaxed">
                       Effort estimated per-finding by the QuantaXscan scanner engine based on algorithm complexity and NIST migration path.
                     </p>
                   </div>
@@ -1992,7 +2150,7 @@ function SummaryBar({ tabFindings, tabs, setActiveTabId }: {
 
       {/* File count */}
       <div className="flex items-center gap-1 px-3 py-2 shrink-0 ml-auto">
-        <span className="text-neutral-600">{Object.keys(tabFindings).length} files</span>
+        <span className="text-[#9aa3b2]">{Object.keys(tabFindings).length} files</span>
       </div>
     </div>
   );
@@ -2412,7 +2570,7 @@ export function Scan() {
     if (!githubResult) return;
     const lines = [`# QUANTAXSCAN Report: ${githubResult.owner}/${githubResult.repo}`, `Risk: ${githubResult.riskScore}/100`, "", ...githubResult.findings.map(f => `- [${f.severity}] ${f.fileName}:${f.lineNumber} — ${f.algorithm}`)];
     const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/markdown" }));
-    Object.assign(document.createElement("a"), { href: url, download: `QUANTAXSCAN_${githubResult.repo}.md` }).click();
+    Object.assign(document.createElement("a"), { href: url, download: `QuantaXscan_${githubResult.repo}.md` }).click();
     URL.revokeObjectURL(url);
   };
 
@@ -2546,35 +2704,41 @@ export function Scan() {
   const lk = getLangKey(language);
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col bg-[#0a0a0f]">
+    <div className="h-[calc(100dvh-56px)] md:h-[calc(100dvh-64px)] overflow-hidden flex flex-col bg-[#ffffff]">
 
       {/* ── Upload multi-file scan overlay ──────────────────────────────────── */}
-      {spaceScanOverlay && (
-        <SpaceScanOverlay
-          current={spaceScanOverlay.current}
-          total={spaceScanOverlay.total}
-          currentFile={spaceScanOverlay.currentFile}
-          projectName={projectName}
-        />
-      )}
+      <AnimatePresence>
+        {spaceScanOverlay && (
+          <SpaceScanOverlay
+            key="upload-overlay"
+            current={spaceScanOverlay.current}
+            total={spaceScanOverlay.total}
+            currentFile={spaceScanOverlay.currentFile}
+            projectName={projectName}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ── GitHub scan overlay ─────────────────────────────────────────────── */}
-      {githubPhase === "scanning" && (
-        <SpaceScanOverlay
-          current={scannedFileCount}
-          total={fetchedRepo?.fetchedFiles?.length ?? Math.max(scannedFileCount + 1, 1)}
-          currentFile={scanningFileName}
-          projectName={fetchedRepo?.repo ?? githubUrl}
-        />
-      )}
+      <AnimatePresence>
+        {githubPhase === "scanning" && (
+          <SpaceScanOverlay
+            key="github-overlay"
+            current={scannedFileCount}
+            total={fetchedRepo?.fetchedFiles?.length ?? Math.max(scannedFileCount + 1, 1)}
+            currentFile={scanningFileName}
+            projectName={fetchedRepo?.repo ?? githubUrl}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ── Top toolbar ─────────────────────────────────────────────────────── */}
-      <div className="h-10 bg-[#111118] border-b border-white/8 flex items-center px-3 gap-2 shrink-0">
-        <div className="flex items-center bg-[#1a1a26] rounded p-0.5 gap-0.5 border border-white/8">
+      <div className="h-10 bg-[#f7f8fa] border-b border-[#e5e7eb] flex items-center px-3 gap-2 shrink-0">
+        <div className="flex items-center bg-[#f1f3f7] rounded p-0.5 gap-0.5 border border-[#e5e7eb]">
           {(["paste","github"] as const).map(m => (
             <button key={m} onClick={() => setInputMode(m)}
               className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium transition-colors",
-                inputMode === m ? "bg-[#4f8ef7]/15 text-[#4f8ef7] border border-[#4f8ef7]/30" : "text-[#475569] hover:text-[#f1f5f9]")}>
+                inputMode === m ? "bg-[#4f46e5]/15 text-[#4f46e5] border border-[#4f46e5]/30" : "text-[#6b7280] hover:text-[#0a0e1a]")}>
               {m === "paste" ? <><Upload className="h-3 w-3" /> Upload Code</> : <><Github className="h-3 w-3" /> GitHub URL</>}
             </button>
           ))}
@@ -2587,18 +2751,18 @@ export function Scan() {
 
         {inputMode === "paste" ? (
           <>
-            <div className="w-px h-5 bg-white/10 mx-1" />
+            <div className="w-px h-5 bg-[#eef0fe] mx-1" />
             {/* Upload button — always visible */}
             <button onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 h-7 px-2.5 bg-[#4f8ef7]/10 border border-[#4f8ef7]/30 rounded text-[11px] text-[#4f8ef7] hover:bg-[#4f8ef7]/20 transition-colors font-mono">
+              className="flex items-center gap-1.5 h-7 px-2.5 bg-[#4f46e5]/10 border border-[#4f46e5]/30 rounded text-[11px] text-[#4f46e5] hover:bg-[#4f46e5]/20 transition-colors font-mono">
               <FolderOpen className="h-3 w-3" /> Choose File
             </button>
             {hasCustomFile && (
               <>
                 <input value={projectName} onChange={e => setProjectName(e.target.value)}
-                  className="h-7 w-32 bg-[#0d1224] border border-[#4f8ef7]/15 rounded px-2 text-[12px] text-[#f1f5f9] focus:outline-none focus:border-[#4f8ef7]/40 font-mono" placeholder="project-name" />
+                  className="h-7 w-32 bg-[#ffffff] border border-[#4f46e5]/15 rounded px-2 text-[12px] text-[#0a0e1a] focus:outline-none focus:border-[#4f46e5]/40 font-mono" placeholder="project-name" />
                 <select value={language} onChange={e => handleLanguageChange(e.target.value)}
-                  className="h-7 bg-[#1a1a26] border border-white/10 rounded px-2 text-[12px] text-neutral-200 focus:outline-none cursor-pointer">
+                  className="h-7 bg-[#f1f3f7] border border-[#e5e7eb] rounded px-2 text-[12px] text-[#0a0e1a] focus:outline-none cursor-pointer">
                   {["java","python","go","javascript","typescript","rust","csharp","cpp","swift"].map(l => (
                     <option key={l} value={l}>{l === "csharp" ? "C#" : l === "cpp" ? "C++" : l.charAt(0).toUpperCase() + l.slice(1)}</option>
                   ))}
@@ -2608,7 +2772,7 @@ export function Scan() {
             <div className="flex-1" />
             {hasCustomFile && (
               <select value={mode} onChange={e => setMode(e.target.value as CreateScanBodyMode)}
-                className="h-7 bg-[#1a1a26] border border-white/10 rounded px-2 text-[12px] text-neutral-200 focus:outline-none cursor-pointer mr-2">
+                className="h-7 bg-[#f1f3f7] border border-[#e5e7eb] rounded px-2 text-[12px] text-[#0a0e1a] focus:outline-none cursor-pointer mr-2">
                 <option value="scan-only">Scan Only</option>
                 <option value="interactive">Interactive</option>
                 <option value="proactive">Proactive</option>
@@ -2618,36 +2782,36 @@ export function Scan() {
               className={cn(
                 "flex items-center gap-1.5 h-7 px-3 rounded border transition-colors",
                 hasCustomFile
-                  ? "border-[#4f8ef7] bg-transparent text-[#4f8ef7] hover:bg-[#4f8ef7]/10 shadow-[0_0_14px_rgba(0,230,57,0.3)]"
-                  : "border-white/10 bg-transparent text-neutral-600 cursor-not-allowed"
+                  ? "border-[#4f46e5] bg-[#4f46e5]/8 text-[#4f46e5] hover:bg-[#4f46e5]/15 shadow-sm"
+                  : "border-[#e5e7eb] bg-transparent text-[#9aa3b2] cursor-not-allowed"
               )}>
               {scanState === "scanning"
-                ? <><span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Scanning…</>
+                ? <><span className="h-3 w-3 border-2 border-[#4f46e5] border-t-transparent rounded-full animate-spin" /> Scanning…</>
                 : <><Play className="h-3 w-3" /> Run Scan</>}
             </button>
             {scanState === "complete" && pasteFindings.length > 0 && (
               <button onClick={() => void downloadAnnotatedZip()}
                 title="Download all files as ZIP with findings embedded as comments"
-                className="flex items-center gap-1 h-7 px-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded text-[11px] text-emerald-400 hover:bg-emerald-500/20 transition-colors font-mono ml-1">
+                className="flex items-center gap-1 h-7 px-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded text-[11px] text-emerald-600 hover:bg-emerald-500/20 transition-colors font-mono ml-1">
                 <Download className="h-3 w-3" /> Download ZIP
               </button>
             )}
           </>
         ) : (
           <>
-            <div className="w-px h-5 bg-white/10 mx-1" />
-            <Github className="h-3.5 w-3.5 text-neutral-500 shrink-0" />
+            <div className="w-px h-5 bg-[#eef0fe] mx-1" />
+            <Github className="h-3.5 w-3.5 text-[#6b7280] shrink-0" />
             <input value={githubUrl} onChange={e => setGithubUrl(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && (githubPhase === "idle" || githubPhase === "error")) fetchRepo(); }}
               placeholder="https://github.com/owner/repo"
-              className="flex-1 h-7 bg-[#0d1224] border border-[#4f8ef7]/15 rounded px-2 text-[12px] text-[#f1f5f9] focus:outline-none focus:border-[#4f8ef7]/40 font-mono" />
+              className="flex-1 h-7 bg-[#ffffff] border border-[#4f46e5]/15 rounded px-2 text-[12px] text-[#0a0e1a] focus:outline-none focus:border-[#4f46e5]/40 font-mono" />
 
             {/* Quick-pick repos — only in idle/error */}
             {(githubPhase === "idle" || githubPhase === "error") && (
               <div className="flex gap-1.5 ml-2 shrink-0">
                 {QUICK_REPOS.map(r => (
                   <button key={r.url} onClick={() => setGithubUrl(r.url)}
-                    className="h-7 px-2 bg-[#0d1224] border border-[#4f8ef7]/12 hover:border-[#4f8ef7]/40 rounded text-[10px] text-[#475569] hover:text-[#4f8ef7] transition-colors font-mono">
+                    className="h-7 px-2 bg-[#ffffff] border border-[#4f46e5]/12 hover:border-[#4f46e5]/40 rounded text-[10px] text-[#6b7280] hover:text-[#4f46e5] transition-colors font-mono">
                     {r.label.split("/")[1]}
                   </button>
                 ))}
@@ -2658,19 +2822,19 @@ export function Scan() {
             {githubPhase === "scanned" && (
               <div className="flex items-center gap-1.5 ml-2">
                 <button onClick={shareReport} disabled={sharing}
-                  className="flex items-center gap-1 h-7 px-2.5 bg-[#4f8ef7]/12 border border-[#4f8ef7]/30 rounded text-[11px] text-[#4f8ef7] hover:bg-[#4f8ef7]/20 transition-colors disabled:opacity-50">
-                  {sharing ? <span className="h-3 w-3 border-2 border-[#4f8ef7]/50 border-t-[#4f8ef7] rounded-full animate-spin" />
-                    : shareCopied ? <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  className="flex items-center gap-1 h-7 px-2.5 bg-[#4f46e5]/12 border border-[#4f46e5]/30 rounded text-[11px] text-[#4f46e5] hover:bg-[#4f46e5]/20 transition-colors disabled:opacity-50">
+                  {sharing ? <span className="h-3 w-3 border-2 border-[#4f46e5]/50 border-t-[#4f46e5] rounded-full animate-spin" />
+                    : shareCopied ? <CheckCircle2 className="h-3 w-3 text-emerald-600" />
                     : <ExternalLink className="h-3 w-3" />}
                   {shareCopied ? "Copied!" : "Share"}
                 </button>
                 <button onClick={downloadReport}
-                  className="flex items-center gap-1 h-7 px-2 bg-[#1a1a26] border border-white/10 rounded text-[11px] text-neutral-400 hover:text-neutral-200 transition-colors">
+                  className="flex items-center gap-1 h-7 px-2 bg-[#f1f3f7] border border-[#e5e7eb] rounded text-[11px] text-[#475569] hover:text-[#0a0e1a] transition-colors">
                   <Download className="h-3 w-3" /> Report
                 </button>
                 <button onClick={() => void downloadAnnotatedZip()}
                   title="Download all scanned files as ZIP with findings embedded as comments"
-                  className="flex items-center gap-1 h-7 px-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded text-[11px] text-emerald-400 hover:bg-emerald-500/20 transition-colors font-mono">
+                  className="flex items-center gap-1 h-7 px-2.5 bg-emerald-500/10 border border-emerald-500/30 rounded text-[11px] text-emerald-600 hover:bg-emerald-500/20 transition-colors font-mono">
                   <Download className="h-3 w-3" /> ZIP
                 </button>
               </div>
@@ -2679,7 +2843,7 @@ export function Scan() {
             {/* After fetched/scanned: Re-fetch */}
             {(githubPhase === "fetched" || githubPhase === "scanned") && (
               <button onClick={fetchRepo} title="Re-fetch repository"
-                className="flex items-center gap-1 h-7 px-2 bg-[#1a1a26] border border-white/10 rounded text-[11px] text-neutral-500 hover:text-neutral-200 transition-colors ml-2">
+                className="flex items-center gap-1 h-7 px-2 bg-[#f1f3f7] border border-[#e5e7eb] rounded text-[11px] text-[#6b7280] hover:text-[#0a0e1a] transition-colors ml-2">
                 <RefreshCw className="h-3 w-3" />
               </button>
             )}
@@ -2687,7 +2851,7 @@ export function Scan() {
             {/* FETCH REPO button — idle / error */}
             {(githubPhase === "idle" || githubPhase === "error") && (
               <button onClick={fetchRepo}
-                className="flex items-center gap-1.5 h-7 px-3 rounded border border-[#4f8ef7]/50 bg-transparent text-[#4f8ef7]/80 text-[12px] font-mono transition-colors hover:bg-[#4f8ef7]/10 hover:border-[#4f8ef7] ml-2">
+                className="flex items-center gap-1.5 h-7 px-3 rounded border border-[#4f46e5]/50 bg-transparent text-[#4f46e5]/80 text-[12px] font-mono transition-colors hover:bg-[#4f46e5]/10 hover:border-[#4f46e5] ml-2">
                 <Download className="h-3 w-3" /> Fetch Repo
               </button>
             )}
@@ -2695,15 +2859,15 @@ export function Scan() {
             {/* FETCHING spinner */}
             {githubPhase === "fetching" && (
               <button disabled
-                className="flex items-center gap-1.5 h-7 px-3 rounded border border-[#4f8ef7]/30 bg-transparent text-[#4f8ef7]/50 text-[12px] font-mono ml-2">
-                <span className="h-3 w-3 border-2 border-[#4f8ef7]/50 border-t-transparent rounded-full animate-spin" /> Fetching…
+                className="flex items-center gap-1.5 h-7 px-3 rounded border border-[#4f46e5]/30 bg-transparent text-[#4f46e5]/50 text-[12px] font-mono ml-2">
+                <span className="h-3 w-3 border-2 border-[#4f46e5]/50 border-t-transparent rounded-full animate-spin" /> Fetching…
               </button>
             )}
 
             {/* RUN SCAN — highlighted when fetched */}
             {githubPhase === "fetched" && (
               <button onClick={runGithubScan}
-                className="flex items-center gap-1.5 h-7 px-3 rounded border border-[#4f8ef7] bg-[#4f8ef7]/12 text-[#4f8ef7] text-[12px] font-mono font-bold transition-colors hover:bg-[#4f8ef7]/22 ml-2 shadow-[0_0_18px_rgba(79,142,247,0.35)]">
+                className="flex items-center gap-1.5 h-7 px-3 rounded border border-[#4f46e5] bg-[#4f46e5]/12 text-[#4f46e5] text-[12px] font-medium font-semibold transition-colors hover:bg-[#4f46e5]/20 ml-2 shadow-sm">
                 <Play className="h-3 w-3" /> Run Scan
               </button>
             )}
@@ -2711,15 +2875,15 @@ export function Scan() {
             {/* SCANNING spinner */}
             {githubPhase === "scanning" && (
               <button disabled
-                className="flex items-center gap-1.5 h-7 px-3 rounded border border-[#4f8ef7] bg-transparent text-[#4f8ef7] text-[12px] font-mono ml-2">
-                <span className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Scanning…
+                className="flex items-center gap-1.5 h-7 px-3 rounded border border-[#4f46e5] bg-transparent text-[#4f46e5] text-[12px] font-mono ml-2">
+                <span className="h-3 w-3 border-2 border-[#4f46e5] border-t-transparent rounded-full animate-spin" /> Scanning…
               </button>
             )}
 
             {/* RE-SCAN — after scanned */}
             {githubPhase === "scanned" && (
               <button onClick={runGithubScan}
-                className="flex items-center gap-1.5 h-7 px-3 rounded border border-[#4f8ef7] bg-transparent text-[#4f8ef7] text-[12px] font-mono transition-colors hover:bg-[#4f8ef7]/10 ml-2">
+                className="flex items-center gap-1.5 h-7 px-3 rounded border border-[#4f46e5] bg-transparent text-[#4f46e5] text-[12px] font-mono transition-colors hover:bg-[#4f46e5]/10 ml-2">
                 <RefreshCw className="h-3 w-3" /> Re-scan
               </button>
             )}
@@ -2744,21 +2908,21 @@ export function Scan() {
           {explorerOpen && (
             <motion.div key="explorer" initial={{ width: 0 }} animate={{ width: explorerWidth }} exit={{ width: 0 }}
               transition={{ duration: 0.18, ease: "easeInOut" }}
-              className="border-r border-white/8 bg-[#111118] flex flex-col overflow-hidden shrink-0 relative">
+              className="border-r border-[#e5e7eb] bg-[#f7f8fa] flex flex-col overflow-hidden shrink-0 relative">
               <div className="h-8 flex items-center justify-between px-3 shrink-0">
-                <span className="text-[10px] font-semibold tracking-widest text-neutral-500 uppercase">Explorer</span>
-                <button className="p-0.5 text-neutral-600 hover:text-neutral-300"><MoreHorizontal className="h-3.5 w-3.5" /></button>
+                <span className="text-[10px] font-semibold tracking-widest text-[#6b7280] uppercase">Explorer</span>
+                <button className="p-0.5 text-[#9aa3b2] hover:text-[#334155]"><MoreHorizontal className="h-3.5 w-3.5" /></button>
               </div>
               <ScrollArea className="flex-1">
                 {inputMode === "paste" ? (
                   <div className="pb-4">
                     {/* Root folder */}
                     <button onClick={() => toggleCollapse("root")}
-                      className="flex items-center gap-1 w-full px-2 py-1 text-[11px] font-semibold text-neutral-300 uppercase tracking-wider hover:bg-white/5">
-                      {collapsed.has("root") ? <ChevronRight className="h-3 w-3 text-neutral-600" /> : <ChevronDown className="h-3 w-3 text-neutral-600" />}
+                      className="flex items-center gap-1 w-full px-2 py-1 text-[11px] font-semibold text-[#334155] uppercase tracking-wider hover:bg-[#f1f3f7]">
+                      {collapsed.has("root") ? <ChevronRight className="h-3 w-3 text-[#9aa3b2]" /> : <ChevronDown className="h-3 w-3 text-[#9aa3b2]" />}
                       <span className="truncate flex-1 text-left">{projectName}</span>
                       {hasCustomFile && (
-                        <span className="text-[9px] text-neutral-600 font-mono ml-1 shrink-0">{tabs.length}</span>
+                        <span className="text-[9px] text-[#9aa3b2] font-mono ml-1 shrink-0">{tabs.length}</span>
                       )}
                     </button>
                     {!collapsed.has("root") && (
@@ -2779,9 +2943,9 @@ export function Scan() {
                           <>
                             {/* src/ folder */}
                             <button onClick={() => setSrcOpen(v => !v)}
-                              className="flex items-center gap-1.5 w-full py-[3px] text-[12px] text-neutral-400 hover:bg-white/5 hover:text-neutral-200 font-mono"
+                              className="flex items-center gap-1.5 w-full py-[3px] text-[12px] text-[#475569] hover:bg-[#f1f3f7] hover:text-[#0a0e1a] font-mono"
                               style={{ paddingLeft: 16 }}>
-                              {srcOpen ? <ChevronDown className="h-3 w-3 text-neutral-600 shrink-0" /> : <ChevronRight className="h-3 w-3 text-neutral-600 shrink-0" />}
+                              {srcOpen ? <ChevronDown className="h-3 w-3 text-[#9aa3b2] shrink-0" /> : <ChevronRight className="h-3 w-3 text-[#9aa3b2] shrink-0" />}
                               <FolderSvg open={srcOpen} />
                               <span>src</span>
                             </button>
@@ -2796,7 +2960,7 @@ export function Scan() {
                                   onClick={() => openFileInTab(sf.name, sf.content, fileLk, filePath)}
                                   className={cn(
                                     "flex items-center gap-1.5 w-full py-[3px] text-[12px] font-mono border-l-2 transition-colors",
-                                    isActive ? "bg-[#4f8ef7]/8 text-[#4f8ef7] border-[#4f8ef7]" : "text-[#475569] hover:text-[#f1f5f9] hover:bg-white/5 border-transparent",
+                                    isActive ? "bg-[#4f46e5]/8 text-[#4f46e5] border-[#4f46e5]" : "text-[#6b7280] hover:text-[#0a0e1a] hover:bg-[#f1f3f7] border-transparent",
                                   )}
                                   style={{ paddingLeft: 28 }}
                                 >
@@ -2819,7 +2983,7 @@ export function Scan() {
                                 <button key={rf.name}
                                   onClick={() => openFileInTab(rf.name, rf.content, flk, rf.name)}
                                   className={cn(
-                                    "flex items-center gap-1.5 w-full py-[3px] text-[12px] font-mono text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition-colors",
+                                    "flex items-center gap-1.5 w-full py-[3px] text-[12px] font-mono text-[#6b7280] hover:text-[#334155] hover:bg-[#f1f3f7] transition-colors",
                                   )}
                                   style={{ paddingLeft: 20 }}
                                 >
@@ -2841,44 +3005,44 @@ export function Scan() {
                         /* ── Rate-limit help panel ── */
                         <div className="space-y-3">
                           <div className="flex items-start gap-2 p-2.5 rounded-lg bg-yellow-500/8 border border-yellow-500/20">
-                            <AlertTriangle className="h-3.5 w-3.5 text-yellow-400 shrink-0 mt-0.5" />
+                            <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
                             <div className="min-w-0">
-                              <p className="text-[11px] text-yellow-300 font-semibold mb-1">GitHub API rate limit reached</p>
-                              <p className="text-[10px] text-yellow-400/70 leading-relaxed">
+                              <p className="text-[11px] text-amber-700 font-semibold mb-1">GitHub API rate limit reached</p>
+                              <p className="text-[10px] text-amber-600/70 leading-relaxed">
                                 The GitHub API quota for this server's IP is temporarily exhausted.
                               </p>
                               {rateLimitResetAt && (
-                                <p className="text-[10px] text-yellow-400/90 font-mono mt-1.5">
+                                <p className="text-[10px] text-amber-600/90 font-mono mt-1.5">
                                   Resets at {new Date(rateLimitResetAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                                   {" "}({Math.max(1, Math.ceil((rateLimitResetAt - Date.now()) / 60000))} min)
                                 </p>
                               )}
                             </div>
                           </div>
-                          <div className="p-2.5 rounded-lg bg-[#4f8ef7]/6 border border-[#4f8ef7]/15 space-y-2">
-                            <p className="text-[10px] text-[#4f8ef7] font-semibold">Alternative: upload a .zip archive</p>
-                            <p className="text-[10px] text-neutral-400 leading-relaxed">
-                              Download a ZIP of the repo from GitHub and use <span className="text-neutral-200">Upload Code</span> — no API limits apply.
+                          <div className="p-2.5 rounded-lg bg-[#4f46e5]/6 border border-[#4f46e5]/15 space-y-2">
+                            <p className="text-[10px] text-[#4f46e5] font-semibold">Alternative: upload a .zip archive</p>
+                            <p className="text-[10px] text-[#475569] leading-relaxed">
+                              Download a ZIP of the repo from GitHub and use <span className="text-[#0a0e1a]">Upload Code</span> — no API limits apply.
                             </p>
                           </div>
                           <div className="p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/15 space-y-2">
-                            <p className="text-[10px] text-emerald-400 font-semibold">Or add a GitHub token (5000 req/hr)</p>
-                            <ol className="text-[10px] text-neutral-400 space-y-1.5 leading-relaxed list-none">
-                              <li className="flex gap-1.5"><span className="text-emerald-400 shrink-0 font-mono">1.</span>Go to <span className="text-emerald-400">github.com → Settings</span></li>
-                              <li className="flex gap-1.5"><span className="text-emerald-400 shrink-0 font-mono">2.</span>Developer settings → Personal access tokens → Classic</li>
-                              <li className="flex gap-1.5"><span className="text-emerald-400 shrink-0 font-mono">3.</span>Generate new token — no scopes needed for public repos</li>
-                              <li className="flex gap-1.5"><span className="text-emerald-400 shrink-0 font-mono">4.</span>Set <code className="bg-black/40 px-1 rounded text-[9px] font-mono text-emerald-300">GITHUB_TOKEN</code> as an environment variable</li>
+                            <p className="text-[10px] text-emerald-600 font-semibold">Or add a GitHub token (5000 req/hr)</p>
+                            <ol className="text-[10px] text-[#475569] space-y-1.5 leading-relaxed list-none">
+                              <li className="flex gap-1.5"><span className="text-emerald-600 shrink-0 font-mono">1.</span>Go to <span className="text-emerald-600">github.com → Settings</span></li>
+                              <li className="flex gap-1.5"><span className="text-emerald-600 shrink-0 font-mono">2.</span>Developer settings → Personal access tokens → Classic</li>
+                              <li className="flex gap-1.5"><span className="text-emerald-600 shrink-0 font-mono">3.</span>Generate new token — no scopes needed for public repos</li>
+                              <li className="flex gap-1.5"><span className="text-emerald-600 shrink-0 font-mono">4.</span>Set <code className="bg-[#f1f3f7] px-1 rounded text-[9px] font-mono text-emerald-600">GITHUB_TOKEN</code> as an environment variable</li>
                             </ol>
                             <a href="https://github.com/settings/tokens/new" target="_blank" rel="noreferrer"
-                              className="flex items-center gap-1 text-[10px] text-emerald-400 hover:underline mt-1">
+                              className="flex items-center gap-1 text-[10px] text-emerald-600 hover:underline mt-1">
                               <ExternalLink className="h-3 w-3" /> Open GitHub token page
                             </a>
                           </div>
                           <div className="space-y-1 pt-1">
-                            <p className="text-[10px] text-neutral-600 uppercase tracking-wider mb-1">Quick repos to try later</p>
+                            <p className="text-[10px] text-[#9aa3b2] uppercase tracking-wider mb-1">Quick repos to try later</p>
                             {QUICK_REPOS.map(r => (
                               <button key={r.url} onClick={() => { setGithubUrl(r.url); setRateLimitHit(false); }}
-                                className="w-full text-left px-2 py-1.5 rounded text-[11px] text-neutral-500 hover:text-neutral-300 hover:bg-white/5 font-mono transition-colors">
+                                className="w-full text-left px-2 py-1.5 rounded text-[11px] text-[#6b7280] hover:text-[#334155] hover:bg-[#f1f3f7] font-mono transition-colors">
                                 {r.label}
                               </button>
                             ))}
@@ -2887,14 +3051,14 @@ export function Scan() {
                       ) : (
                         /* ── Normal idle / error state ── */
                         <div className="text-center">
-                          <Github className="h-8 w-8 text-neutral-700 mx-auto mb-3" />
-                          <p className="text-[11px] text-neutral-600">
+                          <Github className="h-8 w-8 text-[#9aa3b2] mx-auto mb-3" />
+                          <p className="text-[11px] text-[#9aa3b2]">
                             {githubPhase === "error" ? "Fetch failed — check the URL and try again." : "Enter a GitHub URL above to fetch a repository."}
                           </p>
                           <div className="mt-4 space-y-1">
                             {QUICK_REPOS.map(r => (
                               <button key={r.url} onClick={() => setGithubUrl(r.url)}
-                                className="w-full text-left px-2 py-1.5 rounded text-[11px] text-neutral-500 hover:text-neutral-300 hover:bg-white/5 font-mono transition-colors">
+                                className="w-full text-left px-2 py-1.5 rounded text-[11px] text-[#6b7280] hover:text-[#334155] hover:bg-[#f1f3f7] font-mono transition-colors">
                                 {r.label}
                               </button>
                             ))}
@@ -2904,17 +3068,17 @@ export function Scan() {
                     </div>
                   ) : githubPhase === "fetching" ? (
                     <div className="px-3 py-8 text-center">
-                      <div className="h-6 w-6 border-2 border-[#4f8ef7] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                      <p className="text-[11px] text-neutral-500">{fetchProgress}</p>
+                      <div className="h-6 w-6 border-2 border-[#4f46e5] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                      <p className="text-[11px] text-[#6b7280]">{fetchProgress}</p>
                     </div>
                   ) : githubPhase === "scanning" ? (
                     /* While scanning, keep showing the tree with a scanning overlay badge */
                     <div className="pb-4">
-                      <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold text-neutral-300 uppercase tracking-wider">
-                        <ChevronDown className="h-3 w-3 text-neutral-600" />
+                      <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold text-[#334155] uppercase tracking-wider">
+                        <ChevronDown className="h-3 w-3 text-[#9aa3b2]" />
                         <span>{fetchedRepo?.repo}</span>
-                        <span className="ml-auto text-[9px] text-[#4f8ef7] font-mono flex items-center gap-1">
-                          <span className="h-1.5 w-1.5 rounded-full bg-[#4f8ef7] animate-pulse" /> scanning
+                        <span className="ml-auto text-[9px] text-[#4f46e5] font-mono flex items-center gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#4f46e5] animate-pulse" /> scanning
                         </span>
                       </div>
                       {fullRepoTree.map(node => (
@@ -2927,21 +3091,21 @@ export function Scan() {
                   ) : (fetchedRepo && (githubPhase === "fetched" || githubPhase === "scanned")) ? (
                     <div className="pb-4">
                       {/* Repo header */}
-                      <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold text-neutral-300 uppercase tracking-wider">
-                        <ChevronDown className="h-3 w-3 text-neutral-600" />
+                      <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold text-[#334155] uppercase tracking-wider">
+                        <ChevronDown className="h-3 w-3 text-[#9aa3b2]" />
                         <span>{fetchedRepo.repo}</span>
                         {githubPhase === "fetched" && (
-                          <span className="ml-auto text-[9px] text-emerald-400 font-mono">{fetchedRepo.fetchedFiles.length} files ready</span>
+                          <span className="ml-auto text-[9px] text-emerald-600 font-mono">{fetchedRepo.fetchedFiles.length} files ready</span>
                         )}
                         {githubPhase === "scanned" && githubResult && (
-                          <span className="ml-auto text-[9px] text-red-400 font-mono">{githubResult.criticalCount}C {githubResult.alertCount}A</span>
+                          <span className="ml-auto text-[9px] text-red-600 font-mono">{githubResult.criticalCount}C {githubResult.alertCount}A</span>
                         )}
                       </div>
                       {/* CTA banner when fetched but not yet scanned */}
                       {githubPhase === "fetched" && (
-                        <div className="mx-2 mb-2 px-2 py-1.5 rounded bg-[#4f8ef7]/8 border border-[#4f8ef7]/20 flex items-center gap-2">
-                          <Play className="h-3 w-3 text-[#4f8ef7] shrink-0" />
-                          <span className="text-[10px] text-[#4f8ef7]">Click <strong>Run Scan</strong> to analyse</span>
+                        <div className="mx-2 mb-2 px-2 py-1.5 rounded bg-[#4f46e5]/8 border border-[#4f46e5]/20 flex items-center gap-2">
+                          <Play className="h-3 w-3 text-[#4f46e5] shrink-0" />
+                          <span className="text-[10px] text-[#4f46e5]">Click <strong>Run Scan</strong> to analyse</span>
                         </div>
                       )}
                       {fullRepoTree.map(node => (
@@ -2964,7 +3128,7 @@ export function Scan() {
                 )}
               </ScrollArea>
               <div onMouseDown={onExplorerResizeMD}
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#4f8ef7]/30 transition-colors z-20" />
+                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#4f46e5]/30 transition-colors z-20" />
             </motion.div>
           )}
         </AnimatePresence>
@@ -2976,32 +3140,32 @@ export function Scan() {
               /* ── Upload drop zone — <label> makes entire area clickable natively ── */
               <label
                 htmlFor={zipExtracting ? undefined : "file-upload-input"}
-                className="flex-1 flex items-center justify-center bg-[#0a0a0f] select-none"
+                className="flex-1 flex items-center justify-center bg-[#ffffff] select-none"
                 style={{ cursor: zipExtracting ? "default" : "pointer" }}
                 onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
                 onDrop={e => { e.stopPropagation(); handleEditorDrop(e); }}
               >
                 {zipExtracting && zipStats ? (
                   /* ── Extraction progress state ── */
-                  <div className="border-2 border-dashed border-[#4f8ef7]/40 rounded-2xl px-16 py-14 flex flex-col items-center gap-5 mx-8 text-center min-w-[380px]">
-                    <div className="h-16 w-16 rounded-2xl bg-[#4f8ef7]/10 border border-[#4f8ef7]/30 flex items-center justify-center">
-                      <span className="h-7 w-7 border-[3px] border-[#4f8ef7] border-t-transparent rounded-full animate-spin block" />
+                  <div className="border-2 border-dashed border-[#4f46e5]/40 rounded-2xl px-16 py-14 flex flex-col items-center gap-5 mx-8 text-center min-w-[380px]">
+                    <div className="h-16 w-16 rounded-2xl bg-[#4f46e5]/10 border border-[#4f46e5]/30 flex items-center justify-center">
+                      <span className="h-7 w-7 border-[3px] border-[#4f46e5] border-t-transparent rounded-full animate-spin block" />
                     </div>
                     <div>
-                      <p className="text-[15px] text-neutral-200 font-semibold mb-1">Extracting {zipStats.name}</p>
-                      <p className="text-[12px] text-neutral-500">
+                      <p className="text-[15px] text-[#0a0e1a] font-semibold mb-1">Extracting {zipStats.name}</p>
+                      <p className="text-[12px] text-[#6b7280]">
                         {zipStats.total === 0 ? "Reading zip…" : `${zipStats.loaded} / ${zipStats.total} files`}
                       </p>
                     </div>
                     {zipStats.total > 0 && (
                       <div className="w-full max-w-xs">
-                        <div className="h-1.5 bg-white/8 rounded-full overflow-hidden">
+                        <div className="h-1.5 bg-[#eef0fe] rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-[#4f8ef7] rounded-full transition-all duration-200"
+                            className="h-full bg-[#4f46e5] rounded-full transition-all duration-200"
                             style={{ width: `${Math.round((zipStats.loaded / zipStats.total) * 100)}%` }}
                           />
                         </div>
-                        <p className="text-[10px] text-neutral-700 mt-1.5 font-mono text-right">
+                        <p className="text-[10px] text-[#9aa3b2] mt-1.5 font-mono text-right">
                           {Math.round((zipStats.loaded / zipStats.total) * 100)}%
                         </p>
                       </div>
@@ -3009,29 +3173,29 @@ export function Scan() {
                   </div>
                 ) : (
                   /* ── Idle drop zone ── */
-                  <div className="border-2 border-dashed border-[#4f8ef7]/25 hover:border-[#4f8ef7]/55 transition-colors rounded-2xl px-16 py-14 flex flex-col items-center gap-5 mx-8 text-center">
-                    <div className="h-16 w-16 rounded-2xl bg-[#4f8ef7]/8 border border-[#4f8ef7]/20 flex items-center justify-center">
-                      <Upload className="h-8 w-8 text-[#4f8ef7]/60" />
+                  <div className="border-2 border-dashed border-[#4f46e5]/25 hover:border-[#4f46e5]/55 transition-colors rounded-2xl px-16 py-14 flex flex-col items-center gap-5 mx-8 text-center">
+                    <div className="h-16 w-16 rounded-2xl bg-[#4f46e5]/8 border border-[#4f46e5]/20 flex items-center justify-center">
+                      <Upload className="h-8 w-8 text-[#4f46e5]/60" />
                     </div>
                     <div>
-                      <p className="text-[15px] text-neutral-200 font-semibold mb-1">Click to choose a file, or drag &amp; drop</p>
-                      <p className="text-[12px] text-neutral-500">Supports code files and .zip archives</p>
+                      <p className="text-[15px] text-[#0a0e1a] font-semibold mb-1">Click to choose a file, or drag &amp; drop</p>
+                      <p className="text-[12px] text-[#6b7280]">Supports code files and .zip archives</p>
                     </div>
                     {/* File type badges */}
                     <div className="flex flex-col items-center gap-2">
                       <div className="flex flex-wrap justify-center gap-1.5 max-w-sm">
                         {[".py",".js",".ts",".java",".go",".rs",".cpp",".c",".rb",".php",".kt",".swift"].map(ext => (
-                          <span key={ext} className="px-2 py-0.5 bg-white/5 border border-white/8 rounded text-[10px] text-neutral-500 font-mono">{ext}</span>
+                          <span key={ext} className="px-2 py-0.5 bg-[#f1f3f7] border border-[#e5e7eb] rounded text-[10px] text-[#6b7280] font-mono">{ext}</span>
                         ))}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
-                        <div className="h-px w-12 bg-white/10" />
-                        <span className="px-2.5 py-0.5 bg-[#4f8ef7]/10 border border-[#4f8ef7]/30 rounded text-[10px] text-[#4f8ef7] font-mono font-semibold">.zip</span>
-                        <span className="text-[10px] text-neutral-600">GitHub download &amp; scan</span>
-                        <div className="h-px w-12 bg-white/10" />
+                        <div className="h-px w-12 bg-[#eef0fe]" />
+                        <span className="px-2.5 py-0.5 bg-[#4f46e5]/10 border border-[#4f46e5]/30 rounded text-[10px] text-[#4f46e5] font-mono font-semibold">.zip</span>
+                        <span className="text-[10px] text-[#9aa3b2]">GitHub download &amp; scan</span>
+                        <div className="h-px w-12 bg-[#eef0fe]" />
                       </div>
                     </div>
-                    <span className="flex items-center gap-2 px-6 py-2.5 bg-[#4f8ef7]/15 border border-[#4f8ef7]/50 rounded-lg text-[13px] text-[#4f8ef7] font-semibold pointer-events-none">
+                    <span className="flex items-center gap-2 px-6 py-2.5 bg-[#4f46e5]/15 border border-[#4f46e5]/50 rounded-lg text-[13px] text-[#4f46e5] font-semibold pointer-events-none">
                       <FolderOpen className="h-4 w-4" /> Browse Files
                     </span>
                   </div>
@@ -3070,14 +3234,14 @@ export function Scan() {
             githubPhase === "fetched" && previewFile ? (
               /* PHASE: fetched — show file preview, no findings */
               <>
-                <div className="flex items-end h-9 bg-[#111118] border-b border-white/8 overflow-x-auto shrink-0">
+                <div className="flex items-end h-9 bg-[#f7f8fa] border-b border-[#e5e7eb] overflow-x-auto shrink-0">
                   {fetchedRepo?.fetchedFiles.slice(0, 8).map(f => (
                     <button key={f.path} onClick={() => setSelectedFullPath(f.path)}
                       className={cn(
-                        "flex items-center gap-1.5 h-9 px-3 text-[12px] font-mono border-r border-white/8 shrink-0 transition-colors",
+                        "flex items-center gap-1.5 h-9 px-3 text-[12px] font-mono border-r border-[#e5e7eb] shrink-0 transition-colors",
                         f.path === selectedFullPath
-                          ? "bg-[#0d1224] text-[#4f8ef7] border-t-2 border-t-[#4f8ef7]"
-                          : "bg-[#050810] text-[#475569] hover:text-[#f1f5f9]",
+                          ? "bg-[#ffffff] text-[#4f46e5] border-t-2 border-t-[#4f46e5]"
+                          : "bg-[#f1f3f7] text-[#6b7280] hover:text-[#0a0e1a]",
                       )}>
                       <FileIcon ext={getExt(f.path)} />
                       <span>{f.path.split("/").pop()}</span>
@@ -3094,17 +3258,17 @@ export function Scan() {
               </>
             ) : githubPhase === "scanning" ? (
               /* PHASE: scanning — animated per-file progress list */
-              <div className="flex-1 flex flex-col overflow-hidden bg-[#0a0a0f]">
+              <div className="flex-1 flex flex-col overflow-hidden bg-[#ffffff]">
                 {/* Progress header */}
-                <div className="shrink-0 px-5 py-3 border-b border-white/8 bg-[#111118] flex items-center gap-3">
-                  <span className="h-4 w-4 border-2 border-[#4f8ef7] border-t-transparent rounded-full animate-spin shrink-0" />
+                <div className="shrink-0 px-5 py-3 border-b border-[#e5e7eb] bg-[#f7f8fa] flex items-center gap-3">
+                  <span className="h-4 w-4 border-2 border-[#4f46e5] border-t-transparent rounded-full animate-spin shrink-0" />
                   <div className="flex-1">
                     <div className="flex justify-between text-[10px] font-mono mb-1">
-                      <span className="text-[#4f8ef7]">Scanning {fetchedRepo?.repo ?? "repo"}…</span>
-                      <span className="text-neutral-500">{scannedFileCount}/{fetchedRepo?.fetchedFiles.length ?? 0} files</span>
+                      <span className="text-[#4f46e5]">Scanning {fetchedRepo?.repo ?? "repo"}…</span>
+                      <span className="text-[#6b7280]">{scannedFileCount}/{fetchedRepo?.fetchedFiles.length ?? 0} files</span>
                     </div>
-                    <div className="h-1 bg-white/8 rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-[#4f8ef7] to-[#7c3aed] rounded-full transition-all duration-200"
+                    <div className="h-1 bg-[#eef0fe] rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-[#4f46e5] to-[#4338ca] rounded-full transition-all duration-200"
                         style={{ width: `${fetchedRepo?.fetchedFiles.length ? Math.round((scannedFileCount / fetchedRepo.fetchedFiles.length) * 100) : 0}%` }} />
                     </div>
                   </div>
@@ -3119,19 +3283,19 @@ export function Scan() {
                     return (
                       <div key={f.path} className={cn(
                         "flex items-center gap-2.5 px-3 py-1.5 rounded text-[12px] font-mono transition-all duration-150",
-                        active ? "bg-[#4f8ef7]/10 text-[#4f8ef7]"
-                          : done  ? "text-neutral-500"
-                          : "text-neutral-700"
+                        active ? "bg-[#4f46e5]/10 text-[#4f46e5]"
+                          : done  ? "text-[#6b7280]"
+                          : "text-[#9aa3b2]"
                       )}>
                         {done
-                          ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                          ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
                           : active
-                            ? <span className="h-3.5 w-3.5 border-2 border-[#4f8ef7] border-t-transparent rounded-full animate-spin shrink-0" />
-                            : <div className="h-3.5 w-3.5 rounded-full border border-white/12 shrink-0" />}
-                        <span className="text-neutral-600 shrink-0 hidden sm:inline">{dir}</span>
+                            ? <span className="h-3.5 w-3.5 border-2 border-[#4f46e5] border-t-transparent rounded-full animate-spin shrink-0" />
+                            : <div className="h-3.5 w-3.5 rounded-full border border-[#e5e7eb] shrink-0" />}
+                        <span className="text-[#9aa3b2] shrink-0 hidden sm:inline">{dir}</span>
                         <span className="truncate">{fname}</span>
-                        {done && <span className="ml-auto text-[10px] text-neutral-600 shrink-0">{f.lines}L</span>}
-                        {active && <span className="ml-auto text-[10px] text-[#4f8ef7]/70 shrink-0 animate-pulse">analysing…</span>}
+                        {done && <span className="ml-auto text-[10px] text-[#9aa3b2] shrink-0">{f.lines}L</span>}
+                        {active && <span className="ml-auto text-[10px] text-[#4f46e5]/70 shrink-0 animate-pulse">analysing…</span>}
                       </div>
                     );
                   })}
@@ -3142,36 +3306,36 @@ export function Scan() {
               <>
                 {/* Scan summary strip */}
                 {githubResult && (
-                  <div className="shrink-0 px-4 py-2 bg-[#111118] border-b border-white/8 flex items-center gap-4 flex-wrap">
+                  <div className="shrink-0 px-4 py-2 bg-[#f7f8fa] border-b border-[#e5e7eb] flex items-center gap-4 flex-wrap">
                     <div className={cn(
                       "flex items-center gap-1.5 px-2 py-0.5 rounded font-mono text-[11px] font-bold",
-                      githubResult.riskScore >= 70 ? "bg-red-500/15 text-red-400 border border-red-500/25"
-                        : githubResult.riskScore >= 40 ? "bg-yellow-500/15 text-yellow-400 border border-yellow-500/25"
-                        : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25"
+                      githubResult.riskScore >= 70 ? "bg-red-500/15 text-red-600 border border-red-500/25"
+                        : githubResult.riskScore >= 40 ? "bg-yellow-500/15 text-amber-600 border border-yellow-500/25"
+                        : "bg-emerald-500/15 text-emerald-600 border border-emerald-500/25"
                     )}>
                       <Shield className="h-3 w-3" />
                       Risk {githubResult.riskScore}/100
                     </div>
-                    <span className="text-[11px] text-red-400 font-mono">{githubResult.criticalCount} critical</span>
-                    <span className="text-[11px] text-yellow-400 font-mono">{githubResult.alertCount} alerts</span>
-                    <span className="text-[11px] text-emerald-400 font-mono">{githubResult.cleanCount} clean</span>
-                    <span className="text-[11px] text-neutral-600 font-mono">{githubResult.totalFiles} files · {githubResult.totalLines.toLocaleString()} lines</span>
-                    <span className="text-[10px] text-neutral-700 font-mono ml-auto hidden sm:block">↓ click a file in the explorer to view findings</span>
+                    <span className="text-[11px] text-red-600 font-mono">{githubResult.criticalCount} critical</span>
+                    <span className="text-[11px] text-amber-600 font-mono">{githubResult.alertCount} alerts</span>
+                    <span className="text-[11px] text-emerald-600 font-mono">{githubResult.cleanCount} clean</span>
+                    <span className="text-[11px] text-[#9aa3b2] font-mono">{githubResult.totalFiles} files · {githubResult.totalLines.toLocaleString()} lines</span>
+                    <span className="text-[10px] text-[#9aa3b2] font-mono ml-auto hidden sm:block">↓ click a file in the explorer to view findings</span>
                   </div>
                 )}
                 {/* File tabs */}
-                <div className="flex items-end h-9 bg-[#111118] border-b border-white/8 overflow-x-auto shrink-0">
+                <div className="flex items-end h-9 bg-[#f7f8fa] border-b border-[#e5e7eb] overflow-x-auto shrink-0">
                   {(githubResult?.fileResults ?? []).slice(0, 8).map(f => (
                     <button key={f.path} onClick={() => { setSelectedFile(f); setSelectedFullPath(f.path); }}
                       className={cn(
-                        "flex items-center gap-1.5 h-9 px-3 text-[12px] font-mono border-r border-white/8 shrink-0 transition-colors",
+                        "flex items-center gap-1.5 h-9 px-3 text-[12px] font-mono border-r border-[#e5e7eb] shrink-0 transition-colors",
                         f.path === (selectedFile?.path ?? "")
-                          ? "bg-[#0d1224] text-[#4f8ef7] border-t-2 border-t-[#4f8ef7]"
-                          : "bg-[#050810] text-[#475569] hover:text-[#f1f5f9]",
+                          ? "bg-[#ffffff] text-[#4f46e5] border-t-2 border-t-[#4f46e5]"
+                          : "bg-[#f1f3f7] text-[#6b7280] hover:text-[#0a0e1a]",
                       )}>
                       <FileIcon ext={getExt(f.path)} />
                       <span>{f.path.split("/").pop()}</span>
-                      {f.criticalCount > 0 && <span className="text-[9px] text-red-400 ml-1">{f.criticalCount}C</span>}
+                      {f.criticalCount > 0 && <span className="text-[9px] text-red-600 ml-1">{f.criticalCount}C</span>}
                     </button>
                   ))}
                 </div>
@@ -3185,7 +3349,7 @@ export function Scan() {
               </>
             ) : (
               /* idle / fetching / error / no selection */
-              <div className="flex-1 flex items-center justify-center text-neutral-700 flex-col gap-3">
+              <div className="flex-1 flex items-center justify-center text-[#9aa3b2] flex-col gap-3">
                 <Shield className="h-12 w-12 opacity-30" />
                 <span className="text-sm font-mono">
                   {githubPhase === "fetching" ? fetchProgress
@@ -3213,32 +3377,32 @@ export function Scan() {
       </div>
 
       {/* ── Status bar ──────────────────────────────────────────────────────── */}
-      <div className="h-6 bg-[#050810] border-t border-[#4f8ef7]/12 flex items-center px-3 gap-4 shrink-0">
-        <div className="flex items-center gap-1.5 text-[10px] text-[#4f8ef7]/60 font-mono">
+      <div className="h-6 bg-[#f1f3f7] border-t border-[#4f46e5]/12 flex items-center px-3 gap-4 shrink-0">
+        <div className="flex items-center gap-1.5 text-[10px] text-[#4f46e5]/60 font-mono">
           <Files className="h-3 w-3" /> {activeTab?.label ?? "untitled"}
         </div>
         {scanState === "complete" && pasteFindings.length > 0 && (
           <div className="flex items-center gap-3 text-[10px] font-mono">
-            <span className="text-red-300 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />{pasteFindings.filter(f => f.severity === "critical").length} critical</span>
-            <span className="text-yellow-300 flex items-center gap-1"><Zap className="h-3 w-3" />{pasteFindings.filter(f => f.severity === "alert").length} alerts</span>
+            <span className="text-red-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />{pasteFindings.filter(f => f.severity === "critical").length} critical</span>
+            <span className="text-amber-700 flex items-center gap-1"><Zap className="h-3 w-3" />{pasteFindings.filter(f => f.severity === "alert").length} alerts</span>
           </div>
         )}
         {githubPhase === "fetched" && fetchedRepo && (
           <div className="flex items-center gap-3 text-[10px] font-mono">
-            <span className="text-emerald-400">{fetchedRepo.repo}</span>
-            <span className="text-[#475569]">{fetchedRepo.fetchedFiles.length} files fetched · {fetchedRepo.totalNodes} total</span>
-            {fetchedRepo.truncated && <span className="text-yellow-500">truncated</span>}
+            <span className="text-emerald-600">{fetchedRepo.repo}</span>
+            <span className="text-[#6b7280]">{fetchedRepo.fetchedFiles.length} files fetched · {fetchedRepo.totalNodes} total</span>
+            {fetchedRepo.truncated && <span className="text-amber-600">truncated</span>}
           </div>
         )}
         {githubPhase === "scanned" && githubResult && (
           <div className="flex items-center gap-3 text-[10px] font-mono">
-            <span className="text-red-300">{githubResult.criticalCount} critical</span>
-            <span className="text-yellow-300">{githubResult.alertCount} alerts</span>
-            <span className="text-[#475569]">{githubResult.totalFiles} files · {githubResult.totalLines.toLocaleString()} lines</span>
+            <span className="text-red-600">{githubResult.criticalCount} critical</span>
+            <span className="text-amber-700">{githubResult.alertCount} alerts</span>
+            <span className="text-[#6b7280]">{githubResult.totalFiles} files · {githubResult.totalLines.toLocaleString()} lines</span>
           </div>
         )}
         <div className="flex-1" />
-        <div className="flex items-center gap-3 text-[10px] text-[#475569] font-mono">
+        <div className="flex items-center gap-3 text-[10px] text-[#6b7280] font-mono">
           <span>{LANG_NAMES[langKey] ?? langKey.toUpperCase()}</span>
           <span>UTF-8</span>
           <span>● Local</span>

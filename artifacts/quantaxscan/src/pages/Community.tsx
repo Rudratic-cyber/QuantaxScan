@@ -129,16 +129,16 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const TYPE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  article: { bg: "rgba(79, 142, 247, 0.1)", border: "1px solid rgba(79, 142, 247, 0.3)", text: "#4f8ef7" },
-  question: { bg: "rgba(251, 191, 36, 0.1)", border: "1px solid rgba(251, 191, 36, 0.3)", text: "#fbbf24" },
-  "migration-story": { bg: "rgba(52, 211, 153, 0.1)", border: "1px solid rgba(52, 211, 153, 0.3)", text: "#34d399" },
+  article: { bg: "#eef0fe", border: "1px solid rgba(79, 70, 229, 0.25)", text: "#4f46e5" },
+  question: { bg: "#fffbeb", border: "1px solid rgba(217, 119, 6, 0.25)", text: "#d97706" },
+  "migration-story": { bg: "#ecfdf5", border: "1px solid rgba(5, 150, 105, 0.25)", text: "#059669" },
 };
 
-const BADGE_STYLES: Record<string, { color: string; glow: string }> = {
-  gold: { color: "#FFD700", glow: "rgba(255,215,0,0.4)" },
-  silver: { color: "#C0C0C0", glow: "rgba(192,192,192,0.3)" },
-  bronze: { color: "#CD7F32", glow: "rgba(205,127,50,0.3)" },
-  "quantum-guardian": { color: "#4f8ef7", glow: "rgba(79,142,247,0.5)" },
+const BADGE_STYLES: Record<string, { color: string; bg: string }> = {
+  gold: { color: "#d97706", bg: "#fffbeb" },
+  silver: { color: "#64748b", bg: "#f1f3f7" },
+  bronze: { color: "#b45309", bg: "#fef7ed" },
+  "quantum-guardian": { color: "#4f46e5", bg: "#eef0fe" },
 };
 
 export function Community() {
@@ -177,20 +177,20 @@ export function Community() {
     }) : [];
 
   return (
-    <div className="flex-1 bg-gradient-to-br from-[#0a0e1f] via-[#050810] to-[#0a0e1f] overflow-y-auto relative">
+    <div className="flex-1 bg-[#ffffff] overflow-y-auto relative">
       <div className="container mx-auto px-4 py-8 max-w-6xl">
 
         {/* Header */}
         <Reveal>
           <div className="flex items-center justify-between mb-6">
             <div>
-              <p className="text-[10px] font-mono text-[#00d9ff]/50 tracking-widest mb-1 uppercase">// collective_defense</p>
-              <h1 className="text-3xl font-bold text-[#f1f5f9] tracking-tight">Community</h1>
-              <p className="text-[#94a3b8] font-mono text-xs mt-1">Post questions, share migration stories, and learn from the community</p>
+              <p className="text-[11px] font-semibold text-[#4f46e5] tracking-widest mb-1 uppercase">Collective Defense</p>
+              <h1 className="text-3xl font-bold text-[#0a0e1a] tracking-tight">Community</h1>
+              <p className="text-[#475569] text-sm mt-1">Post questions, share migration stories, and learn from the community</p>
             </div>
             <button
               onClick={() => navigate("/community/create")}
-              className="inline-flex items-center gap-2 rounded-lg border border-[#00d9ff] bg-[#00d9ff]/10 px-5 py-2.5 text-sm font-mono font-bold text-[#00d9ff] shadow-[0_0_14px_rgba(0,217,255,0.2)] hover:bg-[#00d9ff]/18 hover:shadow-[0_0_24px_rgba(0,217,255,0.4)] transition-all"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#4f46e5] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#4338ca] transition-all"
             >
               <Plus className="h-4 w-4" /> Create Post
             </button>
@@ -204,17 +204,17 @@ export function Community() {
             <div className="flex-1">
               {/* Sort bar */}
               <Reveal delay={0.08}>
-                <div className="flex items-center gap-2 mb-5 pb-4 border-b border-white/6">
-                  <p className="text-[9px] font-mono text-[#475569] uppercase tracking-widest">Sort:</p>
+                <div className="flex items-center gap-2 mb-5 pb-4 border-b border-[#eceef2]">
+                  <p className="text-[10px] font-semibold text-[#6b7280] uppercase tracking-widest">Sort</p>
                   <div className="flex gap-2">
                     {SORT_OPTIONS.map(({ id, label, icon: Icon }) => (
                       <button
                         key={id}
                         onClick={() => setSortBy(id as "hot" | "new" | "top")}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono transition-colors ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                           sortBy === id
-                            ? "bg-[#00d9ff]/15 border border-[#00d9ff]/40 text-[#00d9ff]"
-                            : "border border-white/8 text-[#475569] hover:border-white/20 hover:text-[#f1f5f9]"
+                            ? "bg-[#eef0fe] border border-[#4f46e5]/25 text-[#4f46e5]"
+                            : "border border-[#e5e7eb] text-[#475569] hover:border-[#d8dce3] hover:text-[#0a0e1a]"
                         }`}
                       >
                         <Icon className="h-3 w-3" /> {label}
@@ -233,18 +233,17 @@ export function Community() {
                     <Reveal key={post.id} delay={0.04 * i}>
                       <motion.div
                         whileHover={{ y: -2 }}
-                        className="rounded-xl border border-white/8 bg-gradient-to-br from-[#0a0e1f] to-[#050810] hover:border-[#00d9ff]/20 transition-all overflow-hidden"
-                        style={{ boxShadow: "inset 0 0 15px rgba(0,217,255,0.04)" }}
+                        className="rounded-xl border border-[#e5e7eb] bg-white hover:border-[#4f46e5]/25 transition-all overflow-hidden"
+                        style={{ boxShadow: "0 8px 24px rgba(15,23,42,0.06)" }}
                       >
                         {/* Image box */}
                         {post.image && (
-                          <div className="relative h-48 overflow-hidden bg-black/40">
+                          <div className="relative h-48 overflow-hidden bg-[#f1f3f7]">
                             <img
                               src={post.image}
                               alt={post.title}
-                              className="w-full h-full object-cover opacity-80 hover:opacity-100 transition-opacity"
+                              className="w-full h-full object-cover opacity-95 hover:opacity-100 transition-opacity"
                             />
-                            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#050810]" />
                           </div>
                         )}
 
@@ -252,12 +251,12 @@ export function Community() {
                           {/* Header row: Type + Language + Web Info */}
                           <div className="flex flex-wrap items-center gap-2 mb-3">
                             {post.isWebArticle && (
-                              <span className="flex items-center gap-1 rounded px-2.5 py-1 text-[9px] font-mono uppercase tracking-widest font-semibold bg-[#00d9ff]/12 border border-[#00d9ff]/30 text-[#00d9ff]">
-                                <Globe className="h-3 w-3" /> web info
+                              <span className="flex items-center gap-1 rounded px-2.5 py-1 text-[9px] uppercase tracking-widest font-semibold bg-[#eef0fe] border border-[#4f46e5]/25 text-[#4f46e5]">
+                                <Globe className="h-3 w-3" /> Web Info
                               </span>
                             )}
                             <span
-                              className="rounded px-2.5 py-1 text-[9px] font-mono uppercase tracking-widest font-semibold"
+                              className="rounded px-2.5 py-1 text-[9px] uppercase tracking-widest font-semibold"
                               style={{
                                 background: typeStyle.bg,
                                 border: typeStyle.border,
@@ -267,27 +266,27 @@ export function Community() {
                               {post.type.replace("-", " ")}
                             </span>
                             {post.language && (
-                              <span className="rounded px-2.5 py-1 text-[9px] font-mono text-[#94a3b8] border border-white/10 bg-white/4">
+                              <span className="rounded px-2.5 py-1 text-[9px] font-medium text-[#475569] border border-[#e5e7eb] bg-[#f1f3f7]">
                                 {post.language}
                               </span>
                             )}
                           </div>
 
                           {/* Title */}
-                          <h2 className="text-base sm:text-lg font-bold text-[#f1f5f9] mb-2 leading-snug">{post.title}</h2>
+                          <h2 className="text-base sm:text-lg font-bold text-[#0a0e1a] mb-2 leading-snug">{post.title}</h2>
 
                           {/* Preview */}
-                          <p className="text-sm text-[#94a3b8] font-mono leading-relaxed line-clamp-2 mb-4">{post.content}</p>
+                          <p className="text-sm text-[#475569] leading-relaxed line-clamp-2 mb-4">{post.content}</p>
 
                           {/* Footer: Author + Engagement metrics */}
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-white/6">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-3 border-t border-[#eceef2]">
                             <div className="flex items-center gap-3">
-                              <div className="h-7 w-7 rounded-full bg-[#050810] border border-white/10 flex items-center justify-center flex-shrink-0">
-                                <Users className="h-3.5 w-3.5 text-[#475569]" />
+                              <div className="h-7 w-7 rounded-full bg-[#f1f3f7] border border-[#e5e7eb] flex items-center justify-center flex-shrink-0">
+                                <Users className="h-3.5 w-3.5 text-[#6b7280]" />
                               </div>
                               <div className="text-xs">
-                                <p className="text-[#f1f5f9] font-mono">{post.authorName}</p>
-                                <p className="text-[#475569] font-mono text-[11px]">{formatDistanceToNow(new Date(post.createdAt))} ago</p>
+                                <p className="text-[#0a0e1a] font-medium">{post.authorName}</p>
+                                <p className="text-[#6b7280] text-[11px]">{formatDistanceToNow(new Date(post.createdAt))} ago</p>
                               </div>
                             </div>
 
@@ -298,14 +297,14 @@ export function Community() {
                                   <>
                                     <button
                                       onClick={() => handleVote(post.id, "up")}
-                                      className="text-[#475569] hover:text-[#00d9ff] transition-colors p-1.5 hover:bg-white/5 rounded"
+                                      className="text-[#6b7280] hover:text-[#4f46e5] transition-colors p-1.5 hover:bg-[#f1f3f7] rounded"
                                     >
                                       <ThumbsUp className="h-4 w-4" />
                                     </button>
-                                    <span className="font-mono text-sm font-semibold text-[#f1f5f9] min-w-[28px] text-center">{score}</span>
+                                    <span className="font-mono text-sm font-semibold text-[#0a0e1a] min-w-[28px] text-center">{score}</span>
                                     <button
                                       onClick={() => handleVote(post.id, "down")}
-                                      className="text-[#475569] hover:text-[#ff006e] transition-colors p-1.5 hover:bg-white/5 rounded"
+                                      className="text-[#6b7280] hover:text-[#dc2626] transition-colors p-1.5 hover:bg-[#f1f3f7] rounded"
                                     >
                                       <ThumbsDown className="h-4 w-4" />
                                     </button>
@@ -317,10 +316,10 @@ export function Community() {
                                   href={post.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="flex items-center gap-1.5 text-[#00d9ff] hover:text-[#00d9ff] transition-colors px-3 py-1.5 rounded hover:bg-white/5 border border-[#00d9ff]/20"
+                                  className="flex items-center gap-1.5 text-[#4f46e5] hover:text-[#4338ca] transition-colors px-3 py-1.5 rounded hover:bg-[#eef0fe] border border-[#4f46e5]/25"
                                 >
                                   <ExternalLink className="h-3.5 w-3.5" />
-                                  <span className="text-xs font-mono">Read More</span>
+                                  <span className="text-xs font-medium">Read More</span>
                                 </a>
                               )}
                             </div>
@@ -334,9 +333,9 @@ export function Community() {
                 {sortedPosts.length === 0 && (
                   <Reveal delay={0.1}>
                     <div className="text-center py-16">
-                      <MessageSquare className="h-12 w-12 text-[#2d3f5c] mx-auto mb-3 opacity-50" />
-                      <p className="text-[#475569] font-mono text-sm">No posts yet in this category</p>
-                      <p className="text-[#2d3f5c] font-mono text-xs mt-1">Be the first to share knowledge</p>
+                      <MessageSquare className="h-12 w-12 text-[#9aa3b2] mx-auto mb-3" />
+                      <p className="text-[#475569] text-sm">No posts yet in this category</p>
+                      <p className="text-[#9aa3b2] text-xs mt-1">Be the first to share knowledge</p>
                     </div>
                   </Reveal>
                 )}
@@ -346,20 +345,19 @@ export function Community() {
             {/* Sidebar */}
             <div className="w-full lg:w-64 shrink-0 space-y-4">
               {/* Filter Card */}
-              <div className="rounded-lg border border-white/8 bg-gradient-to-br from-[#0a0e1f] to-[#050810] p-4" style={{ boxShadow: "inset 0 0 15px rgba(0,217,255,0.04)" }}>
-                <p className="text-[9px] font-mono uppercase tracking-widest text-[#00d9ff] mb-4 font-semibold">📁 Filter</p>
+              <div className="rounded-lg border border-[#e5e7eb] bg-white p-4 shadow-sm">
+                <p className="text-[10px] uppercase tracking-widest text-[#6b7280] mb-4 font-semibold">Filter</p>
                 <div className="space-y-2">
                   {POST_TYPES.map((t) => (
                     <button
                       key={t}
                       onClick={() => setPostType(t)}
-                      className={`w-full text-left px-3 py-2 rounded-md text-xs font-mono transition-all ${
+                      className={`w-full text-left px-3 py-2 rounded-md text-xs font-medium transition-all ${
                         postType === t
-                          ? "bg-[#00d9ff]/15 border border-[#00d9ff]/40 text-[#00d9ff]"
-                          : "text-[#475569] hover:text-[#f1f5f9] hover:bg-white/5 border border-transparent"
+                          ? "bg-[#eef0fe] border border-[#4f46e5]/25 text-[#4f46e5]"
+                          : "text-[#475569] hover:text-[#0a0e1a] hover:bg-[#f7f8fa] border border-transparent"
                       }`}
                     >
-                      {postType === t ? <span>▶ </span> : <span>  </span>}
                       {TYPE_LABELS[t]}
                     </button>
                   ))}
@@ -367,16 +365,16 @@ export function Community() {
               </div>
 
               {/* Stats Card */}
-              <div className="rounded-lg border border-white/8 bg-gradient-to-br from-[#0a0e1f] to-[#050810] p-4" style={{ boxShadow: "inset 0 0 15px rgba(0,217,255,0.04)" }}>
-                <p className="text-[9px] font-mono uppercase tracking-widest text-[#00d9ff] mb-4 font-semibold">📊 Stats</p>
+              <div className="rounded-lg border border-[#e5e7eb] bg-white p-4 shadow-sm">
+                <p className="text-[10px] uppercase tracking-widest text-[#6b7280] mb-4 font-semibold">Stats</p>
                 <div className="space-y-3">
                   <div>
-                    <p className="text-[11px] text-[#475569] font-mono mb-1">Total Posts</p>
-                    <p className="text-xl font-bold text-[#f1f5f9]">{sortedPosts.length}</p>
+                    <p className="text-[11px] text-[#6b7280] mb-1">Total Posts</p>
+                    <p className="text-xl font-bold text-[#0a0e1a]">{sortedPosts.length}</p>
                   </div>
                   <div>
-                    <p className="text-[11px] text-[#475569] font-mono mb-1">Web Resources</p>
-                    <p className="text-xl font-bold text-[#00d9ff]">{sortedPosts.filter(p => p.isWebArticle).length}</p>
+                    <p className="text-[11px] text-[#6b7280] mb-1">Web Resources</p>
+                    <p className="text-xl font-bold text-[#4f46e5]">{sortedPosts.filter(p => p.isWebArticle).length}</p>
                   </div>
                 </div>
               </div>

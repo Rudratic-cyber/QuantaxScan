@@ -40,19 +40,19 @@ export function DevJoke() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -12, scale: 0.94 }}
           transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-          className="fixed bottom-20 right-5 z-50 max-w-xs rounded-lg border border-white/10 bg-[#0d1224] shadow-[0_8px_32px_rgba(0,0,0,0.6)] p-4 font-mono text-[11px]"
+          className="fixed bottom-6 right-5 z-50 max-w-xs rounded-xl border border-[#e5e7eb] bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)] p-4 text-[12px]"
         >
           <div className="flex items-start gap-2 mb-2">
-            <span className="text-[#4f8ef7] text-[9px] font-bold tracking-widest uppercase shrink-0 mt-0.5">// joke.ts</span>
-            <button onClick={() => setShow(false)} className="ml-auto text-[#475569] hover:text-[#94a3b8] transition-colors">✕</button>
+            <span className="text-[#4f46e5] text-[9px] font-bold tracking-widest uppercase shrink-0 mt-0.5">dev joke</span>
+            <button onClick={() => setShow(false)} className="ml-auto text-[#9aa3b2] hover:text-[#475569] transition-colors">✕</button>
           </div>
-          <p className="text-[#94a3b8] leading-relaxed mb-1.5">{joke.setup}</p>
+          <p className="text-[#475569] leading-relaxed mb-1.5">{joke.setup}</p>
           <AnimatePresence>
             {phase === "punchline" && (
               <motion.p
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-[#f1f5f9] font-semibold"
+                className="text-[#0a0e1a] font-semibold"
               >
                 {joke.punchline}
               </motion.p>
@@ -92,15 +92,15 @@ export function KonamiEgg() {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 1.05 }}
           className="fixed inset-0 z-[999] flex items-center justify-center pointer-events-none"
-          style={{ background: "rgba(5,8,16,0.85)", backdropFilter: "blur(6px)" }}
+          style={{ background: "rgba(255,255,255,0.9)", backdropFilter: "blur(6px)" }}
         >
-          <div className="text-center font-mono">
+          <div className="text-center">
             <div className="text-5xl mb-5">⚛️</div>
-            <p className="text-[#4f8ef7] text-2xl font-bold tracking-widest" style={{ textShadow: "0 0 20px rgba(79,142,247,0.6)" }}>
+            <p className="text-[#4f46e5] text-2xl font-bold tracking-widest">
               QUANTUM UNLOCKED
             </p>
-            <p className="text-[#475569] text-sm mt-2 tracking-widest">// konami code activated</p>
-            <p className="text-[#2d3f5c] text-xs mt-1">// RSA could not protect this secret</p>
+            <p className="text-[#475569] text-sm mt-2 tracking-widest">konami code activated</p>
+            <p className="text-[#9aa3b2] text-xs mt-1">RSA could not protect this secret</p>
           </div>
         </motion.div>
       )}
@@ -131,11 +131,11 @@ export function TerminalHint({ className, children }: { className?: string; chil
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
-            className="absolute top-full mt-2 left-0 z-50 whitespace-nowrap rounded border border-white/10 bg-[#0d1224] px-3 py-1.5 font-mono text-[10px] text-[#94a3b8] shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
+            className="absolute top-full mt-2 left-0 z-50 whitespace-nowrap rounded-md border border-[#e5e7eb] bg-[#0a0e1a] px-3 py-1.5 font-mono text-[10px] text-[#cbd5e1] shadow-[0_8px_24px_rgba(15,23,42,0.2)]"
           >
-            <span className="text-[#475569]">$ </span>
-            <span className="text-[#f1f5f9]">{cmd}</span>
-            <span className="cursor-blink text-[#4f8ef7] ml-0.5">▊</span>
+            <span className="text-[#6b7280]">$ </span>
+            <span className="text-white">{cmd}</span>
+            <span className="cursor-blink text-[#818cf8] ml-0.5">▊</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -160,14 +160,14 @@ export function StatusDot({ className }: { className?: string }) {
       onMouseEnter={() => setVis(true)}
       onMouseLeave={() => setVis(false)}
     >
-      <span className="h-1.5 w-1.5 rounded-full bg-[#34d399] glow-pulse shrink-0" />
+      <span className="h-1.5 w-1.5 rounded-full bg-[#059669] shrink-0" />
       <AnimatePresence>
         {vis && (
           <motion.span
             initial={{ opacity: 0, x: -4 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0 }}
-            className="absolute left-4 whitespace-nowrap text-[9px] font-mono text-[#94a3b8] tracking-wider"
+            className="absolute left-4 whitespace-nowrap text-[9px] font-mono text-[#475569] tracking-wider"
           >
             {msg}
           </motion.span>

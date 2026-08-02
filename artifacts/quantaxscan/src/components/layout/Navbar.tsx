@@ -14,20 +14,23 @@ import { TerminalHint } from "@/components/EasterEggs";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Center nav — Scanner, Dashboard, Community, Discord
+// Center nav
 const CENTER_NAV = [
   { name: "Scanner",   link: "/scan" },
+  { name: "Coverage",  link: "/coverage" },
   { name: "Dashboard", link: "/dashboard" },
+  { name: "Security",  link: "/security" },
   { name: "Community", link: "/community" },
-  { name: "Discord",   link: "https://discord.gg/qReVaR2TpC", external: true },
 ];
 
 // All items for mobile
 const ALL_NAV = [
-  { name: "Demo",      link: "/demo/paramiko-ssh" },
   { name: "Scanner",   link: "/scan" },
+  { name: "Coverage",  link: "/coverage" },
   { name: "Dashboard", link: "/dashboard" },
+  { name: "Security",  link: "/security" },
   { name: "Community", link: "/community" },
+  { name: "Demo",      link: "/demo/paramiko-ssh" },
 ];
 
 function QuantumBurst({ active }: { active: boolean }) {
@@ -40,10 +43,10 @@ function QuantumBurst({ active }: { active: boolean }) {
           <motion.span
             key={i}
             initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
-            animate={{ x: Math.cos(angle) * 30, y: Math.sin(angle) * 30, opacity: 0, scale: 0.2 }}
+            animate={{ x: Math.cos(angle) * 26, y: Math.sin(angle) * 26, opacity: 0, scale: 0.2 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
-            className="absolute w-2 h-2 rounded-full bg-[#4f8ef7] pointer-events-none z-50"
-            style={{ top: "50%", left: "50%", marginTop: -4, marginLeft: -4 }}
+            className="absolute w-1.5 h-1.5 rounded-full bg-[#4f46e5] pointer-events-none z-50"
+            style={{ top: "50%", left: "50%", marginTop: -3, marginLeft: -3 }}
           />
         );
       })}
@@ -76,22 +79,17 @@ function NavLogo() {
         <QuantumBurst active={burst} />
         <motion.div
           animate={spinning
-            ? { rotate: 360, scale: [1, 1.35, 1] }
+            ? { rotate: 360, scale: [1, 1.25, 1] }
             : { rotate: 0,   scale: 1 }}
           transition={{ duration: 0.55, ease: "easeInOut" }}
         >
-          <QuantaXscanLogo variant="icon" size="sm" glow />
+          <QuantaXscanLogo variant="icon" size="sm" />
         </motion.div>
         <span
-          className="font-mono font-bold tracking-tight text-base text-[#f1f5f9] leading-none"
-          style={{
-            letterSpacing: "-0.02em",
-            textShadow: spinning
-              ? "0 0 18px rgba(79,142,247,1), 0 0 36px rgba(167,139,250,0.8)"
-              : "0 0 10px rgba(79,142,247,0.4)",
-          }}
+          className="font-bold tracking-tight text-base text-[#0a0e1a] leading-none"
+          style={{ letterSpacing: "-0.02em" }}
         >
-          Quanta<span style={{ color: "#4f8ef7" }}>Xscan</span>
+          Quanta<span style={{ color: "#4f46e5" }}>Xscan</span>
         </span>
       </a>
     </TerminalHint>
@@ -104,37 +102,22 @@ export function Navbar() {
   return (
     <NavbarRoot>
       <NavBody>
-        {/* ── Left: Logo + Demo outlined pill ── */}
+        {/* ── Left: Logo ── */}
         <div className="flex items-center gap-3" style={{ flex: "1 1 0" }}>
           <NavLogo />
-          {/* Demo button — outlined, right next to logo */}
-          <a
-            href="/demo/paramiko-ssh"
-            className="relative group hidden lg:inline-flex items-center gap-1.5 rounded-lg border border-[#4f8ef7]/35 bg-[#4f8ef7]/6 px-3.5 py-1.5 text-xs font-mono font-semibold text-[#4f8ef7] transition-all duration-200 hover:border-[#4f8ef7]/65 hover:bg-[#4f8ef7]/14 hover:shadow-[0_0_16px_rgba(79,142,247,0.25)]"
-          >
-            <span className="text-[#4f8ef7]/50">./</span>demo
-            {/* Subtle pulsing dot */}
-            <span className="h-1.5 w-1.5 rounded-full bg-[#4f8ef7] animate-pulse ml-0.5" />
-          </a>
         </div>
 
-        {/* ── Center: Scanner | Dashboard | Community | Discord ── */}
-        <div className="flex items-center justify-center" style={{ flex: "1 1 0" }}>
-          <NavItems items={CENTER_NAV.filter(item => !item.external)} />
-          {/* Discord button */}
-          <a
-            href="https://discord.gg/qReVaR2TpC"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="relative group hidden lg:inline-flex items-center gap-1.5 ml-3 rounded-lg border border-[#5865F2]/35 bg-[#5865F2]/6 px-3.5 py-1.5 text-xs font-mono font-semibold text-[#5865F2] transition-all duration-200 hover:border-[#5865F2]/65 hover:bg-[#5865F2]/14 hover:shadow-[0_0_16px_rgba(88,101,242,0.25)]"
-          >
-            discord
-          </a>
+        {/* ── Center: nav ── */}
+        <div className="flex items-center justify-center" style={{ flex: "2 1 0" }}>
+          <NavItems items={CENTER_NAV} />
         </div>
 
-        {/* ── Right: Auth + CTA ── */}
-        <div className="flex items-center justify-end gap-3" style={{ flex: "1 1 0" }}>
-          <NavbarButton variant="primary" href="/scan">./scan --now</NavbarButton>
+        {/* ── Right: CTA ── */}
+        <div className="flex items-center justify-end gap-2" style={{ flex: "1 1 0" }}>
+          <NavbarButton variant="ghost" href="/demo/paramiko-ssh" className="hidden lg:inline-flex">
+            View a demo
+          </NavbarButton>
+          <NavbarButton variant="primary" href="/scan">Scan a repository</NavbarButton>
         </div>
       </NavBody>
 
@@ -149,23 +132,14 @@ export function Navbar() {
             <a
               key={item.name}
               href={item.link}
-              className="block py-2 text-sm font-mono text-[#94a3b8] hover:text-[#f1f5f9] transition-colors"
+              className="block py-2.5 text-sm font-medium text-[#475569] hover:text-[#0a0e1a] transition-colors"
               onClick={() => setIsMobileMenuOpen(false)}
             >
-              <span className="text-[#4f8ef7]/40 mr-1">./</span>{item.name.toLowerCase()}
+              {item.name}
             </a>
           ))}
-          <a
-            href="https://discord.gg/qReVaR2TpC"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block py-2 text-sm font-mono text-[#5865F2] hover:text-[#7289DA] transition-colors"
-            onClick={() => setIsMobileMenuOpen(false)}
-          >
-            <span className="text-[#5865F2]/40 mr-1">./</span>discord
-          </a>
-          <div className="pt-3 flex flex-col gap-2 border-t border-[#4f8ef7]/10 mt-2">
-            <NavbarButton variant="primary" href="/scan">./scan --now</NavbarButton>
+          <div className="pt-3 flex flex-col gap-2 border-t border-[#e5e7eb] mt-2">
+            <NavbarButton variant="primary" href="/scan">Scan a repository</NavbarButton>
           </div>
         </MobileNavMenu>
       </MobileNav>
