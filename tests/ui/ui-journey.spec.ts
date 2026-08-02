@@ -28,7 +28,10 @@ test.describe("UI Journey Tests", () => {
     await page.keyboard.press("Escape");
     await page.locator('button:has-text("Skip intro")').waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
 
-    await expect(page.getByText(/What we look at/i).or(page.getByText(/Scan/i)).first()).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.getByRole("heading", { name: /Know where your cryptography is/i })
+    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Post-quantum migration starts with an inventory/i)).toBeVisible();
   });
 
   test("navigation reaches every page including Coverage and Security", async ({ page }) => {
@@ -40,15 +43,18 @@ test.describe("UI Journey Tests", () => {
 
     // 2. Scan page
     await page.goto("/scan");
-    await expect(page.getByText(/Scan/i).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Upload Code/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /GitHub URL/i })).toBeVisible();
 
     // 3. Dashboard page
     await page.goto("/dashboard");
-    await expect(page.getByText(/Dashboard/i).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Security Intelligence" })).toBeVisible();
 
     // 4. Community page
     await page.goto("/community");
-    await expect(page.getByText(/Community/i).first()).toBeVisible();
+    await expect(
+      page.getByText(/Post questions, share migration stories, and learn from the community/i)
+    ).toBeVisible();
 
     // 5. Coverage page
     await page.goto("/coverage");
@@ -145,11 +151,29 @@ test.describe("UI Journey Tests", () => {
     );
 
     await page.goto("/demo/paramiko-ssh");
-    await expect(page.getByText(/paramiko\/paramiko/i).first()).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText(/RSA/i).first()).toBeVisible();
+
+    // The scan must resolve before the findings panel exists at all — the file tree,
+    // code viewer and findings panel only render once scanResult is set.
+    await expect(page.getByText(/Scanned paramiko repo and found RSA key generation/i)).toBeVisible({
+      timeout: 15000,
+    });
+
+    // Scan-derived summary metrics from the mocked scan response
+    await expect(page.getByText("2 critical")).toBeVisible();
+    await expect(page.getByText("12h to migrate")).toBeVisible();
+
+    // The finding itself: algorithm, source line, snippet and its NIST replacement
+    await expect(page.getByText("RSA-2048", { exact: true })).toBeVisible();
+    await expect(page.getByText("L36", { exact: true })).toBeVisible();
+    await expect(page.getByText("key = RSA.generate(2048)").first()).toBeVisible();
+    await expect(page.getByText("ML-KEM-768", { exact: true })).toBeVisible();
+    await expect(page.getByText("NIST FIPS 203", { exact: true })).toBeVisible();
   });
 
   test("the dashboard degrades gracefully when its data call returns 401", async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
     // Override default mocks with 401 Unauthorized specifically for this degradation test
     await page.route("**/api/projects*", (route) =>
       route.fulfill({
@@ -167,9 +191,14 @@ test.describe("UI Journey Tests", () => {
     );
 
     await page.goto("/dashboard");
-    // Assert page loaded without blank screen or fatal crash
-    await expect(page.locator("body")).toBeVisible();
-    await expect(page.getByText(/Dashboard/i).first()).toBeVisible();
+
+    // The Dashboard's own chrome still renders, and the empty-state copy proves the
+    // failed queries fell through to the no-data path rather than a crash or spinner.
+    await expect(page.getByRole("heading", { name: "Security Intelligence" })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByText(/No scans yet — run your first scan/i)).toBeVisible();
+    expect(pageErrors).toEqual([]);
   });
 
   test("a report page renders a real report and handles an unknown identifier without a blank screen", async ({ page }) => {

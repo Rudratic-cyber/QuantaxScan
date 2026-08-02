@@ -3,8 +3,6 @@ import supertest from "supertest";
 import { vi } from "vitest";
 
 const API_KEY = "test-api-key-1234567890-super-secret-key-32bytes";
-process.env.QUANTAXSCAN_API_KEYS = API_KEY;
-process.env.DATABASE_URL = "postgres://dummy:dummy@localhost:5432/dummy";
 
 const { testDb, closeTestDb } = await vi.hoisted(async () => {
   process.env.QUANTAXSCAN_API_KEYS = "test-api-key-1234567890-super-secret-key-32bytes";

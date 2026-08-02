@@ -21,9 +21,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm --filter @workspace/quantaxscan run dev --port ${PORT}`,
+    command: "pnpm --filter @workspace/quantaxscan run dev",
+    env: { PORT },
     url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 30000,
   },
 });
