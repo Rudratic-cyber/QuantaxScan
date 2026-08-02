@@ -21,6 +21,7 @@ const queryClient = new QueryClient();
 
 // Intro plays once per page-load (module variable resets on every hard refresh).
 // SPA navigation back to "/" within the same tab won't replay it.
+const INTRO_KEY = "quantaxscan_intro_seen";
 let introHasPlayed = false;
 
 function introAlreadySeen() {
