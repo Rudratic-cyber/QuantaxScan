@@ -30,7 +30,7 @@ function IntroTerminal({ onDone }: { onDone: () => void }) {
   const [scanDone, setScanDone]         = useState(false);
   const [cursor, setCursor]             = useState(true);
   const scrollRef                       = useRef<HTMLDivElement>(null);
-  const CMD = "q-bitron scan ./crypto_utils.py";
+  const CMD = "quantaxscan scan ./crypto_utils.py";
 
   useEffect(() => {
     const id = setInterval(() => setCursor(v => !v), 530);
@@ -93,7 +93,7 @@ function IntroTerminal({ onDone }: { onDone: () => void }) {
 
   const prompt = (
     <span className="select-none">
-      <span className="font-bold" style={{ color: "#4f8ef7" }}>q-bitron</span>
+      <span className="font-bold" style={{ color: "#4f8ef7" }}>quantaxscan</span>
       <span style={{ color: "#2d3f5c" }}>:~$ </span>
     </span>
   );
@@ -105,7 +105,7 @@ function IntroTerminal({ onDone }: { onDone: () => void }) {
         <div className="h-3 w-3 rounded-full bg-[#febc2e]" />
         <div className="h-3 w-3 rounded-full bg-[#28c840]" />
         <span className="flex-1 text-center text-[10px] text-[#475569] tracking-wider">
-          q-bitron — quantum vulnerability scanner
+          quantaxscan — quantum vulnerability scanner
         </span>
       </div>
 
@@ -178,7 +178,7 @@ function IntroTerminal({ onDone }: { onDone: () => void }) {
               <div className="text-[10px] mt-0.5">
                 <span className="text-red-400 font-semibold">2 CRITICAL</span>
                 <span className="text-[#475569]"> vulnerabilities found. Run </span>
-                <span style={{ color: "#4f8ef7" }}>q-bitron fix</span>
+                <span style={{ color: "#4f8ef7" }}>quantaxscan fix</span>
                 <span className="text-[#475569]"> to remediate.</span>
               </div>
             </motion.div>

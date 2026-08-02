@@ -44,7 +44,7 @@
   --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
   --color-sidebar-ring: hsl(var(--sidebar-ring));
 
-  /* ── Q-Bitron Design Tokens ─────────────────────────── */
+  /* ── QuantaXscan Design Tokens ─────────────────────────── */
   /* Backgrounds: deep space blue-black */
   --color-bg-void:     #050810;
   --color-bg-surface:  #0d1224;

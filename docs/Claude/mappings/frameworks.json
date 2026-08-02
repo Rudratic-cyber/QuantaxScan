@@ -56,7 +56,7 @@
       "status": "PRELIMINARY DRAFT — Volumes B and C comment period closed 2024-02-20. Additional volumes expected.",
       "applicability": { "jurisdictions": ["*"], "sectors": ["*"], "systemTypes": ["*"] },
 
-      "role": "THE MOST DIRECTLY RELEVANT NIST PUBLICATION TO THIS PRODUCT. Volume B is a practice guide for cryptographic discovery TOOLS — i.e. the exact product category Q-Vuln is in. It defines a discovery architecture, a normalisation scheme for discovery output, and a functional test plan for evaluating discovery tools.",
+      "role": "THE MOST DIRECTLY RELEVANT NIST PUBLICATION TO THIS PRODUCT. Volume B is a practice guide for cryptographic discovery TOOLS — i.e. the exact product category QuantaXscan is in. It defines a discovery architecture, a normalisation scheme for discovery output, and a functional test plan for evaluating discovery tools.",
 
       "whyItMatters": "IR 8547 tells us WHICH algorithms must go and by when. The CISA factsheet tells us inventory comes first. SP 1800-38B tells us HOW a discovery tool should be built and what it should emit. It is the closest thing to a specification for our product, and a buyer evaluating us may well use its functional test plan (Appendix C, eight use cases) as an evaluation rubric.",
 
@@ -146,7 +146,7 @@
         "confidence": "verified"
       },
 
-      "productNote": "The inventory and prioritisation sections are what Q-Vuln automates. Vendor engagement is the vendor collector (B9). Roadmap establishment and migration execution are customer process we evidence but do not perform.",
+      "productNote": "The inventory and prioritisation sections are what QuantaXscan automates. Vendor engagement is the vendor collector (B9). Roadmap establishment and migration execution are customer process we evidence but do not perform.",
       "url": "https://www.cisa.gov/resources-tools/resources/quantum-readiness-migration-post-quantum-cryptography",
       "mirrorUrl": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf",
       "retrievedAt": "2026-08-01",

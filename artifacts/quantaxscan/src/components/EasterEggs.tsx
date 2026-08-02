@@ -111,10 +111,10 @@ export function KonamiEgg() {
 export function TerminalHint({ className, children }: { className?: string; children?: React.ReactNode }) {
   const [vis, setVis] = useState(false);
   const cmds = [
-    "q-bitron scan ./your-repo --deep",
-    "q-bitron fix --algo ML-KEM-768",
-    "q-bitron report --format sarif",
-    "q-bitron doctor --check-all",
+    "quantaxscan scan ./your-repo --deep",
+    "quantaxscan fix --algo ML-KEM-768",
+    "quantaxscan report --format sarif",
+    "quantaxscan doctor --check-all",
   ];
   const [cmd] = useState(() => cmds[Math.floor(Math.random() * cmds.length)]);
 

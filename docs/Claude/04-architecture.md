@@ -298,7 +298,7 @@ lib/
   api-spec/      existing — extend OpenAPI, regenerate
 artifacts/
   api-server/    existing — routes get thinner, logic moves to lib/
-  q-vuln/        existing
+  quantaxscan/        existing
 ```
 
 Keeping collectors in `lib/` rather than inside `api-server` means they can also run as a

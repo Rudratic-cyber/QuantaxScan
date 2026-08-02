@@ -46,7 +46,7 @@ router.post("/chat", async (req, res) => {
     ? "\n\nCRITICAL: Reply in EXACTLY 2-3 sentences. Plain prose only — no bullet points, no headers, no code blocks. Be specific and direct."
     : "";
 
-  const systemPrompt = `You are Q-Bitron AI — a post-quantum cryptography security expert embedded in a code IDE. Help developers understand quantum vulnerabilities and migrate to NIST PQC standards.
+  const systemPrompt = `You are QuantaXscan AI — a post-quantum cryptography security expert embedded in a code IDE. Help developers understand quantum vulnerabilities and migrate to NIST PQC standards.
 
 Key facts:
 - RSA, ECDSA, ECDH, DH, DSA are broken by Shor's algorithm on quantum computers

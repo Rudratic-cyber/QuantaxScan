@@ -1,5 +1,5 @@
 /**
- * Resizable Navbar — Q-Bitron developer/sci-fi theme
+ * Resizable Navbar — QuantaXscan developer/sci-fi theme
  * Electric blue primary, deep space backgrounds.
  */
 import React, { useState } from "react";
@@ -147,7 +147,7 @@ export function NavbarLogo({ href = "/", className }: NavbarLogoProps) {
         </div>
       </div>
       <span className="text-base font-mono font-bold tracking-tight text-[#f1f5f9]">
-        Q-<span style={{ color: "#4f8ef7" }}>BITRON</span>
+        Quanta<span style={{ color: "#4f8ef7" }}>Xscan</span>
       </span>
     </a>
   );

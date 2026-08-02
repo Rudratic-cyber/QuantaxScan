@@ -17,9 +17,9 @@ and here is where we are against it."* That is worth more than any chart we coul
 | Factsheet section | Who does it | Our role |
 |---|---|---|
 | Establish a quantum-readiness roadmap | Customer | Evidence + template |
-| **Prepare a cryptographic inventory** | **Q-Vuln** | **Automated** |
-| Discuss post-quantum roadmaps with technology vendors | Customer, tracked in Q-Vuln | Vendor register (B9) |
-| Supply chain quantum-readiness | Customer, tracked in Q-Vuln | Vendor + dependency collectors |
+| **Prepare a cryptographic inventory** | **QuantaXscan** | **Automated** |
+| Discuss post-quantum roadmaps with technology vendors | Customer, tracked in QuantaXscan | Vendor register (B9) |
+| Supply chain quantum-readiness | Customer, tracked in QuantaXscan | Vendor + dependency collectors |
 | Technology vendor responsibilities | Vendors | Out of scope |
 
 ### Two things the factsheet says that directly validate this design

@@ -8,7 +8,7 @@ FROM base AS build
 COPY . .
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm --filter @workspace/api-server run build
-RUN pnpm --filter @workspace/q-vuln run build
+RUN pnpm --filter @workspace/quantaxscan run build
 
 FROM base AS api
 COPY --from=build /app /app
@@ -17,7 +17,7 @@ CMD ["pnpm", "--filter", "@workspace/api-server", "run", "start"]
 
 FROM nginx:1.27-alpine AS frontend
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/artifacts/q-vuln/dist/public /usr/share/nginx/html
+COPY --from=build /app/artifacts/quantaxscan/dist/public /usr/share/nginx/html
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENV API_BASE_URL=""

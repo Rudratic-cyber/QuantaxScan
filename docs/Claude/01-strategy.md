@@ -22,7 +22,7 @@ Features that assume they will are misaimed.
 
 ### Why this beats the developer-first framing
 
-The developer-tool version of Q-Vuln competes with every SAST vendor adding a PQC rule pack —
+The developer-tool version of QuantaXscan competes with every SAST vendor adding a PQC rule pack —
 a feature, not a product, and it gets commoditized within a year. The inventory version
 competes on **coverage breadth and evidentiary quality**, which compound and are hard to copy.
 
@@ -115,7 +115,7 @@ low-agility one does not. That closes the loop between the two differentiators.
 
 ## Positioning
 
-**Q-Vuln is the cryptographic asset inventory of record for post-quantum readiness.**
+**QuantaXscan is the cryptographic asset inventory of record for post-quantum readiness.**
 
 | We are | We are not |
 |---|---|

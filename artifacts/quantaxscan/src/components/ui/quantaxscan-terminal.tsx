@@ -1,5 +1,5 @@
 /**
- * Q-Bitron Terminal — auto-types insecure crypto code, then highlights
+ * QuantaXscan Terminal — auto-types insecure crypto code, then highlights
  * vulnerable lines and shows findings. Designed for the MacBook screen.
  * No audio dependency required.
  */
@@ -93,7 +93,7 @@ function PythonLine({ text }: { text: string }) {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export function QVulnTerminal({ className }: { className?: string }) {
+export function QuantaXscanTerminal({ className }: { className?: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLDivElement>(null);
   const inView = useInView(rootRef as React.RefObject<HTMLElement>);
@@ -105,7 +105,7 @@ export function QVulnTerminal({ className }: { className?: string }) {
   const [visibleFindings, setVisibleFindings] = useState(0);
   const [cursorOn, setCursorOn] = useState(true);
 
-  const FULL_CMD = "q-bitron scan ./crypto_utils.py";
+  const FULL_CMD = "quantaxscan scan ./crypto_utils.py";
 
   const animateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -199,7 +199,7 @@ export function QVulnTerminal({ className }: { className?: string }) {
           <div className="h-2.5 w-2.5 rounded-full bg-yellow-500/90" />
           <div className="h-2.5 w-2.5 rounded-full bg-green-500/90" />
         </div>
-        <span className="flex-1 text-center text-[10px] text-neutral-400 tracking-wide">q-bitron — bash — crypto_utils.py</span>
+        <span className="flex-1 text-center text-[10px] text-neutral-400 tracking-wide">quantaxscan — bash — crypto_utils.py</span>
         <div className="w-10" />
       </div>
 
@@ -208,7 +208,7 @@ export function QVulnTerminal({ className }: { className?: string }) {
         {/* Prompt line */}
         {phase !== "idle" && (
           <div className="flex items-center gap-1 mb-1.5">
-            <span className="text-violet-400 font-semibold">q-bitron</span>
+            <span className="text-violet-400 font-semibold">quantaxscan</span>
             <span className="text-neutral-500">:</span>
             <span className="text-sky-400">~</span>
             <span className="text-neutral-500">$</span>
@@ -259,7 +259,7 @@ export function QVulnTerminal({ className }: { className?: string }) {
               animate={{ opacity: 1 }}
               className="border-t border-white/8 pt-2 mt-1"
             >
-              <div className="text-neutral-500 text-[10px] mb-1.5">— q-bitron findings ———————————————</div>
+              <div className="text-neutral-500 text-[10px] mb-1.5">— quantaxscan findings ———————————————</div>
               {FINDINGS.slice(0, visibleFindings).map((f, i) => {
                 const s = SEVERITY_STYLES[f.severity];
                 return (
@@ -302,7 +302,7 @@ export function QVulnTerminal({ className }: { className?: string }) {
         {/* Idle cursor after done */}
         {phase === "done" && (
           <div className="flex items-center gap-1 mt-2">
-            <span className="text-violet-400 font-semibold">q-bitron</span>
+            <span className="text-violet-400 font-semibold">quantaxscan</span>
             <span className="text-neutral-500">:</span>
             <span className="text-sky-400">~</span>
             <span className="text-neutral-500">$</span>

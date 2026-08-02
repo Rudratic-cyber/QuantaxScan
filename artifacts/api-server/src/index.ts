@@ -1,5 +1,9 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { assertApiKeysConfigured } from "./lib/auth";
+
+// Fail closed: refuse to start rather than serve an unauthenticated API.
+assertApiKeysConfigured();
 
 const rawPort = process.env["PORT"];
 
