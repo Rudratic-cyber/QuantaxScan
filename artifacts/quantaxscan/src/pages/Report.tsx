@@ -4,6 +4,7 @@ import { Shield, AlertTriangle, CheckCircle2, Download, ExternalLink, Clock, Zap
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/api";
+import { QuantaXscanLogo } from "@/components/QuantaXscanLogo";
 
 interface GithubFinding {
   lineNumber: number; severity: "critical" | "alert" | "safe";
@@ -193,9 +194,13 @@ export function Report() {
       {/* ── Header ── */}
       <div className="relative z-10 border-b border-[#e5e7eb] bg-white/85 backdrop-blur-sm sticky top-0">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
+          {/* Same hexagon mark + wordmark as the site nav — the report is the page most likely
+              to be seen by someone who has never seen the product before. */}
           <button onClick={() => setLocation("/")} className="flex items-center gap-2 shrink-0">
-            <Shield className="h-5 w-5 text-[#4f46e5]" />
-            <span className="font-bold text-[15px] tracking-tight text-[#0a0e1a]">QuantaXscan</span>
+            <QuantaXscanLogo variant="icon" size="xs" />
+            <span className="font-bold text-[15px] tracking-tight text-[#0a0e1a]">
+              Quanta<span style={{ color: "#4f46e5" }}>Xscan</span>
+            </span>
           </button>
           <div className="flex items-center gap-1.5 min-w-0">
             <Github className="h-3.5 w-3.5 text-[#6b7280] shrink-0" />

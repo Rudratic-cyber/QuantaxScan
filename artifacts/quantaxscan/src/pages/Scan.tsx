@@ -399,6 +399,8 @@ function HighlightedLine({ text, langKey }: { text: string; langKey: string }) {
 interface Tab {
   id: string; label: string; ext: string; langKey: string;
   content: string; dirty?: boolean; path?: string;
+  /** True for the shipped demo-project files. Dropped as soon as the user supplies their own. */
+  sample?: boolean;
 }
 interface ChatMsg { id: string; role: "user" | "assistant"; content: string; }
 interface ChatSession { id: string; title: string; messages: ChatMsg[]; createdAt: string; }
@@ -661,6 +663,22 @@ const PKG_JSON = `{
   "keywords": ["cryptography", "security", "post-quantum"],
   "license": "MIT"
 }`;
+
+// Why a GitHub action failed, in the user's terms. `long` is for the left rail and toasts,
+// `short` for the one-line status in the centre pane. Deliberately does not tell the user to
+// supply an API key — they have no way to do so from the browser, so that would misdirect too.
+const GITHUB_AUTH_ERROR = {
+  long: "Not authorised — the scanner API rejected this request. The URL is fine; repository fetching is not available in this build.",
+  short: "Not authorised — the scanner API rejected this request.",
+};
+const GITHUB_RATE_LIMIT_ERROR = {
+  long: "GitHub's unauthenticated rate limit was reached. The URL is fine — see the panel on the left.",
+  short: "GitHub rate limit reached — try again after the reset.",
+};
+const GITHUB_BAD_URL_ERROR = {
+  long: "Repository not found — check the URL and try again.",
+  short: "Error — check URL and try again.",
+};
 
 // Sample tree per language
 type SampleFile = { name: string; content: string };
@@ -2205,7 +2223,7 @@ export function Scan() {
   const getLangSamples = (lk: string) => LANG_SAMPLES[lk] ?? LANG_SAMPLES.java;
   const [tabs, setTabs]           = useState<Tab[]>(() => {
     const samples = getLangSamples("java");
-    return [{ id: "t_init", label: samples[0].name, ext: "java", langKey: "java", content: samples[0].content, path: `src/${samples[0].name}` }];
+    return [{ id: "t_init", label: samples[0].name, ext: "java", langKey: "java", content: samples[0].content, path: `src/${samples[0].name}`, sample: true }];
   });
   const [activeTabId, setActiveTabId] = useState("t_init");
 
@@ -2236,6 +2254,9 @@ export function Scan() {
   const [scanningFileName, setScanningFileName] = useState("");
   const [rateLimitHit, setRateLimitHit]     = useState(false);
   const [rateLimitResetAt, setRateLimitResetAt] = useState<number | null>(null);
+  // Why the last GitHub action failed. Without this, every failure was reported as a bad URL —
+  // including an API rejection, which sends the user back to retype a perfectly valid URL.
+  const [githubError, setGithubError]       = useState<{ long: string; short: string } | null>(null);
 
   const toggleCollapse = useCallback((path: string) => {
     setCollapsed(prev => { const n = new Set(prev); n.has(path) ? n.delete(path) : n.add(path); return n; });
@@ -2267,13 +2288,22 @@ export function Scan() {
 
   const addOutput = (msg: string) => setOutputLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
-  // Open file in a new tab (or switch if already open)
-  const openFileInTab = useCallback((name: string, content: string, lk: string, path?: string) => {
+  // Monotonic tab-id source. `Date.now()` collides when several files are opened in one loop.
+  const tabIdSeq = useRef(0);
+  const nextTabId = () => `t_${++tabIdSeq.current}_${Date.now()}`;
+
+  // Open file in a new tab (or switch if already open).
+  // Opening a *user* file drops the shipped demo-project tabs — otherwise the demo files stay in
+  // the project and get scanned alongside the upload, inflating the file count and the findings.
+  const openFileInTab = useCallback((name: string, content: string, lk: string, path?: string, isSample = false) => {
     const existing = tabs.find(t => t.path === path || t.label === name);
     if (existing) { setActiveTabId(existing.id); return; }
-    const id = `t_${Date.now()}`;
+    const id = nextTabId();
     const ext = getExt(name);
-    setTabs(prev => [...prev, { id, label: name, ext, langKey: lk, content, path, dirty: false }]);
+    setTabs(prev => [
+      ...(isSample ? prev : prev.filter(t => !t.sample)),
+      { id, label: name, ext, langKey: lk, content, path, dirty: false, sample: isSample },
+    ]);
     setActiveTabId(id);
   }, [tabs]);
 
@@ -2281,12 +2311,15 @@ export function Scan() {
   const handleLanguageChange = (lang: string) => {
     setLanguage(lang);
     const lk = getLangKey(lang);
-    // Refresh tab with language's first sample
-    const samples = getLangSamples(lk);
-    const firstSample = samples[0];
-    const id = `t_${Date.now()}`;
-    setTabs([{ id, label: firstSample.name, ext: lk, langKey: lk, content: firstSample.content, path: `src/${firstSample.name}` }]);
-    setActiveTabId(id);
+    // Only reset to the language's sample project while the user has not supplied their own
+    // files — otherwise switching language would silently discard the upload.
+    if (!hasCustomFile) {
+      const samples = getLangSamples(lk);
+      const firstSample = samples[0];
+      const id = nextTabId();
+      setTabs([{ id, label: firstSample.name, ext: lk, langKey: lk, content: firstSample.content, path: `src/${firstSample.name}`, sample: true }]);
+      setActiveTabId(id);
+    }
     setScanState("idle");
     setActiveScanId(null);
     setOutputLogs([]);
@@ -2492,7 +2525,7 @@ export function Scan() {
   const fetchRepo = async () => {
     if (!githubUrl.trim()) { toast({ title: "Error", description: "Enter a GitHub URL", variant: "destructive" }); return; }
     setGithubPhase("fetching"); setFetchedRepo(null); setGithubResult(null);
-    setSelectedFile(null); setSelectedFullPath(""); setRateLimitHit(false);
+    setSelectedFile(null); setSelectedFullPath(""); setRateLimitHit(false); setGithubError(null);
     const msgs = ["Connecting to GitHub API…","Fetching repository tree…","Downloading source files…","Building folder structure…","Almost done…"];
     let mi = 0;
     const iv = setInterval(() => setFetchProgress(msgs[mi++ % msgs.length]), 900);
@@ -2504,7 +2537,20 @@ export function Scan() {
         if (data.rateLimit) {
           setRateLimitHit(true);
           setRateLimitResetAt(data.resetAt ? data.resetAt * 1000 : null);
+          setGithubError(GITHUB_RATE_LIMIT_ERROR);
           setGithubPhase("error"); return;
+        }
+        if (res.status === 401 || res.status === 403) {
+          setGithubError(GITHUB_AUTH_ERROR);
+          setGithubPhase("error");
+          toast({ title: "Not authorised", description: GITHUB_AUTH_ERROR.long, variant: "destructive" });
+          return;
+        }
+        if (res.status === 400 || res.status === 404) {
+          setGithubError(GITHUB_BAD_URL_ERROR);
+          setGithubPhase("error");
+          toast({ title: "Repository not found", description: data.error ?? GITHUB_BAD_URL_ERROR.long, variant: "destructive" });
+          return;
         }
         throw new Error(data.error ?? `HTTP ${res.status}`);
       }
@@ -2513,7 +2559,9 @@ export function Scan() {
       if (firstScannable) setSelectedFullPath(firstScannable.path);
     } catch (err) {
       clearInterval(iv); setGithubPhase("error");
-      toast({ title: "Fetch Failed", description: err instanceof Error ? err.message : "Failed", variant: "destructive" });
+      const detail = err instanceof Error ? err.message : "Failed";
+      setGithubError({ long: `Fetch failed — ${detail}`, short: "Fetch failed." });
+      toast({ title: "Fetch Failed", description: detail, variant: "destructive" });
     }
   };
 
@@ -2524,7 +2572,7 @@ export function Scan() {
     }
     const files = fetchedRepo.fetchedFiles;
     setGithubPhase("scanning"); setGithubResult(null); setSelectedFile(null);
-    setScannedFileCount(0); setScanningFileName("");
+    setScannedFileCount(0); setScanningFileName(""); setGithubError(null);
 
     try {
       // Fire the real API call immediately — content is already capped at 300 lines per file
@@ -2550,7 +2598,15 @@ export function Scan() {
       } catch {
         throw new Error(`Server returned non-JSON response (HTTP ${res.status}). The request body may be too large — try a smaller repo.`);
       }
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          setGithubError(GITHUB_AUTH_ERROR);
+          setGithubPhase("error");
+          toast({ title: "Not authorised", description: GITHUB_AUTH_ERROR.long, variant: "destructive" });
+          return;
+        }
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
 
       setGithubResult(data);
       setGithubPhase("scanned");
@@ -2562,7 +2618,9 @@ export function Scan() {
     } catch (err) {
       console.error("[runGithubScan] scan failed:", err);
       setGithubPhase("error");
-      toast({ title: "Scan Failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+      const detail = err instanceof Error ? err.message : String(err);
+      setGithubError({ long: `Scan failed — ${detail}`, short: "Scan failed." });
+      toast({ title: "Scan Failed", description: detail, variant: "destructive" });
     }
   };
 
@@ -2957,7 +3015,7 @@ export function Scan() {
                               const hasFind  = isActive && scanState === "complete" && pasteFindings.length > 0;
                               return (
                                 <button key={sf.name}
-                                  onClick={() => openFileInTab(sf.name, sf.content, fileLk, filePath)}
+                                  onClick={() => openFileInTab(sf.name, sf.content, fileLk, filePath, true)}
                                   className={cn(
                                     "flex items-center gap-1.5 w-full py-[3px] text-[12px] font-mono border-l-2 transition-colors",
                                     isActive ? "bg-[#4f46e5]/8 text-[#4f46e5] border-[#4f46e5]" : "text-[#6b7280] hover:text-[#0a0e1a] hover:bg-[#f1f3f7] border-transparent",
@@ -2981,7 +3039,7 @@ export function Scan() {
                               const flk = getLangKey("", rf.name);
                               return (
                                 <button key={rf.name}
-                                  onClick={() => openFileInTab(rf.name, rf.content, flk, rf.name)}
+                                  onClick={() => openFileInTab(rf.name, rf.content, flk, rf.name, true)}
                                   className={cn(
                                     "flex items-center gap-1.5 w-full py-[3px] text-[12px] font-mono text-[#6b7280] hover:text-[#334155] hover:bg-[#f1f3f7] transition-colors",
                                   )}
@@ -3052,8 +3110,10 @@ export function Scan() {
                         /* ── Normal idle / error state ── */
                         <div className="text-center">
                           <Github className="h-8 w-8 text-[#9aa3b2] mx-auto mb-3" />
-                          <p className="text-[11px] text-[#9aa3b2]">
-                            {githubPhase === "error" ? "Fetch failed — check the URL and try again." : "Enter a GitHub URL above to fetch a repository."}
+                          <p className="text-[11px] text-[#6b7280]">
+                            {githubPhase === "error"
+                              ? (githubError?.long ?? GITHUB_BAD_URL_ERROR.long)
+                              : "Enter a GitHub URL above to fetch a repository."}
                           </p>
                           <div className="mt-4 space-y-1">
                             {QUICK_REPOS.map(r => (
@@ -3353,7 +3413,7 @@ export function Scan() {
                 <Shield className="h-12 w-12 opacity-30" />
                 <span className="text-sm font-mono">
                   {githubPhase === "fetching" ? fetchProgress
-                    : githubPhase === "error" ? "Error — check URL and try again."
+                    : githubPhase === "error" ? (githubError?.short ?? GITHUB_BAD_URL_ERROR.short)
                     : "Fetch a GitHub repo to browse its files."}
                 </span>
               </div>

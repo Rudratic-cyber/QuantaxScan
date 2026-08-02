@@ -58,9 +58,9 @@ export function Footer() {
                         {l.label}
                       </a>
                     ) : l.planned ? (
-                      <span className="inline-flex items-center gap-1.5 text-sm text-[#9aa3b2]">
+                      <span className="inline-flex items-center gap-1.5 text-sm text-[#6b7280]">
                         {l.label}
-                        <span className="rounded bg-[#f1f3f7] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#9aa3b2]">Planned</span>
+                        <span className="rounded border border-[#e5e7eb] bg-[#f1f3f7] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#6b7280]">Planned</span>
                       </span>
                     ) : (
                       <Link href={l.href} className="text-sm text-[#475569] transition-colors hover:text-[#0a0e1a]">

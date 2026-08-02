@@ -431,7 +431,7 @@ export function Demo() {
               )}
             </div>
 
-            <ScrollArea className="flex-1">
+            <ScrollArea className="flex-1" viewportClassName="[&>div]:block!">
               {selectedFile && selectedFile.findings.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
                   <div className="h-12 w-12 rounded-full bg-[#ecfdf5] flex items-center justify-center mb-3">
