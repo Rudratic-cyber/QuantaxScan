@@ -7,11 +7,15 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "test": "pnpm -r --if-present run test"
+    "test:libs": "pnpm -r --if-present run test",
+    "test:api": "pnpm --filter @workspace/api-server test",
+    "test:ui": "playwright test",
+    "test": "pnpm run test:api && pnpm run test:ui"
   },
   "private": true,
   "devDependencies": {
-    "typescript": "~5.9.2",
-    "prettier": "^3.8.1"
+    "@playwright/test": "^1.62.1",
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
   }
 }
