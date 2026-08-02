@@ -24,11 +24,13 @@ Replace per-scan findings with persistent assets and time-stamped observations.
 - Stable identity across re-scans via a deterministic fingerprint
 
 **Acceptance:** re-scanning an unchanged repo produces zero new assets and updates `lastSeen` on
-existing ones. Removing the vulnerable line marks the asset `gone`, and it stays in history.
-Verified for the "zero new assets on re-scan" half (`artifacts/api-server/src/lib/asset-ingest.test.ts`);
-the `gone`-status lifecycle transition on removal has no code driving it yet — nothing currently
-marks an asset `gone` when its source line disappears from a re-scan, only `lastSeen` updates
-when it is still present.
+existing ones. Removing the vulnerable line marks the asset `gone`, and it stays in history. Both
+halves verified (`artifacts/api-server/src/lib/asset-ingest.test.ts`). The `gone` reconciliation
+is scoped **per scanned file** (by `location`), not per repo/project: a call that only submits a
+subset of a project's files (e.g. `POST /scans` submitting one file) has no information about
+files it wasn't given, so those files' assets are left untouched rather than wrongly marked gone.
+Reappearance is symmetric — a `gone` asset that is observed again reactivates the same row
+(`status` back to `active`) rather than creating a duplicate.
 
 **Depends on:** nothing. **Blocks:** literally everything else.
 

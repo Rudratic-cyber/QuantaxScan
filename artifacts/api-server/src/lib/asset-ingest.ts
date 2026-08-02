@@ -1,7 +1,7 @@
 import { assetsTable, observationsTable, collectionRunsTable } from "@workspace/db/schema";
 import * as schema from "@workspace/db/schema";
 import { collectSourceObservations, computeFingerprint } from "@workspace/collectors";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 // Generic over the query-result driver (node-postgres in production,
@@ -27,6 +27,7 @@ export interface IngestResult {
   assetsCreated: number;
   assetsUpdated: number;
   observationsCreated: number;
+  assetsMarkedGone: number;
 }
 
 export async function ingestSourceObservations(
@@ -57,6 +58,12 @@ export async function ingestSourceObservations(
 
   let assetsCreated = 0;
   let assetsUpdated = 0;
+  // Fingerprints touched by an observation in this run — used below to find
+  // previously-active assets at a scanned location that this run did NOT
+  // reobserve, i.e. the vulnerable line was removed. Only fingerprints, not
+  // full asset rows, need tracking here since the gone-reconciliation query
+  // re-fetches whatever it needs to update.
+  const touchedFingerprints = new Set<string>();
 
   for (const raw of observations) {
     const source = raw.locationDetail?.kind === "source" ? raw.locationDetail.source : undefined;
@@ -75,6 +82,7 @@ export async function ingestSourceObservations(
       algorithm: raw.algorithm,
       symbol,
     });
+    touchedFingerprints.add(fingerprint);
 
     const [existingAsset] = await db
       .select()
@@ -118,5 +126,40 @@ export async function ingestSourceObservations(
     });
   }
 
-  return { collectionRunId: run.id, assetsCreated, assetsUpdated, observationsCreated: observations.length };
+  // Lifecycle: mark "gone" any previously-active asset at a location this
+  // run fully rescanned but did not reobserve — the vulnerable line was
+  // removed. docs/Claude/03-features.md A1 acceptance: "Removing the
+  // vulnerable line marks the asset `gone`, and it stays in history" (the
+  // row is updated in place, never deleted).
+  //
+  // Scoped per scanned FILE (by `location`), not per `repo`: a call that
+  // only submits a subset of a repo's files (e.g. POST /scans submitting
+  // one file) has no information about files it wasn't given, so those
+  // files' assets must be left untouched rather than wrongly marked gone.
+  let assetsMarkedGone = 0;
+  const scannedLocations = [...new Set(params.files.map((f) => `${params.repo}:${f.path}`))];
+  if (scannedLocations.length > 0) {
+    const priorActiveAssets = await db
+      .select()
+      .from(assetsTable)
+      .where(
+        and(
+          eq(assetsTable.organizationId, organizationId),
+          eq(assetsTable.surface, "source"),
+          inArray(assetsTable.location, scannedLocations),
+          eq(assetsTable.status, "active"),
+        ),
+      );
+
+    for (const asset of priorActiveAssets) {
+      if (!touchedFingerprints.has(asset.fingerprint)) {
+        // lastSeen is deliberately left as-is — it records when the asset
+        // was last actually observed, not when we last failed to find it.
+        await db.update(assetsTable).set({ status: "gone" }).where(eq(assetsTable.id, asset.id));
+        assetsMarkedGone++;
+      }
+    }
+  }
+
+  return { collectionRunId: run.id, assetsCreated, assetsUpdated, observationsCreated: observations.length, assetsMarkedGone };
 }

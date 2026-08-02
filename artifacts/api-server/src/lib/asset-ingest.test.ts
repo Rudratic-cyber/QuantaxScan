@@ -78,6 +78,75 @@ describe("ingestSourceObservations — the A1/A2 dual-write path", () => {
     expect(asset.keySize).toBeNull();
   });
 
+  it("marks an asset gone when a rescan of its file no longer finds it, and keeps it in history (A1 acceptance)", async () => {
+    const { db, close } = await createTestDb();
+    cleanup = close;
+
+    const firstScan = ["key = RSA.generate(2048)", "h = hashlib.md5(x)"].join("\n");
+    const first = await ingestSourceObservations(db, {
+      repo: "project:1",
+      files: [{ path: "keys.py", content: firstScan, language: "python" }],
+    });
+    expect(first.assetsCreated).toBe(2);
+    expect(first.assetsMarkedGone).toBe(0);
+
+    // The RSA line is removed; MD5 remains.
+    const secondScan = "h = hashlib.md5(x)";
+    const second = await ingestSourceObservations(db, {
+      repo: "project:1",
+      files: [{ path: "keys.py", content: secondScan, language: "python" }],
+    });
+    expect(second.assetsCreated).toBe(0);
+    expect(second.assetsMarkedGone).toBe(1);
+
+    const assets = await db.select().from(assetsTable).where(eq(assetsTable.organizationId, DEFAULT_ORGANIZATION_ID));
+    // Still 2 rows — the RSA asset is not deleted, only its status changed.
+    expect(assets).toHaveLength(2);
+    const rsaAsset = assets.find((a) => a.algorithm === "RSA")!;
+    const md5Asset = assets.find((a) => a.algorithm === "MD5")!;
+    expect(rsaAsset.status).toBe("gone");
+    expect(md5Asset.status).toBe("active");
+
+    // Its observation history from the first scan still exists.
+    const rsaObservations = await db.select().from(observationsTable).where(eq(observationsTable.assetId, rsaAsset.id));
+    expect(rsaObservations).toHaveLength(1);
+
+    // If the line comes back in a later scan, the same asset row reactivates rather than a new one being created.
+    const third = await ingestSourceObservations(db, {
+      repo: "project:1",
+      files: [{ path: "keys.py", content: firstScan, language: "python" }],
+    });
+    expect(third.assetsCreated).toBe(0);
+    const [reactivated] = await db.select().from(assetsTable).where(eq(assetsTable.id, rsaAsset.id));
+    expect(reactivated.status).toBe("active");
+    const assetsAfterReactivation = await db.select().from(assetsTable).where(eq(assetsTable.organizationId, DEFAULT_ORGANIZATION_ID));
+    expect(assetsAfterReactivation).toHaveLength(2); // still the same two rows, no duplicate created on reactivation
+  });
+
+  it("does not mark a file's assets gone when that file is simply absent from a later, narrower scan — reconciliation is scoped per scanned file, not per repo", async () => {
+    const { db, close } = await createTestDb();
+    cleanup = close;
+
+    await ingestSourceObservations(db, {
+      repo: "project:1",
+      files: [
+        { path: "a.py", content: "key = RSA.generate(2048)", language: "python" },
+        { path: "b.py", content: "h = hashlib.md5(x)", language: "python" },
+      ],
+    });
+
+    // A later scan submits only a.py — b.py was not part of this run, so
+    // its asset must be left alone, not marked gone.
+    const second = await ingestSourceObservations(db, {
+      repo: "project:1",
+      files: [{ path: "a.py", content: "key = RSA.generate(2048)", language: "python" }],
+    });
+    expect(second.assetsMarkedGone).toBe(0);
+
+    const [md5Asset] = await db.select().from(assetsTable).where(eq(assetsTable.algorithm, "MD5"));
+    expect(md5Asset.status).toBe("active");
+  });
+
   it("writes a collection_run and links every observation to it", async () => {
     const { db, close } = await createTestDb();
     cleanup = close;

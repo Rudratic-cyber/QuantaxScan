@@ -161,7 +161,11 @@ The existing data is a smoke test. Do this now, while that is true.
    in `artifacts/api-server/src/routes/scans.ts` now also call
    `artifacts/api-server/src/lib/asset-ingest.ts`'s `ingestSourceObservations()` alongside the
    existing `findings` insert. Dual-write failures are logged, not propagated — the legacy path
-   must keep working during the transition even if the new path has an issue.
+   must keep working during the transition even if the new path has an issue. This same function
+   also drives the `active` → `gone` lifecycle transition: any previously-active asset at a
+   location this call fully rescanned but did not reobserve is marked `gone` in place (never
+   deleted), and reobserving it later reactivates the same row. Reconciliation is scoped per
+   scanned file, not per repo — see the function for why.
 4. ⬜ **Cut reads over to `assets`** — **deliberately not done in this change.** `stats.ts`,
    `projects.ts` (`GET /projects/:id/findings`) and `reports.ts` all read `findings` today, and
    there is no `GET /api/inventory/assets` yet. Cutting reads over is a real piece of work (new
