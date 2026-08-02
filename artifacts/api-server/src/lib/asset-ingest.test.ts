@@ -147,6 +147,32 @@ describe("ingestSourceObservations — the A1/A2 dual-write path", () => {
     expect(md5Asset.status).toBe("active");
   });
 
+  it("does not reset a waived or remediated asset to active when it is observed again — only gone reactivates", async () => {
+    const { db, close } = await createTestDb();
+    cleanup = close;
+
+    const files = [{ path: "keys.py", content: "key = RSA.generate(2048)\nh = hashlib.md5(x)", language: "python" }];
+    await ingestSourceObservations(db, { repo: "project:1", files });
+
+    // A human accepts the RSA risk and marks the MD5 one fixed. Both are
+    // decisions about the asset, not observations of it.
+    await db.update(assetsTable).set({ status: "waived" }).where(eq(assetsTable.algorithm, "RSA"));
+    await db.update(assetsTable).set({ status: "remediated" }).where(eq(assetsTable.algorithm, "MD5"));
+    const [beforeRescan] = await db.select().from(assetsTable).where(eq(assetsTable.algorithm, "RSA"));
+
+    await ingestSourceObservations(db, { repo: "project:1", files });
+
+    const assets = await db.select().from(assetsTable).where(eq(assetsTable.organizationId, DEFAULT_ORGANIZATION_ID));
+    expect(assets.find((a) => a.algorithm === "RSA")!.status).toBe("waived");
+    expect(assets.find((a) => a.algorithm === "MD5")!.status).toBe("remediated");
+    // The re-observation is still recorded — only the human decision is left alone.
+    expect(assets.find((a) => a.algorithm === "RSA")!.lastSeen.getTime()).toBeGreaterThanOrEqual(
+      beforeRescan.lastSeen.getTime(),
+    );
+    const observations = await db.select().from(observationsTable).where(eq(observationsTable.assetId, beforeRescan.id));
+    expect(observations).toHaveLength(2);
+  });
+
   it("writes a collection_run and links every observation to it", async () => {
     const { db, close } = await createTestDb();
     cleanup = close;

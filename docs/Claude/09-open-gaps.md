@@ -49,7 +49,12 @@ Severity is **for the enterprise product**, not for today's demo.
 > size or a named curve's bit size **when it appears on the same line as the matched
 > algorithm** — `RSA.generate(2048)`, `elliptic.P384()`, `createECDH('secp256k1')` all resolve;
 > `RSA.generate(bits)` (a variable) or a constant defined on a different line do not, and
-> correctly stay `keySize: null` rather than defaulting to anything. **What this does not close:**
+> correctly stay `keySize: null` rather than defaulting to anything. Which *kind* of literal
+> counts is gated on the matched algorithm: a curve name is only a key size for the EC
+> algorithms, and a modulus only for RSA/DSA. A line naming both — e.g. an SSH preferred-key
+> list `["rsa-sha2-256", "ecdsa-sha2-nistp256"]` — must not report the curve as the RSA key's
+> size; a wrong value here is worse than `null`, because A4 will key security strength off it.
+> **What this does not close:**
 > this is a regex/line-based detector, not a parser — it cannot fold constants or read
 > cross-line context, so most real code (like the pattern above) still resolves to
 > undetermined. It also does not close the "mapping engine returns both candidate obligations"

@@ -1,0 +1,1 @@
+CREATE INDEX "assets_org_location_status_idx" ON "assets" USING btree ("organization_id","location","status");

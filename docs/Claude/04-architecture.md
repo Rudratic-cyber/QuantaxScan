@@ -164,8 +164,13 @@ The existing data is a smoke test. Do this now, while that is true.
    must keep working during the transition even if the new path has an issue. This same function
    also drives the `active` → `gone` lifecycle transition: any previously-active asset at a
    location this call fully rescanned but did not reobserve is marked `gone` in place (never
-   deleted), and reobserving it later reactivates the same row. Reconciliation is scoped per
-   scanned file, not per repo — see the function for why.
+   deleted), and reobserving it later reactivates the same row (`gone` → `active` only; `waived`
+   and `remediated` survive re-observation untouched). Reconciliation is scoped per scanned file,
+   not per repo — see the function for why. The whole ingest is one transaction and a fixed number
+   of statements regardless of detection count: observations are collapsed to one row per
+   fingerprint and upserted with `ON CONFLICT DO UPDATE`, so a concurrent scan of the same project
+   cannot lose the dual-write to a unique-index violation, and `collection_runs.observationCount`
+   cannot outlive a partial write.
 4. ⬜ **Cut reads over to `assets`** — **deliberately not done in this change.** `stats.ts`,
    `projects.ts` (`GET /projects/:id/findings`) and `reports.ts` all read `findings` today, and
    there is no `GET /api/inventory/assets` yet. Cutting reads over is a real piece of work (new
@@ -185,6 +190,14 @@ The existing data is a smoke test. Do this now, while that is true.
 `lib/db/src/schema/findings.ts` / `scans.ts`. `scripts/src/cleanup-orphans.ts` must run first
 against any database old enough to have orphaned rows, or the `ADD CONSTRAINT` in the generated
 migration fails outright.
+
+`assets`/`observations` deliberately have **no** foreign key to a project: an asset is
+organization-scoped and cross-surface, and a `tls`/`kms`/`certificate` asset has no project at
+all. So `DELETE /api/projects/:id` cannot rely on a cascade for them — it reconciles them
+explicitly by the `project:<id>:` location prefix (`observations` then cascade off `assets`),
+which is what keeps the submitted `codeSnippet` in `observations.evidence` from outliving the
+project delete. The `project:<id>` convention itself has one owner, `projectRepoId()` in
+`lib/db/src/schema/assets.ts`, used by the scan routes, the backfill script, and that handler.
 
 ### Also: stop storing customer source code
 

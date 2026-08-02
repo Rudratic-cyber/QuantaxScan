@@ -82,6 +82,22 @@ const NAMED_CURVE_BIT_SIZES: Record<string, number> = {
 /** Modulus sizes an RSA/DSA key is actually generated at, in practice. Used to reject an incidental same-line number (a year, an RFC number, a port) that is not a key size. */
 const PLAUSIBLE_MODULUS_BIT_SIZES = new Set([512, 1024, 2048, 3072, 4096, 7680, 8192, 15360]);
 
+/**
+ * Which kind of literal, if any, states a given algorithm's key size. A curve
+ * name is only that algorithm's key size for elliptic-curve algorithms: a line
+ * such as `_preferred_keys = ["rsa-sha2-256", "ecdsa-sha2-nistp256"]` matches
+ * the RSA pattern but its curve token belongs to a different algorithm
+ * entirely, and a symmetric/hash match (MD5, SHA-1, AES-ECB) has neither a
+ * modulus nor a curve on the line. Anything not listed here stays undetermined.
+ */
+const KEY_SIZE_SOURCE: Record<string, "modulus" | "curve"> = {
+  RSA: "modulus",
+  DSA: "modulus",
+  ECDSA: "curve",
+  "ECDH/DH": "curve",
+  EdDSA: "curve",
+};
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -94,17 +110,21 @@ function escapeRegExp(s: string): string {
  * Returns `undefined` — never a guessed default — when no literal is found.
  */
 export function extractKeySizeFromLine(line: string, algorithm: string): number | undefined {
-  for (const [curveName, bits] of Object.entries(NAMED_CURVE_BIT_SIZES)) {
-    if (new RegExp(`\\b${escapeRegExp(curveName)}\\b`, "i").test(line)) {
-      return bits;
-    }
-  }
-  if (algorithm === "RSA" || algorithm === "DSA") {
+  const kind = KEY_SIZE_SOURCE[algorithm];
+  if (kind === "modulus") {
     const numbers = line.match(/\b\d{3,5}\b/g);
     if (numbers) {
       for (const n of numbers) {
         const value = parseInt(n, 10);
         if (PLAUSIBLE_MODULUS_BIT_SIZES.has(value)) return value;
+      }
+    }
+    return undefined;
+  }
+  if (kind === "curve") {
+    for (const [curveName, bits] of Object.entries(NAMED_CURVE_BIT_SIZES)) {
+      if (new RegExp(`\\b${escapeRegExp(curveName)}\\b`, "i").test(line)) {
+        return bits;
       }
     }
   }

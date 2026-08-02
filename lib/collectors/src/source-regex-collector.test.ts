@@ -91,4 +91,21 @@ describe("extractKeySizeFromLine — G-05", () => {
     expect(extractKeySizeFromLine("Implements SSH-2.0 (RFC 4253) RSA handshake", "RSA")).toBeUndefined();
     expect(extractKeySizeFromLine("RSA key rotation policy: review by 2030", "RSA")).toBeUndefined();
   });
+
+  it("never reads a curve name as an RSA/DSA key size — a curve on the line belongs to a different algorithm", () => {
+    // The paramiko fixture's preferred-key list: the RSA pattern matches on
+    // "rsa-sha2-256", but nistp256 is the ECDSA entry's curve, not an RSA
+    // modulus (256 is not a possible one).
+    expect(
+      extractKeySizeFromLine('_preferred_keys = ["rsa-sha2-256", "ssh-rsa", "ecdsa-sha2-nistp256"]', "RSA"),
+    ).toBeUndefined();
+    expect(extractKeySizeFromLine("dsa_params(secp384r1)", "DSA")).toBeUndefined();
+    // A literal modulus still wins on a line that also names a curve.
+    expect(extractKeySizeFromLine("RSA.generate(2048)  # replaces secp256r1", "RSA")).toBe(2048);
+  });
+
+  it("returns undefined for algorithms whose key size is neither a modulus nor a curve", () => {
+    expect(extractKeySizeFromLine("hashlib.md5(secp256r1_blob)", "MD5")).toBeUndefined();
+    expect(extractKeySizeFromLine("createHash('sha1') // was P-384", "SHA-1")).toBeUndefined();
+  });
 });

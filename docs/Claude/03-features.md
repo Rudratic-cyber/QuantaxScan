@@ -30,7 +30,9 @@ is scoped **per scanned file** (by `location`), not per repo/project: a call tha
 subset of a project's files (e.g. `POST /scans` submitting one file) has no information about
 files it wasn't given, so those files' assets are left untouched rather than wrongly marked gone.
 Reappearance is symmetric — a `gone` asset that is observed again reactivates the same row
-(`status` back to `active`) rather than creating a duplicate.
+(`status` back to `active`) rather than creating a duplicate. Reactivation is *only* `gone` →
+`active`: `waived` and `remediated` are human decisions about an asset, not observations of it,
+so re-seeing the same line records the observation and advances `lastSeen` without undoing them.
 
 **Depends on:** nothing. **Blocks:** literally everything else.
 

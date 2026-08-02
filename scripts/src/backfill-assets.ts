@@ -28,9 +28,9 @@
  * Usage: `pnpm --filter @workspace/scripts run backfill-assets`
  * Requires `DATABASE_URL` to point at the target database.
  */
-import { db, scansTable, findingsTable, assetsTable, observationsTable, collectionRunsTable } from "@workspace/db";
+import { db, scansTable, findingsTable, assetsTable, observationsTable, collectionRunsTable, projectRepoId } from "@workspace/db";
 import { computeFingerprint } from "@workspace/collectors";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 const DEFAULT_ORGANIZATION_ID = 1;
 
@@ -43,7 +43,11 @@ async function main() {
     process.exit(1);
   }
 
-  const scans = await db.select().from(scansTable);
+  // Oldest scan first. Without this the rows come back in whatever order the
+  // heap hands them over, and `firstSeen`/`lastSeen` — the entire reason this
+  // script exists rather than letting dual-write populate history — would be
+  // taken from an arbitrary scan rather than the first/last one.
+  const scans = await db.select().from(scansTable).orderBy(asc(scansTable.createdAt), asc(scansTable.id));
   let assetsCreated = 0;
   let assetsReObserved = 0;
   let observationsCreated = 0;
@@ -52,7 +56,7 @@ async function main() {
   for (const scan of scans) {
     const findings = await db.select().from(findingsTable).where(eq(findingsTable.scanId, scan.id));
     const observedAt = scan.completedAt ?? scan.createdAt;
-    const repo = `project:${scan.projectId}`;
+    const repo = projectRepoId(scan.projectId);
 
     const [run] = await db
       .insert(collectionRunsTable)
@@ -89,7 +93,16 @@ async function main() {
 
       let assetId: number;
       if (existingAsset) {
-        await db.update(assetsTable).set({ lastSeen: observedAt }).where(eq(assetsTable.id, existingAsset.id));
+        // lastSeen only ever advances and firstSeen only ever retreats. Scans
+        // are processed oldest-first by createdAt, but a scan's completedAt
+        // can still predate an earlier-created scan's, so the window is
+        // widened explicitly rather than relying on the ordering alone.
+        const widened: { lastSeen?: Date; firstSeen?: Date } = {};
+        if (observedAt > existingAsset.lastSeen) widened.lastSeen = observedAt;
+        if (observedAt < existingAsset.firstSeen) widened.firstSeen = observedAt;
+        if (widened.lastSeen || widened.firstSeen) {
+          await db.update(assetsTable).set(widened).where(eq(assetsTable.id, existingAsset.id));
+        }
         assetId = existingAsset.id;
         assetsReObserved++;
       } else {

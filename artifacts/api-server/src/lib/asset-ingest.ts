@@ -1,7 +1,7 @@
 import { assetsTable, observationsTable, collectionRunsTable } from "@workspace/db/schema";
 import * as schema from "@workspace/db/schema";
 import { collectSourceObservations, computeFingerprint } from "@workspace/collectors";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 // Generic over the query-result driver (node-postgres in production,
@@ -42,28 +42,15 @@ export async function ingestSourceObservations(
   const organizationId = params.organizationId ?? DEFAULT_ORGANIZATION_ID;
   const observations = collectSourceObservations({ kind: "source", repo: params.repo, files: params.files });
 
-  const [run] = await db
-    .insert(collectionRunsTable)
-    .values({
-      organizationId,
-      collector: "source-regex",
-      collectorVersion: "1.0.0",
-      surface: "source",
-      status: "completed",
-      target: params.repo,
-      observationCount: observations.length,
-      completedAt: new Date(),
-    })
-    .returning();
-
-  let assetsCreated = 0;
-  let assetsUpdated = 0;
-  // Fingerprints touched by an observation in this run — used below to find
-  // previously-active assets at a scanned location that this run did NOT
-  // reobserve, i.e. the vulnerable line was removed. Only fingerprints, not
-  // full asset rows, need tracking here since the gone-reconciliation query
-  // re-fetches whatever it needs to update.
-  const touchedFingerprints = new Set<string>();
+  // Collapse the run's observations to one row per asset before touching the
+  // database: a file legitimately matches the same (repo, path, algorithm,
+  // symbol) on many lines, and those are many observations of ONE asset.
+  // Later lines win, so the asset reflects the last state the collector saw —
+  // including a key size going back to undetermined. Deduplicating here is
+  // also what makes the batched upsert legal: Postgres rejects an ON CONFLICT
+  // DO UPDATE that would touch the same row twice in one statement.
+  const assetValuesByFingerprint = new Map<string, typeof assetsTable.$inferInsert>();
+  const pendingObservations: Array<{ fingerprint: string; values: Omit<typeof observationsTable.$inferInsert, "assetId" | "collectionRunId"> }> = [];
 
   for (const raw of observations) {
     const source = raw.locationDetail?.kind === "source" ? raw.locationDetail.source : undefined;
@@ -82,84 +69,138 @@ export async function ingestSourceObservations(
       algorithm: raw.algorithm,
       symbol,
     });
-    touchedFingerprints.add(fingerprint);
 
-    const [existingAsset] = await db
-      .select()
-      .from(assetsTable)
-      .where(and(eq(assetsTable.organizationId, organizationId), eq(assetsTable.fingerprint, fingerprint)));
+    assetValuesByFingerprint.set(fingerprint, {
+      organizationId,
+      fingerprint,
+      surface: "source",
+      algorithm: raw.algorithm,
+      keySize,
+      location: raw.location,
+      locationDetail: raw.locationDetail,
+      status: "active",
+    });
 
-    let assetId: number;
-    if (existingAsset) {
-      await db
-        .update(assetsTable)
-        .set({ lastSeen: new Date(), status: "active", keySize, location: raw.location, locationDetail: raw.locationDetail })
-        .where(eq(assetsTable.id, existingAsset.id));
-      assetId = existingAsset.id;
-      assetsUpdated++;
-    } else {
-      const [created] = await db
-        .insert(assetsTable)
-        .values({
-          organizationId,
-          fingerprint,
-          surface: "source",
-          algorithm: raw.algorithm,
-          keySize,
-          location: raw.location,
-          locationDetail: raw.locationDetail,
-          status: "active",
-        })
-        .returning();
-      assetId = created.id;
-      assetsCreated++;
-    }
-
-    await db.insert(observationsTable).values({
-      assetId,
-      collectionRunId: run.id,
-      collector: "source-regex",
-      collectorVersion: "1.0.0",
-      confidence: raw.confidence,
-      discoveryModality: raw.discoveryModality,
-      evidence: { ...raw.evidence, algorithm: raw.algorithm, keySize, location: raw.location },
+    pendingObservations.push({
+      fingerprint,
+      values: {
+        collector: "source-regex",
+        collectorVersion: "1.0.0",
+        confidence: raw.confidence,
+        discoveryModality: raw.discoveryModality,
+        evidence: { ...raw.evidence, algorithm: raw.algorithm, keySize, location: raw.location },
+      },
     });
   }
 
-  // Lifecycle: mark "gone" any previously-active asset at a location this
-  // run fully rescanned but did not reobserve — the vulnerable line was
-  // removed. docs/Claude/03-features.md A1 acceptance: "Removing the
-  // vulnerable line marks the asset `gone`, and it stays in history" (the
-  // row is updated in place, never deleted).
-  //
+  // Fingerprints touched by an observation in this run — used below to find
+  // previously-active assets at a scanned location that this run did NOT
+  // reobserve, i.e. the vulnerable line was removed.
+  const touchedFingerprints = new Set(assetValuesByFingerprint.keys());
   // Scoped per scanned FILE (by `location`), not per `repo`: a call that
   // only submits a subset of a repo's files (e.g. POST /scans submitting
   // one file) has no information about files it wasn't given, so those
   // files' assets must be left untouched rather than wrongly marked gone.
-  let assetsMarkedGone = 0;
   const scannedLocations = [...new Set(params.files.map((f) => `${params.repo}:${f.path}`))];
-  if (scannedLocations.length > 0) {
-    const priorActiveAssets = await db
-      .select()
-      .from(assetsTable)
-      .where(
-        and(
-          eq(assetsTable.organizationId, organizationId),
-          eq(assetsTable.surface, "source"),
-          inArray(assetsTable.location, scannedLocations),
-          eq(assetsTable.status, "active"),
-        ),
-      );
 
-    for (const asset of priorActiveAssets) {
-      if (!touchedFingerprints.has(asset.fingerprint)) {
+  // One transaction, a fixed number of statements regardless of how many
+  // detections the run produced — `POST /scans/multi` submits a whole repo
+  // at once, and this runs inside the request. The transaction is what keeps
+  // `collection_runs.observationCount` honest: a failure part-way cannot
+  // leave a run row claiming more observations than were written.
+  return await db.transaction(async (tx) => {
+    const [run] = await tx
+      .insert(collectionRunsTable)
+      .values({
+        organizationId,
+        collector: "source-regex",
+        collectorVersion: "1.0.0",
+        surface: "source",
+        status: "completed",
+        target: params.repo,
+        observationCount: observations.length,
+        completedAt: new Date(),
+      })
+      .returning();
+
+    let assetsCreated = 0;
+    let assetsUpdated = 0;
+    const assetIdByFingerprint = new Map<string, number>();
+
+    if (assetValuesByFingerprint.size > 0) {
+      const fingerprints = [...assetValuesByFingerprint.keys()];
+      const existing = await tx
+        .select({ fingerprint: assetsTable.fingerprint })
+        .from(assetsTable)
+        .where(and(eq(assetsTable.organizationId, organizationId), inArray(assetsTable.fingerprint, fingerprints)));
+      assetsUpdated = existing.length;
+      assetsCreated = fingerprints.length - existing.length;
+
+      const upserted = await tx
+        .insert(assetsTable)
+        .values([...assetValuesByFingerprint.values()])
+        .onConflictDoUpdate({
+          target: [assetsTable.organizationId, assetsTable.fingerprint],
+          set: {
+            lastSeen: new Date(),
+            keySize: sql`excluded.key_size`,
+            location: sql`excluded.location`,
+            locationDetail: sql`excluded.location_detail`,
+            // Reactivation is only ever gone -> active. `waived` (a human
+            // explicitly accepted the risk) and `remediated` are decisions
+            // about the asset, not observations of it, so re-seeing the same
+            // line must not silently undo them. The gone-reconciliation below
+            // is already one-directional in the same way: it only ever moves
+            // `active` assets.
+            status: sql`CASE WHEN ${assetsTable.status} = 'gone' THEN 'active' ELSE ${assetsTable.status} END`,
+          },
+        })
+        .returning({ id: assetsTable.id, fingerprint: assetsTable.fingerprint });
+      // Keyed by fingerprint, never by position: the order rows come back
+      // from an upsert's RETURNING is not the order they were supplied in.
+      for (const row of upserted) assetIdByFingerprint.set(row.fingerprint, row.id);
+    }
+
+    if (pendingObservations.length > 0) {
+      await tx.insert(observationsTable).values(
+        pendingObservations.map((pending) => {
+          const assetId = assetIdByFingerprint.get(pending.fingerprint);
+          if (assetId === undefined) {
+            throw new Error(`asset upsert returned no row for fingerprint ${pending.fingerprint}`);
+          }
+          return { assetId, collectionRunId: run.id, ...pending.values };
+        }),
+      );
+    }
+
+    // Lifecycle: mark "gone" any previously-active asset at a location this
+    // run fully rescanned but did not reobserve — the vulnerable line was
+    // removed. docs/Claude/03-features.md A1 acceptance: "Removing the
+    // vulnerable line marks the asset `gone`, and it stays in history" (the
+    // row is updated in place, never deleted).
+    let assetsMarkedGone = 0;
+    if (scannedLocations.length > 0) {
+      const priorActiveAssets = await tx
+        .select({ id: assetsTable.id, fingerprint: assetsTable.fingerprint })
+        .from(assetsTable)
+        .where(
+          and(
+            eq(assetsTable.organizationId, organizationId),
+            eq(assetsTable.surface, "source"),
+            inArray(assetsTable.location, scannedLocations),
+            eq(assetsTable.status, "active"),
+          ),
+        );
+
+      const goneAssetIds = priorActiveAssets.filter((a) => !touchedFingerprints.has(a.fingerprint)).map((a) => a.id);
+      if (goneAssetIds.length > 0) {
         // lastSeen is deliberately left as-is — it records when the asset
         // was last actually observed, not when we last failed to find it.
-        await db.update(assetsTable).set({ status: "gone" }).where(eq(assetsTable.id, asset.id));
-        assetsMarkedGone++;
+        await tx.update(assetsTable).set({ status: "gone" }).where(inArray(assetsTable.id, goneAssetIds));
+        assetsMarkedGone = goneAssetIds.length;
       }
     }
-  }
 
-  return { collectionRunId: run.id, assetsCreated, assetsUpdated, observationsCreated: observations.length, assetsMarkedGone };
+    return { collectionRunId: run.id, assetsCreated, assetsUpdated, observationsCreated: observations.length, assetsMarkedGone };
+  });
 }
