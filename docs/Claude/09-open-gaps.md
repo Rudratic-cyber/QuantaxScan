@@ -70,13 +70,14 @@ NIST IR 8547's rules are keyed on **security strength**, not algorithm name:
 | 112 bits (RSA-2048, P-256) | Deprecated after 2030, disallowed after 2035 |
 | ≥ 128 bits (RSA-3072+, P-384+) | Disallowed after 2035 |
 
-The scanner detects the string `RSA`. It does not extract the modulus size. So **we cannot
-determine which row of the table applies** — meaning we cannot correctly state whether an asset
-faces a 2030 deprecation milestone or only the 2035 disallowance.
+The original diagnosis: the scanner detects the string `RSA` and does not extract the modulus
+size, so **we cannot determine which row of the table applies** — meaning we cannot correctly
+state whether an asset faces a 2030 deprecation milestone or only the 2035 disallowance.
 
-Right now `scanner.ts` emits `algorithm: "RSA"` with no `keySize`, and `RawObservation.keySize`
-in the target model is optional. Every mapping that depends on security strength is currently
-unresolvable.
+Before A1/A2, `scanner.ts` emitted `algorithm: "RSA"` with no `keySize` field at all. The field
+now exists and is populated same-line (see the update above), but `keySize` is optional by
+design, so every mapping that depends on security strength must still handle `null` — and
+nothing resolves it yet.
 
 **What closes it**
 
@@ -102,7 +103,8 @@ specifically, and another argument for prioritising B3/B4.
 ## G-06 — EdDSA not detected `High`
 
 Ed25519/Ed448 are quantum-vulnerable, appear explicitly in IR 8547 Table 2, and were added to
-FIPS 186-5 as an approved algorithm — so they are in active new deployment. `VULNERABILITY_PATTERNS`
+FIPS 186-5 as an approved algorithm — so they are in active new deployment. `SOURCE_PATTERNS`
+(`lib/collectors/src/source-regex-collector.ts`, formerly `scanner.ts`'s `VULNERABILITY_PATTERNS`)
 has no pattern for them.
 
 **What closes it:** one entry in the pattern table (aliases already recorded in

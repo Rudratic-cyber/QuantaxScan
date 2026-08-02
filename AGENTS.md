@@ -7,7 +7,8 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 ## Testing
 
 No test runner existed before the A1/A2 migration (2026-08-02). `vitest` is now used in
-`lib/collectors`, `lib/db`, and `artifacts/api-server` — run with `pnpm --filter <pkg> run test`.
+`lib/collectors`, `lib/db`, and `artifacts/api-server` — run all three with root `pnpm run test`
+(`pnpm -r --if-present run test`), or one with `pnpm --filter <pkg> run test`.
 DB-backed tests use `@electric-sql/pglite` (an embedded, in-process Postgres) instead of a live
 database: `lib/db/src/test-support/test-db.ts` (exported as `@workspace/db/test-support`) spins
 one up and applies the real migrations from `lib/db/drizzle/` via `drizzle-orm/pglite/migrator`,

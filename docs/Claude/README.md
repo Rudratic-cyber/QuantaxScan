@@ -145,21 +145,24 @@ output must label them as draft.
 
 ## Current state of the codebase
 
-Grounding for everything below — this is what exists as of 2026-08-01:
+Grounding for everything below — this is what exists as of 2026-08-02:
 
 | Component | Path | State |
 |---|---|---|
-| Regex scanner, 7 patterns | `artifacts/api-server/src/lib/scanner.ts` | built |
+| Regex scanner, 7 patterns | `lib/collectors/` (`SourceRegexCollector`); `artifacts/api-server/src/lib/scanner.ts` is a back-compat shim | built |
+| Collector contract, CPE 2.3, asset fingerprint | `lib/collectors/` | built |
 | Express 5 API, 9 route modules | `artifacts/api-server/src/routes/` | built |
 | React + Vite frontend | `artifacts/quantaxscan/` | built |
-| Drizzle schema — 10 tables | `lib/db/src/schema/` | built |
+| Drizzle schema | `lib/db/src/schema/` | built |
+| Asset/observation model, dual-written on every scan | `lib/db/src/schema/{assets,observations,collection_runs}.ts` | built, no reads |
 | OpenAPI → Orval codegen | `lib/api-spec/` | built |
 | GitHub repo scanning (25-file cap) | `routes/github.ts` | built |
 | AI chat over SSE | `routes/chat.ts` | built, needs API key |
 
-**Known gaps that this plan addresses:** findings are ephemeral per-scan; risk score is
+**Known gaps that this plan addresses:** every route still reads ephemeral per-scan `findings`
+(assets persist but nothing reads them — see [03-features.md](03-features.md) A1); risk score is
 detection-derived with no data-sensitivity input; no crypto visibility inside dependencies; no
-machine-readable export; no notion of an asset that persists across scans.
+machine-readable export.
 
 ---
 

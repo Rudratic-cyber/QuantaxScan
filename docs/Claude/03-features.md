@@ -57,10 +57,12 @@ but **unverified**: `SourceRegexCollector` is still the only implementation, so 
 criterion has not actually been exercised by a second collector.
 
 \* `@workspace/collectors` (new package): `Collector`/`RawObservation` contract, `SourceRegexCollector`,
-CPE 2.3 parser, discriminated `locationDetail`, deterministic fingerprint, and a small read-time
-lookup over `docs/Claude/mappings/algorithms.json` for severity/replacement/standard/explanation
-(not the C1 dynamic mapping engine — see [05](05-compliance-mapping.md)). Key size extraction
-(G-05) works for same-line literals and named curves in source only; B2–B10 remain unbuilt.
+CPE 2.3 parser, discriminated `locationDetail`, deterministic fingerprint, and a small lookup
+over `docs/Claude/mappings/algorithms.json` for severity/replacement/standard/explanation — not
+the C1 dynamic mapping engine (see [05](05-compliance-mapping.md)), and resolved as each finding
+is built, so those strings are still frozen into the `findings` row until reads cut over (see
+[04-architecture.md](04-architecture.md)). Key size extraction (G-05) works for same-line
+literals and named curves in source only; B2–B10 remain unbuilt.
 
 ---
 
@@ -143,7 +145,10 @@ product. Prioritise accordingly.
 | C8 | Waivers / exceptions register | `planned` | **P1** |
 | C9 | Control framework crosswalk (ISO 27001, SOC 2, PCI DSS 4, DORA) | `planned` | **P3** |
 
-\* C3 exists but is **hardcoded** in `scanner.ts`. C1/C2 move it to data. That's the real work.
+\* C3 exists as a static by-name lookup over `mappings/algorithms.json`
+(`lib/collectors/src/algorithm-mapping.ts`, added by A2 — it replaced the hardcoded copies in
+`scanner.ts`'s pattern table). C1/C2 are the real work: deadline resolution, security-strength
+keying and crosswalks, none of which that lookup does.
 
 Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 

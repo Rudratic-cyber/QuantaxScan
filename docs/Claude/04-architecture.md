@@ -150,9 +150,10 @@ The existing data is a smoke test. Do this now, while that is true.
 1. ✅ **Add new tables alongside the old ones** — `assets`, `observations`, `collection_runs`
    (`lib/db/src/schema/`); migration generated at `lib/db/drizzle/`.
 2. ✅ **Backfill `assets` from `findings` (one-time, best-effort)** — `scripts/src/backfill-assets.ts`.
-   Run `scripts/src/cleanup-orphans.ts` first — deleting orphaned `findings`/`scans` rows so the
-   new foreign keys below can actually be added — then the generated migration (or
-   `pnpm --filter @workspace/db run push`, this project's existing convention), then the backfill.
+   Run `pnpm --filter @workspace/scripts run cleanup-orphans` first — deleting orphaned
+   `findings`/`scans` rows so the new foreign keys below can actually be added — then the
+   generated migration (or `pnpm --filter @workspace/db run push`, this project's existing
+   convention), then `pnpm --filter @workspace/scripts run backfill-assets`.
    Not executed against the live database by this change: the sandboxed environment this change
    was authored in has no credentials for it. All three steps were exercised against a real
    (embedded) Postgres via `@electric-sql/pglite` in tests instead — see
@@ -264,9 +265,13 @@ The existing regex scanner becomes `SourceRegexCollector` (`lib/collectors/src/s
 line, first pattern wins" order), with `nistReplacement` / `nistStandard` / `explanation` /
 `severity` **removed** from its pattern table because those now come from
 `docs/Claude/mappings/algorithms.json` via `lib/collectors/src/algorithm-mapping.ts` — a small,
-deliberately non-dynamic read-time lookup (canonical name → severity/replacement/standard/
+deliberately non-dynamic lookup (canonical name → severity/replacement/standard/
 explanation/effort), not the C1 mapping engine (deadline resolution, crosswalks — still out of
-scope). `artifacts/api-server/src/lib/scanner.ts`'s `scanCode()` is now a thin back-compat shim
+scope). Note where that lookup runs: the shim resolves it when it builds each `ScanFinding`, and
+`routes/scans.ts` still writes the resolved strings into `findings` rows, so a mappings edit
+changes *future* scans, not existing rows. `observations` deliberately stores none of it, so the
+lookup only becomes a true read-time derivation once reads cut over (step 4 of the migration
+path above). `artifacts/api-server/src/lib/scanner.ts`'s `scanCode()` is now a thin back-compat shim
 over the collector, kept because four existing routes call it synchronously; see the file for
 why its copy text can now legitimately differ from the pre-refactor hardcoded strings.
 
