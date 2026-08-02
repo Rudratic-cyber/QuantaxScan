@@ -20,17 +20,17 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-02 | PCI DSS §12.3.3 wording unverified | Medium | PCI SSC registration | Human, 30 min |
 | G-03 | OMB M-23-02 submission format unknown | Medium | Not researched | Human, 2 h |
 | G-04 | `controls.json` crosswalks all seeded | Low | Deliberate — C9 is P3 | Defer to C9 |
-| G-05 | **Key size is never detected** | **Critical** | Design | B1 rework |
+| G-05 | **Key size is never detected** | **Critical, partially closed** | Design | B1 rework — model + source extraction landed; A4 deadline resolution still pending |
 | G-06 | EdDSA not detected at all | High | Missing pattern | 1 line |
 | G-07 | DSA mis-framed as a future problem | High | Mapping data (now fixed) | Reporting change |
 | G-08 | SHA-1 rule is use-dependent; we alert blindly | Medium | Regex can't see context | Confidence + copy |
 | G-09 | AES-ECB framed as a compliance violation | Medium | Wrong citation (now fixed) | Copy change |
 | G-10 | Hygiene findings inflate the PQC risk score | High | `computeScanResult` | A4 |
-| G-11 | No confidence score on findings | High | Design | A2 |
+| G-11 | No confidence score on findings | High, partially closed | Design | A2 — carried on `observations`; no UI/report consumer yet |
 | G-12 | Security findings S1–S8 | High | Interim auth shipped; needs deploy | See [08](08-security.md) |
 | G-13 | `.env` tracked in git | Low now, High later | One command | 2 min |
 | G-14 | No re-verification trigger for standards data | Medium | Process | Calendar + CI |
-| G-15 | Observation model not aligned to SP 1800-38B data elements | Medium | Design | A2 |
+| G-15 | Observation model not aligned to SP 1800-38B data elements | Medium, partially closed | Design | A2 — profile + modality landed; no network collector populates it |
 | G-16 | Binary scanning deferred; NIST treats it as core | Medium | Roadmap call | Re-scope B10 |
 | G-17 | Competitive framing understates the field | High | Wrong assumption | Marketing rewrite |
 | G-18 | `package.json` says MIT, no LICENSE file exists | High | Two-line fix | Before any publication |
@@ -38,9 +38,25 @@ Severity is **for the enterprise product**, not for today's demo.
 
 ---
 
-## G-05 — Key size is never detected `Critical`
+## G-05 — Key size is never detected `Critical, partially closed`
 
 **The most consequential gap in this register, and verification is what exposed it.**
+
+> **Update, 2026-08-02 (A1/A2).** `RawObservation.keySize` and `assets.keySize`/
+> `observations.evidence.keySize` now exist and are exercised end to end
+> (`lib/collectors/src/source-regex-collector.ts`'s `extractKeySizeFromLine`,
+> `lib/db/src/schema/asset-model.test.ts`). `SourceRegexCollector` extracts a literal modulus
+> size or a named curve's bit size **when it appears on the same line as the matched
+> algorithm** — `RSA.generate(2048)`, `elliptic.P384()`, `createECDH('secp256k1')` all resolve;
+> `RSA.generate(bits)` (a variable) or a constant defined on a different line do not, and
+> correctly stay `keySize: null` rather than defaulting to anything. **What this does not close:**
+> this is a regex/line-based detector, not a parser — it cannot fold constants or read
+> cross-line context, so most real code (like the pattern above) still resolves to
+> undetermined. It also does not close the "mapping engine returns both candidate obligations"
+> half of this gap at all — that requires A4/C1, neither of which is built. The register's
+> severity stays `Critical` because the customer-facing consequence (correct deadline reporting)
+> is still unresolved; what changed is that the model can now carry the fact when a collector
+> does determine it, instead of the field not existing.
 
 NIST IR 8547's rules are keyed on **security strength**, not algorithm name:
 
@@ -59,11 +75,15 @@ unresolvable.
 
 **What closes it**
 
-- Extract key size where the source makes it available (`RSA.generate(2048)`, `secp256r1`,
-  `P-384`, cert `notAfter`/SPKI parsing)
-- Where it is genuinely undeterminable, emit `keySize: null` and have the mapping engine return
-  **both** candidate obligations, flagged as "key size undetermined — assumed 112-bit"
-- Never silently pick one
+- ✅ Extract key size where the source makes it available same-line (`RSA.generate(2048)`,
+  `secp256r1`, `P-384`) — done for the source collector. ⬜ Cert `notAfter`/SPKI parsing needs B4,
+  not built.
+- ⬜ Where it is genuinely undeterminable, emit `keySize: null` and have the mapping engine
+  return **both** candidate obligations, flagged as "key size undetermined — assumed 112-bit" —
+  the model now faithfully carries `null` through persistence and read-back (tested); the mapping
+  engine that would consume it and return both obligations is A4/C1, not built.
+- ✅ Never silently pick one — the ingestion boundary converts `undefined` → `null` explicitly;
+  there is no code path that defaults a missing `keySize` to a number.
 
 **Blocks:** correct deadline reporting, therefore the certificate-expiry-vs-deadline chart
 (Row 5 of [06](06-cisa-dashboard.md)), therefore the strongest visual in the product.
@@ -167,7 +187,7 @@ each hygiene entry; the engine must honour it and report a separate "classical h
 
 ---
 
-## G-11 — No confidence score on findings `High`
+## G-11 — No confidence score on findings `High, partially closed`
 
 Every finding is presented as equally certain. `/\bRSA/i` matches prose, comments, variable
 names and unrelated acronyms; `/\bDH\b/i` matches initials and `DHCP` often enough to matter.
@@ -176,6 +196,13 @@ An inventory whose findings cannot be filtered by evidence quality will not surv
 
 **What closes it:** A2 collector interface — `RawObservation.confidence` is already in the target
 design. Regex ≈ 0.7, TLS handshake ≈ 1.0.
+
+> **Update, 2026-08-02 (A1/A2).** ✅ `RawObservation.confidence` exists, `SourceRegexCollector`
+> emits `0.7` for every observation, and it persists on `observations.confidence` (tested in
+> `lib/db/src/schema/asset-model.test.ts`). ⬜ Not closed: no route, report, or UI element
+> reads or filters by it yet — an inventory that carries confidence in the database but never
+> shows it is not yet "an inventory whose findings can be filtered by evidence quality." That is
+> D3/reporting scope, not A1/A2.
 
 ---
 
@@ -304,7 +331,7 @@ presumably be finalised, at which point every date in the system needs revisitin
 
 ---
 
-## G-15 — Observation model not aligned to SP 1800-38B `Medium`
+## G-15 — Observation model not aligned to SP 1800-38B `Medium, partially closed`
 
 NIST SP 1800-38B §4.1.4 defines descriptive data elements for normalised discovery output,
 including **CPE 2.3** (NIST IR 7695) for application software, operating system and device
@@ -319,6 +346,20 @@ carried on the observation alongside numeric confidence.
 
 **Why bother:** the same reason as CBOM export — interoperability over a private schema. CPE
 gives a join key into vulnerability tooling the customer already owns.
+
+> **Update, 2026-08-02 (A1/A2).** ✅ The `network` `locationDetail` profile (all seven Table 6
+> elements, `Cpe23FormattedString` for software/OS/vendor with the "Device Vendor" OUI
+> qualification), the internal CPE 2.3 parser/formatter (NIST IR 7695), and the six-value
+> `discoveryModality` enum (now **confirmed permanent**, not provisional — captain decision,
+> 2026-08-02) are all built — see `lib/collectors/src/{location-detail,cpe,enums}.ts` and
+> [04-architecture.md](04-architecture.md#nist-reached-the-same-conclusion--align-with-it).
+> `locationDetail` is `jsonb` validated at the application boundary rather than the database
+> layer, matching the investigation's recommendation not to explode it into per-surface columns.
+> ⬜ Not closed: **no collector populates the `network` profile.** B3 (TLS prober) and B4
+> (certificate) are the collectors that would put real CPE/hostname/port data into it, and
+> neither is built. This gap stays open until one of them lands; the schema and validation being
+> ready is necessary but not sufficient for "aligned to SP 1800-38B", which is about what the
+> product actually reports, not what its types permit.
 
 ---
 
@@ -401,7 +442,9 @@ deleting is cheaper than auditing 20+ images. Note this does **not** remove it f
 3. **G-06** — one pattern, closes a real detection hole
 4. **G-01** — 30 minutes, unblocks a whole customer segment
 5. **G-16** — a roadmap decision to make before committing to A2's surface priorities
-6. **G-05, G-10, G-11, G-15** — land together with A2/A4; they are the same refactor
+6. **G-05, G-10, G-11, G-15** — land together with A2/A4; they are the same refactor. **Update,
+   2026-08-02:** the A1/A2 half landed (G-05/G-11/G-15 partially closed — see each entry above);
+   G-10 is untouched, since it needs A4 (the Mosca risk engine), which is out of scope for A1/A2.
 7. **G-07, G-08, G-09** — reporting/copy changes, cheap once A4 exists
 8. **G-12, G-19** — before any pilot, and hard gates on open-sourcing. G-12's interim auth is
    shipped; the remaining S-findings and F1 are the pilot blockers

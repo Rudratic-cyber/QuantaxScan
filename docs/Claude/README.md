@@ -110,7 +110,10 @@ A third pass added the NIST publication these docs had been missing entirely:
 > **NIST SP 1800-38 (NCCoE) — "Migration to Post-Quantum Cryptography: Quantum Readiness,
 > Cryptographic Discovery"** is the practice guide for *cryptographic discovery tools* — our
 > exact product category. Volume B defines a discovery architecture, a normalisation scheme for
-> discovery output, and an eight-use-case functional test plan.
+> discovery output, and an eight-use-case functional test plan. **SP 1800-38A/B/C are all
+> preliminary drafts** (A April 2023; B/C December 2023), not final NIST publications — label
+> them as draft guidance anywhere this reaches a customer, and re-check when NIST publishes a
+> replacement.
 
 Earlier drafts had listed **NIST CSF 2.0** as the relevant NIST framework. That was wrong — CSF
 is a generic cybersecurity framework and belongs only as a control crosswalk. The PQC-specific
@@ -121,6 +124,13 @@ Three consequences, all logged as gaps: our observation model should carry SP 18
 elements including **CPE 2.3** ([G-15](09-open-gaps.md)); NIST treats **binary scanning as core**
 where we deferred it ([G-16](09-open-gaps.md)); and the competitive framing was wrong — SP
 1800-38B names a **NIST-convened consortium of discovery-tool vendors** ([G-17](09-open-gaps.md)).
+
+**Update, 2026-08-02:** A1 (asset/observation data model) and A2 (collector interface) have
+landed — new tables, the `Collector`/`RawObservation` contract, `SourceRegexCollector`, the
+`locationDetail`/CPE 2.3 profile, and the six-value discovery-modality enum. See
+[04-architecture.md](04-architecture.md) for what was built versus deferred (read cutover and
+dropping `findings` are a separate follow-up), and [03-features.md](03-features.md) for the
+per-feature status.
 
 Still `needs-check`: CNSA 2.0 per-category dates and OMB M-23-02 format — `nsa.gov`,
 `media.defense.gov` and `cisa.gov` all return HTTP 403 to automated fetches and need a human.
