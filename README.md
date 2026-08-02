@@ -207,6 +207,7 @@ image works against any backend. See [DOCKER.md](DOCKER.md).
 | Command | Does |
 |---|---|
 | `pnpm run typecheck` | Typecheck every package |
+| `pnpm run test` | Run every package's vitest suite (`lib/collectors`, `lib/db`, `artifacts/api-server`) |
 | `pnpm run build` | Typecheck, then build all packages |
 | `pnpm --filter @workspace/api-spec run codegen` | Regenerate API client + Zod schemas from OpenAPI |
 | `pnpm --filter @workspace/db run push` | Push schema changes (dev only) |
@@ -223,7 +224,8 @@ artifacts/
   api-server/        Express 5 API — 9 route modules, esbuild bundle
   mockup-sandbox/    shadcn component playground
 lib/
-  db/                Drizzle ORM + PostgreSQL — 10 tables
+  db/                Drizzle ORM + PostgreSQL — 13 tables
+  collectors/        Collector contract, source regex collector, CPE 2.3, asset fingerprint
   api-spec/          OpenAPI spec, Orval codegen config
   api-client-react/  Generated React Query hooks
   api-zod/           Generated Zod validation schemas
@@ -234,8 +236,13 @@ docker/              nginx config + entrypoint
 
 **Frontend pages:** Home, Scan, Demo, Dashboard, Community, CreatePost, Report, NotFound.
 
-**Database tables:** `projects`, `scans`, `findings`, `community_posts`, `activity`,
-`shared_reports`, `conversations`, `messages`, `users`, `sessions`.
+**Database tables:** `projects`, `scans`, `findings`, `assets`, `observations`,
+`collection_runs`, `community_posts`, `activity`, `shared_reports`, `conversations`, `messages`,
+`users`, `sessions`.
+
+`assets`, `observations` and `collection_runs` are the persistent inventory model. They are
+written alongside `findings` on every scan, but nothing reads them yet — every API route still
+reads `findings`. See [docs/Claude/03-features.md](docs/Claude/03-features.md) (A1/A2).
 
 ### Environment variables
 
@@ -270,8 +277,11 @@ reports.
 
 - **Detection is regex over source, not AST.** Expect false positives — `\bDH\b` matches `DHCP`
   and people's initials in comments. Findings carry no confidence score yet.
-- **Key size is never extracted.** NIST's rules are keyed on security strength (112-bit vs
-  ≥128-bit), so deadline mapping is currently approximate. This is the largest known gap.
+- **Key size is only extracted when it is on the same line.** `RSA.generate(2048)` and named
+  curves like `secp256r1` resolve; anything needing a variable or another line stays undetermined
+  (never guessed), and the value is recorded on the new `assets`/`observations` tables, not on the
+  findings the API returns. NIST's rules are keyed on security strength (112-bit vs ≥128-bit), so
+  deadline mapping is still approximate. This remains the largest known gap.
 - **Dependencies are invisible.** Most real cryptography lives in OpenSSL, BouncyCastle and your
   TLS stack — not application source. A source scanner cannot see it.
 - **EdDSA (Ed25519) is not detected**, despite being quantum-vulnerable and in active use.
@@ -358,7 +368,8 @@ The logo splits as **Quanta** + accented **Xscan**, preserving the original two-
 - **FIPS 203 / 204 / 205** — ML-KEM, ML-DSA, SLH-DSA (final, August 2024)
 - **NIST IR 8547** — transition timeline. *Initial public draft, November 2024 — not final.*
   Deprecation after 2030, disallowance after 2035, at **all** classical key sizes
-- **NIST SP 1800-38** (NCCoE) — cryptographic discovery practice guide
+- **NIST SP 1800-38** (NCCoE) — cryptographic discovery practice guide. *Volumes A/B/C are all
+  preliminary drafts (A April 2023; B/C December 2023) — not final.*
 - **CISA / NSA / NIST** — *Quantum-Readiness: Migration to Post-Quantum Cryptography*, August 2023
 
 Versioned, citation-backed mapping data lives in

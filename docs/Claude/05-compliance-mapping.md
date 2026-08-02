@@ -2,34 +2,29 @@
 
 ## The problem with what exists
 
-Today the mapping from finding to standard is **hardcoded in the detection layer**:
+Standards data used to be literals in the detection layer's pattern table. A2 moved it out: the
+pattern table now carries detection only, and `nistReplacement` / `nistStandard` / `explanation` /
+`severity` are derived by canonical algorithm name from `mappings/algorithms.json`
+(`lib/collectors/src/algorithm-mapping.ts`) as each finding is built. See
+[04-architecture.md](04-architecture.md) for the before/after.
 
-```ts
-// artifacts/api-server/src/lib/scanner.ts:37-45
-{
-  pattern: /\b(RSA|Crypto\.PublicKey\.RSA|...)/i,
-  algorithm: "RSA",
-  severity: "critical",
-  nistReplacement: "ML-KEM-768 (CRYSTALS-Kyber)",   // ← standards data
-  nistStandard: "FIPS 203",                          // ← in source code
-  baseEffort: 4,
-  explanation: "RSA is vulnerable to Shor's algorithm...",
-}
-```
+That is a lookup, not the engine below. Of the three original failures, one is addressed and two
+are not:
 
-...and then **copied into every finding row** at write time (`routes/scans.ts:47-58`).
+1. ~~**Standards change; code must not.**~~ Mostly addressed — a NIST revision is now a
+   `mappings/algorithms.json` edit rather than a source edit. It still needs a rebuild and deploy,
+   because the JSON is imported as a JSON module and esbuild inlines it into the API bundle at
+   build time (see [mappings/README.md](mappings/README.md)).
+2. **History becomes inconsistent.** Still true — `routes/scans.ts` copies the derived
+   `nistReplacement`/`nistStandard`/`explanation` into every `findings` row at write time, and
+   every route reads `findings`. Rows written before an update permanently disagree with rows
+   written after. The `observations` table deliberately stores no standards data, so once reads
+   cut over to it this failure goes away; that cutover is not built.
+3. **Only one framework.** Still true — there is nowhere to put CNSA 2.0, CISA, NSM-10, PCI, or
+   DORA without adding a column per framework.
 
-Three failures:
-
-1. **Standards change; code must not.** NIST publishes new guidance, CNSA dates shift, a
-   deprecation deadline moves — today that is a code change, a build, and a deploy.
-2. **History becomes inconsistent.** Rows written before an update permanently disagree with
-   rows written after. There is no way to re-derive, because the derivation is gone.
-3. **Only one framework.** There is nowhere to put CNSA 2.0, CISA, NSM-10, PCI, or DORA
-   without adding a column per framework.
-
-For a product whose entire value is *"here is your defensible compliance position"*, this is
-the wrong place for the compliance data to live.
+For a product whose entire value is *"here is your defensible compliance position"*, a compliance
+answer that cannot be re-derived — and that only speaks one framework — is not defensible.
 
 ---
 

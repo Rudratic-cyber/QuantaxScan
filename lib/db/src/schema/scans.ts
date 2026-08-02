@@ -1,10 +1,15 @@
 import { pgTable, text, serial, timestamp, integer, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { projectsTable } from "./projects";
 
 export const scansTable = pgTable("scans", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull(),
+  // Real FK added during the A1/A2 migration — see
+  // docs/Claude/04-architecture.md §"Also: add foreign keys".
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projectsTable.id, { onDelete: "cascade" }),
   mode: text("mode").notNull().default("scan-only"),
   status: text("status").notNull().default("pending"),
   riskScore: integer("risk_score"),

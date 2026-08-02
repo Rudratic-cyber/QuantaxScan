@@ -117,7 +117,13 @@ the file.
 
 `scans.code` is a `text` column holding the entire submitted file; `routes/scans.ts:38` writes it
 unconditionally. `shared_reports.data` is an unbounded `jsonb` blob that may contain code
-snippets.
+snippets. Since A1/A2 there is a third copy: the dual-write puts the matched line into
+`observations.evidence.codeSnippet` (bounded, unlike `scans.code`). `assets`/`observations` have
+no foreign key to a project by design, so nothing cascades them on
+`DELETE /api/projects/:id` — the route reconciles them explicitly by the `project:<id>:` location
+prefix (`routes/projects.ts`). **That prefix convention is the only thing keeping those snippets
+from outliving a project delete**; any future code that writes assets under a different location
+scheme must extend that deletion path.
 
 **Fix:** store bounded evidence snippets only. Drop the full body. If replay is genuinely
 required, make it opt-in per project with documented retention and encryption at rest.

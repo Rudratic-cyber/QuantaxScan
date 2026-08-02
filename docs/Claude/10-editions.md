@@ -81,8 +81,8 @@ paid extension
 
 | # | Feature | Status | Edition | Rationale |
 |---|---|---|---|---|
-| A1 | Asset/observation data model | `next` | **C** | The schema is the foundation everything reads; forking it would fragment the ecosystem |
-| A2 | Collector interface | `next` | **C** | The contract third parties write collectors against. Must be open or nobody writes one |
+| A1 | Asset/observation data model | `built`* | **C** | The schema is the foundation everything reads; forking it would fragment the ecosystem |
+| A2 | Collector interface | `built`* | **C** | The contract third parties write collectors against. Must be open or nobody writes one |
 | A3 | Data classification | `next` | **C→E** | Field and presets open; estate-wide classification management and inheritance Enterprise |
 | A4 | Mosca risk engine | `next` | **C→E** | Inequality open; scenario management + portfolio rollup Enterprise |
 | A5 | CBOM export (CycloneDX 1.7) | `next` | **C** | Interoperability is the whole point. Paywalling export makes us the silo we criticise |
@@ -105,6 +105,10 @@ is not the moat, and community contribution is highest-leverage here.
 | B8 | Manual OT/embedded register | `planned` | **E** | A register of record with owners and review dates — organizational by nature |
 | B9 | Vendor / third-party | `planned` | **E** | Vendor questionnaire tracking is workflow, not detection |
 | B10 | Binaries / firmware | `deferred` | **C** | See [G-16](09-open-gaps.md) — NIST treats this as core discovery, so it belongs open |
+
+\* A1/A2: schema, fingerprint, backfill, and `SourceRegexCollector` are built; read cutover and a
+second collector are not. See [03-features.md](03-features.md#a-inventory-core) for the exact
+built/not-built split — this table mirrors its status column, not a separate assessment.
 
 ### C. Compliance and mapping
 

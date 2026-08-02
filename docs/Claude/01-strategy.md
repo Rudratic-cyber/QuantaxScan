@@ -46,7 +46,7 @@ Everything else is instrumentation for computing this per asset.
 
 | Variable | Where it lives today | Work needed |
 |---|---|---|
-| **Y** — migration time | `scans.totalEffortHours`, summed from `baseEffort` per pattern in `scanner.ts:26-108` | none — already computed |
+| **Y** — migration time | `scans.totalEffortHours`, summed from each algorithm's `baseEffortHours` in `mappings/algorithms.json` (derived by `lib/collectors/src/algorithm-mapping.ts`) | none — already computed |
 | **Z** — time to Q-Day | The Q-Day countdown component (hardcoded `2027-01-01`) | make it a configurable, scenario-driven estimate |
 | **X** — data secrecy lifetime | ❌ does not exist | **one new field** on the asset/project |
 

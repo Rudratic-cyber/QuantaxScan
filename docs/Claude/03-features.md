@@ -14,7 +14,7 @@ Priority: **P0** blocks a milestone · **P1** milestone scope · **P2** valuable
 
 ## A. Inventory core
 
-### A1. Asset/observation data model `next` **P0**
+### A1. Asset/observation data model `built`* **P0**
 
 Replace per-scan findings with persistent assets and time-stamped observations.
 
@@ -24,18 +24,45 @@ Replace per-scan findings with persistent assets and time-stamped observations.
 - Stable identity across re-scans via a deterministic fingerprint
 
 **Acceptance:** re-scanning an unchanged repo produces zero new assets and updates `lastSeen` on
-existing ones. Removing the vulnerable line marks the asset `gone`, and it stays in history.
+existing ones. Removing the vulnerable line marks the asset `gone`, and it stays in history. Both
+halves verified (`artifacts/api-server/src/lib/asset-ingest.test.ts`). The `gone` reconciliation
+is scoped **per scanned file** (by `location`), not per repo/project: a call that only submits a
+subset of a project's files (e.g. `POST /scans` submitting one file) has no information about
+files it wasn't given, so those files' assets are left untouched rather than wrongly marked gone.
+Reappearance is symmetric — a `gone` asset that is observed again reactivates the same row
+(`status` back to `active`) rather than creating a duplicate. Reactivation is *only* `gone` →
+`active`: `waived` and `remediated` are human decisions about an asset, not observations of it,
+so re-seeing the same line records the observation and advances `lastSeen` without undoing them.
 
 **Depends on:** nothing. **Blocks:** literally everything else.
 
+\* Schema, fingerprint, backfill script, and dual-write from `POST /scans`/`POST /scans/multi`
+are built (`lib/db/src/schema/{assets,observations,collection_runs}.ts`,
+`lib/collectors/src/fingerprint.ts`, `scripts/src/backfill-assets.ts`,
+`artifacts/api-server/src/lib/asset-ingest.ts`). **Not built:** reads are not cut over — every
+existing route still reads `findings`, `findings` is not dropped, and `scans.code` (full
+submitted source) is still stored. See [04-architecture.md](04-architecture.md#migration-path)
+for why that is a deliberate, separately-scoped follow-up rather than a partial migration.
+
 ---
 
-### A2. Collector interface `next` **P0**
+### A2. Collector interface `built`* **P0**
 
 Generalise `scanner.ts`'s `VULNERABILITY_PATTERNS` array into a pluggable collector contract.
 Regex-over-source becomes one implementation.
 
 **Acceptance:** a new collector can be added without modifying `scanner.ts` or the API routes.
+Architecturally true — nothing in `Collector`/`RawObservation` assumes a source-only collector —
+but **unverified**: `SourceRegexCollector` is still the only implementation, so this acceptance
+criterion has not actually been exercised by a second collector.
+
+\* `@workspace/collectors` (new package): `Collector`/`RawObservation` contract, `SourceRegexCollector`,
+CPE 2.3 parser, discriminated `locationDetail`, deterministic fingerprint, and a small lookup
+over `docs/Claude/mappings/algorithms.json` for severity/replacement/standard/explanation — not
+the C1 dynamic mapping engine (see [05](05-compliance-mapping.md)), and resolved as each finding
+is built, so those strings are still frozen into the `findings` row until reads cut over (see
+[04-architecture.md](04-architecture.md)). Key size extraction (G-05) works for same-line
+literals and named curves in source only; B2–B10 remain unbuilt.
 
 ---
 
@@ -85,7 +112,7 @@ another silo.
 
 | # | Collector | Status | Pri | Notes |
 |---|---|---|---|---|
-| B1 | Source code (regex) | `built` | — | Exists. Needs to move behind A2. **Open gaps: no key-size extraction (G-05), no EdDSA pattern (G-06), no confidence score (G-11)** — see [09](09-open-gaps.md) |
+| B1 | Source code (regex) | `built` | — | Now `SourceRegexCollector` behind A2 (`lib/collectors/`). **Key size (G-05): partially closed** — extracts a same-line literal modulus or named-curve size, undetermined (not defaulted) otherwise; no cross-line/AST resolution. **Confidence (G-11): closed** for this collector — `0.7`, persisted. **EdDSA (G-06): still open** — out of scope for this change, no new pattern added — see [09](09-open-gaps.md) |
 | B2 | Dependency / SBOM | `next` | **P0** | Biggest coverage jump. Parse lockfiles → map to known crypto libs + versions |
 | B3 | TLS / cipher suite prober | `planned` | **P1** | Active handshake against hosts. Records *negotiated* KEX, not configured |
 | B4 | Certificate / X.509 | `planned` | **P1** | Key type, size, expiry. Expiry-vs-Q-Day is the killer chart |
@@ -118,7 +145,10 @@ product. Prioritise accordingly.
 | C8 | Waivers / exceptions register | `planned` | **P1** |
 | C9 | Control framework crosswalk (ISO 27001, SOC 2, PCI DSS 4, DORA) | `planned` | **P3** |
 
-\* C3 exists but is **hardcoded** in `scanner.ts`. C1/C2 move it to data. That's the real work.
+\* C3 exists as a static by-name lookup over `mappings/algorithms.json`
+(`lib/collectors/src/algorithm-mapping.ts`, added by A2 — it replaced the hardcoded copies in
+`scanner.ts`'s pattern table). C1/C2 are the real work: deadline resolution, security-strength
+keying and crosswalks, none of which that lookup does.
 
 Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 

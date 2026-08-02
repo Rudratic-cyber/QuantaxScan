@@ -65,6 +65,9 @@ because most crypto lives in dependencies and TLS termination, not in applicatio
 | Data classification field (`X`) | Product | Unlocks Mosca |
 | Mosca risk engine, split from detection | Product | The core differentiator |
 
+The first two rows landed 2026-08-02 (A1/A2), minus the read cutover — per-feature status lives
+in [03-features.md](03-features.md), not here.
+
 **M1 exit criteria**
 - A repo scan produces assets that survive a re-scan with stable IDs and `firstSeen`/`lastSeen`
 - `GET /api/inventory/cbom` returns a CycloneDX 1.7 document that passes schema validation
