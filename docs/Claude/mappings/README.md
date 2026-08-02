@@ -9,8 +9,14 @@ change; nothing in `src/` should have to change when they do.
 | `frameworks.json` | Framework definitions, versions, applicability rules |
 | `controls.json` | Crosswalk to general control frameworks |
 
-Loaded and schema-validated at boot by `lib/mappings/`. See
-[../05-compliance-mapping.md](../05-compliance-mapping.md) for the engine design.
+See [../05-compliance-mapping.md](../05-compliance-mapping.md) for the engine design.
+
+**Sharp edge — `algorithms.json` is a build input, not a runtime file.**
+`lib/collectors/src/algorithm-mapping.ts` imports it as a JSON module (`with { type: "json" }`)
+so esbuild inlines it into the API bundle; there is no runtime read of this path, and nothing
+schema-validates it at boot. Editing the JSON therefore has no effect until the API is rebuilt
+and redeployed, and a malformed entry surfaces as a build error or a missing lookup at scan time
+rather than a startup failure. `frameworks.json` and `controls.json` have no consumer yet.
 
 ---
 
@@ -103,8 +109,9 @@ Standards data changes by **pull request against these JSON files** — never a 
 4. Attach `citation.url` and `citation.section`
 5. Set `confidence` to `verified` **only if you personally opened the source document**
 
-CI validates against the JSON schema and blocks any `needs-check` entry referenced by a
-customer-facing report template.
+*Intended, not yet built:* CI validating against the JSON schema and blocking any `needs-check`
+entry referenced by a customer-facing report template. There is no CI in this repo today, and the
+sharp edge above is why that matters — nothing checks these files but a rebuild.
 
 ### The draft-status rule
 

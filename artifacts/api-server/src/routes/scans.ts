@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, scansTable, findingsTable, projectsTable, activityTable } from "@workspace/db";
+import { db, scansTable, findingsTable, projectsTable, activityTable, projectRepoId } from "@workspace/db";
 import { CreateScanBody, GetScanParams, GetScanFindingsParams } from "@workspace/api-zod";
 import { scanCode, computeScanResult, generateExecutiveSummary } from "../lib/scanner";
+import { ingestSourceObservations } from "../lib/asset-ingest";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -58,6 +59,16 @@ router.post("/scans", async (req, res): Promise<void> => {
         explanation: f.explanation,
       }))
     );
+  }
+
+  // Dual-write the asset/observation model alongside the legacy findings
+  // table (docs/Claude/04-architecture.md §"Migration path", step 3). This
+  // is additive only: a failure here must not take down the existing
+  // scan-submission flow, so it is logged rather than propagated.
+  try {
+    await ingestSourceObservations(db, { repo: projectRepoId(projectId), files: [{ path: fileName, content: code, language }] });
+  } catch (err) {
+    logger.error({ err, projectId, scanId: scan.id }, "asset/observation dual-write failed for POST /scans");
   }
 
   // Update project stats
@@ -209,6 +220,17 @@ router.post("/scans/multi", async (req, res): Promise<void> => {
   }
 
   if (allFindingRows.length > 0) await db.insert(findingsTable).values(allFindingRows);
+
+  // Dual-write — see the matching comment in POST /scans. One collection
+  // run for the whole multi-file submission, not one per file.
+  try {
+    await ingestSourceObservations(db, {
+      repo: projectRepoId(project.id),
+      files: files.map((f) => ({ path: f.filename, content: f.content, language })),
+    });
+  } catch (err) {
+    logger.error({ err, projectId: project.id }, "asset/observation dual-write failed for POST /scans/multi");
+  }
 
   await db.update(projectsTable)
     .set({ riskScore: worstRisk, criticalCount: totalCritical, alertCount: totalAlert, cleanCount: totalSafe, lastScanAt: new Date() })

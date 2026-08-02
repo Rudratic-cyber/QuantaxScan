@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, inArray } from "drizzle-orm";
-import { db, projectsTable, scansTable, findingsTable } from "@workspace/db";
+import { eq, inArray, like } from "drizzle-orm";
+import { db, projectsTable, scansTable, findingsTable, assetsTable, projectRepoId } from "@workspace/db";
 import {
   CreateProjectBody,
   GetProjectParams,
@@ -74,7 +74,17 @@ router.delete("/projects/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  await db.delete(projectsTable).where(eq(projectsTable.id, params.data.id));
+  // `scans`/`findings` cascade off the project's foreign key, but
+  // `assets`/`observations` are organization-scoped and have no FK to a
+  // project — so deleting a project would otherwise leave its assets behind
+  // forever, with the submitted `codeSnippet` still in `observations.evidence`.
+  // Reconcile them by the `project:<id>:` location prefix; `observations`
+  // cascade off `assets`. The id is a validated integer, so the LIKE pattern
+  // carries no wildcard or injection risk.
+  await db.transaction(async (tx) => {
+    await tx.delete(assetsTable).where(like(assetsTable.location, `${projectRepoId(params.data.id)}:%`));
+    await tx.delete(projectsTable).where(eq(projectsTable.id, params.data.id));
+  });
   res.sendStatus(204);
 });
 

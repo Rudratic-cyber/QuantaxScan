@@ -5,3 +5,6 @@ export * from "./community_posts";
 export * from "./activity";
 export * from "./auth";
 export * from "./shared_reports";
+export * from "./collection_runs";
+export * from "./assets";
+export * from "./observations";

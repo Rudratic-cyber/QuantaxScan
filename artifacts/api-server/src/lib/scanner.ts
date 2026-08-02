@@ -1,3 +1,4 @@
+import { collectSourceObservations, deriveAlgorithmMapping, type RawObservation } from "@workspace/collectors";
 import { logger } from "./logger";
 
 export interface ScanFinding {
@@ -24,124 +25,53 @@ export interface ScanResult {
   executiveSummary: string;
 }
 
-const VULNERABILITY_PATTERNS: Array<{
-  pattern: RegExp;
-  algorithm: string;
-  severity: "critical" | "alert";
-  nistReplacement: string;
-  nistStandard: string;
-  baseEffort: number;
-  explanation: string;
-}> = [
-  {
-    pattern: /\b(RSA|Crypto\.PublicKey\.RSA|KeyPairGenerator\s*\(\s*["']RSA["']\)|generateKeyPair\s*\(\s*['"]rsa['"]|new\s+RSA\b)/i,
-    algorithm: "RSA",
-    severity: "critical",
-    nistReplacement: "ML-KEM-768 (CRYSTALS-Kyber)",
-    nistStandard: "FIPS 203",
-    baseEffort: 4,
-    explanation:
-      "RSA is vulnerable to Shor's algorithm on quantum computers. NIST mandates migration to ML-KEM (CRYSTALS-Kyber) for key encapsulation or ML-DSA for signatures.",
-  },
-  {
-    pattern: /\b(ECDSA|secp256k1|prime256v1|elliptic\.P256|EC\.sign|createSign\s*\(\s*['"]sha256WithRSAEncryption['"])/i,
-    algorithm: "ECDSA",
-    severity: "critical",
-    nistReplacement: "ML-DSA (CRYSTALS-Dilithium)",
-    nistStandard: "FIPS 204",
-    baseEffort: 4,
-    explanation:
-      "ECDSA relies on elliptic curve discrete logarithm, which Shor's algorithm breaks. Replace with ML-DSA (CRYSTALS-Dilithium) per FIPS 204.",
-  },
-  {
-    pattern: /\b(ECDH|createECDH|DH\b|DHParameterSpec|getDiffieHellman)/i,
-    algorithm: "ECDH/DH",
-    severity: "critical",
-    nistReplacement: "ML-KEM-768 (CRYSTALS-Kyber)",
-    nistStandard: "FIPS 203",
-    baseEffort: 8,
-    explanation:
-      "Diffie-Hellman and ECDH key exchange are broken by quantum computers. ML-KEM (CRYSTALS-Kyber) is the NIST-approved replacement for key agreement.",
-  },
-  {
-    pattern: /\b(DSA\b|KeyPairGenerator\s*\(\s*["']DSA["'])/i,
-    algorithm: "DSA",
-    severity: "critical",
-    nistReplacement: "SLH-DSA (SPHINCS+)",
-    nistStandard: "FIPS 205",
-    baseEffort: 6,
-    explanation:
-      "DSA is vulnerable to quantum attacks. SLH-DSA (SPHINCS+) is the stateless hash-based signature scheme approved in FIPS 205.",
-  },
-  {
-    pattern: /\b(md5|hashlib\.md5|createHash\s*\(\s*['"]md5['"]|MD5\b)/i,
-    algorithm: "MD5",
-    severity: "alert",
-    nistReplacement: "SHA-256 or SHA-3",
-    nistStandard: "NIST SP 800-107",
-    baseEffort: 0.5,
-    explanation:
-      "MD5 is cryptographically broken. While not directly broken by quantum computers, it provides no meaningful security. Replace with SHA-256 or SHA-3.",
-  },
-  {
-    pattern: /\b(sha1|hashlib\.sha1|SHA1\b|createHash\s*\(\s*['"]sha1['"]|getInstance\s*\(\s*["']SHA-1["'])/i,
-    algorithm: "SHA-1",
-    severity: "alert",
-    nistReplacement: "SHA-256 or SHA-3",
-    nistStandard: "NIST SP 800-107",
-    baseEffort: 0.5,
-    explanation:
-      "SHA-1 is deprecated and insecure. Grover's algorithm reduces its security. Upgrade to SHA-256 or SHA-3-256.",
-  },
-  {
-    pattern: /\b(AES[_-]ECB|AES\/ECB|getInstance\s*\(\s*["']AES\/ECB\/|Cipher\.ECB|mode\s*=\s*['"]ECB['"])/i,
-    algorithm: "AES-ECB",
-    severity: "alert",
-    nistReplacement: "AES-GCM or AES-CBC",
-    nistStandard: "NIST SP 800-38D",
-    baseEffort: 1,
-    explanation:
-      "AES-ECB mode is structurally insecure — identical plaintext blocks produce identical ciphertext. Switch to AES-GCM for authenticated encryption or AES-CBC with proper IV.",
-  },
-];
+/**
+ * `scanCode()` is a thin back-compat shim over `@workspace/collectors`'s
+ * `SourceRegexCollector` (via its synchronous `collectSourceObservations`),
+ * kept because four routes (`scans.ts`, `projects.ts`, `demo.ts`,
+ * `github.ts`) call it synchronously and expect exactly this `ScanFinding`
+ * shape. docs/Claude/04-architecture.md §2: "The existing regex scanner
+ * becomes `SourceRegexCollector` — one implementation, unchanged in
+ * behaviour". Detection (which line matches which algorithm) is unchanged;
+ * `nistReplacement`/`nistStandard`/`explanation`/`severity` are no longer
+ * frozen pattern-table copy — they are derived at call time from
+ * `docs/Claude/mappings/algorithms.json` (see `algorithm-mapping.ts`), so a
+ * mappings-data update changes future scans without touching historical
+ * rows. That means this copy text can differ from the original hardcoded
+ * strings — deliberately; see docs/Claude/09-open-gaps.md G-11/G-15.
+ */
+export function scanCode(code: string, fileName: string, _language: string): ScanFinding[] {
+  const observations = collectSourceObservations({
+    kind: "source",
+    repo: "", // scanCode() has no repository identity to offer — see routes/scans.ts for where a real one is threaded through for asset persistence
+    files: [{ path: fileName, content: code, language: _language }],
+  });
 
-const NIST_REPLACEMENTS: Record<string, { replacement: string; standard: string }> = {
-  RSA: { replacement: "ML-KEM-768 (CRYSTALS-Kyber)", standard: "FIPS 203" },
-  ECDSA: { replacement: "ML-DSA (CRYSTALS-Dilithium)", standard: "FIPS 204" },
-  "ECDH/DH": { replacement: "ML-KEM-768 (CRYSTALS-Kyber)", standard: "FIPS 203" },
-  DSA: { replacement: "SLH-DSA (SPHINCS+)", standard: "FIPS 205" },
-  MD5: { replacement: "SHA-256 or SHA-3", standard: "NIST SP 800-107" },
-  "SHA-1": { replacement: "SHA-256 or SHA-3", standard: "NIST SP 800-107" },
-  "AES-ECB": { replacement: "AES-GCM or AES-CBC", standard: "NIST SP 800-38D" },
-};
+  return observations.map((observation) => toScanFinding(fileName, observation));
+}
 
-export function scanCode(code: string, fileName: string, language: string): ScanFinding[] {
-  const lines = code.split("\n");
-  const findings: ScanFinding[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const lineNum = i + 1;
-
-    for (const vuln of VULNERABILITY_PATTERNS) {
-      if (vuln.pattern.test(line)) {
-        findings.push({
-          fileName,
-          lineNumber: lineNum,
-          severity: vuln.severity,
-          algorithm: vuln.algorithm,
-          codeSnippet: line.trim().substring(0, 200),
-          nistReplacement: vuln.nistReplacement,
-          nistStandard: vuln.nistStandard,
-          effortHours: vuln.baseEffort,
-          explanation: vuln.explanation,
-        });
-        break; // Only one finding per line
-      }
-    }
+function toScanFinding(fileName: string, observation: RawObservation): ScanFinding {
+  const mapping = deriveAlgorithmMapping(observation.algorithm);
+  if (!mapping) {
+    // Every SOURCE_PATTERNS algorithm name is asserted to exist in
+    // algorithms.json (see lib/collectors/src/algorithm-mapping.test.ts).
+    // This branch means that invariant broke — log loudly rather than
+    // silently inventing standards data.
+    logger.error({ algorithm: observation.algorithm }, "No algorithms.json mapping for a detected algorithm");
   }
-
-  return findings;
+  const lineNumber = (observation.evidence.lineNumber as number | undefined) ?? 0;
+  const codeSnippet = (observation.evidence.codeSnippet as string | undefined) ?? "";
+  return {
+    fileName,
+    lineNumber,
+    severity: mapping?.severity ?? "alert",
+    algorithm: observation.algorithm,
+    codeSnippet,
+    nistReplacement: mapping?.nistReplacement ?? null,
+    nistStandard: mapping?.nistStandard ?? null,
+    effortHours: mapping?.effortHours ?? 1,
+    explanation: mapping?.explanation ?? "",
+  };
 }
 
 export function computeScanResult(findings: ScanFinding[], totalLines: number): Omit<ScanResult, "executiveSummary" | "findings"> {
@@ -181,7 +111,7 @@ export function generateExecutiveSummary(
 ): string {
   const criticalCount = findings.filter((f) => f.severity === "critical").length;
   const alertCount = findings.filter((f) => f.severity === "alert").length;
-  
+
   const algoCounts: Record<string, number> = {};
   for (const f of findings) {
     algoCounts[f.algorithm] = (algoCounts[f.algorithm] || 0) + 1;
