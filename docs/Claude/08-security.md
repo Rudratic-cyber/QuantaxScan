@@ -19,10 +19,33 @@ SaaS, and buyers in this category will run a security review before a pilot, not
 Fine for a Replit demo; disqualifying for an enterprise pilot. Listed with severity **for the
 enterprise context**, not for the demo it is today.
 
-### 🔴 S1 — No authentication anywhere — **AND IT IS LIVE**
+### 🟠 S1 — No authentication anywhere — **INTERIM CONTROL SHIPPED, NOT CLOSED**
 
-Every route in `artifacts/api-server/src/routes/` is unauthenticated. Anyone who can reach the
-API can read every project, scan, and finding, and create new ones.
+Every route in `artifacts/api-server/src/routes/` was unauthenticated. Anyone who could reach the
+API could read every project, scan, and finding, and create new ones.
+
+> **Interim mitigation landed 2026-08-02.** `artifacts/api-server/src/lib/auth.ts` adds a
+> default-deny shared-API-key middleware on `/api`. Every route requires
+> `Authorization: Bearer <key>` or `X-API-Key: <key>` unless it appears in the `PUBLIC_ROUTES`
+> table in that file. Keys come from `QUANTAXSCAN_API_KEYS`; the server **refuses to start**
+> without it, so a deployment cannot regress to an open API. Keys are compared as SHA-256
+> digests with `timingSafeEqual`.
+>
+> Public by design: `GET /healthz`, `GET /demo/repos`, `POST /demo/repos/:slug/scan`,
+> `GET /community/posts`, `GET /community/leaderboard`, `GET /reports/:id`. Everything touching
+> project, scan, finding, stats, chat or GitHub data is protected, including unmatched routes.
+>
+> **This is not F1 and must not be recorded as S1 closed.** It carries no per-user identity, so
+> there is no org-scoped authorisation and no tenant isolation — one key grants everything. It is
+> a single shared secret with no rotation story and no per-caller attribution, which also means
+> S8 audit logging cannot attribute access to a person. Still outstanding:
+>
+> - Per-user identity and organisation scoping enforced at the query layer (F1)
+> - Purging real project names from the production database — cannot be done from the repo
+> - Key rotation without downtime
+>
+> **The exposure stays open until the deployment sets `QUANTAXSCAN_API_KEYS` and redeploys.**
+> Merging this change does not close it.
 
 > **Escalated 2026-08-01.** This is no longer a hypothetical. The application is deployed at
 > **https://quantaxscan.swotpam.com** and the unauthenticated API is reachable from the public
@@ -43,11 +66,12 @@ tenant" — that framing is now too generous. There is production data exposed t
 
 **Interim mitigations, in order of how fast they can ship:**
 
-1. Put the API behind auth at the edge (the deployment is fronted by Google infrastructure —
-   IAP, an API gateway, or basic auth on `/api/*` would take minutes)
-2. Or restrict destructive verbs — `DELETE /api/projects/:id` should not be reachable anonymously
+1. ~~Put the API behind auth at the edge~~ — done differently: application-level default-deny
+   API key middleware, which travels with the code rather than depending on the hosting platform
+2. ~~Restrict destructive verbs~~ — `DELETE /api/projects/:id` now requires a key
 3. Purge real project names from the production database; treat it as a demo dataset only
-4. Then implement F1 properly
+   — **still outstanding, needs database access**
+4. Then implement F1 properly — **still outstanding**
 
 Whatever else is true, **the demo should not be sharing a database with anything real.**
 
@@ -76,6 +100,19 @@ authentication by default, opt-in public sharing, mandatory expiry, and revocati
 data these reports will carry post-migration, treat this as the single highest-priority fix in
 the file.
 
+> **Partially fixed 2026-08-02.** `generateId()` now uses `randomBytes(16).toString('base64url')`.
+> This was pulled forward with S1 because `GET /api/reports/:id` was deliberately left on the
+> public side of the auth allowlist, which makes the ID the only control on that route.
+> `POST /api/reports` now requires a key.
+>
+> **The fix is forward-only.** Every row already in `shared_reports` keeps its 10-character
+> `Math.random()` ID and stays anonymously reachable, so the enumeration exposure described above
+> is unchanged for existing links. Closing that means re-issuing or deleting those rows, which
+> needs database access rather than a code change.
+>
+> **Still outstanding:** authenticated-by-default with opt-in sharing, mandatory expiry,
+> revocation, access logging, and the pre-existing weak IDs above.
+
 ### 🟠 S3 — Full customer source code stored in the database
 
 `scans.code` is a `text` column holding the entire submitted file; `routes/scans.ts:38` writes it
@@ -98,6 +135,12 @@ authentication exists, this is a cross-origin credential-theft primitive.
 
 **Fix:** explicit origin allowlist from configuration. These two options must never ship
 together.
+
+> **Fixed 2026-08-02.** `app.ts` builds the allowlist from `CORS_ALLOWED_ORIGINS`
+> (comma-separated). Unknown origins get no `Access-Control-Allow-Origin` header; requests with
+> no `Origin` header — curl, server-to-server — are unaffected by CORS and are gated by the API
+> key instead. `cors()` stays mounted ahead of the auth middleware so OPTIONS preflight
+> terminates there rather than being answered with a 401.
 
 ### 🟠 S5 — `.env` committed, and not gitignored
 
@@ -188,9 +231,11 @@ expiry; revocable; access-logged; cryptographically random IDs (S2); never index
 Before the first customer with real data:
 
 - [ ] S1 — authentication + org-scoped authorisation
+      *(interim shared API key shipped; per-user identity and org scoping still missing)*
 - [ ] S2 — CSPRNG IDs, auth, expiry, revocation on shared reports
+      *(CSPRNG IDs done; auth, expiry, revocation still missing)*
 - [ ] S3 — stop persisting full source
-- [ ] S4 — CORS allowlist
+- [x] S4 — CORS allowlist
 - [ ] S5 — `.env` out of git, secret scanning in CI
 - [ ] S6 — rate limits + scan queue
 - [ ] S7 — SSRF controls on GitHub fetching

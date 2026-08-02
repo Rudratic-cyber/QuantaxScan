@@ -1,6 +1,6 @@
 # 09 — Open gap register
 
-Every known gap in one place, with what closes it and what it blocks. Updated 2026-08-01.
+Every known gap in one place, with what closes it and what it blocks. Updated 2026-08-02.
 
 Three families:
 
@@ -27,7 +27,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-09 | AES-ECB framed as a compliance violation | Medium | Wrong citation (now fixed) | Copy change |
 | G-10 | Hygiene findings inflate the PQC risk score | High | `computeScanResult` | A4 |
 | G-11 | No confidence score on findings | High | Design | A2 |
-| G-12 | Security findings S1–S8 | Critical | Not started | See [08](08-security.md) |
+| G-12 | Security findings S1–S8 | High | Interim auth shipped; needs deploy | See [08](08-security.md) |
 | G-13 | `.env` tracked in git | Low now, High later | One command | 2 min |
 | G-14 | No re-verification trigger for standards data | Medium | Process | Calendar + CI |
 | G-15 | Observation model not aligned to SP 1800-38B data elements | Medium | Design | A2 |
@@ -232,9 +232,9 @@ before.
 
 ---
 
-## G-12 — Security findings S1–S8 `Critical` — **LIVE EXPOSURE**
+## G-12 — Security findings S1–S8 `High` — **MITIGATED IN CODE, PENDING DEPLOY**
 
-Full detail in [08-security.md](08-security.md). Headline: no authentication anywhere,
+Full detail in [08-security.md](08-security.md). Headline was: no authentication anywhere,
 share-link IDs from `Math.random()`, full customer source persisted, `cors({ origin: true })`
 with credentials.
 
@@ -243,9 +243,29 @@ with credentials.
 > the production database, including real internal names. `DELETE /api/projects/:id` is equally
 > open. This is not a future risk — it is current.
 
-**Blocks:** the first pilot with real customer data — and it now also needs an *immediate*
-interim mitigation independent of the roadmap. Edge auth on `/api/*` is a minutes-long change
-and should not wait for F1.
+> **Interim mitigation landed 2026-08-02.** Default-deny shared-API-key middleware on `/api`
+> (`artifacts/api-server/src/lib/auth.ts`), an explicit CORS origin allowlist, and CSPRNG
+> share-link IDs. The API server refuses to start without `QUANTAXSCAN_API_KEYS`, so the open
+> state cannot be redeployed by accident.
+>
+> **The live exposure is not closed until the deployment sets `QUANTAXSCAN_API_KEYS` and
+> redeploys** — and because the control fails closed, deploying *without* that variable takes the
+> API down rather than leaving it open. Setting the secret is part of shipping this, not a
+> follow-up.
+>
+> **The hosted `/scan` journey goes dark on deploy.** It calls `/api/github/fetch`,
+> `/api/github/scan-files`, `/api/scans/multi`, `/api/chat` and `/api/reports`, all of which are
+> now protected, and the browser bundle holds no key. That is the product's headline flow, not a
+> peripheral page. `/demo/*` stays public, so the demo repositories still work end to end. Expect
+> an outage on the main path until F1, not graceful degradation.
+>
+> Severity drops from `Critical` to `High` on deploy, not on merge. It does not reach closed:
+> S1 still lacks per-user identity and org scoping (F1), S2 still lacks expiry and revocation,
+> and S3, S6, S7, S8 are untouched. Real project names are still in the production database and
+> that needs database access, not a code change.
+
+**Blocks:** the first pilot with real customer data — F1 and the remaining S-findings are still
+required for that. The immediate anonymous-access problem is addressed.
 
 ---
 
@@ -258,6 +278,13 @@ Currently holds only `API_BASE_URL`, so nothing has leaked. But `.gitignore` doe
 **What closes it:** add `.env` to `.gitignore`, `git rm --cached .env`, keep `.env.example`, add
 a pre-commit secret scanner. Two minutes, and free right now — it stops being free the moment
 someone adds a real secret.
+
+> **Now urgent (2026-08-02).** The G-12 mitigation introduced `QUANTAXSCAN_API_KEYS`, a genuine
+> secret that the deployment must set. `.env.example` and `DOCKER.md` both say not to put it in
+> `.env`, but that is a documented convention protecting a tracked file, which is exactly the
+> failure mode this gap describes. Do the two-minute fix before the next person ignores the
+> comment. Note that adding `.env` to `.gitignore` alone does nothing — it is already tracked, so
+> `git rm --cached .env` is the part that matters.
 
 ---
 
@@ -376,7 +403,8 @@ deleting is cheaper than auditing 20+ images. Note this does **not** remove it f
 5. **G-16** — a roadmap decision to make before committing to A2's surface priorities
 6. **G-05, G-10, G-11, G-15** — land together with A2/A4; they are the same refactor
 7. **G-07, G-08, G-09** — reporting/copy changes, cheap once A4 exists
-8. **G-12, G-19** — before any pilot, and hard gates on open-sourcing
+8. **G-12, G-19** — before any pilot, and hard gates on open-sourcing. G-12's interim auth is
+   shipped; the remaining S-findings and F1 are the pilot blockers
 9. **G-14** — process, set up once
 10. **G-02, G-03** — when the relevant customer segment is actually in play
 11. **G-04** — with C9

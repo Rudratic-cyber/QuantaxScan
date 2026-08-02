@@ -25,10 +25,18 @@ tags:
   - name: github
     description: GitHub repository scanning
 
+# Interim shared-key authentication (S1 / G-12). Applies to every operation
+# unless overridden with `security: []`. This carries no per-user identity and
+# no organisation scoping — see docs/Claude/08-security.md.
+security:
+  - apiKeyHeader: []
+  - bearerApiKey: []
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
+      security: []
       tags: [health]
       summary: Health check
       description: Returns server health status
@@ -170,6 +178,7 @@ paths:
   /community/posts:
     get:
       operationId: listCommunityPosts
+      security: []
       tags: [community]
       summary: List community posts
       parameters:
@@ -242,6 +251,7 @@ paths:
   /community/leaderboard:
     get:
       operationId: getLeaderboard
+      security: []
       tags: [community]
       summary: Get top contributors leaderboard
       parameters:
@@ -276,6 +286,7 @@ paths:
   /demo/repos:
     get:
       operationId: listDemoRepos
+      security: []
       tags: [demo]
       summary: List available demo repositories
       responses:
@@ -291,6 +302,7 @@ paths:
   /demo/repos/{slug}/scan:
     post:
       operationId: runDemoScan
+      security: []
       tags: [demo]
       summary: Run a scan on a demo repository
       parameters:
@@ -346,6 +358,17 @@ paths:
           description: GitHub API rate limit
 
 components:
+  securitySchemes:
+    apiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Shared API key. Interim control pending per-user auth (F1).
+    bearerApiKey:
+      type: http
+      scheme: bearer
+      description: "The same shared API key, sent as `Authorization: Bearer <key>`."
+
   schemas:
     HealthStatus:
       type: object

@@ -1,15 +1,17 @@
 import { Router, type IRouter, type Request, type Response } from "express";
+import { randomBytes } from "node:crypto";
 import { db, sharedReportsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-function generateId(len = 10): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  for (let i = 0; i < len; i++) id += chars[Math.floor(Math.random() * chars.length)];
-  return id;
+// GET /api/reports/:id is public by design (share links), so the ID is the only
+// access control on it and must be unguessable. The previous Math.random()
+// implementation was enumerable once V8's PRNG state was recovered — S2.
+// Still outstanding for S2: expiry, revocation, and access logging.
+function generateId(): string {
+  return randomBytes(16).toString("base64url");
 }
 
 router.post("/reports", async (req: Request, res: Response): Promise<void> => {
@@ -21,7 +23,7 @@ router.post("/reports", async (req: Request, res: Response): Promise<void> => {
     return;
   }
   try {
-    const id = generateId(10);
+    const id = generateId();
     await db.insert(sharedReportsTable).values({ id, owner, repo, repoUrl, data });
     logger.info({ id, owner, repo }, "Shared report created");
     res.json({ id, shareUrl: `/report/${id}` });

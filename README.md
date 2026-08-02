@@ -82,21 +82,30 @@ upstream rate limit is 60 requests/hour — check remaining budget at `/api/gith
 
 The API is served under `/api` on the same origin.
 
+Most routes require an API key, sent as `Authorization: Bearer <key>` or `X-API-Key: <key>`.
+Public routes — no key needed — are `GET /healthz`, `GET /demo/repos`,
+`POST /demo/repos/:slug/scan`, `GET /community/posts`, `GET /community/leaderboard` and
+`GET /reports/:id`; everything else returns `401`. Keys are configured server-side via
+`QUANTAXSCAN_API_KEYS` and the server will not start without it. This is an interim control —
+it grants all-or-nothing access with no per-user identity. See
+[docs/Claude/08-security.md](docs/Claude/08-security.md) (S1).
+
 ```bash
 BASE=https://quantaxscan.swotpam.com/api
+KEY=your-api-key
 
-# health
+# health (public)
 curl $BASE/healthz
 
 # platform stats + recent activity
-curl $BASE/stats
+curl -H "X-API-Key: $KEY" $BASE/stats
 
 # create a project
-curl -X POST $BASE/projects -H 'Content-Type: application/json' \
+curl -X POST $BASE/projects -H "X-API-Key: $KEY" -H 'Content-Type: application/json' \
   -d '{"name":"my-app","language":"python","code":"# placeholder"}'
 
 # scan a file against that project (projectId from the response above)
-curl -X POST $BASE/scans -H 'Content-Type: application/json' -d '{
+curl -X POST $BASE/scans -H "X-API-Key: $KEY" -H 'Content-Type: application/json' -d '{
   "projectId": 1,
   "mode": "scan-only",
   "language": "python",
@@ -159,15 +168,19 @@ docker run -d --name quantaxscan-pg \
 export DATABASE_URL='postgres://postgres:quantaxscan@localhost:55432/quantaxscan'
 pnpm --filter @workspace/db run push --force
 
-# 2. API  (terminal 1)
-PORT=5055 DATABASE_URL=$DATABASE_URL pnpm --filter @workspace/api-server run dev
+# 2. API  (terminal 1) — the server refuses to start without an API key
+export QUANTAXSCAN_API_KEYS="$(openssl rand -base64 32)"
+PORT=5055 DATABASE_URL=$DATABASE_URL CORS_ALLOWED_ORIGINS=http://localhost:5199 \
+  pnpm --filter @workspace/api-server run dev
 
 # 3. frontend  (terminal 2)
 PORT=5199 VITE_API_BASE_URL=http://localhost:5055 pnpm --filter @workspace/quantaxscan run dev
 ```
 
 Then open **http://localhost:5199** and check the API with
-`curl http://localhost:5055/api/healthz`.
+`curl http://localhost:5055/api/healthz`. The browser UI holds no API key, so pages backed by
+protected routes return 401 until per-user auth (F1) lands — use `curl -H "X-API-Key: $QUANTAXSCAN_API_KEYS"`
+to exercise those routes meanwhile.
 
 > ⚠️ **`VITE_API_BASE_URL` is required.** There is no Vite dev proxy, and
 > `artifacts/quantaxscan/public/config.js` ships `apiBaseUrl: ""`. Without it every `/api/*` call 404s
@@ -181,6 +194,7 @@ exporting it.
 
 ```bash
 echo "API_BASE_URL=http://localhost:5000" > .env
+export QUANTAXSCAN_API_KEYS="$(openssl rand -base64 32)"   # not in .env — it is tracked in git
 docker compose up -d --build
 ```
 
@@ -229,6 +243,8 @@ docker/              nginx config + entrypoint
 |---|---|---|---|
 | `DATABASE_URL` | API | **yes** | PostgreSQL connection. The process exits at import time without it |
 | `PORT` | API, Vite | **yes** for API | API throws if unset; Vite defaults to 5173 |
+| `QUANTAXSCAN_API_KEYS` | API | **yes** | Comma-separated API keys. The API refuses to start without it, so it can never serve an unauthenticated API. Keep it out of `.env` — that file is tracked in git |
+| `CORS_ALLOWED_ORIGINS` | API | no | Comma-separated origins allowed to call the API cross-origin. Unset means same-origin only |
 | `VITE_API_BASE_URL` | frontend | dev only | API origin — no dev proxy exists |
 | `API_BASE_URL` | docker frontend | docker only | Injected into `config.js` at container start |
 | `GITHUB_TOKEN` | API | no | Raises the GitHub rate limit above 60 req/hr |
@@ -259,7 +275,8 @@ reports.
 - **Dependencies are invisible.** Most real cryptography lives in OpenSSL, BouncyCastle and your
   TLS stack — not application source. A source scanner cannot see it.
 - **EdDSA (Ed25519) is not detected**, despite being quantum-vulnerable and in active use.
-- **No authentication.** See below.
+- **Authentication is a single shared API key**, not per-user accounts — so there is no
+  organisation scoping and no tenant isolation. See below.
 - Findings are per-scan, so there is no drift detection or remediation tracking yet.
 
 The full plan for addressing these — and a 19-item gap register — is in
@@ -270,25 +287,28 @@ The full plan for addressing these — and a 19-item gap register — is in
 
 ## ⚠️ Security notice
 
-**The hosted instance has no authentication.** Every API route is open to the internet. Verified
-on the live deployment:
+**Authentication is a shared API key, and it is an interim control — not a finished design.**
 
-```
-$ curl https://quantaxscan.swotpam.com/api/projects
-[{"id":1,"name":"Kodela-website-sam", ...}]     # all projects, no auth
-```
+Until 2026-08-02 every API route was open to the internet, and anyone could list, create and
+delete projects and read every scan result on the hosted instance. `/api` is now default-deny:
+requests need `Authorization: Bearer <key>` or `X-API-Key: <key>` unless the route is on the
+public allowlist (`GET /healthz`, `GET /demo/repos`, `POST /demo/repos/:slug/scan`,
+`GET /community/posts`, `GET /community/leaderboard`, `GET /reports/:id`). Shared report IDs are
+now generated with `crypto.randomBytes`, and CORS uses an explicit origin allowlist.
 
-Anyone can list, create and delete projects and read every scan result. Shared report links use
-IDs from `Math.random()`, which is not a CSPRNG — the sequence is predictable from a few
-observed outputs, and `GET /api/reports/:id` has no auth, expiry or revocation.
+What that does **not** give you:
 
-**Do not scan private or proprietary code on the hosted instance.** Submitted source is stored
-in full in the database (`scans.code`), and project names are publicly listable. Run it locally
-for anything you would not publish.
+- **No per-user identity and no organisation scoping.** One key grants access to everything.
+  There is no tenant isolation, and access cannot be attributed to a person in the logs.
+- **No key rotation story**, and shared report links still have no expiry or revocation.
+- **Submitted source is still stored in full** in the database (`scans.code`).
+
+**Do not scan private or proprietary code on the hosted instance.** Run it locally for anything
+you would not publish.
 
 These are documented with fixes in [docs/Claude/08-security.md](docs/Claude/08-security.md)
-(findings S1–S8). They are appropriate for a public demo and must be resolved before any
-production or enterprise use.
+(findings S1–S8). S1 is mitigated, not closed; S3, S6, S7 and S8 are open. All must be resolved
+before any production or enterprise use.
 
 ---
 
