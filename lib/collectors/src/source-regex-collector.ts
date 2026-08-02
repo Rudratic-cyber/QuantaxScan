@@ -36,7 +36,7 @@ const SOURCE_PATTERNS: SourcePattern[] = [
   },
   {
     algorithm: "DSA",
-    pattern: /\b(DSA\b|KeyPairGenerator\s*\(\s*["']DSA["']\))/i,
+    pattern: /\b(DSA\b|KeyPairGenerator\s*\(\s*["']DSA["'])/i,
   },
   {
     algorithm: "MD5",
@@ -44,7 +44,7 @@ const SOURCE_PATTERNS: SourcePattern[] = [
   },
   {
     algorithm: "SHA-1",
-    pattern: /\b(sha1|hashlib\.sha1|SHA1\b|createHash\s*\(\s*['"]sha1['"]|getInstance\s*\(\s*["']SHA-1["']\))/i,
+    pattern: /\b(sha1|hashlib\.sha1|SHA1\b|createHash\s*\(\s*['"]sha1['"]|getInstance\s*\(\s*["']SHA-1["'])/i,
   },
   {
     algorithm: "AES-ECB",

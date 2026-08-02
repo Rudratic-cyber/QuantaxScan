@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import type { Surface } from "./enums";
 
 /**
  * Deterministic asset fingerprint inputs, one variant per surface that
@@ -80,8 +79,4 @@ export function computeFingerprint(input: FingerprintInput): string {
   const fields = orderedFields(input);
   const payload = JSON.stringify(fields);
   return createHash("sha256").update(payload).digest("hex");
-}
-
-export function fingerprintSurface(input: FingerprintInput): Surface {
-  return input.surface;
 }

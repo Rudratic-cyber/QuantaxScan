@@ -106,7 +106,12 @@ async function main() {
             status: "active",
             firstSeen: observedAt,
             lastSeen: observedAt,
-            effortHours: finding.effortHours,
+            // effortHours deliberately left unset: like nistReplacement/severity,
+            // it is mapping-derived data (algorithms.json's baseEffortHours) —
+            // freezing the legacy finding's copy here would repeat the exact
+            // staleness problem this migration exists to fix. Consistent with
+            // artifacts/api-server/src/lib/asset-ingest.ts's dual-write path,
+            // which also never sets it.
           })
           .returning();
         assetId = created.id;

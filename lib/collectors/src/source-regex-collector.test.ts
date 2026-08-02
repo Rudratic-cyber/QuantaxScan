@@ -19,6 +19,18 @@ describe("SourceRegexCollector — behaviour parity with the pre-refactor scanne
     expect(obs[1]).toMatchObject({ algorithm: "MD5", evidence: { lineNumber: 3 } });
   });
 
+  it("matches getInstance(\"SHA-1\", provider) — a comma, not a closing paren, follows the quoted value", async () => {
+    // MessageDigest.getInstance("SHA-1", "SUN"): a comma follows the quoted
+    // "SHA-1", not `)`. This is the only SOURCE_PATTERNS alternative that
+    // can match a hyphenated "SHA-1" at all (the others require no hyphen),
+    // so a stray required trailing `)` here silently drops this whole call
+    // form. An earlier draft of this refactor introduced exactly that bug;
+    // this line must keep matching it.
+    const content = 'MessageDigest.getInstance("SHA-1", "SUN")';
+    const [obs] = await collectAll([{ path: "a.java", content, language: "java" }]);
+    expect(obs.algorithm).toBe("SHA-1");
+  });
+
   it("sets discoveryModality to static_artifact_analysis and confidence to 0.7 for every observation", async () => {
     const content = "const k = new RSA()";
     const [obs] = await collectAll([{ path: "a.js", content, language: "javascript" }]);
