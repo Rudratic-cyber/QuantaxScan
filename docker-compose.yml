@@ -14,7 +14,7 @@ services:
       - GITHUB_TOKEN=${GITHUB_TOKEN}
     restart: unless-stopped
 
-  q-vuln:
+  quantaxscan:
     build:
       context: .
       dockerfile: Dockerfile

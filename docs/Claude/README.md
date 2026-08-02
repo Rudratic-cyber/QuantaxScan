@@ -1,4 +1,4 @@
-# Q-Vuln — Enterprise Post-Quantum Readiness
+# QuantaXscan — Enterprise Post-Quantum Readiness
 
 **Working docs for the expansion from "code scanner" to "cryptographic inventory platform."**
 
@@ -8,7 +8,7 @@ Owner: Rudratic-cyber · Started: 2026-08-01 · Status: planning
 
 ## The one-paragraph version
 
-Q-Vuln today scans source code for quantum-vulnerable algorithms and maps them to NIST PQC
+QuantaXscan today scans source code for quantum-vulnerable algorithms and maps them to NIST PQC
 replacements. That is one collector against one surface, and it sees a small fraction of an
 enterprise's real cryptographic exposure. This plan turns it into a **cryptographic asset
 inventory platform** sold to a CISO who needs a defensible, continuously-updated answer to
@@ -141,7 +141,7 @@ Grounding for everything below — this is what exists as of 2026-08-01:
 |---|---|---|
 | Regex scanner, 7 patterns | `artifacts/api-server/src/lib/scanner.ts` | built |
 | Express 5 API, 9 route modules | `artifacts/api-server/src/routes/` | built |
-| React + Vite frontend | `artifacts/q-vuln/` | built |
+| React + Vite frontend | `artifacts/quantaxscan/` | built |
 | Drizzle schema — 10 tables | `lib/db/src/schema/` | built |
 | OpenAPI → Orval codegen | `lib/api-spec/` | built |
 | GitHub repo scanning (25-file cap) | `routes/github.ts` | built |
@@ -159,9 +159,9 @@ See the repo root. Short version — the frontend needs `VITE_API_BASE_URL` set 
 because there is no Vite dev proxy:
 
 ```bash
-docker run -d --name qvuln-pg -e POSTGRES_PASSWORD=qvuln -e POSTGRES_DB=qvuln -p 55432:5432 postgres:16
-export DATABASE_URL='postgres://postgres:qvuln@localhost:55432/qvuln'
+docker run -d --name quantaxscan-pg -e POSTGRES_PASSWORD=quantaxscan -e POSTGRES_DB=quantaxscan -p 55432:5432 postgres:16
+export DATABASE_URL='postgres://postgres:quantaxscan@localhost:55432/quantaxscan'
 pnpm install && pnpm --filter @workspace/db run push --force
 PORT=5055 DATABASE_URL=$DATABASE_URL pnpm --filter @workspace/api-server run dev
-PORT=5199 VITE_API_BASE_URL=http://localhost:5055 pnpm --filter @workspace/q-vuln run dev
+PORT=5199 VITE_API_BASE_URL=http://localhost:5055 pnpm --filter @workspace/quantaxscan run dev
 ```

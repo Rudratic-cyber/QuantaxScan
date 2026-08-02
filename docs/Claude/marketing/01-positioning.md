@@ -2,12 +2,12 @@
 
 ## One-liner
 
-> **Q-Vuln is the cryptographic inventory of record for post-quantum readiness.**
+> **QuantaXscan is the cryptographic inventory of record for post-quantum readiness.**
 
 ## Elevator version
 
 > Regulators have set dates for retiring RSA and elliptic-curve cryptography. Most enterprises
-> cannot answer the first question those deadlines raise: *where is all our crypto?* Q-Vuln
+> cannot answer the first question those deadlines raise: *where is all our crypto?* QuantaXscan
 > builds that inventory automatically across source code, dependencies, TLS, certificates and
 > key stores — then tells you which assets will still be exposed when the deadlines land.
 

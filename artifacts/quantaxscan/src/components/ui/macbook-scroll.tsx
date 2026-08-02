@@ -138,7 +138,7 @@ export const Lid = ({
           style={{ boxShadow: "0px 2px 0px 2px #171717 inset" }}
           className="absolute inset-0 flex items-center justify-center rounded-lg bg-[#010101]"
         >
-          <QVulnAppleLogo />
+          <QuantaXscanAppleLogo />
         </div>
       </div>
 
@@ -312,7 +312,7 @@ export const OptionKey = ({ className }: { className: string }) => (
   </svg>
 );
 
-const QVulnAppleLogo = () => (
+const QuantaXscanAppleLogo = () => (
   <svg viewBox="0 0 24 24" fill="none" className="h-8 w-8 text-white/20">
     <path d="M12 2L2 7l10 5 10-5-10-5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
     <path d="M2 17l10 5 10-5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>

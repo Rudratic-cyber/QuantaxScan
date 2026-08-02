@@ -648,7 +648,7 @@ func SelfSignedConfig() (*tls.Config, error) {
 
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{Organization: []string{"Q-Vuln Demo"}},
+		Subject:      pkix.Name{Organization: []string{"QuantaXscan Demo"}},
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,

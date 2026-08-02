@@ -1,6 +1,6 @@
 # 07 — Website
 
-The current site is the React app in `artifacts/q-vuln/` — heavy on animation (galaxy canvas,
+The current site is the React app in `artifacts/quantaxscan/` — heavy on animation (galaxy canvas,
 intro splash, typewriter, particles). That register works for a launch page and demos. It works
 against us with an enterprise buyer who wants to know what the product does.
 
@@ -38,7 +38,7 @@ Draft — awaiting approval.
 
 > # Know where your cryptography is.
 >
-> Post-quantum migration starts with an inventory almost nobody has. Q-Vuln builds it
+> Post-quantum migration starts with an inventory almost nobody has. QuantaXscan builds it
 > automatically — across source code, dependencies, TLS, certificates and key stores — and
 > shows you which assets will still be exposed when the deadlines land.
 >

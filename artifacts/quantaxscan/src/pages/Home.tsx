@@ -55,7 +55,7 @@ function AnimatedNumber({ value }: { value: number }) {
 function TerminalBlock() {
   const [lines, setLines] = useState<{ text: string; color?: string }[]>([]);
   const SEQUENCE = [
-    { text: "$ q-bitron scan ./src --recursive", color: "#7ab3ff" },
+    { text: "$ quantaxscan scan ./src --recursive", color: "#7ab3ff" },
     { text: "  Analyzing cryptographic primitives...", color: "#475569" },
     { text: "  [████████████░░░░] 78% — crypto_utils.py", color: "#475569" },
     { text: "  ⚠  RSA-2048 detected on line 42 [CRITICAL]", color: "#f87171" },
@@ -63,7 +63,7 @@ function TerminalBlock() {
     { text: "  ✓  AES-256-GCM on line 103 [SAFE]", color: "#34d399" },
     { text: "  [████████████████] 100% complete", color: "#475569" },
     { text: "  Mapped 2 findings → NIST FIPS 203/204", color: "#4f8ef7" },
-    { text: "$ q-bitron fix --apply --standard fips-203", color: "#7ab3ff" },
+    { text: "$ quantaxscan fix --apply --standard fips-203", color: "#7ab3ff" },
   ];
   useEffect(() => {
     let i = 0;
@@ -83,7 +83,7 @@ function TerminalBlock() {
         <div className="h-3 w-3 rounded-full bg-[#febc2e]" />
         <div className="h-3 w-3 rounded-full bg-[#28c840]" />
         <span className="flex-1 text-center text-[10px] text-[#475569] font-mono tracking-wider">
-          q-bitron — quantum vulnerability scanner v2.0
+          quantaxscan — quantum vulnerability scanner v2.0
         </span>
       </div>
       <div className="p-5 font-mono text-[12px] space-y-1 min-h-[200px]">

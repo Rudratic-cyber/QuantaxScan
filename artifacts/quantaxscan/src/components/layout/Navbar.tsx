@@ -9,7 +9,7 @@ import {
   MobileNavToggle,
   MobileNavMenu,
 } from "@/components/ui/resizable-navbar";
-import { QBitronLogo } from "@/components/QBitronLogo";
+import { QuantaXscanLogo } from "@/components/QuantaXscanLogo";
 import { TerminalHint } from "@/components/EasterEggs";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -80,7 +80,7 @@ function NavLogo() {
             : { rotate: 0,   scale: 1 }}
           transition={{ duration: 0.55, ease: "easeInOut" }}
         >
-          <QBitronLogo variant="icon" size="sm" glow />
+          <QuantaXscanLogo variant="icon" size="sm" glow />
         </motion.div>
         <span
           className="font-mono font-bold tracking-tight text-base text-[#f1f5f9] leading-none"
@@ -91,7 +91,7 @@ function NavLogo() {
               : "0 0 10px rgba(79,142,247,0.4)",
           }}
         >
-          Q-<span style={{ color: "#4f8ef7" }}>BITRON</span>
+          Quanta<span style={{ color: "#4f8ef7" }}>Xscan</span>
         </span>
       </a>
     </TerminalHint>

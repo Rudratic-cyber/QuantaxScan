@@ -87,7 +87,7 @@ function detectLanguage(path: string): string {
 function makeGitHubHeaders(): Record<string, string> {
   const h: Record<string, string> = {
     "Accept": "application/vnd.github.v3+json",
-    "User-Agent": "q-vuln-scanner/1.0",
+    "User-Agent": "quantaxscan-scanner/1.0",
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (process.env.GITHUB_TOKEN) {

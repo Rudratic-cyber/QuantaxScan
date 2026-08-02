@@ -11,7 +11,7 @@ const SIZE_MAP: Record<LogoSize, { icon: number; text: string; gap: string; font
   xl: { icon: 64, text: "text-4xl", gap: "gap-4", fontSize: 30 },
 };
 
-function QBitronMark({ size = 32, glow = true, animate: doAnimate = false }: {
+function QuantaXscanMark({ size = 32, glow = true, animate: doAnimate = false }: {
   size?: number; glow?: boolean; animate?: boolean;
 }) {
   const s = size;
@@ -107,7 +107,7 @@ function QBitronMark({ size = 32, glow = true, animate: doAnimate = false }: {
   );
 }
 
-export function QBitronLogo({
+export function QuantaXscanLogo({
   variant = "full",
   size = "sm",
   glow = true,
@@ -122,7 +122,7 @@ export function QBitronLogo({
 }) {
   const s = SIZE_MAP[size];
 
-  if (variant === "icon") return <QBitronMark size={s.icon} glow={glow} animate={animate} />;
+  if (variant === "icon") return <QuantaXscanMark size={s.icon} glow={glow} animate={animate} />;
 
   if (variant === "wordmark") {
     return (
@@ -134,14 +134,14 @@ export function QBitronLogo({
           letterSpacing: "-0.02em",
         }}
       >
-        Q-<span style={{ color: "#4f8ef7" }}>BITRON</span>
+        Quanta<span style={{ color: "#4f8ef7" }}>Xscan</span>
       </span>
     );
   }
 
   return (
     <div className={`flex items-center ${s.gap} ${className}`}>
-      <QBitronMark size={s.icon} glow={glow} animate={animate} />
+      <QuantaXscanMark size={s.icon} glow={glow} animate={animate} />
       <span
         className={`font-mono font-bold tracking-tight ${s.text}`}
         style={{
@@ -150,7 +150,7 @@ export function QBitronLogo({
           letterSpacing: "-0.02em",
         }}
       >
-        Q-<span style={{ color: "#4f8ef7" }}>BITRON</span>
+        Quanta<span style={{ color: "#4f8ef7" }}>Xscan</span>
       </span>
     </div>
   );

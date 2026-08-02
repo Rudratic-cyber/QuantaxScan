@@ -625,7 +625,7 @@ vendor/
 Thumbs.db
 *.swp`;
 
-const README_MD = `# Q-Bitron Security Audit
+const README_MD = `# QuantaXscan Security Audit
 
 Post-quantum cryptography vulnerability scanner.
 
@@ -650,12 +650,12 @@ const PKG_JSON = `{
   "version": "1.0.0",
   "description": "Cryptographic security utilities — PQC audit",
   "scripts": {
-    "scan": "q-bitron scan ./src",
+    "scan": "quantaxscan scan ./src",
     "build": "javac -d build src/**/*.java",
     "test": "junit5"
   },
   "devDependencies": {
-    "q-bitron": "^2.0.0"
+    "quantaxscan": "^2.0.0"
   },
   "keywords": ["cryptography", "security", "post-quantum"],
   "license": "MIT"
@@ -1213,7 +1213,7 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
                 ? <span className="text-neutral-500 p-2 block">Debug output appears here after a scan.</span>
                 : findings.map((f, i) => (
                   <div key={i} className="py-1 border-b border-white/5">
-                    <span style={{ color: "#4f8ef7" }}>q-bitron</span><span className="text-neutral-600"> &gt; </span>
+                    <span style={{ color: "#4f8ef7" }}>quantaxscan</span><span className="text-neutral-600"> &gt; </span>
                     <span className="text-neutral-300">algorithm=</span><span className="text-amber-300">{f.algorithm}</span>
                     <span className="text-neutral-300"> line=</span><span className="text-cyan-300">{f.lineNumber}</span>
                     <span className="text-neutral-300"> effort=</span><span className="text-cyan-300">{f.effortHours}h</span>
@@ -1236,7 +1236,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
   triggerMsg: { id: number; text: string; context: string } | null;
   onTriggerConsumed: () => void;
 }) {
-  const STORAGE_KEY = "qvuln_sessions_local";
+  const STORAGE_KEY = "quantaxscan_sessions_local";
   const [sessions, setSessions]           = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [input, setInput]                 = useState("");
@@ -1388,7 +1388,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
         title="Drag to resize chat" />
       {/* Header */}
       <div className="h-9 flex items-center justify-between px-3 border-b border-white/8 shrink-0">
-        <span className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">Chat — Q-Bitron AI</span>
+        <span className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">Chat — QuantaXscan AI</span>
         <div className="flex gap-1">
           <button onClick={newSession} title="New chat" className="p-1 hover:bg-white/8 rounded transition-colors"><Plus className="h-3.5 w-3.5 text-neutral-500" /></button>
           <button onClick={onToggle} className="p-1 hover:bg-white/8 rounded transition-colors"><X className="h-3.5 w-3.5 text-neutral-500" /></button>
@@ -1498,7 +1498,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
         </div>
         <p className="text-[9px] text-right mt-1">
           <span className="font-mono text-[#4f8ef7]/40 tracking-wide">
-            // powered by q-bitron ai
+            // powered by quantaxscan ai
           </span>
         </p>
       </div>
@@ -1980,7 +1980,7 @@ function SummaryBar({ tabFindings, tabs, setActiveTabId }: {
                   ))}
                   <div className="px-3 py-2 border-t border-white/6 mt-0.5">
                     <p className="text-[9px] text-neutral-700 leading-relaxed">
-                      Effort estimated per-finding by the Q-Bitron scanner engine based on algorithm complexity and NIST migration path.
+                      Effort estimated per-finding by the QuantaXscan scanner engine based on algorithm complexity and NIST migration path.
                     </p>
                   </div>
                 </>
@@ -2410,9 +2410,9 @@ export function Scan() {
 
   const downloadReport = () => {
     if (!githubResult) return;
-    const lines = [`# Q-BITRON Report: ${githubResult.owner}/${githubResult.repo}`, `Risk: ${githubResult.riskScore}/100`, "", ...githubResult.findings.map(f => `- [${f.severity}] ${f.fileName}:${f.lineNumber} — ${f.algorithm}`)];
+    const lines = [`# QUANTAXSCAN Report: ${githubResult.owner}/${githubResult.repo}`, `Risk: ${githubResult.riskScore}/100`, "", ...githubResult.findings.map(f => `- [${f.severity}] ${f.fileName}:${f.lineNumber} — ${f.algorithm}`)];
     const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/markdown" }));
-    Object.assign(document.createElement("a"), { href: url, download: `Q-BITRON_${githubResult.repo}.md` }).click();
+    Object.assign(document.createElement("a"), { href: url, download: `QUANTAXSCAN_${githubResult.repo}.md` }).click();
     URL.revokeObjectURL(url);
   };
 
@@ -2508,7 +2508,7 @@ export function Scan() {
         if (byLine[i]) {
           for (const f of byLine[i]) {
             out.push(
-              `${pre} [Q-BITRON ${f.severity.toUpperCase()}] ${f.algorithm} is quantum-vulnerable` +
+              `${pre} [QUANTAXSCAN ${f.severity.toUpperCase()}] ${f.algorithm} is quantum-vulnerable` +
               (f.nistReplacement ? ` → replace with ${f.nistReplacement}` : "")
             );
           }
@@ -2537,7 +2537,7 @@ export function Scan() {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     a.href     = url;
-    a.download = `${projectName || githubResult?.repo || "scan"}-qbitron-annotated.zip`;
+    a.download = `${projectName || githubResult?.repo || "scan"}-quantaxscan-annotated.zip`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }, [inputMode, tabs, activeTabId, pasteFindings, githubPhase, githubResult, projectName]);
@@ -3242,7 +3242,7 @@ export function Scan() {
           <span>{LANG_NAMES[langKey] ?? langKey.toUpperCase()}</span>
           <span>UTF-8</span>
           <span>● Local</span>
-          <span>Q-Bitron v2</span>
+          <span>QuantaXscan v2</span>
         </div>
       </div>
     </div>

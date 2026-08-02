@@ -405,7 +405,7 @@ function AISummaryPanel({ project, findings }: {
           </div>
           <div>
             <p className="text-[9px] font-mono uppercase tracking-widest" style={{ color: THEME.cyan + "88" }}>// ai_analysis</p>
-            <h3 className="text-sm font-bold text-[#f1f5f9]">Q-Bitron Intelligence Report</h3>
+            <h3 className="text-sm font-bold text-[#f1f5f9]">QuantaXscan Intelligence Report</h3>
           </div>
         </div>
         <button onClick={() => { void run(); }}
@@ -456,7 +456,7 @@ function AISummaryPanel({ project, findings }: {
         {done && text.length > 0 && (
           <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-white/5">
             <Sparkles className="h-3 w-3 text-[#4f8ef7]/50" />
-            <span className="text-[9px] font-mono text-[#2d3f5c] uppercase tracking-widest">Powered by Q-Bitron AI</span>
+            <span className="text-[9px] font-mono text-[#2d3f5c] uppercase tracking-widest">Powered by QuantaXscan AI</span>
           </div>
         )}
       </div>
@@ -730,7 +730,7 @@ export function Dashboard() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Q-Bitron Security Report - ${project.name}</title>
+  <title>QuantaXscan Security Report - ${project.name}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Monaco', 'Menlo', monospace; background: #0a0e1f; color: #f1f5f9; line-height: 1.6; }
@@ -786,7 +786,7 @@ export function Dashboard() {
 <body>
   <div class="container">
     <header>
-      <h1>Q-BITRON Security Report</h1>
+      <h1>QUANTAXSCAN Security Report</h1>
       <p class="subtitle">Post-Quantum Cryptography Vulnerability Assessment</p>
       <div>
         <strong>Project:</strong> ${project.name} (${project.language})<br>
@@ -898,7 +898,7 @@ export function Dashboard() {
     ` : ''}
 
     <div class="footer">
-      <p>Q-BITRON © 2026 | Post-Quantum Security Intelligence Platform</p>
+      <p>QUANTAXSCAN © 2026 | Post-Quantum Security Intelligence Platform</p>
       <p>This report contains sensitive security information. Handle with appropriate confidentiality.</p>
     </div>
   </div>
@@ -909,7 +909,7 @@ export function Dashboard() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Q-Bitron-Report-${project.name.replace(/\s+/g, "-")}-${new Date().toISOString().split("T")[0]}.html`;
+    a.download = `QuantaXscan-Report-${project.name.replace(/\s+/g, "-")}-${new Date().toISOString().split("T")[0]}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -937,7 +937,7 @@ export function Dashboard() {
         <Reveal>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
-              <p className="text-[9px] font-mono text-[#4f8ef7]/50 tracking-[0.2em] mb-1 uppercase">// q_bitron :: dashboard</p>
+              <p className="text-[9px] font-mono text-[#4f8ef7]/50 tracking-[0.2em] mb-1 uppercase">// quantaxscan :: dashboard</p>
               <h1 className="text-2xl font-bold text-[#f1f5f9] tracking-tight">Security Intelligence</h1>
               <p className="text-[#475569] font-mono text-xs mt-1">
                 {sorted.length > 0

@@ -1,8 +1,8 @@
-# Q-Vuln — Post-Quantum Security Scanner
+# QuantaXscan — Post-Quantum Security Scanner
 
 ## Overview
 
-Q-Vuln is a web application that scans codebases for quantum-vulnerable cryptographic algorithms (RSA, ECDSA, ECDH, DSA, MD5, SHA-1, AES-ECB) and maps every finding to NIST-approved post-quantum replacements (ML-KEM, ML-DSA, SLH-DSA). It features a VS Code-style IDE scanner, risk analytics dashboard, and a community knowledge hub.
+QuantaXscan is a web application that scans codebases for quantum-vulnerable cryptographic algorithms (RSA, ECDSA, ECDH, DSA, MD5, SHA-1, AES-ECB) and maps every finding to NIST-approved post-quantum replacements (ML-KEM, ML-DSA, SLH-DSA). It features a VS Code-style IDE scanner, risk analytics dashboard, and a community knowledge hub.
 
 ## Stack
 
@@ -23,7 +23,7 @@ Q-Vuln is a web application that scans codebases for quantum-vulnerable cryptogr
 
 ```
 artifacts/
-  q-vuln/       — React + Vite frontend (served at /)
+  quantaxscan/       — React + Vite frontend (served at /)
   api-server/   — Express 5 API server (served at /api)
 lib/
   api-spec/     — OpenAPI spec (openapi.yaml)
@@ -38,7 +38,7 @@ lib/
 - **Accent**: Quantum purple `#a78bfa`
 - **Backgrounds**: `#050810` void → `#0d1224` surface → `#131d35` elevated
 - **Text**: `#f1f5f9` primary, `#94a3b8` secondary, `#475569` muted
-- **Logo**: Hexagonal mark with circuit traces, Q letterform, and orbit ring (QBitronLogo.tsx)
+- **Logo**: Hexagonal mark with circuit traces, Q letterform, and orbit ring (QuantaXscanLogo.tsx)
 - **Fonts**: Inter (sans) + JetBrains Mono (mono)
 - **Background**: GalaxyBackground.tsx — animated canvas with nebula, stars, hex grid, quantum wave lines, floating particles
 - **Animations**: Framer Motion throughout — whileInView scroll reveals, hover lift/scale, animated number counters, typewriter cycling hero taglines

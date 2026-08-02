@@ -1,6 +1,6 @@
 # Docker usage
 
-This setup runs the Q-Vuln frontend locally while calling the Replit-hosted API and database.
+This setup runs the QuantaXscan frontend locally while calling the Replit-hosted API and database.
 
 ## Prereqs
 - Docker Desktop (or Docker Engine + Compose)
@@ -24,12 +24,12 @@ docker compose ps
 
 ## View logs
 ```
-docker compose logs -f q-vuln
+docker compose logs -f quantaxscan
 ```
 
 ## Restart
 ```
-docker compose restart q-vuln
+docker compose restart quantaxscan
 ```
 
 ## Stop and remove container
