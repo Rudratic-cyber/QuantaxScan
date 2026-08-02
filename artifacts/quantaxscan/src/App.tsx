@@ -11,19 +11,30 @@ import { Dashboard } from "@/pages/Dashboard";
 import { Community } from "@/pages/Community";
 import { CreatePost } from "@/pages/CreatePost";
 import { Report } from "@/pages/Report";
+import { Coverage } from "@/pages/Coverage";
+import { Security } from "@/pages/Security";
 import { IntroScreen } from "@/components/IntroScreen";
 import { motion } from "framer-motion";
 import { useState } from "react";
 
 const queryClient = new QueryClient();
 
+// Intro plays once per page-load (module variable resets on every hard refresh).
+// SPA navigation back to "/" within the same tab won't replay it.
+const INTRO_KEY = "quantaxscan_intro_seen";
 let introHasPlayed = false;
+
+function introAlreadySeen() {
+  return introHasPlayed;
+}
 
 function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/scan" component={Scan} />
+      <Route path="/coverage" component={Coverage} />
+      <Route path="/security" component={Security} />
       <Route path="/demo/:slug" component={Demo} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/community/create" component={CreatePost} />
@@ -37,10 +48,11 @@ function AppInner() {
   const [location]  = useLocation();
   const isHome      = location === "/";
   const isReport    = location.startsWith("/report/");
-  const [introDone, setIntroDone] = useState(() => introHasPlayed);
+  const [introDone, setIntroDone] = useState(introAlreadySeen);
 
   const handleIntroDone = () => {
     introHasPlayed = true;
+    try { sessionStorage.setItem(INTRO_KEY, "1"); } catch { /* ignore */ }
     setIntroDone(true);
   };
 

@@ -55,6 +55,42 @@ Root `pnpm run typecheck` fails today independent of any particular change: `git
 note was written. Don't attribute these to your own changes without checking — diff the error
 list against `git stash && pnpm run typecheck && git stash pop` first.
 
+`artifacts/quantaxscan` (frontend) independently has its own 13-error pre-existing baseline
+(`Typewriter.tsx`, `quantaxscan-terminal.tsx`, `Dashboard.tsx`, `Scan.tsx` — mostly implicit-`any`
+and a couple of real-but-minor type mismatches). `pnpm run build` gates on `pnpm run typecheck`
+and so reports "failed" even though the app itself builds and runs fine — api-server builds with
+esbuild (no typechecking) and vite doesn't block on `tsc` errors either. To get real build output,
+run `pnpm -r --if-present run build` directly, bypassing the typecheck gate.
+
+## Merging across a directory rename
+
+`main`'s `q-vuln` → `quantaxscan` rename (`26da89e`) is a real rename as far as git is concerned —
+`git merge`/`git merge-tree` correctly pair each old-path file with its new-path counterpart via
+similarity detection and 3-way-merge the content at the **new** path, even when the other side
+never touched the new path directly (confirmed with a `git merge-tree --write-tree` dry run before
+committing to anything). Genuinely new files/directories a branch adds inside the old tree have no
+rename mapping to follow: git flags them as "file location" conflicts (already computed at the
+correct destination, just needs `git add`) or, for a directory with zero prior existence on either
+side, leaves them at the old path for a manual `git mv`.
+
+Where this goes wrong is trusting an *unconflicted* hunk just because git didn't print conflict
+markers. If one side is a near-total rewrite of a file (a theme/design change, not just renamed
+identifiers), a 3-way merge can silently interleave two different eras of the same function in a
+region that never triggered a textual conflict — e.g. dropping a prop's destructuring because one
+side added it and the other side's surrounding lines happened to still line up. The tell: diff the
+file against `main`'s real HEAD after resolving and see if anything looks structurally incomplete,
+not just diff-clean. When one side of a conflicted file is a nearly-total rewrite, don't hunk-merge
+it — diff `main` against the merge-base for that file (isolates what `main` actually changed since
+divergence), take the other side's full content, and reapply just that delta on top.
+
+## Local dev ports collide with other concurrent worktrees
+
+The README's example ports (Postgres `55432`, API `5055`, frontend `5199`) are shared defaults —
+if another lane/worktree on the same host is already running local verification, those ports (and
+container name `quantaxscan-pg`) will already be taken. Check `docker ps -a` and `ss -tln` first
+and pick different ports/container name for your own session rather than reusing the examples
+verbatim.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
