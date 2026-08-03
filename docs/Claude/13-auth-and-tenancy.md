@@ -1387,9 +1387,25 @@ rather than an API serving requests with no isolation. The order:
 ```
 
 `apply-tenancy` needs `CAPTAIN_EMAIL` and refuses to run without it — it seeds the owner of
-organisation 1, which every pre-existing row is assigned to. It must run *before* `apply-rls`,
-because it is a data migration and the generated drizzle migration cannot add a `NOT NULL` column
-to a populated table.
+organisation 1, which every pre-existing row is assigned to.
+
+**It runs first, before `push`, and creates the three tenancy tables itself.** That ordering is
+forced rather than chosen: `push` cannot add a `NOT NULL` column to a populated table, so it
+cannot run until the backfill has happened — and the backfill needs `organizations` to exist to
+point a foreign key at. `push` then adds what `apply-tenancy` deliberately leaves alone (foreign
+keys, indexes, `CHECK` constraints), for which it needs no help. Both scripts are idempotent and
+were re-run to confirm it.
+
+**This whole sequence was verified end to end against real PostgreSQL 16.14**, not only against
+the pglite harness: a database built to the pre-P1 schema, populated the way production is, then
+migrated. All rows survived and were stamped to organisation 1; the legacy NULL-organisation
+`activity` row was preserved; `shared_reports` was backfilled to public with a 30-day expiry;
+`sessions.expire` became `timestamptz`. The API server then booted as `quantaxscan_app` and
+`GET /api/projects` returned the pre-existing projects exactly as before. As that role,
+`rolbypassrls` and `rolsuper` are both false, an unscoped read returns zero rows, a read after a
+committed transaction returns zero rows *without erroring* (the `nullif` fix), and a
+wrong-organisation insert is rejected by `WITH CHECK`. Rewriting one policy to the shape
+`drizzle-kit push` produces made the server refuse to start, naming the table and the reason.
 
 **Step 4 is what makes the guarantee real.** Until the runtime authenticates as a role with no
 `BYPASSRLS` and no table ownership, the policies installed in step 3 are inert — the code will work

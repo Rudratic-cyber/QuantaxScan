@@ -55,9 +55,12 @@ try {
       console.warn(`${envVar} is unset — leaving ${role}'s password unchanged.`);
       continue;
     }
-    // Parameterised: a role password is a literal, not an identifier, so it
-    // must never be interpolated.
-    await client.query(`ALTER ROLE ${role} WITH PASSWORD $1`, [password]);
+    // `ALTER ROLE ... PASSWORD` is DDL, and DDL takes no bind parameters —
+    // `$1` there is a syntax error, not a placeholder. This is the same sharp
+    // edge AGENTS.md records for CHECK constraints, in a different costume.
+    // `escapeLiteral` is pg's own quoting, so the password is still never
+    // naively interpolated.
+    await client.query(`ALTER ROLE ${role} WITH PASSWORD ${client.escapeLiteral(password)}`);
     console.log(`Set password for ${role}.`);
   }
 

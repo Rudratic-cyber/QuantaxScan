@@ -10,9 +10,20 @@
  * Run order for an existing deployment:
  *
  *   1. pnpm --filter @workspace/db run apply-tenancy   (this script)
- *   2. pnpm --filter @workspace/db run push            (reconciles anything left)
+ *   2. pnpm --filter @workspace/db run push            (foreign keys, indexes, checks)
  *   3. pnpm --filter @workspace/db run apply-rls       (roles, grants, policies)
  *   4. point DATABASE_URL at `quantaxscan_app`, then deploy
+ *
+ * This script runs FIRST, and therefore creates the three tenancy tables itself
+ * rather than waiting for `push` to do it. That ordering is forced: `push`
+ * cannot add a `NOT NULL` column to a populated table, so it cannot run until
+ * the backfill below has happened — and the backfill needs `organizations` to
+ * exist to point a foreign key at. Step 2 then reconciles what this script
+ * deliberately leaves alone (foreign keys, indexes, CHECK constraints), for
+ * which it needs no help.
+ *
+ * The CREATE TABLE statements below mirror `drizzle/0002_*.sql`. If they ever
+ * drift, `push` in step 2 corrects them and the schema tests fail loudly.
  *
  * Step 4 is not optional decoration: until the runtime authenticates as a role
  * without BYPASSRLS and without table ownership, the policies installed in
@@ -59,17 +70,34 @@ try {
   await client.query("BEGIN");
 
   console.log("1. Tenancy tables");
-  // The tables themselves come from the drizzle migration / push. This script
-  // only handles what those cannot: existing data.
-  const { rows: tableCheck } = await client.query<{ present: boolean }>(
-    `select to_regclass('public.organizations') is not null as present`,
+  await step(
+    "create",
+    `create table if not exists organizations (
+       id serial primary key not null,
+       name text not null,
+       slug text not null,
+       personal boolean default false not null,
+       created_at timestamp with time zone default now() not null
+     );
+     create table if not exists organization_members (
+       organization_id integer not null,
+       user_id varchar not null,
+       role text default 'member' not null,
+       created_at timestamp with time zone default now() not null,
+       constraint organization_members_organization_id_user_id_pk primary key (organization_id, user_id)
+     );
+     create table if not exists user_identities (
+       id serial primary key not null,
+       user_id varchar not null,
+       provider text not null,
+       provider_user_id text not null,
+       provider_tenant_id text,
+       email text,
+       email_verified boolean default false not null,
+       created_at timestamp with time zone default now() not null,
+       last_login_at timestamp with time zone
+     );`,
   );
-  if (!tableCheck[0]?.present) {
-    throw new Error(
-      "`organizations` does not exist. Run `pnpm --filter @workspace/db run push` first — " +
-        "this script migrates data, it does not create the schema.",
-    );
-  }
 
   console.log("2. Seed the captain, as organisation 1");
   // id 1 is required, not cosmetic: every existing assets/collection_runs row
