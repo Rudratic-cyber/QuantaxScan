@@ -6,9 +6,14 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 ## Testing
 
-No test runner existed before the A1/A2 migration (2026-08-02). `vitest` is now used in
-`lib/collectors`, `lib/db`, and `artifacts/api-server` — run all three with root `pnpm run test`
-(`pnpm -r --if-present run test`), or one with `pnpm --filter <pkg> run test`.
+Root `pnpm run test` runs three suites in sequence — `test:libs` (vitest in `lib/collectors` and
+`lib/db`), `test:api` (vitest + supertest in `artifacts/api-server`), `test:ui` (Playwright specs
+in `tests/ui/`). Run one package's vitest suite directly with `pnpm --filter <pkg> run test`.
+**`test:ui` is not free to run:** it needs the Playwright browsers installed and it boots its own
+Vite dev server on `UI_TEST_PORT` (default `5833`) with `strictPort`, so it fails loudly if that
+port is taken — see the port-collision note below. Suite contents and the CI pipeline live in
+[docs/Claude/12-test-suite.md](docs/Claude/12-test-suite.md).
+
 DB-backed tests use `@electric-sql/pglite` (an embedded, in-process Postgres) instead of a live
 database: `lib/db/src/test-support/test-db.ts` (exported as `@workspace/db/test-support`) spins
 one up and applies the real migrations from `lib/db/drizzle/` via `drizzle-orm/pglite/migrator`,
@@ -48,11 +53,11 @@ when adding new collectors or schema.
 
 ## `pnpm run typecheck` pre-existing failures
 
-Root `pnpm run typecheck` fails today independent of any particular change: `github.ts` (Express
-`Response` typing mismatches), `reports.ts` (a drizzle query-builder overload), and `chat.ts`/etc.
-(`lib/integrations-openai-ai-server` isn't in the root `tsconfig.json` project references, so its
-`dist/` is never built by `tsc --build`). Confirmed present on `main` via `git stash` before this
-note was written. Don't attribute these to your own changes without checking — diff the error
+Root `pnpm run typecheck` fails today independent of any particular change — 14 errors in
+`artifacts/api-server`: `github.ts` (Express `Response` typing mismatches), `reports.ts` (a
+drizzle query-builder overload), and `chat.ts`/etc. (`lib/integrations-openai-ai-server` isn't in
+the root `tsconfig.json` project references, so its `dist/` is never built by `tsc --build`).
+Confirmed present on `main` via `git stash` before this note was written. Don't attribute these to your own changes without checking — diff the error
 list against `git stash && pnpm run typecheck && git stash pop` first.
 
 `artifacts/quantaxscan` (frontend) independently has its own 13-error pre-existing baseline
@@ -85,11 +90,11 @@ divergence), take the other side's full content, and reapply just that delta on 
 
 ## Local dev ports collide with other concurrent worktrees
 
-The README's example ports (Postgres `55432`, API `5055`, frontend `5199`) are shared defaults —
-if another lane/worktree on the same host is already running local verification, those ports (and
-container name `quantaxscan-pg`) will already be taken. Check `docker ps -a` and `ss -tln` first
-and pick different ports/container name for your own session rather than reusing the examples
-verbatim.
+The README's example ports (Postgres `55432`, API `5055`, frontend `5199`) and the Playwright UI
+suite's `UI_TEST_PORT` (default `5833`) are shared defaults — if another lane/worktree on the same
+host is already running local verification, those ports (and container name `quantaxscan-pg`) will
+already be taken. Check `docker ps -a` and `ss -tln` first and pick different ports/container name
+for your own session rather than reusing the examples verbatim.
 
 ## Frontend sharp edges
 

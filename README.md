@@ -207,12 +207,19 @@ image works against any backend. See [DOCKER.md](DOCKER.md).
 | Command | Does |
 |---|---|
 | `pnpm run typecheck` | Typecheck every package |
-| `pnpm run test` | Run every package's vitest suite (`lib/collectors`, `lib/db`, `artifacts/api-server`) |
+| `pnpm run test` | All three suites in order: `test:libs`, `test:api`, `test:ui` |
+| `pnpm run test:libs` | Vitest unit suites in `lib/collectors` and `lib/db` |
+| `pnpm run test:api` | Vitest + Supertest API feature suite against in-memory Postgres |
+| `pnpm run test:ui` | Playwright UI journeys — starts its own Vite dev server on `UI_TEST_PORT` (default 5833) |
 | `pnpm run build` | Typecheck, then build all packages |
 | `pnpm --filter @workspace/api-spec run codegen` | Regenerate API client + Zod schemas from OpenAPI |
 | `pnpm --filter @workspace/db run push` | Push schema changes (dev only) |
 
 `preinstall` refuses npm and yarn — this is a pnpm workspace.
+
+`test:ui` needs the Playwright browsers (`npx playwright install chromium`). What each suite
+covers, and the GitHub Actions pipeline that runs them on every pull request, is documented in
+[docs/Claude/12-test-suite.md](docs/Claude/12-test-suite.md).
 
 ---
 
@@ -230,6 +237,7 @@ lib/
   api-client-react/  Generated React Query hooks
   api-zod/           Generated Zod validation schemas
   integrations/      OpenAI server + React wrappers
+tests/ui/            Playwright UI journey specs
 docs/Claude/         Product plan, architecture, compliance mapping, editions, gap register
 docker/              nginx config + entrypoint
 ```
