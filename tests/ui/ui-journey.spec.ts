@@ -171,6 +171,10 @@ test.describe("UI Journey Tests", () => {
   });
 
   test("the dashboard degrades gracefully when its data call returns 401", async ({ page }) => {
+    // React Query retries a failed query three times with exponential backoff (1s + 2s + 4s)
+    // before the error state settles, so this journey is legitimately slower than the default.
+    test.setTimeout(60_000);
+
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -192,12 +196,27 @@ test.describe("UI Journey Tests", () => {
 
     await page.goto("/dashboard");
 
-    // The Dashboard's own chrome still renders, and the empty-state copy proves the
-    // failed queries fell through to the no-data path rather than a crash or spinner.
+    // The Dashboard's own chrome still renders rather than crashing or hanging on a spinner.
     await expect(page.getByRole("heading", { name: "Security Intelligence" })).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByText(/No scans yet — run your first scan/i)).toBeVisible();
+
+    // A refused request is reported as a refusal. "No scans yet" would be a different claim
+    // entirely — we did not learn that there are none, we failed to ask — and it used to send
+    // the user to a scanner that cannot work either, a loop with no exit.
+    await expect(
+      page.getByRole("heading", { name: /Projects could not be loaded/i })
+    ).toBeVisible({ timeout: 25000 });
+    await expect(
+      page.getByText(/The API refused the request, so we cannot tell whether you have any scans/i)
+    ).toBeVisible();
+
+    // The recovery action matches the cause: retry the call, not "run your first scan".
+    await expect(page.getByRole("button", { name: /Try again/i })).toBeVisible();
+
+    // The regression guard: the empty-state claim must not appear anywhere on an auth failure.
+    await expect(page.getByText(/No scans yet/i)).toHaveCount(0);
+
     expect(pageErrors).toEqual([]);
   });
 
