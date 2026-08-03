@@ -110,8 +110,9 @@ Standards data changes by **pull request against these JSON files** — never a 
 5. Set `confidence` to `verified` **only if you personally opened the source document**
 
 *Intended, not yet built:* CI validating against the JSON schema and blocking any `needs-check`
-entry referenced by a customer-facing report template. There is no CI in this repo today, and the
-sharp edge above is why that matters — nothing checks these files but a rebuild.
+entry referenced by a customer-facing report template. The repo's CI
+(`.github/workflows/ci.yml`) only builds and runs the test suites, and the sharp edge above is
+why that matters — nothing checks these files but a rebuild.
 
 ### The draft-status rule
 

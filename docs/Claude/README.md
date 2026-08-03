@@ -40,6 +40,7 @@ its three variables in the codebase. See [01-strategy.md](01-strategy.md).
 | 08 | [Security](08-security.md) | Best practices for a platform that ingests customer source code |
 | 09 | [Open gaps](09-open-gaps.md) | **Every known gap, what closes it, what it blocks** |
 | 10 | [Editions](10-editions.md) | Community vs Enterprise, all 46 features tiered, licensing, publication gates |
+| 12 | [Test suite & CI](12-test-suite.md) | API feature suite, Playwright UI journeys, GitHub Actions pipeline, coverage gaps |
 
 ### Data
 
