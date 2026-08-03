@@ -7,6 +7,11 @@ const API_KEY = "test-api-key-1234567890-super-secret-key-32bytes";
 const { testDb, testScope, closeTestDb } = await vi.hoisted(async () => {
   process.env.QUANTAXSCAN_API_KEYS = "test-api-key-1234567890-super-secret-key-32bytes";
   process.env.DATABASE_URL = "postgres://dummy:dummy@localhost:5432/dummy";
+  // Set explicitly, not left to the default. Vitest isolates modules but NOT
+  // `process.env`, and cross-tenant.test.ts sets this to "2" — inherited here
+  // it would quietly verify the wrong organisation while still passing, since
+  // the suite is self-consistent either way.
+  process.env.QUANTAXSCAN_API_KEY_ORG_ID = "1";
   const { createTestDb } = await import("@workspace/db/test-support");
   // `asRole` matters here as much as in the isolation suite: without it the
   // connection is pglite's superuser, which has BYPASSRLS, and these routes

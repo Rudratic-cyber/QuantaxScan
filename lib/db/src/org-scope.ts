@@ -141,9 +141,31 @@ export interface OrgScope {
   withoutOrgScope<T>(reason: string, fn: (tx: ScopedTx) => Promise<T>): Promise<T>;
 }
 
+/**
+ * The reasons `withoutOrgScope` is legitimately used on a hot path. Adding to
+ * this list is a deliberate act: it downgrades an audit warning to routine, so
+ * a reason belongs here only when the table it touches is genuinely not
+ * organisation-scoped (`users`, `sessions`, `community_posts`).
+ */
+export const UNSCOPED_BY_DESIGN = ["public community content"] as const;
+
 export interface OrgScopeOptions {
-  /** Where the audited escape hatch reports its use. Defaults to `console.warn`. */
-  warn?: (message: string, detail: { reason: string; stack?: string }) => void;
+  /**
+   * Where the audited escape hatch reports its use. Defaults to
+   * `console.warn`; the API server passes its pino logger.
+   *
+   * `expected` distinguishes a reason that is *supposed* to appear on every
+   * request from one that is not. An alert that fires thousands of times a day
+   * is not an alert, so declared reasons are reported as routine and anything
+   * undeclared is reported as a warning with a stack.
+   */
+  warn?: (message: string, detail: { reason: string; expected: boolean; stack?: string }) => void;
+  /**
+   * Reasons known to be legitimate and high-frequency — today, the public
+   * community routes. Anything not on this list is unexpected by definition
+   * and gets the loud treatment.
+   */
+  expectedReasons?: readonly string[];
 }
 
 /**
@@ -155,10 +177,12 @@ export interface OrgScopeOptions {
  * requires `DATABASE_URL`.
  */
 export function createOrgScope(database: AppDatabase, options: OrgScopeOptions = {}): OrgScope {
-  const warn =
+  const expectedReasons = new Set(options.expectedReasons ?? []);
+  const report =
     options.warn ??
     ((message, detail) => {
-      console.warn(message, detail);
+      if (detail.expected) console.info(message);
+      else console.warn(message, detail);
     });
 
   async function withOrg<T>(ctx: OrgContext, fn: (tx: ScopedTx) => Promise<T>): Promise<T> {
@@ -218,7 +242,14 @@ export function createOrgScope(database: AppDatabase, options: OrgScopeOptions =
    */
   async function withoutOrgScope<T>(reason: string, fn: (tx: ScopedTx) => Promise<T>): Promise<T> {
     assertNotNestedInProcess("withoutOrgScope");
-    warn(`withoutOrgScope: ${reason}`, { reason, stack: new Error("withoutOrgScope").stack });
+    const expected = expectedReasons.has(reason);
+    report(`withoutOrgScope: ${reason}`, {
+      reason,
+      expected,
+      // The stack is what makes an unexplained use findable. It costs
+      // something to capture, so only the unexpected path pays for it.
+      stack: expected ? undefined : new Error("withoutOrgScope").stack,
+    });
 
     return activeScope.run({ opening: "withoutOrgScope" }, () =>
       database.transaction(async (tx) => {

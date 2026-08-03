@@ -49,7 +49,13 @@ API could read every project, scan, and finding, and create new ones.
 > - Per-user identity — sign-in, sessions, providers (F1, specified in
 >   [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §3, not built)
 > - Purging real project names from the production database — cannot be done from the repo.
->   Organisation scoping contains them to one tenant; it does not delete them
+>   Organisation scoping contains them to one tenant; it does not delete them.
+>   **This now has a deadline.** Legacy `activity` rows carry `organization_id IS NULL`, and the
+>   policy makes NULL-organisation rows readable by *every* organisation — correct for a legacy
+>   global feed, and harmless while there is one tenant. Their descriptions embed real project
+>   names, and `GET /api/stats` returns them. Run
+>   `DELETE FROM activity WHERE organization_id IS NULL` **before a second organisation is
+>   created**. The policy permits that delete; it is not a code change
 > - Key rotation without downtime
 >
 > **The exposure stays open until the deployment sets `QUANTAXSCAN_API_KEYS` and redeploys.**

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, sql } from "drizzle-orm";
 import { withoutOrgScope, communityPostsTable } from "@workspace/db";
+import { UNSCOPED_BY_DESIGN } from "@workspace/db/org-scope";
 import {
   CreateCommunityPostBody,
   VoteCommunityPostParams,
@@ -21,7 +22,10 @@ const router: IRouter = Router();
  * escape hatch stays true; a list of "routes allowed to use `db` directly"
  * rots the moment someone adds a route.
  */
-const UNSCOPED = "public community content";
+// Declared in UNSCOPED_BY_DESIGN so these routine, every-page-load uses are
+// logged as routine. An audit warning that fires on every request is not an
+// audit warning — anything NOT on that list stays loud, with a stack.
+const UNSCOPED = UNSCOPED_BY_DESIGN[0];
 
 router.get("/community/posts", async (req, res): Promise<void> => {
   const parsed = ListCommunityPostsQueryParams.safeParse(req.query);

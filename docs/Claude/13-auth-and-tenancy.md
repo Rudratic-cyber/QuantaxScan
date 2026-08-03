@@ -1396,6 +1396,19 @@ point a foreign key at. `push` then adds what `apply-tenancy` deliberately leave
 keys, indexes, `CHECK` constraints), for which it needs no help. Both scripts are idempotent and
 were re-run to confirm it.
 
+**That last claim was checked rather than assumed**, because trusting `push` to have added things
+because it said "Changes applied" is the exact mistake §5.4 exists to prevent. Two databases were
+built on the same server — one by the three generated migrations alone (the *fresh* path, which is
+what the test harness exercises), one by `apply-tenancy` → `push` over a populated pre-P1 schema
+(the *upgrade* path, which only production takes) — and their `pg_constraint` and `pg_indexes`
+contents were diffed. **68 objects, identical, 17 foreign keys each.** Spot-checked live:
+`user_identities_provider_subject_idx` rejects a second user claiming the same
+`(provider, provider_user_id)`, which is the constraint standing between P2's account linking and
+an account-takeover.
+
+Worth re-running as a pre-deploy check if the schema changes, because nothing in CI covers it: the
+harness always takes the fresh path, so an upgrade-path gap would be invisible there.
+
 **This whole sequence was verified end to end against real PostgreSQL 16.14**, not only against
 the pglite harness: a database built to the pre-P1 schema, populated the way production is, then
 migrated. All rows survived and were stamped to organisation 1; the legacy NULL-organisation
@@ -1411,6 +1424,22 @@ wrong-organisation insert is rejected by `WITH CHECK`. Rewriting one policy to t
 `BYPASSRLS` and no table ownership, the policies installed in step 3 are inert — the code will work
 identically and prove nothing. P1 can merge, pass CI and deploy without step 4, and everything will
 look fine. Do step 4.
+
+### One thing to do before a second organisation exists
+
+`apply-tenancy` leaves existing `activity` rows at `organization_id IS NULL`, and the policy admits
+NULL on read **for every organisation** — that is §5.3 working as designed for a legacy global
+feed. But those rows carry descriptions like `Multi-file scan: 3 critical vulnerabilities found
+across 12 files in "<projectName>"`, which is organisation 1's real project names, and
+`GET /api/stats` returns them in `recentActivity`. §6.4 calls that exact content a cross-tenant
+project-name leak.
+
+Today there is one organisation, so nothing leaks. **The moment P2 creates a second one, it
+does.** The policy already makes the answer available — NULL-org rows are readable and
+**deletable**, just not updatable — so this is a `DELETE FROM activity WHERE organization_id IS
+NULL`, to be run before the second tenant is created, not a code change. It belongs with the
+existing "purging real project names needs database access" item in
+[08-security.md](08-security.md).
 
 The README sentence **"Do not scan private or proprietary code on the hosted instance"**
 (`README.md:316`) is removable at the end of **P4**, not P5 — because P4 is what stops persisting
@@ -1552,7 +1581,8 @@ written.
 | 5 | `POST /demo/repos/:slug/scan` stops writing to `activity` in P2 (§6.2) | Done in P1 | Not a choice: the route is public, so it has no organisation, so `activity`'s `WITH CHECK` rejects the insert. §5.3's policy depends on this route no longer writing, so the two cannot be separated |
 | 6 | — | `POST /api/scans` confirms the parent project is visible in-scope | See §13.5. A foreign key is not subject to RLS |
 | 7 | `apply-rls` creates roles with passwords | Roles are created without one; `apply-rls` sets them from `QUANTAXSCAN_APP_DB_PASSWORD` / `QUANTAXSCAN_MIGRATOR_DB_PASSWORD` when supplied | A password must not be a literal in committed SQL. Without the variables the roles cannot log in, which fails closed |
-| 8 | — | `quantaxscan_migrator` is granted `BYPASSRLS` | `FORCE ROW LEVEL SECURITY` subjects the table *owner* to the policies, and the policies name `quantaxscan_app` — so without this a future data migration would silently see zero rows. It is also exactly why the runtime must not use this role |
+| 8 | `DELETE /api/projects/:id` on another organisation's id returns 404 (§9.3) | 204, having changed nothing | The handler issues a scoped delete that matches zero rows; distinguishing "not yours" from "already gone" would need an extra read whose only purpose is to produce a different status code. 204-for-everything is no worse an existence oracle than 404-for-everything, and it is what the route already did for an unknown id. The suite asserts the row survives intact, which is the property that matters |
+| 9 | — | `quantaxscan_migrator` is granted `BYPASSRLS` | `FORCE ROW LEVEL SECURITY` subjects the table *owner* to the policies, and the policies name `quantaxscan_app` — so without this a future data migration would silently see zero rows. It is also exactly why the runtime must not use this role |
 
 ### What P1 did **not** do
 
