@@ -6,7 +6,8 @@
     "preinstall": "node -e \"const fs = require('fs'); fs.rmSync('package-lock.json', { force: true }); fs.rmSync('yarn.lock', { force: true }); if (process.env.npm_config_user_agent && !process.env.npm_config_user_agent.includes('pnpm')) { console.error('Use pnpm instead'); process.exit(1); }\"",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
+    "typecheck": "pnpm run typecheck:libs && pnpm run typecheck:tests && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "test:libs": "pnpm -r --filter \"./lib/**\" --if-present run test",
     "test:api": "pnpm --filter @workspace/api-server test",
     "test:ui": "playwright test",
@@ -15,6 +16,7 @@
   "private": true,
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@types/node": "^25.3.5",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"
   }
