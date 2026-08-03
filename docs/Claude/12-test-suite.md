@@ -33,7 +33,7 @@ Rather than mocking database queries or running against a shared Postgres contai
 1. **Health Check**:
    - `GET /api/healthz` -> returns status 200 with `{ status: "ok" }`.
 2. **Authentication Boundary (Security Control)**:
-   - Public allowlist routes (`GET /api/healthz`, `GET /api/demo/repos`, `POST /api/demo/repos/:slug/scan`, `GET /api/community/posts`, `GET /api/community/leaderboard`, `GET /api/reports/:id`) accessible without API key.
+   - Every route in the public allowlist is reachable without an API key. `PUBLIC_ROUTES` in `artifacts/api-server/src/lib/auth.ts` owns that list; the test restates it as a literal array, so a route added to the allowlist must be added to the test by hand.
    - Protected routes (`/api/projects`, `/api/scans`, `/api/scans/multi`, `/api/community/posts` write/vote, `/api/reports` create) return 401 Unauthorized when unauthenticated or presenting an invalid key.
    - Valid `X-API-Key` or `Authorization: Bearer <key>` headers allow access to protected endpoints.
 3. **Demo Repositories & Demo Scan**:
@@ -83,7 +83,7 @@ The CI workflow is defined in `.github/workflows/ci.yml`.
 - **Hermetic Build Environment**: Runs on `ubuntu-latest`, installing Node.js 20, pnpm v10, and Playwright Chromium dependencies (`npx playwright install --with-deps chromium`).
 - **Typecheck Baseline Handling**:
   - `pnpm run typecheck` is run explicitly with `continue-on-error: true`.
-  - *Rationale*: A documented pre-existing baseline of ~14 TypeScript errors in `api-server` and 13 in `quantaxscan` exists on `main`. Running typecheck as a non-blocking step ensures all type errors are printed into the CI log for visibility without failing pull requests on pre-existing issues.
+  - *Rationale*: `main` carries a pre-existing typecheck baseline (owned by AGENTS.md § "`pnpm run typecheck` pre-existing failures" — check the counts there, not here). Running typecheck as a non-blocking step prints all type errors into the CI log for visibility without failing pull requests on pre-existing issues.
 - **Build**: Executes `pnpm -r --if-present run build` (bypassing the typecheck script gate).
 - **Test Suites Execution**: Runs `pnpm run test:libs`, `pnpm run test:api` and `pnpm run test:ui` as three separately named steps, so a failure is attributable to a suite from the step name alone.
 - **Failure Diagnostics**: On failure, `playwright-report/` and `test-results/` (which hold the HTML report and the `on-first-retry` traces) are uploaded via `actions/upload-artifact@v4`.
@@ -92,20 +92,14 @@ The CI workflow is defined in `.github/workflows/ci.yml`.
 
 ## 5. Running Tests Locally
 
+The `test` / `test:libs` / `test:api` / `test:ui` scripts are listed in the root README's
+Commands table. Only the UI suite needs setup beyond `pnpm install`:
+
 ```bash
-# Run all test suites (libs + API + UI)
-pnpm run test
+# One-time: the UI suite needs a browser binary
+npx playwright install chromium
 
-# Run the lib/ unit suites only (Vitest — collectors, db)
-pnpm run test:libs
-
-# Run API feature tests only (Vitest)
-pnpm run test:api
-
-# Run UI journey tests only (Playwright on port 5833)
-pnpm run test:ui
-
-# Run UI journey tests on a different port (other worktrees may hold 5833)
+# Run the UI journeys on a free port (other worktrees may already hold 5833)
 UI_TEST_PORT=5901 pnpm run test:ui
 ```
 
