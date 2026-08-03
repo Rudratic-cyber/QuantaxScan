@@ -18,15 +18,15 @@ vendors gives a homepage under 30 seconds, and an intro splash spends several of
 | `/demo/:slug` Demos | Exists | Pre-loaded repos, zero-friction trial |
 | `/dashboard` | Exists | Needs the calmer CISO register ([../06-cisa-dashboard.md](../06-cisa-dashboard.md)) |
 | `/community` | Exists | Knowledge hub |
+| `/coverage` | Exists | Which surfaces, what is built vs planned — honestly labelled |
+| `/security` | Exists | Our own posture. Enterprise buyers look for this before they talk to you |
 | **`/why-inventory`** | **Needed** | The core argument, standalone and linkable |
-| **`/coverage`** | **Needed** | Which surfaces, what is built vs planned — honestly labelled |
 | **`/standards`** | **Needed** | Our reading of NIST/CISA, with citations and verified dates |
-| **`/security`** | **Needed** | Our own posture. Enterprise buyers look for this before they talk to you |
 | **`/blog`** | **Needed** | Currently no home for long-form |
 | **`/docs`** | **Needed** | How collectors work, what data leaves the network |
 
-`/security` and `/coverage` are the two that most affect an enterprise buying decision and both
-are missing. Prioritise them over homepage polish.
+`/security` and `/coverage` are the two that most affect an enterprise buying decision, and both
+have shipped.
 
 ---
 
