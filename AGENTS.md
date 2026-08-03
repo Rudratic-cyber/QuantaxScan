@@ -16,9 +16,20 @@ port is taken — see the port-collision note below. Suite contents and the CI p
 
 DB-backed tests use `@electric-sql/pglite` (an embedded, in-process Postgres) instead of a live
 database: `lib/db/src/test-support/test-db.ts` (exported as `@workspace/db/test-support`) spins
-one up and applies the real migrations from `lib/db/drizzle/` via `drizzle-orm/pglite/migrator`,
-so tests exercise actual `CHECK`/FK/unique-index SQL, not just the TypeScript schema. This caught
+one up, applies the real migrations from `lib/db/drizzle/` via `drizzle-orm/pglite/migrator`, and
+then applies `lib/db/sql/tenant-isolation.sql` verbatim — so tests exercise actual
+`CHECK`/FK/unique-index SQL and the real RLS policies, not just the TypeScript schema. This caught
 a real bug once already (see below) — don't replace it with a mocked/hand-rolled schema.
+
+**Any test that touches organisation-scoped data must pass
+`createTestDb({ asRole: "quantaxscan_app" })`.** PGlite connects as `postgres`, which is
+`rolbypassrls = t`: with RLS enabled, FORCEd, and no GUC set at all, a plain `SELECT` still
+returns every row across every organisation. A cross-tenant test written against the default
+harness **passes while proving nothing**. The negative control in
+`lib/db/src/tenant-isolation.test.ts` exists to keep that honest and should be the first thing
+read there. Two pglite specifics: `client.query()` rejects multi-statement SQL (use `exec()`), and
+`db.execute()` returns `{ rows, ... }` rather than an array — use `executeRows<T>()` from
+`@workspace/db/org-scope`.
 
 ## Database migrations
 
@@ -29,6 +40,26 @@ reviewable SQL under `lib/db/drizzle/` (both work from the schema files alone �
 not need a reachable database, only a syntactically valid `DATABASE_URL` string to satisfy
 `drizzle.config.ts`'s eager check). Keep the generated migration in sync with what `push` would
 actually apply; `push` is authoritative for what lands in a real database.
+
+**`drizzle-kit push` is authoritative for tables, columns, indexes and constraints — and must
+never be used for row-level security.** It creates policies with a **NULL `USING` clause**, which
+permits every row while `\d+` and `pg_policies` both show the policy as present. RLS reads as
+installed and there is no isolation at all. Reproduced twice from an empty database against
+PostgreSQL 16.14; `generate` emits the correct SQL, `push` drops the expression. Therefore:
+
+- Policies, roles and grants live in `lib/db/sql/tenant-isolation.sql`, applied by
+  `pnpm --filter @workspace/db run apply-rls` **after** `push`.
+- `.enableRLS()` and `pgPolicy()` are not used in the schema files, so `push` never manages them.
+- `assertTenantIsolationInstalled()` gates API-server startup on the real `pg_class`/`pg_policy`
+  state, so a future `push` regressing it cannot go unnoticed. A deploy that has not run
+  `apply-rls` will refuse to boot — that is intended.
+- `pnpm --filter @workspace/db run apply-tenancy` is the one-time data migration (add nullable →
+  backfill → constrain), which neither `push` nor a generated migration can do on a populated
+  table. Full order and rationale: [docs/Claude/13-auth-and-tenancy.md](docs/Claude/13-auth-and-tenancy.md) §10.
+
+**The runtime must connect as `quantaxscan_app`** — a role with no table ownership and no
+`BYPASSRLS`. Connect as the owner or a superuser and every policy is inert while the code behaves
+identically. That credential swap is what makes tenant isolation real rather than theatre.
 
 **Sharp edge:** a `CHECK` constraint built from `sql\`${value}\`` for a plain string produces a
 `$n` bind-parameter placeholder — invalid inside DDL, since there is nothing to bind against at
@@ -43,6 +74,40 @@ Shared enums that need both a DB constraint and a TypeScript type (`DiscoveryMod
 not a Postgres `ENUM` type — narrowing an `ENUM` requires recreating the type; narrowing a `CHECK`
 from the same tuple is a one-line diff. Don't introduce a second definition of one of these enums
 anywhere else.
+
+**One recorded exception:** auth and tenancy enums (`ORG_ROLE_VALUES`, `IDENTITY_PROVIDER_VALUES`,
+`REPORT_VISIBILITY_VALUES`) live in `lib/db/src/schema/auth-enums.ts`, not in
+`@workspace/collectors`. The rule above exists because those enums are part of the *collector*
+contract and `lib/collectors` is deliberately dependency-free so it can ship as a standalone
+on-prem agent — an on-prem collector has no concept of an organisation role or an identity
+provider. The rule's mechanism (one const tuple, `text` + `CHECK` via `oneOf()`, never a Postgres
+`ENUM`) is preserved exactly.
+
+## Tenant isolation
+
+Read [docs/Claude/13-auth-and-tenancy.md](docs/Claude/13-auth-and-tenancy.md) before changing
+anything under `lib/db/sql/`, `lib/db/src/org-scope.ts`, or any route's database access. §13 lists
+the failure modes that produce a *silently wrong result rather than an error*, which is the whole
+reason that file is long.
+
+The rules that matter day to day:
+
+- **Route files never import `db`** — they use the `ScopedTx` handed to them by `withOrg`,
+  `withPublicShare` or `withoutOrgScope`. `artifacts/api-server/src/db-import.test.ts` enforces
+  this. A query on `db` inside a `withOrg` callback runs on a different connection, outside the
+  transaction and therefore outside the GUC the policies read.
+- **Scopes do not nest.** All three helpers throw if one is already open. A nested scope silently
+  re-scopes its parent once its savepoint is released — the only failure here that returns
+  *another tenant's* rows rather than none. Pass the `ScopedTx` down instead.
+- **A foreign key is not subject to RLS.** PostgreSQL checks referential integrity with policies
+  bypassed, so a client-supplied parent id must be confirmed visible *inside the scope* before
+  writing a child row. `POST /api/scans` does this; anything new taking a parent id must too.
+- Adding a route? `artifacts/api-server/src/cross-tenant.test.ts` carries a manifest of every
+  route and fails if one exists that it does not name. That is deliberate — decide whether a new
+  route is org-scoped before it ships.
+- Adding an organisation-scoped table? Add it to `ORG_SCOPED_TABLES`
+  (`lib/db/src/tenant-isolation.ts`), give it a policy in `tenant-isolation.sql`, and grant it.
+  A table with no grant is unreachable by the runtime, which is the fail-closed default.
 
 ## Package boundaries
 

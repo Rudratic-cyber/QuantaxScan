@@ -199,23 +199,40 @@ Detail: [07-reports.md](07-reports.md)
 
 | # | Feature | Status | Pri |
 |---|---|---|---|
-| F1 | Authentication + RBAC | `planned` | **P0**† |
-| F2 | Multi-tenancy with hard isolation | `planned` | **P0**† |
+| F1 | Authentication + RBAC | `partial` | **P0**† |
+| F2 | Multi-tenancy with hard isolation | `partial` | **P0**† |
 | F3 | Audit logging | `planned` | **P1** |
 | F4 | Source-code handling controls (ephemeral, no-retention mode) | `planned` | **P0**† |
 | F5 | Self-hosted / on-prem deployment | `planned` | **P1**‡ |
 | F6 | SSO / SAML | `planned` | **P2** |
-| F7 | Secrets management (no `.env` in git) | `next` | **P0** |
+| F7 | Secrets management (no `.env` in git) | `partial` | **P0** |
 | F8 | Ticket sync (Jira / ServiceNow) | `deferred` | **P3** |
 
-† **There is currently no authentication at all.** Every API route is open, and `app.ts:27`
-sets `cors({ origin: true })` which reflects any origin. That is fine for a Replit demo and
-disqualifying for an enterprise pilot. F1/F2/F4 are P0 the moment a second organisation's data
-enters the system.
+† **F1 `partial` — the authorisation half exists, the authentication half does not.**
+Organisation-scoped authorisation is enforced in the database (see F2), and a default-deny shared
+API key protects `/api`. There is still **no per-user identity**: no sign-in, no sessions, no
+identity providers, so a person cannot be a principal and no action can be attributed to one. The
+sign-in design is specified in [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §3 and is not
+built. Do not read `partial` as "nearly done" — it is the larger and more visible half that
+remains.
+
+**F2 `partial` — the isolation is real; the tenants are not yet.** Every organisation-scoped table
+carries `organization_id` under a PostgreSQL row-level-security policy, the runtime connects as a
+role without `BYPASSRLS`, and every route goes through `withOrg`, so a forgotten `where` clause
+returns zero rows rather than another tenant's data. An automated cross-tenant suite proves it,
+with a negative control demonstrated able to fail. What is missing is the ability to *create* a
+second tenant: there is one organisation, and the shared API key is bound to it. Detail and
+deploy order: [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §5, §9, §10.
+
+**F7 `partial`** — `.env` is out of git and gitignored (S5/G-13). Secret scanning in CI is not
+done.
+
+F1/F2/F4 are P0 the moment a second organisation's data enters the system. The mechanism for F2
+now exists ahead of that moment, which is the intended order.
 
 ‡ Promote to **P0** if design partners refuse SaaS source-code ingestion.
 
-Detail: [08-security.md](08-security.md)
+Detail: [08-security.md](08-security.md), [13-auth-and-tenancy.md](13-auth-and-tenancy.md)
 
 ---
 

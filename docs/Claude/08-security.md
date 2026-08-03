@@ -35,13 +35,21 @@ API could read every project, scan, and finding, and create new ones.
 > `GET /community/posts`, `GET /community/leaderboard`, `GET /reports/:id`. Everything touching
 > project, scan, finding, stats, chat or GitHub data is protected, including unmatched routes.
 >
-> **This is not F1 and must not be recorded as S1 closed.** It carries no per-user identity, so
-> there is no org-scoped authorisation and no tenant isolation — one key grants everything. It is
-> a single shared secret with no rotation story and no per-caller attribution, which also means
-> S8 audit logging cannot attribute access to a person. Still outstanding:
+> **Organisation scoping landed 2026-08-03.** The key is no longer a grant over everything: it is
+> bound to one organisation by `QUANTAXSCAN_API_KEY_ORG_ID` (default 1), and every scoped read and
+> write goes through `withOrg` under row-level security. See §"Tenant isolation" below and
+> [13-auth-and-tenancy.md](13-auth-and-tenancy.md).
 >
-> - Per-user identity and organisation scoping enforced at the query layer (F1)
-> - Purging real project names from the production database — cannot be done from the repo
+> **This is still not F1 and must not be recorded as S1 closed.** It carries no per-user identity:
+> there is no sign-in, no session, and no way for a person to be a principal. The shared key
+> remains a single secret with no rotation story and no per-caller attribution, which is why S8
+> audit logging still cannot attribute access to a person — and is now the documented reason it is
+> a **break-glass and machine credential** rather than the user path. Still outstanding:
+>
+> - Per-user identity — sign-in, sessions, providers (F1, specified in
+>   [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §3, not built)
+> - Purging real project names from the production database — cannot be done from the repo.
+>   Organisation scoping contains them to one tenant; it does not delete them
 > - Key rotation without downtime
 >
 > **The exposure stays open until the deployment sets `QUANTAXSCAN_API_KEYS` and redeploys.**
@@ -148,14 +156,23 @@ together.
 > key instead. `cors()` stays mounted ahead of the auth middleware so OPTIONS preflight
 > terminates there rather than being answered with a 401.
 
-### 🟠 S5 — `.env` committed, and not gitignored
+### 🟢 S5 — `.env` committed, and not gitignored — **CLOSED 2026-08-03**
 
-`.env` is tracked in git and `.gitignore` does not cover it. Today it holds only `API_BASE_URL`,
-so nothing has leaked — but the code already references `DATABASE_URL`, `GITHUB_TOKEN`,
-`AI_INTEGRATIONS_OPENAI_API_KEY`. The next person to add one commits a secret.
+`.env` was tracked in git and `.gitignore` did not cover it. It held only `API_BASE_URL`, so
+nothing leaked — but the code already references `DATABASE_URL`, `GITHUB_TOKEN`,
+`AI_INTEGRATIONS_OPENAI_API_KEY`, and `.env` is where `QUANTAXSCAN_API_KEYS` and the new database
+role passwords are meant to live locally.
 
-**Fix now, while it is free:** add `.env` to `.gitignore`, `git rm --cached .env`, keep
-`.env.example`. Add a pre-commit secret scanner.
+> **Closed 2026-08-03.** `git rm --cached .env`, plus `.gitignore` entries for `.env` and `.env.*`
+> keeping `.env.example`. The `git rm --cached` is the part that mattered — adding an
+> already-tracked file to `.gitignore` does nothing.
+>
+> No history rewrite: the file's history contains no secret, and a rewrite is destructive and
+> force-push-shaped. If a secret is ever committed, rotate the credential; do not rely on a
+> rewrite to have removed it.
+>
+> **The secret-scanner half is not done.** The pre-pilot checklist below keeps S5 unticked for
+> that reason.
 
 ### 🟡 S6 — No rate limiting
 
@@ -213,11 +230,42 @@ per collector. Never ask for admin because it is easier to document.
 Store credentials in a secrets manager, never in the application database. Support customer-held
 keys where possible so we cannot use a credential without the customer's involvement.
 
-### Tenant isolation
+### Tenant isolation — **implemented 2026-08-03**
 
 Multi-tenancy must be enforced at the query layer, not by convention. Every inventory query
 carries `organizationId` and it is applied in a single choke point that cannot be bypassed by
 forgetting a `where` clause. Test with an automated cross-tenant access suite.
+
+That is now built, and the choke point is the **database**, because nothing else can make the
+guarantee literally. Implementation and evidence:
+[13-auth-and-tenancy.md](13-auth-and-tenancy.md) §5 and §9.
+
+- `lib/db/sql/tenant-isolation.sql` — row-level-security policies on every organisation-scoped
+  table, `ENABLE` plus `FORCE`. Hand-written, because `drizzle-kit push` installs policies with a
+  NULL `USING` clause that permits every row while appearing installed (§5.4 — this is the single
+  sharpest trap in the whole design).
+- The runtime connects as `quantaxscan_app`: no table ownership, no `BYPASSRLS`. **This is what
+  makes the policies real rather than decorative** — a superuser or owner connection bypasses
+  them, and the code would behave identically while proving nothing.
+- `withOrg` (`lib/db/src/org-scope.ts`) sets two transaction-local GUCs the policies compare
+  against. It refuses to nest: a nested scope silently re-scopes its parent once its savepoint is
+  released, and that is the only failure mode here that returns *another tenant's* rows rather
+  than none.
+- `assertTenantIsolationInstalled()` refuses to start the API server unless every scoped table has
+  RLS enabled, forced, and a policy with a real `USING` expression that applies to the runtime
+  role.
+- No route imports the module-level `db`; a test enforces it.
+
+Two limits worth stating plainly rather than leaving implied:
+
+1. **A foreign key is not subject to RLS.** PostgreSQL checks referential integrity with the
+   policies bypassed, so a client-supplied parent id must still be confirmed visible inside the
+   scope before a child row is written. One such case existed and was fixed
+   (`POST /api/scans`); it was found by the cross-tenant suite, not by review.
+2. **`users`, `sessions` and `community_posts` are deliberately not scoped** — the first two are
+   read before an organisation context exists, the third is public content. User enumeration is
+   contained because the only path to another person is through `organization_members`, which is
+   scoped.
 
 ### Data minimisation
 
@@ -237,12 +285,14 @@ expiry; revocable; access-logged; cryptographically random IDs (S2); never index
 Before the first customer with real data:
 
 - [ ] S1 — authentication + org-scoped authorisation
-      *(interim shared API key shipped; per-user identity and org scoping still missing)*
+      *(org-scoped authorisation shipped — see §"Tenant isolation" and
+      [13-auth-and-tenancy.md](13-auth-and-tenancy.md); per-user identity still missing)*
 - [ ] S2 — CSPRNG IDs, auth, expiry, revocation on shared reports
-      *(CSPRNG IDs done; auth, expiry, revocation still missing)*
+      *(CSPRNG IDs done; expiry, revocation and access-count columns exist and the public-share
+      rule is enforced by the policy — the interface that sets and shows them is not built)*
 - [ ] S3 — stop persisting full source
 - [x] S4 — CORS allowlist
-- [ ] S5 — `.env` out of git, secret scanning in CI
+- [ ] S5 — `.env` out of git *(done)*, secret scanning in CI *(not done)*
 - [ ] S6 — rate limits + scan queue
 - [ ] S7 — SSRF controls on GitHub fetching
 - [ ] S8 — audit logging

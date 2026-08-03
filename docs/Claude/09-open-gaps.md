@@ -27,8 +27,8 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-09 | AES-ECB framed as a compliance violation | Medium | Wrong citation (now fixed) | Copy change |
 | G-10 | Hygiene findings inflate the PQC risk score | High | `computeScanResult` | A4 |
 | G-11 | No confidence score on findings | High, partially closed | Design | A2 — carried on `observations`; no UI/report consumer yet |
-| G-12 | Security findings S1–S8 | High | Interim auth shipped; needs deploy | See [08](08-security.md) |
-| G-13 | `.env` tracked in git | Low now, High later | One command | 2 min |
+| G-12 | Security findings S1–S8 | High | Interim auth + org scoping shipped; needs deploy | See [08](08-security.md), [13](13-auth-and-tenancy.md) |
+| ~~G-13~~ | ~~`.env` tracked in git~~ | **Closed** | Done 2026-08-03 | — |
 | G-14 | No re-verification trigger for standards data | Medium | Process | Calendar + CI |
 | G-15 | Observation model not aligned to SP 1800-38B data elements | Medium, partially closed | Design | A2 — profile + modality landed; no network collector populates it |
 | G-16 | Binary scanning deferred; NIST treats it as core | Medium | Roadmap call | Re-scope B10 |
@@ -298,32 +298,45 @@ with credentials.
 > [11-ui-defect-fixes.md](11-ui-defect-fixes.md). That is honesty about the gate, not a narrowing
 > of it; the gated journeys still fail until F1.
 >
+> **Organisation scoping landed 2026-08-03 (P1).** Every organisation-scoped table now carries
+> `organization_id` with a row-level-security policy enforcing it, the runtime connects as a role
+> with no `BYPASSRLS`, and every route reads and writes through `withOrg`. A forgotten `where`
+> clause now returns zero rows rather than another tenant's data. Design and evidence:
+> [13-auth-and-tenancy.md](13-auth-and-tenancy.md).
+>
+> **This is the org-scoping half of S1 and nothing else.** There is still no per-user identity —
+> no sign-in, no sessions, no providers — so the shared API key remains the only credential, now
+> bound to organisation 1. **S1 stays open.** The change is deliberately invisible: no
+> user-facing behaviour differs, which is what makes a regression show up as zero rows rather
+> than as a subtle authorisation bug.
+>
 > Severity drops from `Critical` to `High` on deploy, not on merge. It does not reach closed:
-> S1 still lacks per-user identity and org scoping (F1), S2 still lacks expiry and revocation,
-> and S3, S6, S7, S8 are untouched. Real project names are still in the production database and
-> that needs database access, not a code change.
+> S1 still lacks per-user identity (F1), S2 still lacks the expiry and revocation *interface*
+> (the columns and the policy now exist), and S3, S6, S7, S8 are untouched. Real project names
+> are still in the production database and that needs database access, not a code change.
 
 **Blocks:** the first pilot with real customer data — F1 and the remaining S-findings are still
 required for that. The immediate anonymous-access problem is addressed.
 
 ---
 
-## G-13 — `.env` tracked in git `Low now, High later`
+## G-13 — `.env` tracked in git ~~`Low now, High later`~~ — **CLOSED 2026-08-03**
 
-Currently holds only `API_BASE_URL`, so nothing has leaked. But `.gitignore` does not cover
-`.env`, and the code already references `DATABASE_URL`, `GITHUB_TOKEN` and
-`AI_INTEGRATIONS_OPENAI_API_KEY`.
+`.env` was tracked and `.gitignore` did not cover it. It held only `API_BASE_URL`, so nothing
+leaked — but it is where `QUANTAXSCAN_API_KEYS` and, shortly, `SESSION_SECRET` and two database
+passwords are meant to live locally.
 
-**What closes it:** add `.env` to `.gitignore`, `git rm --cached .env`, keep `.env.example`, add
-a pre-commit secret scanner. Two minutes, and free right now — it stops being free the moment
-someone adds a real secret.
-
-> **Now urgent (2026-08-02).** The G-12 mitigation introduced `QUANTAXSCAN_API_KEYS`, a genuine
-> secret that the deployment must set. `.env.example` and `DOCKER.md` both say not to put it in
-> `.env`, but that is a documented convention protecting a tracked file, which is exactly the
-> failure mode this gap describes. Do the two-minute fix before the next person ignores the
-> comment. Note that adding `.env` to `.gitignore` alone does nothing — it is already tracked, so
-> `git rm --cached .env` is the part that matters.
+> **Closed 2026-08-03** by `git rm --cached .env` plus `.gitignore` entries for `.env` and
+> `.env.*` (keeping `.env.example`). The `git rm --cached` is the part that mattered: adding an
+> already-tracked file to `.gitignore` does nothing.
+>
+> **No history rewrite was performed, and none is warranted** — the file's history contains no
+> secret, and a rewrite is a destructive, force-push-shaped operation with real cost to everyone
+> holding a clone. If a secret is ever committed, that calculus changes and the credential must be
+> rotated regardless.
+>
+> **Still outstanding, and deliberately not claimed as part of this:** a pre-commit or CI secret
+> scanner. `08-security.md`'s pre-pilot checklist keeps S5 open on that basis.
 
 ---
 
@@ -449,7 +462,8 @@ deleting is cheaper than auditing 20+ images. Note this does **not** remove it f
 
 ## Suggested order
 
-1. **G-13, G-18** — minutes each, and both are free only while the repo is private
+1. ~~**G-13**~~ (closed 2026-08-03), **G-18** — minutes each, and free only while the repo is
+   private
 2. **G-17** — the positioning is wrong *now*, and it is a document edit
 3. **G-06** — one pattern, closes a real detection hole
 4. **G-01** — 30 minutes, unblocks a whole customer segment
@@ -458,8 +472,9 @@ deleting is cheaper than auditing 20+ images. Note this does **not** remove it f
    2026-08-02:** the A1/A2 half landed (G-05/G-11/G-15 partially closed — see each entry above);
    G-10 is untouched, since it needs A4 (the Mosca risk engine), which is out of scope for A1/A2.
 7. **G-07, G-08, G-09** — reporting/copy changes, cheap once A4 exists
-8. **G-12, G-19** — before any pilot, and hard gates on open-sourcing. G-12's interim auth is
-   shipped; the remaining S-findings and F1 are the pilot blockers
+8. **G-12, G-19** — before any pilot, and hard gates on open-sourcing. G-12's interim auth and
+   organisation scoping are shipped; per-user identity (F1) and the remaining S-findings are the
+   pilot blockers
 9. **G-14** — process, set up once
 10. **G-02, G-03** — when the relevant customer segment is actually in play
 11. **G-04** — with C9
