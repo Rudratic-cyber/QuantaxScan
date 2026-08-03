@@ -45,6 +45,7 @@ describe("asset/observation model — persisted against a real (embedded) Postgr
     expect(asset.keySize).toBeNull();
 
     await db.insert(observationsTable).values({
+      organizationId: 1,
       assetId: asset.id,
       collectionRunId: run.id,
       collector: "source-regex",
@@ -105,6 +106,7 @@ describe("asset/observation model — persisted against a real (embedded) Postgr
 
     await expect(
       db.insert(observationsTable).values({
+        organizationId: 1,
         assetId: asset.id,
         collectionRunId: run.id,
         collector: "source-regex",
@@ -154,6 +156,7 @@ describe("asset/observation model — persisted against a real (embedded) Postgr
 
     await expect(
       db.insert(observationsTable).values({
+        organizationId: 1,
         assetId: 999_999,
         collectionRunId: 999_999,
         collector: "source-regex",
@@ -169,17 +172,18 @@ describe("asset/observation model — persisted against a real (embedded) Postgr
     cleanup = close;
 
     await expect(
-      db.insert(scansTable).values({ projectId: 999_999, totalLines: 0 }),
+      db.insert(scansTable).values({ organizationId: 1, projectId: 999_999, totalLines: 0 }),
     ).rejects.toThrow();
 
     const [project] = await db
       .insert(projectsTable)
-      .values({ name: "p", language: "python" })
+      .values({ organizationId: 1, name: "p", language: "python" })
       .returning();
-    const [scan] = await db.insert(scansTable).values({ projectId: project.id, totalLines: 0 }).returning();
+    const [scan] = await db.insert(scansTable).values({ organizationId: 1, projectId: project.id, totalLines: 0 }).returning();
 
     await expect(
       db.insert(findingsTable).values({
+        organizationId: 1,
         scanId: 999_999,
         fileName: "a.py",
         lineNumber: 1,
@@ -191,6 +195,7 @@ describe("asset/observation model — persisted against a real (embedded) Postgr
 
     await expect(
       db.insert(findingsTable).values({
+        organizationId: 1,
         scanId: scan.id,
         fileName: "a.py",
         lineNumber: 1,

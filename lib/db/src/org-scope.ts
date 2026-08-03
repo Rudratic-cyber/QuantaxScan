@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { sql, type ExtractTablesWithRelations } from "drizzle-orm";
+import { sql, type ExtractTablesWithRelations, type SQL } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT, PgTransaction } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 
@@ -26,6 +26,24 @@ export type AppDatabase = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 /** The handle a scoped callback is given. Route code must use *this*, never the module-level `db`. */
 export type ScopedTx = PgTransaction<PgQueryResultHKT, typeof schema, ExtractTablesWithRelations<typeof schema>>;
+
+/**
+ * Run raw SQL and get its rows back, typed.
+ *
+ * `db.execute()` is typed against the driver's result HKT, which is left
+ * unresolved on the generic handle above — so its return type is `unknown` and
+ * every call site would otherwise need its own cast. At runtime both drivers
+ * this project uses return `{ rows, fields, affectedRows }`.
+ *
+ * Worth stating because the design document specifies
+ * `const [{ existing }] = await tx.execute(...)`, destructuring the result as
+ * an array. It is not one. That destructure throws — and it is the nesting
+ * guard, the one place in this mechanism where a misread fails open.
+ */
+export async function executeRows<T>(handle: AppDatabase | ScopedTx, query: SQL): Promise<T[]> {
+  const result = (await handle.execute(query)) as unknown as { rows?: T[] } | undefined;
+  return result?.rows ?? [];
+}
 
 export interface OrgContext {
   organizationId: number;
@@ -100,10 +118,13 @@ function assertNotNestedInProcess(opening: string): void {
  * request.
  */
 async function assertNotNested(tx: ScopedTx, opening: string): Promise<void> {
-  const result = await tx.execute(sql`select
-    nullif(current_setting(${SCOPE_SENTINEL}, true), '') as scope_active,
-    nullif(current_setting('app.current_org_id', true), '') as org_id`);
-  const row = (result.rows as GucRow[] | undefined)?.[0];
+  const rows = await executeRows<GucRow>(
+    tx,
+    sql`select
+      nullif(current_setting(${SCOPE_SENTINEL}, true), '') as scope_active,
+      nullif(current_setting('app.current_org_id', true), '') as org_id`,
+  );
+  const row = rows[0];
 
   if (row?.scope_active != null || row?.org_id != null) {
     const where = row?.org_id != null ? `organization ${row.org_id}` : "an unscoped block";

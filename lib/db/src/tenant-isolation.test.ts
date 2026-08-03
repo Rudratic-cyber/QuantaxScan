@@ -1,6 +1,7 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { sql } from "drizzle-orm";
 import { createTestDb, type TestDb } from "./test-support/test-db";
+import { executeRows } from "./org-scope";
 import { projectsTable } from "./schema/projects";
 import { activityTable } from "./schema/activity";
 import { sharedReportsTable } from "./schema/shared_reports";
@@ -73,11 +74,10 @@ describe("the test harness is actually subject to RLS", () => {
   it("the harness role is genuinely subject to RLS — without this, every isolation test below is vacuous", async () => {
     harness = await createTestDb({ asRole: RUNTIME_DB_ROLE });
 
-    const role = (
-      await harness.db.execute(
-        sql`select rolsuper, rolbypassrls from pg_roles where rolname = current_user`,
-      )
-    ).rows[0] as { rolsuper: boolean; rolbypassrls: boolean };
+    const [role] = await executeRows<{ rolsuper: boolean; rolbypassrls: boolean }>(
+      harness.db,
+      sql`select rolsuper, rolbypassrls from pg_roles where rolname = current_user`,
+    );
 
     expect(role.rolsuper).toBe(false);
     expect(role.rolbypassrls).toBe(false);
@@ -98,11 +98,10 @@ describe("the test harness is actually subject to RLS", () => {
     // control above has to exist.
     harness = await createTestDb();
 
-    const role = (
-      await harness.db.execute(
-        sql`select rolsuper, rolbypassrls from pg_roles where rolname = current_user`,
-      )
-    ).rows[0] as { rolsuper: boolean; rolbypassrls: boolean };
+    const [role] = await executeRows<{ rolsuper: boolean; rolbypassrls: boolean }>(
+      harness.db,
+      sql`select rolsuper, rolbypassrls from pg_roles where rolname = current_user`,
+    );
     expect(role.rolbypassrls).toBe(true);
 
     await seedTwoOrgs(harness);
@@ -201,9 +200,9 @@ describe("withOrg is the choke point", () => {
     await seedTwoOrgs(harness);
 
     const found = await harness.scope.withOrg({ organizationId: 2, userId: "" }, (tx) =>
-      tx.execute(sql`select id from projects where id = 1`),
+      executeRows<{ id: number }>(tx, sql`select id from projects where id = 1`),
     );
-    expect(found.rows).toHaveLength(0);
+    expect(found).toHaveLength(0);
   });
 
   it("cross-tenant UPDATE and DELETE affect nothing and leave the other tenant's row intact", async () => {
@@ -337,9 +336,9 @@ describe("the shapes that are deliberately not the standard one", () => {
 
     // Deletable, so the legacy feed can be pruned.
     const deleted = await withOrg({ organizationId: 1, userId: "" }, (tx) =>
-      tx.execute(sql`delete from activity where organization_id is null returning id`),
+      executeRows<{ id: number }>(tx, sql`delete from activity where organization_id is null returning id`),
     );
-    expect(deleted.rows).toHaveLength(1);
+    expect(deleted).toHaveLength(1);
   });
 
   it("shared_reports: a public, unexpired, unrevoked report is readable with no organisation scope at all", async () => {
@@ -385,16 +384,16 @@ describe("the shapes that are deliberately not the standard one", () => {
     // is opened at a placeholder the user is not a member of. The `user_id`
     // branch is what makes their own membership visible anyway.
     const mine = await harness.scope.withOrg({ organizationId: -1, userId: "user-a" }, (tx) =>
-      tx.execute(sql`select organization_id from organization_members`),
+      executeRows(tx, sql`select organization_id from organization_members`),
     );
-    expect(mine.rows).toEqual([{ organization_id: 1 }]);
+    expect(mine).toEqual([{ organization_id: 1 }]);
 
     // And the organisations that membership grants — via a subquery evaluated
     // under organization_members' own policy, with no recursion.
     const orgs = await harness.scope.withOrg({ organizationId: -1, userId: "user-a" }, (tx) =>
-      tx.execute(sql`select id from organizations order by id`),
+      executeRows(tx, sql`select id from organizations order by id`),
     );
-    expect(orgs.rows).toEqual([{ id: 1 }]);
+    expect(orgs).toEqual([{ id: 1 }]);
   });
 
   it("organization_members: one user's membership row is invisible to another user in another organisation", async () => {
@@ -410,8 +409,8 @@ describe("the shapes that are deliberately not the standard one", () => {
     // This is the containment on user enumeration: `users` is not RLS-scoped,
     // but the only path to another person is through this table.
     const seen = await harness.scope.withOrg({ organizationId: 2, userId: "user-b" }, (tx) =>
-      tx.execute(sql`select user_id from organization_members`),
+      executeRows(tx, sql`select user_id from organization_members`),
     );
-    expect(seen.rows).toEqual([{ user_id: "user-b" }]);
+    expect(seen).toEqual([{ user_id: "user-b" }]);
   });
 });

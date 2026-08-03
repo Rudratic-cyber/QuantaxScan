@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import type { AppDatabase } from "./org-scope";
+import { executeRows, type AppDatabase } from "./org-scope";
 
 /**
  * Verification that tenant isolation is actually installed — not merely that
@@ -63,7 +63,9 @@ export async function inspectTenantIsolation(db: AppDatabase): Promise<TableIsol
 
   // `polroles = '{0}'` is the encoding for a policy applied to PUBLIC; any
   // other entry is an explicit role OID list.
-  const result = await db.execute(sql`
+  const rows = await executeRows<StateRow>(
+    db,
+    sql`
     select c.relname                                as table_name,
            c.relrowsecurity                         as rls_enabled,
            c.relforcerowsecurity                    as rls_forced,
@@ -75,9 +77,8 @@ export async function inspectTenantIsolation(db: AppDatabase): Promise<TableIsol
       join pg_namespace n on n.oid = c.relnamespace
       left join pg_policy p on p.polrelid = c.oid
      where n.nspname = 'public'
-       and c.relname in (${tables})`);
-
-  const rows = (result.rows ?? []) as StateRow[];
+       and c.relname in (${tables})`,
+  );
 
   return ORG_SCOPED_TABLES.map((table) => {
     const forTable = rows.filter((r) => r.table_name === table);

@@ -4,12 +4,15 @@ import { vi } from "vitest";
 
 const API_KEY = "test-api-key-1234567890-super-secret-key-32bytes";
 
-const { testDb, closeTestDb } = await vi.hoisted(async () => {
+const { testDb, testScope, closeTestDb } = await vi.hoisted(async () => {
   process.env.QUANTAXSCAN_API_KEYS = "test-api-key-1234567890-super-secret-key-32bytes";
   process.env.DATABASE_URL = "postgres://dummy:dummy@localhost:5432/dummy";
   const { createTestDb } = await import("@workspace/db/test-support");
-  const { db, close } = await createTestDb();
-  return { testDb: db, closeTestDb: close };
+  // `asRole` matters here as much as in the isolation suite: without it the
+  // connection is pglite's superuser, which has BYPASSRLS, and these routes
+  // would appear to work even if `withOrg` were removed entirely.
+  const { db, scope, close } = await createTestDb({ asRole: "quantaxscan_app" });
+  return { testDb: db, testScope: scope, closeTestDb: close };
 });
 
 vi.mock("@workspace/db", async () => {
@@ -17,6 +20,10 @@ vi.mock("@workspace/db", async () => {
   return {
     db: testDb,
     pool: {},
+    // Routes reach the database only through these, so the mock has to supply
+    // them bound to the test handle — a `db` alone would leave every route
+    // calling the real, unconfigured pool.
+    ...testScope,
     ...schema,
   };
 });

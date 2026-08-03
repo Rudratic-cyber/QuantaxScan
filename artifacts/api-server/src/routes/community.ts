@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, sql } from "drizzle-orm";
-import { db, communityPostsTable } from "@workspace/db";
+import { withoutOrgScope, communityPostsTable } from "@workspace/db";
 import {
   CreateCommunityPostBody,
   VoteCommunityPostParams,
@@ -11,14 +11,26 @@ import {
 
 const router: IRouter = Router();
 
+/**
+ * Community posts are public content by design, so `community_posts` is
+ * deliberately NOT organisation-scoped and carries no RLS policy — scoping it
+ * would make posts invisible to the people they are written for.
+ *
+ * That exemption goes through `withoutOrgScope`, which logs its reason with a
+ * stack, rather than through an exemption list somewhere else. An audited
+ * escape hatch stays true; a list of "routes allowed to use `db` directly"
+ * rots the moment someone adds a route.
+ */
+const UNSCOPED = "public community content";
+
 router.get("/community/posts", async (req, res): Promise<void> => {
   const parsed = ListCommunityPostsQueryParams.safeParse(req.query);
   const type = parsed.success ? parsed.data.type : undefined;
   const limit = (parsed.success ? parsed.data.limit : undefined) ?? 20;
 
-  let query = db.select().from(communityPostsTable).orderBy(desc(communityPostsTable.createdAt));
-
-  const posts = await query.limit(limit);
+  const posts = await withoutOrgScope(UNSCOPED, (tx) =>
+    tx.select().from(communityPostsTable).orderBy(desc(communityPostsTable.createdAt)).limit(limit),
+  );
 
   const filtered =
     type && type !== "all" ? posts.filter((p) => p.type === type) : posts;
@@ -33,18 +45,20 @@ router.post("/community/posts", async (req, res): Promise<void> => {
     return;
   }
 
-  const [post] = await db
-    .insert(communityPostsTable)
-    .values({
-      type: parsed.data.type,
-      title: parsed.data.title,
-      content: parsed.data.content,
-      authorName: parsed.data.authorName,
-      language: parsed.data.language ?? null,
-      framework: parsed.data.framework ?? null,
-      tags: parsed.data.tags ?? [],
-    })
-    .returning();
+  const [post] = await withoutOrgScope(UNSCOPED, (tx) =>
+    tx
+      .insert(communityPostsTable)
+      .values({
+        type: parsed.data.type,
+        title: parsed.data.title,
+        content: parsed.data.content,
+        authorName: parsed.data.authorName,
+        language: parsed.data.language ?? null,
+        framework: parsed.data.framework ?? null,
+        tags: parsed.data.tags ?? [],
+      })
+      .returning(),
+  );
 
   res.status(201).json(post);
 });
@@ -63,26 +77,31 @@ router.post("/community/posts/:id/vote", async (req, res): Promise<void> => {
     return;
   }
 
-  const [existing] = await db
-    .select()
-    .from(communityPostsTable)
-    .where(eq(communityPostsTable.id, params.data.id));
+  const updated = await withoutOrgScope(UNSCOPED, async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(communityPostsTable)
+      .where(eq(communityPostsTable.id, params.data.id));
 
-  if (!existing) {
+    if (!existing) return null;
+
+    const update =
+      body.data.direction === "up"
+        ? { upvotes: existing.upvotes + 1 }
+        : { downvotes: existing.downvotes + 1 };
+
+    const [row] = await tx
+      .update(communityPostsTable)
+      .set(update)
+      .where(eq(communityPostsTable.id, params.data.id))
+      .returning();
+    return row;
+  });
+
+  if (!updated) {
     res.status(404).json({ error: "Post not found" });
     return;
   }
-
-  const update =
-    body.data.direction === "up"
-      ? { upvotes: existing.upvotes + 1 }
-      : { downvotes: existing.downvotes + 1 };
-
-  const [updated] = await db
-    .update(communityPostsTable)
-    .set(update)
-    .where(eq(communityPostsTable.id, params.data.id))
-    .returning();
 
   res.json(updated);
 });
@@ -92,7 +111,9 @@ router.get("/community/leaderboard", async (req, res): Promise<void> => {
   const limit = (parsed.success ? parsed.data.limit : undefined) ?? 10;
 
   // Aggregate by authorName
-  const posts = await db.select().from(communityPostsTable).limit(200);
+  const posts = await withoutOrgScope(UNSCOPED, (tx) =>
+    tx.select().from(communityPostsTable).limit(200),
+  );
   const map: Record<string, { totalPosts: number; totalUpvotes: number }> = {};
 
   for (const post of posts) {

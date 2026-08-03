@@ -1,6 +1,5 @@
 import { Router, type IRouter } from "express";
 import { scanCode, computeScanResult, generateExecutiveSummary } from "../lib/scanner";
-import { db, activityTable } from "@workspace/db";
 import { DEMO_REPOS } from "../lib/demo-repos";
 
 const router: IRouter = Router();
@@ -61,10 +60,13 @@ router.post("/demo/repos/:slug/scan", async (req, res): Promise<void> => {
   const result = computeScanResult(allFindings, totalLines);
   const summary = generateExecutiveSummary(allFindings, totalLines, repo.language);
 
-  await db.insert(activityTable).values({
-    description: `Demo scan run on ${repo.name} — found ${result.criticalCount} critical vulnerabilities`,
-    severity: result.criticalCount > 0 ? "critical" : result.alertCount > 0 ? "alert" : "info",
-  });
+  // This route is public and hard-coded, and it no longer writes to the
+  // database. Two reasons, and the second is structural: an unauthenticated
+  // route should not write at all, and a demo scan over fixed repositories
+  // produces no audit row worth keeping. It was also the last writer of
+  // `activity` rows with no organisation — with it gone, nothing mints new
+  // unowned rows, which is what lets the activity policy admit NULL on read
+  // while refusing it on write. The response is unchanged.
 
   res.json({
     id: -1,
