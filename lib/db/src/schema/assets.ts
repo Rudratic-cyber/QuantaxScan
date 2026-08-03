@@ -3,15 +3,16 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { SURFACE_VALUES, ASSET_STATUS_VALUES, type LocationDetail } from "@workspace/collectors";
 import { oneOf } from "./sql-helpers";
+import { organizationsTable } from "./organizations";
 
 /**
  * Stable identity, survives re-scans. docs/Claude/04-architecture.md
  * §"Target model": `asset — a thing that has crypto, persists across scans`.
  *
- * `organizationId` has no `references()` — there is no `organizations` table
- * yet (multi-tenancy is F2, out of scope for this change). It is carried
- * here, unenforced, so the fingerprint uniqueness scope and the eventual F2
- * migration do not require touching this table again.
+ * `organizationId` now references the real `organizations` table, and is the
+ * column the row-level-security policy compares against. It kept its
+ * `integer` type through that change — which is why `organizations.id` is
+ * `serial` rather than `uuid`; see organizations.ts.
  *
  * `fingerprint` is unique per organization, not globally: two organizations
  * legitimately scanning identical code should each get their own asset, not
@@ -21,7 +22,9 @@ export const assetsTable = pgTable(
   "assets",
   {
     id: serial("id").primaryKey(),
-    organizationId: integer("organization_id").notNull(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .references(() => organizationsTable.id, { onDelete: "cascade" }),
     fingerprint: text("fingerprint").notNull(), // deterministic identity — see @workspace/collectors fingerprint.ts
     surface: text("surface").notNull(),
     algorithm: text("algorithm").notNull(),

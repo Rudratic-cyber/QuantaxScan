@@ -3,6 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { SURFACE_VALUES } from "@workspace/collectors";
 import { oneOf } from "./sql-helpers";
+import { organizationsTable } from "./organizations";
 
 /**
  * One execution of one collector. docs/Claude/04-architecture.md §"Target
@@ -19,7 +20,9 @@ export const collectionRunsTable = pgTable(
   "collection_runs",
   {
     id: serial("id").primaryKey(),
-    organizationId: integer("organization_id").notNull(),
+    organizationId: integer("organization_id")
+      .notNull()
+      .references(() => organizationsTable.id, { onDelete: "cascade" }),
     collector: text("collector").notNull(),
     collectorVersion: text("collector_version").notNull(),
     surface: text("surface").notNull(),
