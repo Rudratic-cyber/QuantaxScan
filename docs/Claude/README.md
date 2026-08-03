@@ -42,6 +42,12 @@ its three variables in the codebase. See [01-strategy.md](01-strategy.md).
 | 10 | [Editions](10-editions.md) | Community vs Enterprise, all 46 features tiered, licensing, publication gates |
 | 12 | [Test suite & CI](12-test-suite.md) | API feature suite, Playwright UI journeys, GitHub Actions pipeline, coverage gaps |
 
+### Engineering records
+
+| # | Document | What it answers |
+|---|---|---|
+| 11 | [UI defect fixes](11-ui-defect-fixes.md) | What the visual review of `main` found, and what closed each item |
+
 ### Data
 
 | Path | What it is |

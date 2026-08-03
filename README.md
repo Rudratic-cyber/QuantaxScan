@@ -242,7 +242,8 @@ docs/Claude/         Product plan, architecture, compliance mapping, editions, g
 docker/              nginx config + entrypoint
 ```
 
-**Frontend pages:** Home, Scan, Demo, Dashboard, Community, CreatePost, Report, NotFound.
+**Frontend pages:** Home, Scan, Coverage, Security, Demo, Dashboard, Community, CreatePost,
+Report, NotFound.
 
 **Database tables:** `projects`, `scans`, `findings`, `assets`, `observations`,
 `collection_runs`, `community_posts`, `activity`, `shared_reports`, `conversations`, `messages`,

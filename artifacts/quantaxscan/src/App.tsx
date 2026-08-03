@@ -14,6 +14,7 @@ import { Report } from "@/pages/Report";
 import { Coverage } from "@/pages/Coverage";
 import { Security } from "@/pages/Security";
 import { IntroScreen } from "@/components/IntroScreen";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { motion } from "framer-motion";
 import { useState } from "react";
 
@@ -56,9 +57,15 @@ function AppInner() {
     setIntroDone(true);
   };
 
-  // Report pages are fully standalone — no Layout, no intro, no animation wrapper
+  // Report pages are fully standalone — no Layout, no intro, no animation wrapper.
+  // Boundary: /report/:id is a public shareable URL, so a malformed stored payload must not
+  // hand the recipient a blank white page.
   if (isReport) {
-    return <Route path="/report/:id" component={Report} />;
+    return (
+      <ErrorBoundary>
+        <Route path="/report/:id" component={Report} />
+      </ErrorBoundary>
+    );
   }
 
   return (

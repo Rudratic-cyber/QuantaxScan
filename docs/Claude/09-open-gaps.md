@@ -293,6 +293,11 @@ with credentials.
 > peripheral page. `/demo/*` stays public, so the demo repositories still work end to end. Expect
 > an outage on the main path until F1, not graceful degradation.
 >
+> **Frontend follow-up, 2026-08-03.** The Dashboard and the Scan page now report an API refusal
+> as a refusal rather than as "no scans yet" / "check the URL" — see
+> [11-ui-defect-fixes.md](11-ui-defect-fixes.md). That is honesty about the gate, not a narrowing
+> of it; the gated journeys still fail until F1.
+>
 > Severity drops from `Critical` to `High` on deploy, not on merge. It does not reach closed:
 > S1 still lacks per-user identity and org scoping (F1), S2 still lacks expiry and revocation,
 > and S3, S6, S7, S8 are untouched. Real project names are still in the production database and

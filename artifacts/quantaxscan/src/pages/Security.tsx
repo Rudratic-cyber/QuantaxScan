@@ -84,7 +84,7 @@ export function Security() {
           ))}
         </div>
         <Reveal delay={0.1}>
-          <p className="mx-auto mt-6 max-w-2xl text-center text-sm text-[#9aa3b2]">
+          <p className="mx-auto mt-6 max-w-2xl text-center text-sm text-[#6b7280]">
             Self-hosted collectors are on the roadmap. If your security policy rules out SaaS source
             ingestion, tell us early — it changes what we build first.
           </p>
@@ -134,14 +134,19 @@ export function Security() {
           {HARDENING.map((h) => (
             <Reveal key={h}>
               <div className="flex items-start gap-3 rounded-xl border border-[#e5e7eb] bg-white p-4">
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[#e5e7eb] bg-[#f7f8fa] text-[10px] font-bold text-[#9aa3b2]">☐</span>
+                {/* A list marker, not a checkbox: these are commitments, not completed work.
+                    An unchecked box read as an unfinished to-do list; a tick would claim they
+                    are already done. Same 20px footprint, so the grid does not reflow. */}
+                <span aria-hidden="true" className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-[#eef0fe]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#4f46e5]" />
+                </span>
                 <span className="text-sm leading-relaxed text-[#3f4656]">{h}</span>
               </div>
             </Reveal>
           ))}
         </div>
         <Reveal delay={0.1}>
-          <p className="mt-6 text-sm text-[#9aa3b2]">
+          <p className="mt-6 text-sm text-[#6b7280]">
             Before general availability: SOC 2 Type II or ISO 27001, a public trust page, a
             vulnerability disclosure policy, and a signed DPA template.
           </p>

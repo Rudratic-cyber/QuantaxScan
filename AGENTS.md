@@ -96,6 +96,19 @@ host is already running local verification, those ports (and container name `qua
 already be taken. Check `docker ps -a` and `ss -tln` first and pick different ports/container name
 for your own session rather than reusing the examples verbatim.
 
+## Frontend sharp edges
+
+`ScrollArea` (`components/ui/scroll-area.tsx`) silently clips horizontally. Radix gives the
+viewport's content wrapper an inline `display: table`, which sizes to max-content, and this
+component renders only a vertical `ScrollBar` — so anything wider than a narrow panel is cut off
+with no way to reach it. Pass `viewportClassName="[&>div]:block!"` when the panel is narrow and
+the content must wrap (see the Demo findings rail). Tailwind here is **v4**: the important
+modifier is a trailing `!` (`block!`), not the v3 leading `!`.
+
+The API server refuses to start unless every `QUANTAXSCAN_API_KEYS` entry is ≥24 characters.
+Local verification is normally done **keyless** in the browser — that is the real deployed
+condition until per-user accounts land, and it is what exercises the 401 paths.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

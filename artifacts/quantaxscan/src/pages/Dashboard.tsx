@@ -628,7 +628,12 @@ type DashTab = "overview" | "ai" | "community";
 
 export function Dashboard() {
   const { data: globalStats } = useGetGlobalStats();
-  const { data: projects, refetch: refetchProjects } = useListProjects();
+  const {
+    data: projects,
+    refetch: refetchProjects,
+    isError: projectsFailed,
+    isPending: projectsPending,
+  } = useListProjects();
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dashTab, setDashTab] = useState<DashTab>("overview");
@@ -941,6 +946,8 @@ export function Dashboard() {
               <p className="text-[#6b7280] text-xs mt-1">
                 {sorted.length > 0
                   ? `${sorted.length} project${sorted.length !== 1 ? "s" : ""} in scope — ${globalStats?.totalVulnerabilitiesFound.toLocaleString() ?? "—"} total findings`
+                  : projectsPending ? "Loading projects…"
+                  : projectsFailed ? "Projects could not be loaded"
                   : "No scans yet — run your first scan"}
               </p>
             </div>
@@ -1019,30 +1026,65 @@ export function Dashboard() {
           </div>
         </Reveal>
 
-        {/* ── Empty state ─────────────────────────────────────── */}
-        {sorted.length === 0 ? (
-          <Reveal delay={0.1}>
-            <div className="rounded-2xl border border-[#e5e7eb] bg-white flex flex-col items-center justify-center py-28 px-8 text-center" style={{ boxShadow: `0 8px 24px rgba(15,23,42,0.06)` }}>
-              <div className="h-20 w-20 rounded-2xl bg-[#eef0fe] border border-[#4f46e5]/20 flex items-center justify-center mb-6">
-                <Shield className="h-10 w-10 text-[#4f46e5]/50" />
-              </div>
-              <h2 className="text-lg font-bold text-[#0a0e1a] mb-2">No scans yet</h2>
-              <p className="text-sm text-[#6b7280] mb-8 max-w-sm leading-relaxed">
-                Upload code or paste a GitHub URL in the scanner to run your first post-quantum security scan.
-              </p>
-              <Link href="/scan"
-                className="inline-flex items-center gap-2 rounded-lg border border-[#4f46e5] bg-[#4f46e5] px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#4338ca] transition-all">
-                <Terminal className="h-4 w-4" /> Run a scan
-              </Link>
-            </div>
-          </Reveal>
-        ) : (
-          <AnimatePresence mode="wait">
+        {/* Only Overview depends on the project list. AI Analysis and Community Intel used to be
+            short-circuited by this too, which hid Community Intel's public, unauthenticated data
+            behind a "No scans yet" card. */}
+        <AnimatePresence mode="wait">
 
             {/* ════════════════════════════════════════════════════
                 TAB: OVERVIEW
             ════════════════════════════════════════════════════ */}
-            {dashTab === "overview" && (
+            {dashTab === "overview" && sorted.length === 0 && (
+              <motion.div key="overview-empty" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
+                <Reveal delay={0.1}>
+                  <div className="rounded-2xl border border-[#e5e7eb] bg-white flex flex-col items-center justify-center py-28 px-8 text-center" style={{ boxShadow: `0 8px 24px rgba(15,23,42,0.06)` }}>
+                    <div className="h-20 w-20 rounded-2xl bg-[#eef0fe] border border-[#4f46e5]/20 flex items-center justify-center mb-6">
+                      {projectsFailed
+                        ? <AlertTriangle className="h-10 w-10 text-[#d97706]/70" />
+                        : <Shield className="h-10 w-10 text-[#4f46e5]/50" />}
+                    </div>
+                    {projectsPending ? (
+                      <>
+                        <h2 className="text-lg font-bold text-[#0a0e1a] mb-2">Loading projects…</h2>
+                        <p className="text-sm text-[#6b7280] mb-8 max-w-sm leading-relaxed">
+                          Fetching your scanned projects.
+                        </p>
+                      </>
+                    ) : projectsFailed ? (
+                      <>
+                        {/* Distinct from "no scans": the request was refused, so we do not know
+                            whether there are projects. Saying "No scans yet" here is a lie. */}
+                        <h2 className="text-lg font-bold text-[#0a0e1a] mb-2">Projects could not be loaded</h2>
+                        <p className="text-sm text-[#6b7280] mb-8 max-w-sm leading-relaxed">
+                          The API refused the request, so we cannot tell whether you have any scans.
+                          This is not the same as having none.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <h2 className="text-lg font-bold text-[#0a0e1a] mb-2">No scans yet</h2>
+                        <p className="text-sm text-[#6b7280] mb-8 max-w-sm leading-relaxed">
+                          Upload code or paste a GitHub URL in the scanner to run your first post-quantum security scan.
+                        </p>
+                      </>
+                    )}
+                    {projectsFailed ? (
+                      <button onClick={() => { void refetchProjects(); }}
+                        className="inline-flex items-center gap-2 rounded-lg border border-[#4f46e5] bg-[#4f46e5] px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#4338ca] transition-all">
+                        <RefreshCw className="h-4 w-4" /> Try again
+                      </button>
+                    ) : !projectsPending && (
+                      <Link href="/scan"
+                        className="inline-flex items-center gap-2 rounded-lg border border-[#4f46e5] bg-[#4f46e5] px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#4338ca] transition-all">
+                        <Terminal className="h-4 w-4" /> Run a scan
+                      </Link>
+                    )}
+                  </div>
+                </Reveal>
+              </motion.div>
+            )}
+
+            {dashTab === "overview" && sorted.length > 0 && (
               <motion.div key="overview" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
 
                 {/* Stat cards row */}
@@ -1355,8 +1397,7 @@ export function Dashboard() {
               </motion.div>
             )}
 
-          </AnimatePresence>
-        )}
+        </AnimatePresence>
       </div>
     </div>
   );
