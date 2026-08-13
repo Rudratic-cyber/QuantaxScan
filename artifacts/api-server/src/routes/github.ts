@@ -303,7 +303,9 @@ router.post("/github/scan", async (req: Request, res: Response): Promise<void> =
     repoUrl, owner, repo, totalFiles: fileResults.length, findings: allFindings,
     criticalCount: result.criticalCount, alertCount: result.alertCount,
     cleanCount: result.cleanCount, riskScore: result.riskScore, totalLines,
-    totalEffortHours: result.totalEffortHours, executiveSummary: generateExecutiveSummary(allFindings, totalLines, primaryLang),
+    totalEffortHours: result.totalEffortHours,
+    executiveSummary: generateExecutiveSummary(allFindings, totalLines, primaryLang, result.mosca),
+    pqc: result.pqc, hygiene: result.hygiene, mosca: result.mosca,
     fileResults: fileResults.map(f => ({
       path: f.path, language: f.language, lines: f.lines, content: f.content, findings: f.findings,
       criticalCount: f.findings.filter(x => x.severity === "critical").length,
@@ -378,7 +380,8 @@ router.post("/github/scan-files", async (req: Request, res: Response): Promise<v
     criticalCount: result.criticalCount, alertCount: result.alertCount,
     cleanCount: result.cleanCount, riskScore: result.riskScore,
     totalLines, totalEffortHours: result.totalEffortHours,
-    executiveSummary: generateExecutiveSummary(allFindings, totalLines, primaryLang),
+    executiveSummary: generateExecutiveSummary(allFindings, totalLines, primaryLang, result.mosca),
+    pqc: result.pqc, hygiene: result.hygiene, mosca: result.mosca,
     fileResults: fileResults.map(f => ({
       path: f.path, language: f.language, lines: f.lines, content: f.content, findings: f.findings,
       criticalCount: f.findings.filter(x => x.severity === "critical").length,

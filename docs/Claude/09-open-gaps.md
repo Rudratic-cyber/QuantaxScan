@@ -20,12 +20,12 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-02 | PCI DSS §12.3.3 wording unverified | Medium | PCI SSC registration | Human, 30 min |
 | G-03 | OMB M-23-02 submission format unknown | Medium | Not researched | Human, 2 h |
 | G-04 | `controls.json` crosswalks all seeded | Low | Deliberate — C9 is P3 | Defer to C9 |
-| G-05 | **Key size is never detected** | **Critical, partially closed** | Design | B1 rework — model + source extraction landed; A4 deadline resolution still pending |
+| G-05 | **Key size is never detected** | **Critical, partially closed** | Design | B1 rework — model + source extraction landed; deadline resolution still pending, and **A4 shipped without it** — the risk engine keys on `quantumVulnerable`, not on security strength, so this now needs C1 |
 | G-06 | EdDSA not detected at all | High | Missing pattern | 1 line |
 | G-07 | DSA mis-framed as a future problem | High | Mapping data (now fixed) | Reporting change |
 | G-08 | SHA-1 rule is use-dependent; we alert blindly | Medium | Regex can't see context | Confidence + copy |
 | G-09 | AES-ECB framed as a compliance violation | Medium | Wrong citation (now fixed) | Copy change |
-| G-10 | Hygiene findings inflate the PQC risk score | High | `computeScanResult` | A4 |
+| ~~G-10~~ | ~~Hygiene findings inflate the PQC risk score~~ | **Closed** | Done 2026-08-14 (A4) | — |
 | G-11 | No confidence score on findings | High, partially closed | Design | A2 — carried on `observations`; no UI/report consumer yet |
 | G-12 | Security findings S1–S8 | High | Interim auth + org scoping shipped; needs deploy | See [08](08-security.md), [13](13-auth-and-tenancy.md) |
 | ~~G-13~~ | ~~`.env` tracked in git~~ | **Closed** | Done 2026-08-03 | — |
@@ -177,7 +177,7 @@ will check the citation.
 
 ---
 
-## G-10 — Hygiene findings inflate the PQC risk score `High`
+## G-10 — Hygiene findings inflate the PQC risk score ~~`High`~~ — **CLOSED 2026-08-14**
 
 Three of the seven detection patterns — MD5, SHA-1, AES-ECB — are **not quantum
 vulnerabilities**. `computeScanResult()` counts them into the same severity totals and risk
@@ -191,6 +191,32 @@ room.
 
 **What closes it:** A4 risk engine split. `algorithms.json` already carries `reportingNote` on
 each hygiene entry; the engine must honour it and report a separate "classical hygiene" panel.
+
+> **Closed 2026-08-14 by A4** (`lib/risk/`, `@workspace/risk`). `computeRiskProfile()` splits
+> findings into a post-quantum track and a classical-hygiene track and computes `pqc.riskScore`
+> over the former alone: **a scan containing only MD5/SHA-1/AES-ECB now scores zero
+> post-quantum risk**, regression-tested at both the engine level
+> (`lib/risk/src/risk-profile.test.ts`) and at `computeScanResult()`, where the bug actually
+> lived (`artifacts/api-server/src/lib/scanner.test.ts`). The register's observed case — a
+> ten-line file at risk 100 with 3 of 5 findings unrelated to quantum computing — is pinned as
+> a test and now scores 60, from the three asymmetric findings only.
+>
+> **The split is derived from the mappings data, not from a list of algorithm names in code.**
+> `deriveAlgorithmMapping()` now surfaces `algorithms.json`'s `quantumVulnerable` flag verbatim
+> and `lib/risk/src/tracks.ts` keys on it, so the next algorithm added to the data lands on the
+> right track without a code change. Each hygiene algorithm's own `reportingNote` is attached to
+> its panel entry rather than paraphrased, which is what makes G-09's "best practice, not a
+> compliance violation" framing reach the report.
+>
+> Two smaller overclaims went with it: the executive summary no longer describes hygiene
+> findings as "non-PQC-safe" (there is no PQC successor to MD5) and no longer recommends
+> migration to FIPS 203/204/205 on a scan that found no quantum-vulnerable cryptography.
+>
+> **Not claimed:** no UI renders the hygiene panel yet, and `openapi.yaml`/the Orval client are
+> not regenerated, so the typed frontend client cannot see `pqc`/`hygiene`/`mosca`. The data
+> contract exists; the panel is D2/reporting work. **G-07, G-08 and G-09 stay open** — A4
+> carries their `reportingNote`s through so they have something to act on, which is the "cheap
+> once A4 exists" the ordering below refers to, but it does not act on them.
 
 ---
 
@@ -468,10 +494,13 @@ deleting is cheaper than auditing 20+ images. Note this does **not** remove it f
 3. **G-06** — one pattern, closes a real detection hole
 4. **G-01** — 30 minutes, unblocks a whole customer segment
 5. **G-16** — a roadmap decision to make before committing to A2's surface priorities
-6. **G-05, G-10, G-11, G-15** — land together with A2/A4; they are the same refactor. **Update,
-   2026-08-02:** the A1/A2 half landed (G-05/G-11/G-15 partially closed — see each entry above);
-   G-10 is untouched, since it needs A4 (the Mosca risk engine), which is out of scope for A1/A2.
-7. **G-07, G-08, G-09** — reporting/copy changes, cheap once A4 exists
+6. ~~**G-10**~~ (closed 2026-08-14 by A4), **G-05, G-11, G-15** — land together with A2/A4; they
+   are the same refactor. **Update, 2026-08-02:** the A1/A2 half landed (G-05/G-11/G-15 partially
+   closed — see each entry above). **Update, 2026-08-14:** A4 landed and closed G-10. It did
+   *not* touch G-05's deadline-resolution half — the engine splits on `quantumVulnerable`, which
+   needs no key size; returning both candidate obligations for an undetermined key size is C1.
+7. **G-07, G-08, G-09** — reporting/copy changes, and A4 now carries each algorithm's
+   `reportingNote` into the panel, which is the hook they were waiting on. Still open.
 8. **G-12, G-19** — before any pilot, and hard gates on open-sourcing. G-12's interim auth and
    organisation scoping are shipped; per-user identity (F1) and the remaining S-findings are the
    pilot blockers

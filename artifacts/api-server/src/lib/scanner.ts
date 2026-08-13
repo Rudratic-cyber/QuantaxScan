@@ -1,4 +1,13 @@
 import { collectSourceObservations, deriveAlgorithmMapping, type RawObservation } from "@workspace/collectors";
+import {
+  computeRiskProfile,
+  splitFindingsByTrack,
+  CONSULTANT_HOURLY_RATE_USD,
+  type HygieneSummary,
+  type MoscaAssessment,
+  type PqcExposure,
+  type QDayScenario,
+} from "@workspace/risk";
 import { logger } from "./logger";
 
 export interface ScanFinding {
@@ -19,10 +28,48 @@ export interface ScanResult {
   criticalCount: number;
   alertCount: number;
   cleanCount: number;
+  /**
+   * **Post-quantum exposure only, since A4.** Classical-hygiene findings
+   * (MD5, SHA-1, AES-ECB) no longer contribute — see `pqc`/`hygiene` below
+   * and docs/Claude/09-open-gaps.md G-10. A scan that finds only hygiene
+   * issues scores 0 here and reports them in `hygiene`.
+   */
   riskScore: number;
+  /** Every finding's effort, both tracks. Per-track figures are on `pqc` and `hygiene`. */
   totalEffortHours: number;
   estimatedCost: number;
   executiveSummary: string;
+  /** A4: the post-quantum half, with the score decomposed so a UI can explain it. */
+  pqc: PqcExposure;
+  /** A4/G-10: the classical-hygiene panel, scored separately and never folded into `riskScore`. */
+  hygiene: HygieneSummary;
+  /** A4: `X + Y > Z` evaluated against every Q-Day scenario, with all three inputs exposed. */
+  mosca: MoscaAssessment;
+}
+
+/**
+ * The risk-engine inputs a route can supply. All optional: A4 must not
+ * require any caller to know about data classification before A3 exists.
+ */
+export interface ScanRiskContext {
+  /**
+   * X — how long this project's data must stay confidential, in years.
+   *
+   * **TODO(A3):** docs/Claude/03-features.md §A3 (data classification) is the
+   * feature that supplies this per asset, defaulting to a project-level
+   * setting. It is being built separately. Until it lands no route passes
+   * this, so every scan uses `DEFAULT_SECRECY_LIFETIME_YEARS` and reports
+   * `mosca.secrecyLifetimeSource === "assumed-default"` — which is what a
+   * report must print beside the verdict rather than implying the customer
+   * classified the data.
+   */
+  secrecyLifetimeYears?: number;
+  /** TODO(D5): crypto-agility scoring, which divides into Y. Neutral (1) until D5 exists. */
+  agilityScore?: number;
+  /** Injected so a scan's verdicts are reproducible in tests. */
+  now?: Date;
+  /** Customer-supplied Q-Day scenarios; defaults to the three in docs/Claude/01-strategy.md. */
+  scenarios?: readonly QDayScenario[];
 }
 
 /**
@@ -74,74 +121,127 @@ function toScanFinding(fileName: string, observation: RawObservation): ScanFindi
   };
 }
 
-export function computeScanResult(findings: ScanFinding[], totalLines: number): Omit<ScanResult, "executiveSummary" | "findings"> {
+/**
+ * Risk, no longer derived from detection alone (A4 —
+ * docs/Claude/04-architecture.md §3 "Split the risk engine from detection").
+ *
+ * What changed and why, in one place:
+ *
+ * - `riskScore` is now the **post-quantum exposure score** from
+ *   `@workspace/risk`, computed over quantum-vulnerable findings only. The
+ *   old formula added `alertCount` into its numerator and a flat +10 for any
+ *   alert at all, so three MD5 hits made a file look post-quantum exposed.
+ *   That is G-10, observed live as "a 10-line file scored risk 100, 3
+ *   critical / 2 alert, where 2 of the 5 findings had nothing to do with
+ *   quantum computing."
+ * - `criticalCount`/`alertCount`/`cleanCount` are **unchanged**, deliberately.
+ *   They are persisted columns on `scans` and `projects` read by four routes;
+ *   redefining them would be a second, untested behaviour change riding along
+ *   with this one. They remain "how the finding is displayed"; `pqc` and
+ *   `hygiene` are "which risk this finding is".
+ * - `pqc`, `hygiene` and `mosca` are additive, so every existing call site
+ *   keeps working untouched.
+ */
+export function computeScanResult(
+  findings: ScanFinding[],
+  totalLines: number,
+  risk: ScanRiskContext = {},
+): Omit<ScanResult, "executiveSummary" | "findings"> {
   const criticalCount = findings.filter((f) => f.severity === "critical").length;
   const alertCount = findings.filter((f) => f.severity === "alert").length;
   const cleanCount = totalLines - criticalCount - alertCount;
   const totalEffortHours = findings.reduce((sum, f) => sum + f.effortHours, 0);
-  const estimatedCost = Math.round(totalEffortHours * 500); // $500/hr security consultant rate
+  const estimatedCost = Math.round(totalEffortHours * CONSULTANT_HOURLY_RATE_USD);
 
-  // Risk score 0-100: higher = more vulnerable
-  const riskScore = Math.min(
-    100,
-    Math.round(
-      (criticalCount * 3 + alertCount) /
-        Math.max(1, totalLines) *
-        1000 +
-        (criticalCount > 0 ? 40 : 0) +
-        (alertCount > 0 ? 10 : 0)
-    )
-  );
+  const profile = computeRiskProfile(findings, {
+    totalLines,
+    secrecyLifetimeYears: risk.secrecyLifetimeYears,
+    agilityScore: risk.agilityScore,
+    now: risk.now,
+    scenarios: risk.scenarios,
+  });
 
   return {
     totalLines,
     criticalCount,
     alertCount,
     cleanCount: Math.max(0, cleanCount),
-    riskScore: Math.min(100, riskScore),
+    riskScore: profile.pqc.riskScore,
     totalEffortHours,
     estimatedCost,
+    pqc: profile.pqc,
+    hygiene: profile.hygiene,
+    mosca: profile.mosca,
   };
 }
 
+/**
+ * The board-facing paragraph. A4 changes what it is allowed to claim.
+ *
+ * Before this change it described MD5/SHA-1/AES-ECB matches as "weaker-crypto
+ * alerts (not directly quantum-broken but non-PQC-safe)" and then closed
+ * every summary — including one over nothing but MD5 — with "immediate
+ * migration to NIST PQC standards is recommended". Both are the G-10 category
+ * error in prose: there is no PQC migration for a hash that was never
+ * approved, and calling it "non-PQC-safe" implies one exists. The split is
+ * now stated explicitly, and the PQC recommendation only appears when there
+ * is post-quantum exposure to act on.
+ *
+ * `mosca` is optional so the three existing callers can adopt it
+ * independently; when supplied, the summary leads with the verdict rather
+ * than the finding count, which is the sentence
+ * docs/Claude/01-strategy.md says a CISO actually puts in a board deck.
+ */
 export function generateExecutiveSummary(
   findings: ScanFinding[],
   totalLines: number,
-  language: string
+  language: string,
+  mosca?: MoscaAssessment
 ): string {
-  const criticalCount = findings.filter((f) => f.severity === "critical").length;
-  const alertCount = findings.filter((f) => f.severity === "alert").length;
+  const { pqc: pqcFindings, hygiene: hygieneFindings } = splitFindingsByTrack(findings);
 
-  const algoCounts: Record<string, number> = {};
-  for (const f of findings) {
-    algoCounts[f.algorithm] = (algoCounts[f.algorithm] || 0) + 1;
-  }
+  const topAlgo = (subset: ScanFinding[]): [string, number] | undefined => {
+    const counts: Record<string, number> = {};
+    for (const f of subset) counts[f.algorithm] = (counts[f.algorithm] || 0) + 1;
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  };
 
-  const topAlgo = Object.entries(algoCounts).sort((a, b) => b[1] - a[1])[0];
-
-  if (criticalCount === 0 && alertCount === 0) {
+  if (findings.length === 0) {
     return `We scanned ${totalLines.toLocaleString()} lines of ${language} code and found no quantum-vulnerable cryptographic patterns. Your codebase appears quantum-safe based on detected cryptographic usage.`;
   }
 
   const parts = [`We scanned ${totalLines.toLocaleString()} lines of ${language} code.`];
 
-  if (criticalCount > 0) {
+  if (pqcFindings.length > 0) {
     parts.push(
-      `Found ${criticalCount} quantum-critical vulnerabilit${criticalCount === 1 ? "y" : "ies"} that will break on Q-Day.`
+      `Found ${pqcFindings.length} quantum-vulnerable finding${pqcFindings.length === 1 ? "" : "s"} that will break on Q-Day.`
+    );
+    const top = topAlgo(pqcFindings);
+    if (top) {
+      parts.push(`Your highest-exposure algorithm is ${top[0]} with ${top[1]} occurrence${top[1] === 1 ? "" : "s"}.`);
+    }
+  } else {
+    parts.push("Found no quantum-vulnerable cryptography, so the post-quantum exposure score is zero.");
+  }
+
+  if (hygieneFindings.length > 0) {
+    const top = topAlgo(hygieneFindings);
+    parts.push(
+      `Separately, ${hygieneFindings.length} classical-hygiene finding${hygieneFindings.length === 1 ? "" : "s"}${top ? ` (mostly ${top[0]})` : ""} — real cryptographic weaknesses, but not quantum vulnerabilities, and excluded from the post-quantum score.`
     );
   }
 
-  if (alertCount > 0) {
-    parts.push(`Found ${alertCount} weaker-crypto alert${alertCount === 1 ? "" : "s"} (not directly quantum-broken but non-PQC-safe).`);
-  }
-
-  if (topAlgo) {
+  if (mosca && mosca.applicable) {
     parts.push(
-      `Your highest-risk pattern is ${topAlgo[0]} with ${topAlgo[1]} occurrence${topAlgo[1] === 1 ? "" : "s"}.`
+      mosca.breachedScenarioCount > 0
+        ? `Mosca's inequality is breached under ${mosca.breachedScenarioCount} of ${mosca.scenarioCount} Q-Day scenarios (secrecy lifetime ${mosca.x} years${mosca.secrecyLifetimeSource === "assumed-default" ? ", assumed — no data classification set" : ""}, migration ${mosca.y} years).`
+        : `Mosca's inequality holds under all ${mosca.scenarioCount} Q-Day scenarios at a secrecy lifetime of ${mosca.x} years${mosca.secrecyLifetimeSource === "assumed-default" ? " (assumed — no data classification set)" : ""}.`
     );
   }
 
-  parts.push("Immediate migration to NIST PQC standards (FIPS 203/204/205) is recommended.");
+  if (pqcFindings.length > 0) {
+    parts.push("Migration to NIST PQC standards (FIPS 203/204/205) is recommended for the quantum-vulnerable findings.");
+  }
 
   return parts.join(" ");
 }

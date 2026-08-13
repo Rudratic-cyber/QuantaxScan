@@ -83,12 +83,40 @@ per asset, with the default clearly marked as an assumption in reports.
 
 ---
 
-### A4. Mosca risk engine `next` **P0**
+### A4. Mosca risk engine `built`* **P0**
 
 Split risk from detection. Input `(asset, X, Y, Z-scenario)` → verdict + score.
 
 **Acceptance:** returns a verdict per Q-Day scenario, and the UI shows *why* — the three input
-values, not just a number.
+values, not just a number. **Engine half met, UI half not** — see the asterisk.
+
+\* `@workspace/risk` (`lib/risk/`, new package): `assessMoscaRisk()` returns one `MoscaVerdict`
+per Q-Day scenario (conservative 2030 / central 2035 / aggressive 2040, from
+[01-strategy.md](01-strategy.md)), each carrying `x`, `y`, `z`, `breached`, `breachMarginYears`
+and a narrative sentence naming all three inputs — the module exports no way to obtain a score
+without them. `computeRiskProfile()` is the scan-level entry point: it returns a **post-quantum
+exposure score** and a **separate classical-hygiene panel**, which is what closes
+[G-10](09-open-gaps.md#g-10--hygiene-findings-inflate-the-pqc-risk-score). The track split is
+derived from `algorithms.json`'s own `quantumVulnerable` flag and each entry's `reportingNote`,
+never from a list of algorithm names in code. `computeScanResult()` now reports the PQC score as
+`riskScore` and returns `pqc`/`hygiene`/`mosca` alongside it; the scan, multi-scan, demo and
+GitHub routes pass those through. Nothing about A4 is persisted — the profile is recomputed at
+read time, so a mappings or scenario change moves the verdict without a backfill.
+
+**Not built, deliberately:**
+
+- **The UI.** `pqc`, `hygiene` and `mosca` are the panel's data contract; no page renders them
+  yet, and `lib/api-spec/openapi.yaml` and the generated Orval client are not updated, so the
+  typed frontend client cannot see the new fields. That is D2 (Mosca exposure view) and the
+  hygiene panel's presentation, not A4's engine.
+- **X per asset.** A3 supplies it. Until then every verdict uses
+  `DEFAULT_SECRECY_LIFETIME_YEARS` (3 — A3's "Internal" preset) and reports
+  `mosca.secrecyLifetimeSource: "assumed-default"` so a report can mark it as an assumption.
+- **Agility in Y.** Y is `effortHours ÷ agilityScore ÷ hours-per-calendar-year` with
+  `agilityScore` fixed at 1 pending D5, and the hours-per-year constant is a stated guess with
+  no source in these documents. It is the least defensible number in the engine.
+- **Portfolio rollup and scenario management** — the Enterprise half per
+  [10-editions.md](10-editions.md). Scenarios are a parameter everywhere, which is the hook.
 
 ---
 

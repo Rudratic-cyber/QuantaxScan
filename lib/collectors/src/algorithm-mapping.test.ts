@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveAlgorithmMapping } from "./algorithm-mapping";
+import { deriveAlgorithmMapping, MAPPINGS_DATA_VERSION } from "./algorithm-mapping";
 
 describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappings/algorithms.json", () => {
   it("reproduces the pre-refactor scanner.ts severities exactly (quantumVulnerable -> critical, else alert)", () => {
@@ -33,5 +33,15 @@ describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappi
 
   it("is sourced from the current mappings dataVersion, not a frozen copy", () => {
     expect(deriveAlgorithmMapping("RSA")?.dataVersion).toBe("0.3.0");
+    expect(MAPPINGS_DATA_VERSION).toBe("0.3.0");
+  });
+
+  it("surfaces quantumVulnerable verbatim, so the A4 risk split reads the data rather than a name list", () => {
+    for (const algorithm of ["RSA", "ECDSA", "ECDH/DH", "DSA", "EdDSA"]) {
+      expect(deriveAlgorithmMapping(algorithm)?.quantumVulnerable, algorithm).toBe(true);
+    }
+    for (const algorithm of ["MD5", "SHA-1", "AES-ECB", "AES"]) {
+      expect(deriveAlgorithmMapping(algorithm)?.quantumVulnerable, algorithm).toBe(false);
+    }
   });
 });
