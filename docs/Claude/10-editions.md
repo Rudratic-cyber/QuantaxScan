@@ -156,14 +156,22 @@ The line: **Community tells you what you have. Enterprise proves it to someone e
 
 | # | Feature | Status | Edition | Rationale |
 |---|---|---|---|---|
-| F1 | Authentication + RBAC | `planned` | **C→E** | Basic auth open — never ship an unauthenticated tool. SSO/RBAC Enterprise |
-| F2 | Multi-tenancy | `planned` | **E** | Definitionally organizational |
+| F1 | Authentication + RBAC | `partial` | **C→E** | Basic auth open — never ship an unauthenticated tool. SSO/RBAC Enterprise |
+| F2 | Multi-tenancy | `partial` | **E**§ | Definitionally organizational |
 | F3 | Audit logging | `planned` | **E** | |
 | F4 | Source-code handling controls | `planned` | **C** | **Never paywall a security control.** Ephemeral/no-retention mode ships open |
 | F5 | Self-hosted deployment | `planned` | **C** | Community *is* self-hosted. Enterprise adds support and SLA, not capability |
 | F6 | SSO / SAML | `planned` | **E** | Classic enterprise line |
-| F7 | Secrets management | `next` | **C** | Hygiene, not a feature |
+| F7 | Secrets management | `partial` | **C** | Hygiene, not a feature |
 | F8 | Ticket sync | `deferred` | **E** | |
+
+§ **The tiering is unchanged, and the boundary is worth stating precisely.** What is Enterprise is
+*multi-tenancy as a capability* — several organisations, membership, switching between them. The
+**isolation mechanism is not tiered and never will be**: row-level security, the non-`BYPASSRLS`
+runtime role and the `withOrg` choke point are in the base product, enforced identically in every
+edition. Isolation is a security control, and rule one below applies to it. A Community
+deployment is an organisation of one that is nonetheless properly scoped. See
+[13-auth-and-tenancy.md](13-auth-and-tenancy.md).
 
 > **Two rules that override revenue optimisation:** never paywall a security control (F4), and
 > never paywall interoperability (A5/E3). Selling "the version that doesn't leak your source

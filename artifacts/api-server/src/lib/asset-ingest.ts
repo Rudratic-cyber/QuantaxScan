@@ -1,12 +1,7 @@
 import { assetsTable, observationsTable, collectionRunsTable } from "@workspace/db/schema";
-import * as schema from "@workspace/db/schema";
+import type { ScopedTx } from "@workspace/db/org-scope";
 import { collectSourceObservations, computeFingerprint } from "@workspace/collectors";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-
-// Generic over the query-result driver (node-postgres in production,
-// pglite in tests) so this function accepts either without a cast.
-type AppDatabase = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 /**
  * Dual-write step of the A1/A2 migration (docs/Claude/04-architecture.md
@@ -17,10 +12,16 @@ type AppDatabase = PgDatabase<PgQueryResultHKT, typeof schema>;
  * over yet (see docs/Claude/04-architecture.md for why that is a
  * deliberately separate follow-up, not done in this change).
  *
- * There is no `organizations` table yet (F2 multi-tenancy is out of
- * scope), so every asset is attributed to a single hardcoded organization.
+ * Takes the caller's already-scoped transaction and uses it directly rather
+ * than opening one of its own. That is not a style preference: a second scope
+ * opened inside an existing one is the single failure mode in the isolation
+ * mechanism that returns another tenant's rows rather than none, so `withOrg`
+ * refuses to nest and this function must be handed the `ScopedTx` instead.
+ *
+ * `organizationId` is required, with no default. A hardcoded organisation
+ * default is exactly the bug the whole mechanism exists to prevent — and the
+ * policies' `WITH CHECK` would reject a wrong value here anyway.
  */
-export const DEFAULT_ORGANIZATION_ID = 1;
 
 export interface IngestResult {
   collectionRunId: number;
@@ -31,15 +32,16 @@ export interface IngestResult {
 }
 
 export async function ingestSourceObservations(
-  db: AppDatabase,
+  tx: ScopedTx,
   params: {
     /** A stable target identity for the collection run and the fingerprint's `repo` component — this project has no real git-repo concept yet, so callers pass e.g. `project:<id>`. */
     repo: string;
     files: Array<{ path: string; content: string; language: string }>;
-    organizationId?: number;
+    /** Must match the organisation the caller's `withOrg` scope was opened at; RLS rejects anything else. */
+    organizationId: number;
   },
 ): Promise<IngestResult> {
-  const organizationId = params.organizationId ?? DEFAULT_ORGANIZATION_ID;
+  const { organizationId } = params;
   const observations = collectSourceObservations({ kind: "source", repo: params.repo, files: params.files });
 
   // Collapse the run's observations to one row per asset before touching the
@@ -84,6 +86,7 @@ export async function ingestSourceObservations(
     pendingObservations.push({
       fingerprint,
       values: {
+        organizationId,
         collector: "source-regex",
         collectorVersion: "1.0.0",
         confidence: raw.confidence,
@@ -103,12 +106,12 @@ export async function ingestSourceObservations(
   // files' assets must be left untouched rather than wrongly marked gone.
   const scannedLocations = [...new Set(params.files.map((f) => `${params.repo}:${f.path}`))];
 
-  // One transaction, a fixed number of statements regardless of how many
-  // detections the run produced — `POST /scans/multi` submits a whole repo
-  // at once, and this runs inside the request. The transaction is what keeps
-  // `collection_runs.observationCount` honest: a failure part-way cannot
-  // leave a run row claiming more observations than were written.
-  return await db.transaction(async (tx) => {
+  // A fixed number of statements regardless of how many detections the run
+  // produced — `POST /scans/multi` submits a whole repo at once, and this runs
+  // inside the request. Atomicity now comes from the caller's scope: the whole
+  // request is one transaction, so a failure part-way cannot leave a run row
+  // claiming more observations than were written.
+  {
     const [run] = await tx
       .insert(collectionRunsTable)
       .values({
@@ -202,5 +205,5 @@ export async function ingestSourceObservations(
     }
 
     return { collectionRunId: run.id, assetsCreated, assetsUpdated, observationsCreated: observations.length, assetsMarkedGone };
-  });
+  }
 }

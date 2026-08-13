@@ -12,6 +12,9 @@ The test architecture bridges the gap between unit-level pattern matching and en
 |---|---|---|---|
 | **Library Unit Suites** | Vitest | `lib/collectors`, `lib/db` | Node + in-memory `@electric-sql/pglite` Postgres |
 | **API Feature Suite** | Vitest + Supertest | `artifacts/api-server/src/api-feature.test.ts` | In-memory `@electric-sql/pglite` Postgres + Express `app` |
+| **Tenant Isolation Suite** | Vitest | `lib/db/src/tenant-isolation.test.ts` | pglite with the real RLS policies, connected as `quantaxscan_app` |
+| **Cross-Tenant HTTP Suite** | Vitest + Supertest | `artifacts/api-server/src/cross-tenant.test.ts` | As above, through the real Express app |
+| **Scope-Discipline Guard** | Vitest | `artifacts/api-server/src/db-import.test.ts` | Static — reads `routes/*.ts` source |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
 | **Continuous Integration** | GitHub Actions | `.github/workflows/ci.yml` | Ubuntu runner (`ubuntu-latest`) |
 
@@ -27,7 +30,39 @@ running local verification on the same host.
 The API feature suite exercises the Express API server endpoints against a real in-memory Postgres database.
 
 ### Database Strategy
-Rather than mocking database queries or running against a shared Postgres container, the test suite uses `createTestDb()` (`lib/db/src/test-support/test-db.ts`). This boots `@electric-sql/pglite` (an embedded, in-process Postgres engine) and applies the authoritative Drizzle migrations from `lib/db/drizzle/`. This ensures `CHECK` constraints, foreign keys, and unique indexes are exercised as they would be in production.
+Rather than mocking database queries or running against a shared Postgres container, the test suite uses `createTestDb()` (`lib/db/src/test-support/test-db.ts`). This boots `@electric-sql/pglite` (an embedded, in-process Postgres engine) and applies the authoritative Drizzle migrations from `lib/db/drizzle/`, then `lib/db/sql/tenant-isolation.sql` verbatim. This ensures `CHECK` constraints, foreign keys, unique indexes **and the real row-level-security policies** are exercised as they would be in production.
+
+**`asRole` is not optional for anything that asserts about tenancy.** PGlite connects as
+`postgres`, which has `rolbypassrls = t` — with RLS enabled, FORCEd, and no scope set at all, a
+plain `SELECT` still returns every row across every organisation. A cross-tenant test written
+against the default harness **passes while proving nothing**. Pass
+`createTestDb({ asRole: "quantaxscan_app" })`.
+
+---
+
+## 2a. Tenant Isolation & Cross-Tenant Suites
+
+These are the automated cross-tenant access suite that
+[08-security.md](08-security.md) §"Tenant isolation" requires. Design:
+[13-auth-and-tenancy.md](13-auth-and-tenancy.md) §9.
+
+**The negative control comes first, and it was proven able to fail.** The first test in
+`lib/db/src/tenant-isolation.test.ts` asserts the harness role is genuinely subject to RLS —
+`rolsuper` and `rolbypassrls` both false, and zero rows visible with no scope set. The second
+asserts the *opposite* for the default role, pinning the trap permanently. Removing the harness's
+`SET ROLE` makes 13 of 29 tests fail; with it, all 29 pass. A suite that goes green on its first
+run without that demonstration should be treated as a red flag rather than a result.
+
+What each covers:
+
+| File | Proves |
+|---|---|
+| `lib/db/src/tenant-isolation.test.ts` | The harness is subject to RLS · every scoped table has RLS enabled, FORCEd, and a policy with a real `USING` clause applying to the runtime role · `assertTenantIsolationInstalled()` rejects both a NULL-`USING` policy and a `NO FORCE` table · a query with no `where` clause returns only the scoped organisation · cross-tenant read/update/delete reach nothing · a wrong-organisation insert is rejected by `WITH CHECK` · scopes refuse to nest · the deliberate asymmetries (`activity` NULL rows, public share links, membership bootstrap) behave as designed |
+| `artifacts/api-server/src/cross-tenant.test.ts` | The same, end to end through Express, with the API key bound to organisation 2 and the fixtures in organisation 1 · a route manifest that fails if any route exists which it does not name · share links honouring visibility, revocation and expiry |
+| `artifacts/api-server/src/db-import.test.ts` | No route file imports `db`; every route touching the database opens a scope |
+
+The manifest and the `db` guard are lint rules expressed as tests, because both are security
+properties and a security property belongs in the suite that has to stay green.
 
 ### Coverage Summary
 1. **Health Check**:
@@ -115,3 +150,11 @@ The following product areas are deliberately excluded from automated test covera
    - Live GitHub repository fetching and scanning endpoints require active GitHub App / OAuth credentials.
 3. **Production Database Driver Migrations**:
    - Tests run against `@electric-sql/pglite` (embedded Postgres). Live `drizzle-kit push` against a production Postgres host is tested during deployment.
+   - `apply-tenancy` (the add-nullable → backfill → constrain data migration) has no automated
+     test: it exists precisely to handle *populated* tables, and the harness starts empty. The
+     end state it produces is what every other test asserts against.
+4. **Per-user authentication**:
+   - There is none yet. The cross-tenant suite proves isolation between two *API-key* principals;
+     the session half — two signed-in users, membership revocation taking effect on the next
+     request — arrives with sign-in. See [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §9.3 and
+     §10.

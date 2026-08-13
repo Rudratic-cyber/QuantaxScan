@@ -52,3 +52,10 @@ Thumbs.db
 test-results/
 playwright-report/
 
+
+# Local environment. Real secrets (QUANTAXSCAN_API_KEYS, SESSION_SECRET,
+# DATABASE_URL) must never be committed — see docs/Claude/08-security.md S5.
+# Copy .env.example to .env and fill it in locally.
+.env
+.env.*
+!.env.example

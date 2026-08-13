@@ -15,10 +15,10 @@
  * `scans`/`findings` data (only a project ID and a file name), so the
  * fingerprint's `repo` component is synthesised as `project:<id>`; a
  * genuine multi-repo project backfilled this way will not distinguish
- * files that happen to share a path across repos. `organizationId` is
- * hardcoded to 1 — there is no `organizations` table yet (F2 multi-tenancy
- * is out of scope for this change; see docs/Claude/04-architecture.md
- * §"assets — stable identity").
+ * files that happen to share a path across repos. It backfills organisation
+ * 1 — the organisation every pre-existing row belongs to — and runs inside a
+ * single `withOrg` scope, so the row-level security policies stamp and check
+ * every write rather than trusting the constant.
  *
  * Not idempotent by design: re-running against data it has already
  * backfilled would create duplicate observations. It refuses to run if any
@@ -28,13 +28,16 @@
  * Usage: `pnpm --filter @workspace/scripts run backfill-assets`
  * Requires `DATABASE_URL` to point at the target database.
  */
-import { db, scansTable, findingsTable, assetsTable, observationsTable, collectionRunsTable, projectRepoId } from "@workspace/db";
+import { withOrg, scansTable, findingsTable, assetsTable, observationsTable, collectionRunsTable, projectRepoId } from "@workspace/db";
 import { computeFingerprint } from "@workspace/collectors";
 import { and, asc, eq } from "drizzle-orm";
 
-const DEFAULT_ORGANIZATION_ID = 1;
+/** Organisation 1: the organisation every row that predates tenancy belongs to. */
+const BACKFILL_ORG = { organizationId: 1, userId: "" };
+const DEFAULT_ORGANIZATION_ID = BACKFILL_ORG.organizationId;
 
 async function main() {
+  await withOrg(BACKFILL_ORG, async (db) => {
   const [existingRun] = await db.select({ id: collectionRunsTable.id }).from(collectionRunsTable).limit(1);
   if (existingRun) {
     console.error(
@@ -132,6 +135,7 @@ async function main() {
       }
 
       await db.insert(observationsTable).values({
+        organizationId: DEFAULT_ORGANIZATION_ID,
         assetId,
         collectionRunId: run.id,
         collector: "source-regex",
@@ -154,6 +158,7 @@ async function main() {
     `Backfill complete: ${collectionRunsCreated} collection_runs, ${assetsCreated} assets created, ` +
       `${assetsReObserved} assets re-observed (deduplicated by fingerprint), ${observationsCreated} observations.`,
   );
+  });
 }
 
 main()

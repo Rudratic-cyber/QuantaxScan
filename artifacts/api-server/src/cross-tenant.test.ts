@@ -1,0 +1,354 @@
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import supertest from "supertest";
+import { sql } from "drizzle-orm";
+
+/**
+ * Cross-tenant proof, through the real Express app.
+ *
+ * The principal here is the shared API key **bound to organisation 2**
+ * (`QUANTAXSCAN_API_KEY_ORG_ID=2`), while the fixtures put most of the data in
+ * organisation 1. So every assertion below is "a caller in one organisation
+ * reaching for another organisation's data", exercised end to end: HTTP →
+ * middleware → route → `withOrg` → policy.
+ *
+ * Two things make it real rather than decorative:
+ *
+ *   1. The connection runs as `quantaxscan_app`, which has no BYPASSRLS. See
+ *      the negative control in lib/db's tenant-isolation.test.ts — without
+ *      that role every assertion here would pass vacuously.
+ *   2. Nothing is asserted about `where` clauses. The routes genuinely do not
+ *      filter by `organization_id`; the database does. That is the point of
+ *      08-security.md's "single choke point that cannot be bypassed by
+ *      forgetting a `where` clause", and it is why `GET /api/projects` —
+ *      literally `select().from(projectsTable)` with no filter at all — is the
+ *      strongest test in this file.
+ *
+ * The session half of the design's cross-tenant suite (two signed-in users,
+ * membership revocation taking effect on the next request) needs sign-in,
+ * which does not exist yet. It is deliberately absent, not forgotten.
+ */
+
+const API_KEY = "test-api-key-1234567890-super-secret-key-32bytes";
+const OTHER_ORG = 1; // where the fixtures live
+const OUR_ORG = 2; // who the API key is
+
+const { testDb, testScope, seedAsSuperuser, closeTestDb } = await vi.hoisted(async () => {
+  process.env.QUANTAXSCAN_API_KEYS = "test-api-key-1234567890-super-secret-key-32bytes";
+  process.env.DATABASE_URL = "postgres://dummy:dummy@localhost:5432/dummy";
+  process.env.QUANTAXSCAN_API_KEY_ORG_ID = "2";
+  const { createTestDb } = await import("@workspace/db/test-support");
+  const { db, scope, seedAsSuperuser, close } = await createTestDb({ asRole: "quantaxscan_app" });
+  return { testDb: db, testScope: scope, seedAsSuperuser, closeTestDb: close };
+});
+
+vi.mock("@workspace/db", async () => {
+  const schema = await import("@workspace/db/schema");
+  return { db: testDb, pool: {}, ...testScope, ...schema };
+});
+
+import { executeRows } from "@workspace/db/org-scope";
+import app from "./app";
+import router from "./routes";
+
+const request = supertest(app);
+const auth = <T extends { set: (k: string, v: string) => T }>(r: T): T => r.set("X-API-Key", API_KEY);
+
+/** Ids seeded into the OTHER organisation, which this caller must never reach. */
+const theirs = { projectId: 0, scanId: 0, findingId: 0, publicReport: "their-public", privateReport: "their-private" };
+/** Ids seeded into OUR organisation, which this caller must see. */
+const ours = { projectId: 0, scanId: 0 };
+
+beforeAll(async () => {
+  await seedAsSuperuser(async (client) => {
+    const insertProject = async (org: number, name: string) =>
+      (await client.query<{ id: number }>(
+        `insert into projects (organization_id, name, language) values ($1, $2, 'python') returning id`,
+        [org, name],
+      )).rows[0].id;
+
+    const insertScan = async (org: number, projectId: number) =>
+      (await client.query<{ id: number }>(
+        `insert into scans (organization_id, project_id, total_lines, code) values ($1, $2, 42, 'secret source') returning id`,
+        [org, projectId],
+      )).rows[0].id;
+
+    theirs.projectId = await insertProject(OTHER_ORG, "their confidential project");
+    ours.projectId = await insertProject(OUR_ORG, "our project");
+    theirs.scanId = await insertScan(OTHER_ORG, theirs.projectId);
+    ours.scanId = await insertScan(OUR_ORG, ours.projectId);
+
+    theirs.findingId = (await client.query<{ id: number }>(
+      `insert into findings (organization_id, scan_id, file_name, line_number, severity, algorithm, code_snippet)
+         values ($1, $2, 'their.py', 1, 'critical', 'RSA', 'their snippet') returning id`,
+      [OTHER_ORG, theirs.scanId],
+    )).rows[0].id;
+
+    await client.query(
+      `insert into activity (organization_id, description) values ($1, 'their private activity'), ($2, 'our activity')`,
+      [OTHER_ORG, OUR_ORG],
+    );
+
+    await client.query(
+      `insert into shared_reports (id, organization_id, owner, repo, repo_url, data, visibility, expires_at)
+         values ($1, $3, 'acme', 'r', 'https://x', '{"secret":true}'::jsonb, 'public',  now() + interval '7 days'),
+                ($2, $3, 'acme', 'r', 'https://x', '{"secret":true}'::jsonb, 'private', now() + interval '7 days')`,
+      [theirs.publicReport, theirs.privateReport, OTHER_ORG],
+    );
+  });
+});
+
+afterAll(async () => {
+  await closeTestDb();
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("route manifest — a new route cannot ship without being considered", () => {
+  /**
+   * Every route the router exposes, with how it is reached. A route present in
+   * Express but absent here fails the suite. That is the whole point: it stops
+   * an unscoped route from being added quietly, which is the failure this
+   * phase exists to make impossible.
+   */
+  const MANIFEST: Record<string, "public" | "org-scoped" | "unscoped-public-content"> = {
+    "GET /healthz": "public",
+    "GET /demo/repos": "public",
+    "POST /demo/repos/:slug/scan": "public",
+    "GET /reports/:id": "public",
+    "GET /community/posts": "unscoped-public-content",
+    "GET /community/leaderboard": "unscoped-public-content",
+    "POST /community/posts": "unscoped-public-content",
+    "POST /community/posts/:id/vote": "unscoped-public-content",
+    "GET /projects": "org-scoped",
+    "POST /projects": "org-scoped",
+    "GET /projects/:id": "org-scoped",
+    "DELETE /projects/:id": "org-scoped",
+    "GET /projects/:id/findings": "org-scoped",
+    "POST /scans": "org-scoped",
+    "GET /scans/:id": "org-scoped",
+    "GET /scans/:id/findings": "org-scoped",
+    "POST /scans/multi": "org-scoped",
+    "POST /reports": "org-scoped",
+    "GET /stats": "org-scoped",
+    // These touch no database at all: chat proxies to OpenAI and persists
+    // nothing, and the github routes fetch from GitHub and hand the result
+    // straight back. They still require an API key. When any of them starts
+    // persisting, this entry has to change, and that is the point of the file.
+    "POST /chat": "public",
+    "GET /github/rate-limit": "public",
+    "POST /github/scan": "public",
+    "POST /github/fetch": "public",
+    "POST /github/scan-files": "public",
+  };
+
+  function routesOf(stack: unknown[]): string[] {
+    return stack.flatMap((layer) => {
+      const l = layer as { route?: { path: string; methods: Record<string, boolean> }; handle?: { stack?: unknown[] } };
+      if (l.route) {
+        return Object.keys(l.route.methods)
+          .filter((m) => l.route!.methods[m])
+          .map((m) => `${m.toUpperCase()} ${l.route!.path}`);
+      }
+      return l.handle?.stack ? routesOf(l.handle.stack) : [];
+    });
+  }
+
+  it("every route mounted on the router is declared in the manifest", () => {
+    const mounted = routesOf((router as unknown as { stack: unknown[] }).stack).sort();
+    const declared = Object.keys(MANIFEST).sort();
+
+    const undeclared = mounted.filter((r) => !declared.includes(r));
+    expect(
+      undeclared,
+      "a route exists in Express but not in this manifest — decide whether it is org-scoped before shipping it",
+    ).toEqual([]);
+
+    const stale = declared.filter((r) => !mounted.includes(r));
+    expect(stale, "the manifest names routes that no longer exist").toEqual([]);
+  });
+});
+
+describe("list routes return this organisation's rows and only this organisation's rows", () => {
+  it("GET /api/projects — no `where organization_id` exists in the handler; the policy is what scopes it", async () => {
+    const res = await auth(request.get("/api/projects"));
+    expect(res.status).toBe(200);
+    expect(res.body.map((p: { name: string }) => p.name)).toEqual(["our project"]);
+    expect(res.body).toHaveLength(1);
+  });
+
+  it("GET /api/stats counts only this organisation, and leaks no other tenant's project names", async () => {
+    const res = await auth(request.get("/api/stats"));
+    expect(res.status).toBe(200);
+
+    const descriptions = res.body.recentActivity.map((a: { description: string }) => a.description);
+    expect(descriptions).toContain("our activity");
+    expect(descriptions).not.toContain("their private activity");
+
+    // one project + one scan in our organisation
+    expect(res.body.totalReposScanned).toBe(2);
+  });
+
+  it("GET /api/projects/:id/findings returns nothing for another organisation's project", async () => {
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/findings`));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+});
+
+describe("addressing another organisation's row by id is indistinguishable from it not existing", () => {
+  it("GET /api/projects/:id → 404, not 403 — a 403 would confirm the row is real", async () => {
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}`));
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "Project not found" });
+  });
+
+  it("GET /api/scans/:id → 404", async () => {
+    const res = await auth(request.get(`/api/scans/${theirs.scanId}`));
+    expect(res.status).toBe(404);
+  });
+
+  it("GET /api/scans/:id/findings → empty, and their snippet is not in the body", async () => {
+    const res = await auth(request.get(`/api/scans/${theirs.scanId}/findings`));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("DELETE /api/projects/:id reports success but changes nothing — their row survives intact", async () => {
+    const res = await auth(request.delete(`/api/projects/${theirs.projectId}`));
+    expect(res.status).toBe(204);
+
+    // Verified from outside the request's scope, so this is the row's real
+    // state and not another scoped read agreeing with itself.
+    const survivors = await testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+      executeRows<{ name: string }>(tx, sql`select name from projects where id = ${theirs.projectId}`),
+    );
+    expect(survivors).toEqual([{ name: "their confidential project" }]);
+  });
+
+  it("POST /api/scans naming another organisation's project writes nothing", async () => {
+    const countTheirScans = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(tx, sql`select count(*)::int as n from scans where project_id = ${theirs.projectId}`),
+      );
+    const before = await countTheirScans();
+
+    const res = await auth(
+      request.post("/api/scans").send({
+        projectId: theirs.projectId,
+        mode: "scan-only",
+        code: "key = RSA.generate(2048)",
+        language: "python",
+      }),
+    );
+    // 404, and not for free: a foreign key is checked with RLS bypassed, so
+    // the database happily accepted `project_id` pointing at another
+    // organisation's project until the handler was made to confirm the parent
+    // is visible inside the scope. This assertion is what caught that.
+    expect(res.status).toBe(404);
+
+    const after = await countTheirScans();
+    expect(after).toEqual(before);
+  });
+});
+
+describe("share links are governed by the policy, not by the route", () => {
+  it("another organisation's PUBLIC report is readable anonymously — that is what a share link is for", async () => {
+    const res = await request.get(`/api/reports/${theirs.publicReport}`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(theirs.publicReport);
+  });
+
+  it("another organisation's PRIVATE report is 404 anonymously AND to us, even holding a valid API key", async () => {
+    expect((await request.get(`/api/reports/${theirs.privateReport}`)).status).toBe(404);
+    expect((await auth(request.get(`/api/reports/${theirs.privateReport}`))).status).toBe(404);
+  });
+
+  it("a revoked report stops resolving without the route knowing anything about revocation", async () => {
+    await seedAsSuperuser(async (client) => {
+      await client.query(`update shared_reports set revoked_at = now() where id = $1`, [theirs.publicReport]);
+    });
+    expect((await request.get(`/api/reports/${theirs.publicReport}`)).status).toBe(404);
+
+    await seedAsSuperuser(async (client) => {
+      await client.query(`update shared_reports set revoked_at = null where id = $1`, [theirs.publicReport]);
+    });
+    expect((await request.get(`/api/reports/${theirs.publicReport}`)).status).toBe(200);
+  });
+
+  it("an expired report stops resolving too", async () => {
+    await seedAsSuperuser(async (client) => {
+      await client.query(`update shared_reports set expires_at = now() - interval '1 hour' where id = $1`, [
+        theirs.publicReport,
+      ]);
+    });
+    expect((await request.get(`/api/reports/${theirs.publicReport}`)).status).toBe(404);
+
+    await seedAsSuperuser(async (client) => {
+      await client.query(`update shared_reports set expires_at = now() + interval '7 days' where id = $1`, [
+        theirs.publicReport,
+      ]);
+    });
+    expect((await request.get(`/api/reports/${theirs.publicReport}`)).status).toBe(200);
+  });
+
+  it("a report we create lands in OUR organisation and is readable by its link", async () => {
+    const created = await auth(
+      request.post("/api/reports").send({ owner: "us", repo: "r", repoUrl: "https://x", data: { ok: true } }),
+    );
+    expect(created.status).toBe(200);
+
+    const fetched = await request.get(`/api/reports/${created.body.id}`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.body.organizationId).toBe(OUR_ORG);
+    expect(fetched.body.expiresAt).not.toBeNull();
+  });
+});
+
+describe("writes land in the caller's organisation, never anywhere else", () => {
+  it("POST /api/projects stamps our organisation and is invisible to the other one", async () => {
+    const res = await auth(
+      request.post("/api/projects").send({ name: "brand new", language: "python", code: "x = 1" }),
+    );
+    expect(res.status).toBe(201);
+    expect(res.body.organizationId).toBe(OUR_ORG);
+
+    const theirView = await testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+      executeRows<{ n: number }>(tx, sql`select count(*)::int as n from projects where name = 'brand new'`),
+    );
+    expect(theirView).toEqual([{ n: 0 }]);
+  });
+
+  it("POST /api/scans/multi stamps every row it writes — scans, findings, activity and assets alike", async () => {
+    const res = await auth(
+      request.post("/api/scans/multi").send({
+        projectName: "multi",
+        language: "python",
+        files: [{ filename: "a.py", content: "key = RSA.generate(2048)" }],
+      }),
+    );
+    expect(res.status).toBe(201);
+
+    // Everything this request wrote must carry OUR organisation. Counted from
+    // the other organisation's scope: it should see none of it.
+    const projectId: number = res.body.projectId;
+    const assetPrefix = `project:${projectId}:%`;
+    const leaked = await testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+      executeRows<{ p: number; s: number; a: number; o: number }>(
+        tx,
+        sql`select
+          (select count(*)::int from projects     where name = 'multi')                  as p,
+          (select count(*)::int from scans        where project_id = ${projectId})       as s,
+          (select count(*)::int from assets       where location like ${assetPrefix})    as a,
+          (select count(*)::int from observations)                                       as o`,
+      ),
+    );
+    expect(leaked).toEqual([{ p: 0, s: 0, a: 0, o: 0 }]);
+
+    // And our own scope sees the assets, so the dual-write really happened
+    // rather than being silently swallowed by the policy.
+    const mine = await testScope.withOrg({ organizationId: OUR_ORG, userId: "" }, (tx) =>
+      executeRows<{ n: number }>(tx, sql`select count(*)::int as n from assets where location like ${assetPrefix}`),
+    );
+    expect(mine[0].n).toBeGreaterThan(0);
+  });
+});

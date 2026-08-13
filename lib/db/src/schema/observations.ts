@@ -1,10 +1,11 @@
-import { pgTable, text, serial, integer, real, timestamp, jsonb, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, real, timestamp, jsonb, check, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { DISCOVERY_MODALITY_VALUES } from "@workspace/collectors";
 import { oneOf } from "./sql-helpers";
 import { assetsTable } from "./assets";
 import { collectionRunsTable } from "./collection_runs";
+import { organizationsTable } from "./organizations";
 
 /**
  * Evidence, with provenance. docs/Claude/04-architecture.md §"Target model":
@@ -27,6 +28,15 @@ export const observationsTable = pgTable(
   "observations",
   {
     id: serial("id").primaryKey(),
+    /**
+     * Denormalised from `assets` — see the note on `scans.organizationId`.
+     * This does not weaken the project-deletion path: observations still
+     * cascade off `assets`, and the `project:<id>:` location-prefix
+     * reconciliation in `routes/projects.ts` is unchanged.
+     */
+    organizationId: integer("organization_id")
+      .notNull()
+      .references(() => organizationsTable.id, { onDelete: "cascade" }),
     assetId: integer("asset_id")
       .notNull()
       .references(() => assetsTable.id, { onDelete: "cascade" }),
@@ -43,7 +53,10 @@ export const observationsTable = pgTable(
     evidence: jsonb("evidence"),
     observedAt: timestamp("observed_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [check("observations_discovery_modality_check", oneOf(table.discoveryModality, DISCOVERY_MODALITY_VALUES))],
+  (table) => [
+    index("observations_org_idx").on(table.organizationId),
+    check("observations_discovery_modality_check", oneOf(table.discoveryModality, DISCOVERY_MODALITY_VALUES)),
+  ],
 );
 
 export const insertObservationSchema = createInsertSchema(observationsTable).omit({ id: true, observedAt: true });
