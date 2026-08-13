@@ -208,7 +208,18 @@ router.get("/scans/:id", async (req, res): Promise<void> => {
   // Storing the verdict would freeze a number that is supposed to move.
   const profile = computeRiskProfile(found.findings, { totalLines: found.totalLines ?? 0 });
 
-  res.json({ ...found, pqc: profile.pqc, hygiene: profile.hygiene, mosca: profile.mosca });
+  // `riskScore` is overridden with the recomputed value rather than served
+  // from the column. Returning both would put two different numbers under
+  // two keys in one payload: the stored one is frozen at write time and Z
+  // shrinks every day, so they diverge. The column is kept as the historical
+  // record and for list views that do not recompute.
+  res.json({
+    ...found,
+    riskScore: profile.pqc.riskScore,
+    pqc: profile.pqc,
+    hygiene: profile.hygiene,
+    mosca: profile.mosca,
+  });
 });
 
 router.get("/scans/:id/findings", async (req, res): Promise<void> => {

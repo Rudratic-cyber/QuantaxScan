@@ -1,6 +1,6 @@
 # 09 — Open gap register
 
-Every known gap in one place, with what closes it and what it blocks. Updated 2026-08-02.
+Every known gap in one place, with what closes it and what it blocks. Updated 2026-08-14.
 
 Three families:
 

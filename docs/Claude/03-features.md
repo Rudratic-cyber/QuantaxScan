@@ -118,6 +118,14 @@ read time, so a mappings or scenario change moves the verdict without a backfill
 - **Portfolio rollup and scenario management** — the Enterprise half per
   [10-editions.md](10-editions.md). Scenarios are a parameter everywhere, which is the hook.
 
+**Know this before reading a score.** `riskScore` is `detection` (0-60) + `moscaBreach` (0-40).
+At the assumed default X of 3 years the conservative scenario (2030) is still further away than
+that, so nothing breaches and **the score cannot exceed 60 until A3 supplies a real secrecy
+lifetime** — or until 2027, when the conservative Q-Day comes inside three years. That is
+intended: the top 40% of the scale is reserved for an actual Mosca breach and must be earned,
+not asserted by detection volume. It does mean the headline number's range is narrower than it
+was before A4, which is the honest reading of a scan with no data classification behind it.
+
 ---
 
 ### A5. CBOM export (CycloneDX 1.7) `next` **P0**
