@@ -322,10 +322,22 @@ test.describe("UI Journey Tests", () => {
     recentActivity: [],
   };
 
+  /**
+   * Exactly what `summariseProjectCoverage` returns for one source scan plus a
+   * dependency run that found nothing — including `examinedSurfaces: 2`, which
+   * counts the empty run. Written to be reproducible by the real summariser
+   * rather than hand-tuned, because the meter computes "how many were never
+   * examined" two independent ways: the headline subtracts the server's
+   * `examinedSurfaces` from `totalSurfaces`, while the per-surface pills come
+   * from joining the client-side catalogue against `surfaces[]`. A payload
+   * whose two halves disagreed would let one of those paths be wrong and still
+   * pass, so this fixture keeps them consistent and the assertions check both
+   * numbers (8 and 8) against it.
+   */
   const coveragePayload = {
     projectId: 7,
     generatedAt: "2026-08-10T09:05:00.000Z",
-    examinedSurfaces: 1,
+    examinedSurfaces: 2,
     totalSurfaces: 10,
     surfaces: [
       {
@@ -337,6 +349,16 @@ test.describe("UI Journey Tests", () => {
         lastExaminedAt: "2026-08-10T09:00:00.000Z",
         assets: 5,
         activeAssets: 4,
+      },
+      {
+        surface: "dependency",
+        surfaceId: "dependency",
+        state: "examined-nothing-found",
+        completedRuns: 1,
+        failedRuns: 2,
+        lastExaminedAt: "2026-08-09T09:00:00.000Z",
+        assets: 0,
+        activeAssets: 0,
       },
     ],
     confidence: {
@@ -378,10 +400,21 @@ test.describe("UI Journey Tests", () => {
     await expect(page.getByRole("heading", { name: "Security Intelligence" })).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByText(/collector surfaces examined/i)).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText(/9 of 10 have never been examined/i)).toBeVisible();
+    // The headline's count comes from the server's examinedSurfaces...
+    await expect(page.getByText(/8 of 10 have never been examined/i)).toBeVisible();
+    // ...and the pills from the catalogue join. Both must say eight, or one of
+    // the two paths is computing a different — and therefore wrong — number.
+    await expect(page.getByText("Never examined", { exact: true })).toHaveCount(8);
+
+    // Examined-and-found-nothing is rendered as its own state, not folded into
+    // either neighbour. A clean surface is coverage; an unexamined one is not.
+    await expect(page.getByText("Nothing found", { exact: true })).toHaveCount(1);
+    await expect(page.getByText(/examined, nothing found/i)).toBeVisible();
+    // ...and the two failed attempts on that same surface are reported without
+    // being counted as coverage.
+    await expect(page.getByText(/2 failed attempts, not counted as coverage/i)).toBeVisible();
 
     // Every planned surface is labelled, individually, rather than being summarised away.
-    await expect(page.getByText("Never examined", { exact: true })).toHaveCount(9);
     await expect(page.getByText("Data-at-rest")).toBeVisible();
     await expect(page.getByText(/the inventory model has no place to record it yet/i).first()).toBeVisible();
 
