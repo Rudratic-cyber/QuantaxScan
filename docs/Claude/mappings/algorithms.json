@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "dataVersion": "0.3.0",
+  "dataVersion": "0.3.1",
   "compiledAt": "2026-08-01",
   "verifiedAt": "2026-08-01",
   "verificationNote": "NIST entries verified against NIST IR 8547 ipd (November 2024) Tables 2-7, FIPS 186-5 (2023-02-03), SP 800-131A Rev 2 (2019-03), SP 800-38A and SP 800-38D, plus the NIST PQC project page. CNSA 2.0 entries remain needs-check — nsa.gov and media.defense.gov return HTTP 403 to automated fetches and must be checked by hand. See README.md.",
@@ -80,8 +80,7 @@
       ],
       "citation": { "document": "NIST IR 8547 ipd", "section": "Table 2", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
       "confidence": "verified",
-      "explanation": "EdDSA is elliptic-curve based and broken by Shor's algorithm. Listed explicitly in IR 8547 Table 2 — the current scanner does not detect it, which is a coverage gap worth closing.",
-      "detectionGap": true
+      "explanation": "EdDSA (Ed25519, Ed448) is elliptic-curve based and broken by Shor's algorithm. Listed explicitly in IR 8547 Table 2, and approved by FIPS 186-5 — so unlike DSA it is still being deployed in new systems."
     },
     {
       "id": "ecdh",

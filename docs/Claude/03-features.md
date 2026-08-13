@@ -52,9 +52,11 @@ Generalise `scanner.ts`'s `VULNERABILITY_PATTERNS` array into a pluggable collec
 Regex-over-source becomes one implementation.
 
 **Acceptance:** a new collector can be added without modifying `scanner.ts` or the API routes.
-Architecturally true — nothing in `Collector`/`RawObservation` assumes a source-only collector —
-but **unverified**: `SourceRegexCollector` is still the only implementation, so this acceptance
-criterion has not actually been exercised by a second collector.
+**Verified** by B2's `DependencyCollector` (the second implementation), which adds a whole new
+surface with zero edits to `scanner.ts` and zero edits to any route. Nothing in
+`Collector`/`RawObservation` assumes a source-only collector, and no new `CollectionTarget`
+variant was needed: a lockfile arrives as an ordinary submitted file and the collector selects
+what it understands by basename.
 
 \* `@workspace/collectors` (new package): `Collector`/`RawObservation` contract, `SourceRegexCollector`,
 CPE 2.3 parser, discriminated `locationDetail`, deterministic fingerprint, and a small lookup
@@ -62,7 +64,8 @@ over `docs/Claude/mappings/algorithms.json` for severity/replacement/standard/ex
 the C1 dynamic mapping engine (see [05](05-compliance-mapping.md)), and resolved as each finding
 is built, so those strings are still frozen into the `findings` row until reads cut over (see
 [04-architecture.md](04-architecture.md)). Key size extraction (G-05) works for same-line
-literals and named curves in source only; B2–B10 remain unbuilt.
+literals and named curves in source, and for dependency packages that pin exactly one curve;
+B2 is now built as a collector (see below), B3–B10 remain unbuilt.
 
 ---
 
@@ -112,8 +115,8 @@ another silo.
 
 | # | Collector | Status | Pri | Notes |
 |---|---|---|---|---|
-| B1 | Source code (regex) | `built` | — | Now `SourceRegexCollector` behind A2 (`lib/collectors/`). **Key size (G-05): partially closed** — extracts a same-line literal modulus or named-curve size, undetermined (not defaulted) otherwise; no cross-line/AST resolution. **Confidence (G-11): closed** for this collector — `0.7`, persisted. **EdDSA (G-06): still open** — out of scope for this change, no new pattern added — see [09](09-open-gaps.md) |
-| B2 | Dependency / SBOM | `next` | **P0** | Biggest coverage jump. Parse lockfiles → map to known crypto libs + versions |
+| B1 | Source code (regex) | `built` | — | Now `SourceRegexCollector` behind A2 (`lib/collectors/`). **Key size (G-05): partially closed** — extracts a same-line literal modulus or named-curve size, undetermined (not defaulted) otherwise; no cross-line/AST resolution. **Confidence (G-11): closed** for this collector — `0.7`, persisted. **EdDSA (G-06): closed** — eighth pattern added, Ed25519/Ed448 resolve their curve bit sizes; one finding per line still means a line naming both `ssh-rsa` and `ssh-ed25519` reports only RSA |
+| B2 | Dependency / SBOM | `built`* | **P0** | Biggest coverage jump. `DependencyCollector` (`lib/collectors/src/dependency-collector.ts`) parses pnpm/npm/yarn lockfiles and `requirements.txt` → curated crypto-package table → observations at `0.8` (single-purpose library) or `0.5` (general-purpose library) confidence |
 | B3 | TLS / cipher suite prober | `planned` | **P1** | Active handshake against hosts. Records *negotiated* KEX, not configured |
 | B4 | Certificate / X.509 | `planned` | **P1** | Key type, size, expiry. Expiry-vs-Q-Day is the killer chart |
 | B5 | KMS / secret stores | `planned` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS. Read-only creds |
@@ -122,6 +125,20 @@ another silo.
 | B8 | Manual OT/embedded register | `planned` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first |
 | B9 | Vendor / third-party | `planned` | **P3** | Questionnaire + contractual PQC clause tracking |
 | B10 | Binaries / firmware | `deferred` | **P3** | Hard. Defer until coverage elsewhere is complete |
+
+\* B2's **collector** is built and tested (`lib/collectors/src/{dependency-collector,lockfiles,crypto-packages}.ts`).
+**Not built:** nothing submits lockfiles to it yet and nothing persists what it finds — the
+ingest path (`artifacts/api-server/src/lib/asset-ingest.ts`) computes a `surface: "source"`
+fingerprint only, so a `surface: "dependency"` ingest (`ecosystem + package + algorithm`, per
+`fingerprint.ts`) plus a route that accepts lockfiles is the follow-up. Ecosystems covered: npm
+(pnpm-lock.yaml, package-lock.json, yarn.lock — both yarn dialects) and PyPI
+(`requirements.txt` only; `poetry.lock`/`Pipfile.lock` are not read). No version-range
+reasoning: the pinned version is recorded, but "vulnerable before x.y.z" is advisory data with
+its own provenance requirements and is deliberately absent. **The package → algorithm table
+(`crypto-packages.ts`) is hand-curated and uncited** — it carries none of the
+`verified`/`needs-check` discipline [`mappings/`](mappings/README.md) imposes on standards data,
+which makes auditing it (or moving it into `mappings/` with citations) the first follow-up
+before a dependency finding reaches a customer.
 
 ### On B2 — say this out loud
 
