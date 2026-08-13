@@ -232,7 +232,7 @@ artifacts/
   mockup-sandbox/    shadcn component playground
 lib/
   db/                Drizzle ORM + PostgreSQL — 13 tables
-  collectors/        Collector contract, source regex collector, CPE 2.3, asset fingerprint
+  collectors/        Collector contract, source regex + dependency/lockfile collectors, CPE 2.3, asset fingerprint
   api-spec/          OpenAPI spec, Orval codegen config
   api-client-react/  Generated React Query hooks
   api-zod/           Generated Zod validation schemas
@@ -291,9 +291,14 @@ reports.
   (never guessed), and the value is recorded on the new `assets`/`observations` tables, not on the
   findings the API returns. NIST's rules are keyed on security strength (112-bit vs ≥128-bit), so
   deadline mapping is still approximate. This remains the largest known gap.
-- **Dependencies are invisible.** Most real cryptography lives in OpenSSL, BouncyCastle and your
-  TLS stack — not application source. A source scanner cannot see it.
-- **EdDSA (Ed25519) is not detected**, despite being quantum-vulnerable and in active use.
+- **Dependencies are invisible *to a scan*.** Most real cryptography lives in OpenSSL,
+  BouncyCastle and your TLS stack — not application source. The dependency collector that reads
+  lockfiles (pnpm/npm/yarn, `requirements.txt`) is built and tested in `lib/collectors`, but no
+  route submits a lockfile to it and no dependency asset is persisted yet, so nothing you scan
+  today reports one.
+- **One finding per line.** EdDSA (Ed25519/Ed448) is detected now and resolves its curve size,
+  but a line naming two algorithms — an SSH key list with both `ssh-rsa` and `ssh-ed25519` — is
+  reported as the first pattern that matches it, and the second algorithm is silently lost.
 - **Authentication is a single shared API key**, not per-user accounts — so there is no
   organisation scoping and no tenant isolation. See below.
 - Findings are per-scan, so there is no drift detection or remediation tracking yet.

@@ -12,6 +12,11 @@ If you read nothing else in this file:
 Then, in order: **CBOM export → Mosca risk → dependency collector → TLS/cert collector →
 CISA dashboard.**
 
+*Update 2026-08-13:* the dependency collector's *detection* half jumped the queue and landed
+early (B2, `lib/collectors/src/dependency-collector.ts`) because it needed no schema or route
+change. Its *ingestion* half — a `surface: "dependency"` fingerprint path and a route that
+accepts lockfiles — has not, so the ordering above still holds for the work that remains.
+
 The reason CBOM export comes second, before anything more exciting: it is cheap, it forces the
 asset model into a shape that is externally validated rather than one we invented, and it is
 the artifact auditors and other tools actually consume. Getting it right early prevents a
@@ -61,12 +66,15 @@ because most crypto lives in dependencies and TLS termination, not in applicatio
 | Asset/observation schema migration | Product | Everything depends on it |
 | Collector interface abstraction | Product | Otherwise every new surface forks `scanner.ts` |
 | CycloneDX 1.7 CBOM export | Product | Cheap, validates the asset model externally |
-| Dependency / SBOM collector | Coverage | Largest single coverage jump available |
+| Dependency / SBOM collector | Coverage | Largest single coverage jump available — collector built, ingestion not |
 | Data classification field (`X`) | Product | Unlocks Mosca |
 | Mosca risk engine, split from detection | Product | The core differentiator |
 
-The first two rows landed 2026-08-02 (A1/A2), minus the read cutover — per-feature status lives
-in [03-features.md](03-features.md), not here.
+The first two rows landed 2026-08-02 (A1/A2), minus the read cutover. The dependency collector
+landed 2026-08-13 as a *collector only*: it produces observations from lockfiles, but nothing
+submits a lockfile to it and no dependency asset is persisted, so the M1 exit criterion below
+about third-party dependencies is **not** met by it. Per-feature status lives in
+[03-features.md](03-features.md), not here.
 
 **M1 exit criteria**
 - A repo scan produces assets that survive a re-scan with stable IDs and `firstSeen`/`lastSeen`

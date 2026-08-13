@@ -58,7 +58,7 @@ router.post("/demo/repos/:slug/scan", async (req, res): Promise<void> => {
   const allFindings = fileResults.flatMap((f) => f.findings);
   const totalLines = fileResults.reduce((acc, f) => acc + f.lines, 0);
   const result = computeScanResult(allFindings, totalLines);
-  const summary = generateExecutiveSummary(allFindings, totalLines, repo.language);
+  const summary = generateExecutiveSummary(allFindings, totalLines, repo.language, result.mosca);
 
   // This route is public and hard-coded, and it no longer writes to the
   // database. Two reasons, and the second is structural: an unauthenticated
@@ -84,6 +84,11 @@ router.post("/demo/repos/:slug/scan", async (req, res): Promise<void> => {
     totalEffortHours: result.totalEffortHours,
     estimatedCost: result.estimatedCost,
     executiveSummary: summary,
+    // A4: the post-quantum score, the classical-hygiene panel it is no longer
+    // inflated by, and the Mosca verdict per Q-Day scenario.
+    pqc: result.pqc,
+    hygiene: result.hygiene,
+    mosca: result.mosca,
     files: fileResults,
     findings: allFindings,
     createdAt: new Date().toISOString(),

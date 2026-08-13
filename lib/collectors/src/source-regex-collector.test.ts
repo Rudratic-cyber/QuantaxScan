@@ -71,6 +71,69 @@ describe("SourceRegexCollector — behaviour parity with the pre-refactor scanne
   });
 });
 
+describe("EdDSA detection — G-06", () => {
+  it("detects Ed25519 in the call forms real code uses, and resolves the curve's bit size", async () => {
+    const cases: Array<[string, string]> = [
+      ["\tpub, priv, err := ed25519.GenerateKey(rand.Reader)", "go"],
+      ["private_key = ed25519.Ed25519PrivateKey.generate()", "python"],
+      ["const { publicKey } = crypto.generateKeyPairSync('ed25519')", "javascript"],
+      ['KeyPairGenerator.getInstance("Ed25519")', "java"],
+      ['_preferred_pubkeys = ("ssh-ed25519",)', "python"],
+    ];
+    for (const [content, language] of cases) {
+      const [obs] = await collectAll([{ path: `a.${language}`, content, language }]);
+      expect(obs, content).toBeDefined();
+      expect(obs.algorithm, content).toBe("EdDSA");
+      // KEY_SIZE_SOURCE has had `EdDSA: "curve"` and NAMED_CURVE_BIT_SIZES has
+      // had ed25519/ed448 all along — with no pattern emitting "EdDSA" those
+      // entries could never fire. This is the assertion that they now do.
+      expect(obs.keySize, content).toBe(256);
+    }
+  });
+
+  it("detects Ed448 and resolves 448, not 256", async () => {
+    const [obs] = await collectAll([{ path: "a.java", content: 'Signature.getInstance("Ed448")', language: "java" }]);
+    expect(obs.algorithm).toBe("EdDSA");
+    expect(obs.keySize).toBe(448);
+  });
+
+  it("detects the bare EdDSA token (a JWS `alg`, an SSH config value)", async () => {
+    const [obs] = await collectAll([{ path: "a.ts", content: "const header = { alg: 'EdDSA' }", language: "typescript" }]);
+    expect(obs.algorithm).toBe("EdDSA");
+    // No curve is named, so the key size is genuinely undeterminable here —
+    // EdDSA is Ed25519 *or* Ed448 (G-05: null, not a guessed 256).
+    expect(obs.keySize).toBeUndefined();
+  });
+
+  it("does not claim X25519/Curve25519 as EdDSA — those are key agreement, not signature", async () => {
+    const [x25519] = await collectAll([
+      { path: "a.js", content: "const ecdh = crypto.createECDH('x25519')", language: "javascript" },
+    ]);
+    expect(x25519.algorithm).toBe("ECDH/DH");
+    const curve25519 = await collectAll([{ path: "a.go", content: "\tcurve25519.X25519(priv, pub)", language: "go" }]);
+    expect(curve25519.every((o) => o.algorithm !== "EdDSA")).toBe(true);
+  });
+
+  it("leaves the pre-existing seven patterns' behaviour unchanged (first-pattern-wins order)", async () => {
+    // The EdDSA entry sits after ECDSA, so an SSH key list naming both still
+    // reports ECDSA for this line — same "one finding per line" semantics.
+    const [obs] = await collectAll([
+      { path: "a.py", content: '_preferred_keys = ["ecdsa-sha2-nistp256", "ssh-ed25519"]', language: "python" },
+    ]);
+    expect(obs.algorithm).toBe("ECDSA");
+    expect(obs.keySize).toBe(256);
+
+    // Same limitation, stated explicitly because it is the common real case:
+    // an SSH preferred-key list naming ssh-rsa AND ssh-ed25519 on one line
+    // reports RSA only. Closing G-06 does not change "one finding per line";
+    // multi-algorithm lines need a parser, not another pattern.
+    const [mixed] = await collectAll([
+      { path: "a.py", content: '_preferred_pubkeys = ("ssh-ed25519", "ssh-rsa")', language: "python" },
+    ]);
+    expect(mixed.algorithm).toBe("RSA");
+  });
+});
+
 describe("extractKeySizeFromLine — G-05", () => {
   it("extracts a literal RSA modulus size on the same line", () => {
     expect(extractKeySizeFromLine("RSA.generate(2048)", "RSA")).toBe(2048);
@@ -107,5 +170,11 @@ describe("extractKeySizeFromLine — G-05", () => {
   it("returns undefined for algorithms whose key size is neither a modulus nor a curve", () => {
     expect(extractKeySizeFromLine("hashlib.md5(secp256r1_blob)", "MD5")).toBeUndefined();
     expect(extractKeySizeFromLine("createHash('sha1') // was P-384", "SHA-1")).toBeUndefined();
+  });
+
+  it("resolves an EdDSA curve — the KEY_SIZE_SOURCE entry that was unreachable before G-06", () => {
+    expect(extractKeySizeFromLine("ed25519.GenerateKey(rand.Reader)", "EdDSA")).toBe(256);
+    expect(extractKeySizeFromLine('Signature.getInstance("Ed448")', "EdDSA")).toBe(448);
+    expect(extractKeySizeFromLine("const header = { alg: 'EdDSA' }", "EdDSA")).toBeUndefined();
   });
 });

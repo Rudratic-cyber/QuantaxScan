@@ -93,8 +93,7 @@
       ],
       "citation": { "document": "NIST IR 8547 ipd", "section": "Table 2", "url": "https://csrc.nist.gov/pubs/ir/8547/ipd", "retrievedAt": "2026-08-01" },
       "confidence": "verified",
-      "explanation": "EdDSA is elliptic-curve based and broken by Shor's algorithm. Listed explicitly in IR 8547 Table 2 — the current scanner does not detect it, which is a coverage gap worth closing.",
-      "detectionGap": true
+      "explanation": "EdDSA (Ed25519, Ed448) is elliptic-curve based and broken by Shor's algorithm. Listed explicitly in IR 8547 Table 2, and approved by FIPS 186-5 — so unlike DSA it is still being deployed in new systems."
     },
     {
       "id": "ecdh",

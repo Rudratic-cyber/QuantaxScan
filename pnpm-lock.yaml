@@ -178,6 +178,9 @@ importers:
       '@workspace/mappings':
         specifier: workspace:*
         version: link:../../lib/mappings
+      '@workspace/risk':
+        specifier: workspace:*
+        version: link:../../lib/risk
       cors:
         specifier: ^2
         version: 2.8.6
@@ -682,6 +685,22 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+
+  lib/risk:
+    dependencies:
+      '@workspace/collectors':
+        specifier: workspace:*
+        version: link:../collectors
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

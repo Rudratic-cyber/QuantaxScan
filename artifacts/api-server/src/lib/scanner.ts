@@ -1,4 +1,12 @@
 import { collectSourceObservations, deriveAlgorithmMapping, type RawObservation } from "@workspace/collectors";
+import {
+  computeRiskProfile,
+  CONSULTANT_HOURLY_RATE_USD,
+  type HygieneSummary,
+  type MoscaAssessment,
+  type PqcExposure,
+  type QDayScenario,
+} from "@workspace/risk";
 import { logger } from "./logger";
 import { resolveCompliance, summariseBuckets, type FindingCompliance } from "./compliance";
 import type { ReportBucket } from "@workspace/mappings";
@@ -33,10 +41,48 @@ export interface ScanResult {
   criticalCount: number;
   alertCount: number;
   cleanCount: number;
+  /**
+   * **Post-quantum exposure only, since A4.** Classical-hygiene findings
+   * (MD5, SHA-1, AES-ECB) no longer contribute — see `pqc`/`hygiene` below
+   * and docs/Claude/09-open-gaps.md G-10. A scan that finds only hygiene
+   * issues scores 0 here and reports them in `hygiene`.
+   */
   riskScore: number;
+  /** Every finding's effort, both tracks. Per-track figures are on `pqc` and `hygiene`. */
   totalEffortHours: number;
   estimatedCost: number;
   executiveSummary: string;
+  /** A4: the post-quantum half, with the score decomposed so a UI can explain it. */
+  pqc: PqcExposure;
+  /** A4/G-10: the classical-hygiene panel, scored separately and never folded into `riskScore`. */
+  hygiene: HygieneSummary;
+  /** A4: `X + Y > Z` evaluated against every Q-Day scenario, with all three inputs exposed. */
+  mosca: MoscaAssessment;
+}
+
+/**
+ * The risk-engine inputs a route can supply. All optional: A4 must not
+ * require any caller to know about data classification before A3 exists.
+ */
+export interface ScanRiskContext {
+  /**
+   * X — how long this project's data must stay confidential, in years.
+   *
+   * **TODO(A3):** docs/Claude/03-features.md §A3 (data classification) is the
+   * feature that supplies this per asset, defaulting to a project-level
+   * setting. It is being built separately. Until it lands no route passes
+   * this, so every scan uses `DEFAULT_SECRECY_LIFETIME_YEARS` and reports
+   * `mosca.secrecyLifetimeSource === "assumed-default"` — which is what a
+   * report must print beside the verdict rather than implying the customer
+   * classified the data.
+   */
+  secrecyLifetimeYears?: number;
+  /** TODO(D5): crypto-agility scoring, which divides into Y. Neutral (1) until D5 exists. */
+  agilityScore?: number;
+  /** Injected so a scan's verdicts are reproducible in tests. */
+  now?: Date;
+  /** Customer-supplied Q-Day scenarios; defaults to the three in docs/Claude/01-strategy.md. */
+  scenarios?: readonly QDayScenario[];
 }
 
 /**
@@ -92,33 +138,57 @@ function toScanFinding(fileName: string, observation: RawObservation, asOf: Date
   };
 }
 
-export function computeScanResult(findings: ScanFinding[], totalLines: number): Omit<ScanResult, "executiveSummary" | "findings"> {
+/**
+ * Risk, no longer derived from detection alone (A4 —
+ * docs/Claude/04-architecture.md §3 "Split the risk engine from detection").
+ *
+ * What changed and why, in one place:
+ *
+ * - `riskScore` is now the **post-quantum exposure score** from
+ *   `@workspace/risk`, computed over quantum-vulnerable findings only. The
+ *   old formula added `alertCount` into its numerator and a flat +10 for any
+ *   alert at all, so three MD5 hits made a file look post-quantum exposed.
+ *   That is G-10, observed live as "a 10-line file scored risk 100, 3
+ *   critical / 2 alert, where 2 of the 5 findings had nothing to do with
+ *   quantum computing."
+ * - `criticalCount`/`alertCount`/`cleanCount` are **unchanged**, deliberately.
+ *   They are persisted columns on `scans` and `projects` read by four routes;
+ *   redefining them would be a second, untested behaviour change riding along
+ *   with this one. They remain "how the finding is displayed"; `pqc` and
+ *   `hygiene` are "which risk this finding is".
+ * - `pqc`, `hygiene` and `mosca` are additive, so every existing call site
+ *   keeps working untouched.
+ */
+export function computeScanResult(
+  findings: ScanFinding[],
+  totalLines: number,
+  risk: ScanRiskContext = {},
+): Omit<ScanResult, "executiveSummary" | "findings"> {
   const criticalCount = findings.filter((f) => f.severity === "critical").length;
   const alertCount = findings.filter((f) => f.severity === "alert").length;
   const cleanCount = totalLines - criticalCount - alertCount;
   const totalEffortHours = findings.reduce((sum, f) => sum + f.effortHours, 0);
-  const estimatedCost = Math.round(totalEffortHours * 500); // $500/hr security consultant rate
+  const estimatedCost = Math.round(totalEffortHours * CONSULTANT_HOURLY_RATE_USD);
 
-  // Risk score 0-100: higher = more vulnerable
-  const riskScore = Math.min(
-    100,
-    Math.round(
-      (criticalCount * 3 + alertCount) /
-        Math.max(1, totalLines) *
-        1000 +
-        (criticalCount > 0 ? 40 : 0) +
-        (alertCount > 0 ? 10 : 0)
-    )
-  );
+  const profile = computeRiskProfile(findings, {
+    totalLines,
+    secrecyLifetimeYears: risk.secrecyLifetimeYears,
+    agilityScore: risk.agilityScore,
+    now: risk.now,
+    scenarios: risk.scenarios,
+  });
 
   return {
     totalLines,
     criticalCount,
     alertCount,
     cleanCount: Math.max(0, cleanCount),
-    riskScore: Math.min(100, riskScore),
+    riskScore: profile.pqc.riskScore,
     totalEffortHours,
     estimatedCost,
+    pqc: profile.pqc,
+    hygiene: profile.hygiene,
+    mosca: profile.mosca,
   };
 }
 
@@ -138,11 +208,16 @@ function distinctAlgorithms(findings: ScanFinding[]): string {
  * migration to NIST PQC standards is recommended" (asserted over MD5 and ECB findings
  * too). It now speaks per bucket, and every standard it names is read back out of the
  * obligations the mapping engine resolved rather than written here.
+ *
+ * `mosca` is optional so the callers can adopt it independently; when supplied, the
+ * summary states the verdict alongside the counts, which is the sentence
+ * docs/Claude/01-strategy.md says a CISO actually puts in a board deck.
  */
 export function generateExecutiveSummary(
   findings: ScanFinding[],
   totalLines: number,
-  language: string
+  language: string,
+  mosca?: MoscaAssessment
 ): string {
   const scanned = `We scanned ${totalLines.toLocaleString()} lines of ${language} code`;
   if (findings.length === 0) {
@@ -185,6 +260,17 @@ export function generateExecutiveSummary(
   if (needsReview.length > 0) {
     parts.push(
       `${needsReview.length} ${plural(needsReview.length, "finding")} (${distinctAlgorithms(needsReview)}) ${plural(needsReview.length, "depends", "depend")} on how the algorithm is used, which a pattern match cannot see — confirm the call site before treating ${plural(needsReview.length, "it", "them")} as a failure.`
+    );
+  }
+
+  // A4's board-facing verdict. Stated alongside the bucket counts rather than instead of
+  // them: the counts say what was found, this says whether the timing is survivable.
+  if (mosca && mosca.applicable) {
+    const assumed = mosca.secrecyLifetimeSource === "assumed-default";
+    parts.push(
+      mosca.breachedScenarioCount > 0
+        ? `Mosca's inequality is breached under ${mosca.breachedScenarioCount} of ${mosca.scenarioCount} Q-Day scenarios (secrecy lifetime ${mosca.x} years${assumed ? ", assumed — no data classification set" : ""}, migration ${mosca.y} years).`
+        : `Mosca's inequality holds under all ${mosca.scenarioCount} Q-Day scenarios at a secrecy lifetime of ${mosca.x} years${assumed ? " (assumed — no data classification set)" : ""}.`
     );
   }
 

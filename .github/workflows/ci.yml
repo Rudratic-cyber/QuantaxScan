@@ -31,10 +31,10 @@ jobs:
       - name: Install Playwright browsers & OS dependencies
         run: npx playwright install --with-deps chromium
 
-      - name: "Typecheck (non-blocking: documented pre-existing baseline failures)"
-        # Note: Pre-existing baseline has ~14 errors in api-server and 13 in frontend (documented in AGENTS.md).
-        # Typecheck is run explicitly with continue-on-error to log type errors for visibility without failing CI on pre-existing issues.
-        continue-on-error: true
+      - name: "Typecheck"
+        # Blocking. The pre-existing baseline this used to tolerate (14 in api-server, 13 in the
+        # frontend) is fixed, and the whole tree is clean — so any error here is new. Kept in sync
+        # with scripts/ci-local.sh, which is the gate this project actually relies on.
         run: pnpm run typecheck
 
       - name: Build packages & applications

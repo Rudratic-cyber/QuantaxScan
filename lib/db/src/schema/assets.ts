@@ -2,7 +2,8 @@ import { pgTable, text, serial, integer, real, timestamp, jsonb, check, index, u
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { SURFACE_VALUES, ASSET_STATUS_VALUES, type LocationDetail } from "@workspace/collectors";
-import { oneOf } from "./sql-helpers";
+import { oneOf, nullableAtLeast } from "./sql-helpers";
+import { DATA_CLASSIFICATION_VALUES, type DataClassification } from "../classification";
 import { organizationsTable } from "./organizations";
 
 /**
@@ -38,10 +39,23 @@ export const assetsTable = pgTable(
     firstSeen: timestamp("first_seen", { withTimezone: true }).notNull().defaultNow(),
     lastSeen: timestamp("last_seen", { withTimezone: true }).notNull().defaultNow(),
 
-    // ownership + risk inputs (consumed by A3/A4, not built here)
+    // ownership + risk inputs
     ownerId: integer("owner_id"),
-    dataClassification: text("data_classification"),
+    /**
+     * A3 — the per-asset override. **Null means "not supplied for this asset"**,
+     * which is a distinct and load-bearing state, not a missing value: it is
+     * what lets a report say the X it used was *assumed* rather than given.
+     * Never given a database default for that reason — see
+     * `src/classification.ts`, and `keySize` above for the same idea (G-05).
+     * Resolve it with `resolveSecrecyLifetime()`; do not read it raw.
+     */
+    dataClassification: text("data_classification").$type<DataClassification>(),
+    /**
+     * A3 — X, in years, overriding the preset implied by `dataClassification`
+     * ("Confidential, but this one has to last 10 years"). Null = not supplied.
+     */
     secrecyLifetimeYears: integer("secrecy_lifetime_years"),
+    // consumed by A4, not built here
     effortHours: real("effort_hours"),
     agilityScore: real("agility_score"),
   },
@@ -52,6 +66,12 @@ export const assetsTable = pgTable(
     index("assets_org_location_status_idx").on(table.organizationId, table.location, table.status),
     check("assets_surface_check", oneOf(table.surface, SURFACE_VALUES)),
     check("assets_status_check", oneOf(table.status, ASSET_STATUS_VALUES)),
+    // Nullable, so NULL satisfies both of these — "not supplied" stays sayable.
+    check("assets_data_classification_check", oneOf(table.dataClassification, DATA_CLASSIFICATION_VALUES)),
+    // A negative X is not a shorter lifetime, it is nonsense that would invert
+    // Mosca's inequality in A4. No upper bound: `indefinite` is 50 years by
+    // preset but an organisation may legitimately claim longer.
+    check("assets_secrecy_lifetime_years_check", nullableAtLeast(table.secrecyLifetimeYears, 0)),
   ],
 );
 
