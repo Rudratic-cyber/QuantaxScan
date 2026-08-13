@@ -135,8 +135,8 @@ product. Prioritise accordingly.
 
 | # | Feature | Status | Pri |
 |---|---|---|---|
-| C1 | Dynamic mapping engine (data-driven) | `next` | **P0** |
-| C2 | Versioned `mappings/` data + provenance | `next` | **P0** |
+| C1 | Dynamic mapping engine (data-driven) | `built` | **P0** |
+| C2 | Versioned `mappings/` data + provenance | `built`† | **P0** |
 | C3 | NIST FIPS 203/204/205 algorithm mapping | `built`* | **P0** |
 | C4 | NIST IR 8547 deprecation timeline mapping | `planned` | **P1** |
 | C5 | CNSA 2.0 timeline mapping | `planned` | **P1** |
@@ -147,8 +147,24 @@ product. Prioritise accordingly.
 
 \* C3 exists as a static by-name lookup over `mappings/algorithms.json`
 (`lib/collectors/src/algorithm-mapping.ts`, added by A2 — it replaced the hardcoded copies in
-`scanner.ts`'s pattern table). C1/C2 are the real work: deadline resolution, security-strength
-keying and crosswalks, none of which that lookup does.
+`scanner.ts`'s pattern table). It still backs `severity`/`effortHours` on a `ScanFinding`; the
+obligations, deadlines and citations come from C1.
+
+**C1 is `@workspace/mappings` (`lib/mappings/`).** `resolve(input, { asOf, version, profile })` is
+pure and returns obligations with framework, requirement, deadline, replacement, citation,
+confidence and draft status, plus a report bucket and a use-condition table. Nothing in its
+TypeScript names an algorithm, a date or a citation — even the deadline-type vocabulary is a data
+block. Obligations resolve on every findings *read* (`api-server/src/lib/compliance.ts`), so a
+mappings update reaches historical findings without a migration.
+
+**Acceptance (M2 exit): met.** `lib/mappings/src/engine.test.ts` changes a date, adds an algorithm
+and adds a deadline type in cloned data and asserts the output follows with no code change.
+**Not closed by C1:** security-strength keying still returns both IR 8547 rows because key size is
+usually undetermined (G-05), and `controls.json` crosswalks are untouched (C9/G-04).
+
+† C2: the data files, provenance fields and boot-time schema validation are in place. The CI check
+that blocks a `needs-check` entry from reaching a customer-facing template is **not built** — the
+`confidence` field travels with each obligation so the renderer can label it, which is weaker.
 
 Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 

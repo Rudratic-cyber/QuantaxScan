@@ -90,7 +90,9 @@ in [03-features.md](03-features.md), not here.
 | Certificate / X.509 collector | Coverage | Expiry-vs-Q-Day is a visceral chart |
 
 **M2 exit criteria**
-- A finding maps to its NIST/CNSA/CISA obligations **without a code change** when standards data updates
+- ✅ A finding maps to its NIST/CNSA/CISA obligations **without a code change** when standards data
+  updates — C1 shipped 2026-08-13; the criterion is asserted executably in
+  `lib/mappings/src/engine.test.ts`, which mutates the data and checks the output follows
 - Board pack PDF generates end-to-end from real inventory data
 - Certificate inventory shows which certs outlive the conservative Q-Day scenario
 

@@ -114,7 +114,7 @@ built/not-built split — this table mirrors its status column, not a separate a
 
 | # | Feature | Status | Edition | Rationale |
 |---|---|---|---|---|
-| C1 | Dynamic mapping engine | `next` | **C** | The engine is a pure function over open data |
+| C1 | Dynamic mapping engine | `built` | **C** | The engine is a pure function over open data |
 | C2 | Versioned `mappings/` data | `next` | **C** | **CC BY 4.0** — see below. The authority play |
 | C3 | FIPS 203/204/205 mapping | `built` | **C** | |
 | C4 | IR 8547 timeline mapping | `planned` | **C** | |
