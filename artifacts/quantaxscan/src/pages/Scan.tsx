@@ -1177,8 +1177,16 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
                         )}>{f.severity.toUpperCase()}</span>
                         <span className="text-[11px] flex-1 min-w-0">
                           <span className="font-mono text-[#0a0e1a]">{f.algorithm}</span>
-                          <span className="text-[#475569]"> is quantum-vulnerable</span>
+                          {/* Never assert "is quantum-vulnerable" over every finding — MD5, SHA-1 and
+                              AES-ECB are classical hygiene and the claim is false for them (G-08/G-09).
+                              The bucket comes from the mapping engine. */}
+                          <span className="text-[#475569]">{f.compliance ? ` — ${f.compliance.bucketLabel.toLowerCase()}` : " is quantum-vulnerable"}</span>
                         </span>
+                        {f.compliance?.detection.reviewRequired && (
+                          <span className="text-[9px] font-bold tracking-wider px-1.5 py-px rounded shrink-0 bg-[#f1f3f7] text-[#6b7280] border border-[#e5e7eb]">
+                            NEEDS REVIEW
+                          </span>
+                        )}
                         {f.nistReplacement && (
                           <span className="text-emerald-600 text-[10px] font-mono shrink-0">→ {f.nistReplacement}</span>
                         )}
@@ -1310,7 +1318,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
     const sessionMessages = [...(activeSession?.messages ?? []), userMsg];
     const systemContext = overrideCtx ?? (findings.length > 0
       ? `Give a short, clean response with only the most important points.\nUse 3-5 bullets max.\nBold the key risk, the fix, and the next step.\nAvoid long explanations.\n\nScan findings:\n${findings.map(f =>
-          `• Line ${f.lineNumber}: ${f.algorithm} [${f.severity.toUpperCase()}]${f.nistReplacement ? ` → replace with ${f.nistReplacement}` : ""}${f.codeSnippet ? `\n  Code: ${f.codeSnippet}` : ""}`
+          `• Line ${f.lineNumber}: ${f.algorithm} [${f.compliance?.bucketLabel ?? f.severity.toUpperCase()}]${f.compliance ? `\n  ${f.compliance.headline}` : ""}${f.nistReplacement ? ` → replace with ${f.nistReplacement}` : ""}${f.codeSnippet ? `\n  Code: ${f.codeSnippet}` : ""}`
         ).join("\n")}`
       : "Give a short, clean response with only the most important points. Use 3-5 bullets max. Bold key risk, fix, and next step.");
 
@@ -2274,9 +2282,19 @@ export function Scan() {
 
   const handleAskAI = useCallback((f: Finding) => {
     const codeBlock = f.codeSnippet ? `\n\`\`\`\n${f.codeSnippet}\n\`\`\`` : "";
-    const text = `Analyze the **${f.algorithm}** vulnerability at line ${f.lineNumber}${codeBlock}.\n\nWhat is the quantum attack vector and show me the exact code change to fix it using ${f.nistReplacement ?? "a NIST PQC algorithm"}?`;
+    // Don't ask for "the quantum attack vector" on a finding that has nothing to do with
+    // quantum computing — the model will invent one. Key the question off the risk track.
+    const quantum = f.compliance ? f.compliance.riskTrack === "post-quantum" : true;
+    const question = quantum
+      ? `What is the quantum attack vector and show me the exact code change to fix it using ${f.nistReplacement ?? "a NIST PQC algorithm"}?`
+      : `This is a classical-cryptography finding, not a quantum one. Explain the actual weakness and show me the exact code change to fix it${f.nistReplacement ? ` using ${f.nistReplacement}` : ""}.`;
+    const text = `Analyze the **${f.algorithm}** finding at line ${f.lineNumber}${codeBlock}.\n\n${question}`;
     const context = [
-      `Vulnerability: ${f.algorithm} at line ${f.lineNumber} (${f.severity.toUpperCase()})`,
+      `Finding: ${f.algorithm} at line ${f.lineNumber} (${f.compliance?.bucketLabel ?? f.severity.toUpperCase()})`,
+      f.compliance ? `Position: ${f.compliance.headline}` : "",
+      f.compliance?.detection.reviewRequired && f.compliance.detection.reason
+        ? `Confidence caveat: ${f.compliance.detection.reason}`
+        : "",
       f.codeSnippet   ? `Code:\n${f.codeSnippet}` : "",
       f.nistReplacement ? `NIST replacement: ${f.nistReplacement}` : "",
       f.nistStandard  ? `Standard: ${f.nistStandard}` : "",

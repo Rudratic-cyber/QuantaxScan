@@ -174,7 +174,7 @@ export function generateExecutiveSummary(
   if (hygiene.length > 0) {
     const bestPractice = buckets["best-practice"];
     const bestPracticeClause = bestPractice > 0
-      ? ` ${bestPractice} of ${plural(bestPractice, "them")} ${plural(bestPractice, "is", "are")} a best-practice recommendation that violates no standard.`
+      ? ` ${bestPractice} of them ${plural(bestPractice, "is", "are")} a best-practice recommendation that violates no standard.`
       : "";
     parts.push(
       `${hygiene.length} ${plural(hygiene.length, "finding")} (${distinctAlgorithms(hygiene)}) ${plural(hygiene.length, "is", "are")} classical hygiene — unrelated to quantum computing, and excluded from the post-quantum picture.${bestPracticeClause}`

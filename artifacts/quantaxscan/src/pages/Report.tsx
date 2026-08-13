@@ -366,7 +366,9 @@ export function Report() {
 
   // Reports shared before the mapping engine existed have no compliance block in their
   // frozen snapshot; those still group by severity.
-  const hasCompliance = d.findings.some(f => f.compliance);
+  // `every`, not `some`: a mixed response must not drop the findings that have no
+  // compliance block, because the bucket groups below only collect findings that do.
+  const hasCompliance = d.findings.length > 0 && d.findings.every(f => f.compliance);
   const complianceGroups = BUCKET_ORDER
     .map(bucket => ({
       bucket,

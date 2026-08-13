@@ -114,6 +114,15 @@ describe("executive summary states what is true of each bucket (G-08, G-09)", ()
     const findings = scanCode('c = Cipher.getInstance("AES/ECB/PKCS5Padding")', "a.java", "java");
     const summary = generateExecutiveSummary(findings, 1, "python");
     expect(summary).not.toMatch(/non-PQC-safe|quantum-critical|Q-Day/i);
-    expect(summary).toMatch(/violates no standard/i);
+    expect(summary).toMatch(/1 of them is a best-practice recommendation that violates no standard/);
+  });
+
+  it("pluralises correctly with more than one best-practice finding", () => {
+    const ecb = 'c = Cipher.getInstance("AES/ECB/PKCS5Padding")';
+    const findings = scanCode([ecb, ecb].join("\n"), "a.java", "java");
+    const summary = generateExecutiveSummary(findings, 2, "java");
+    expect(summary).toMatch(/2 findings .* are classical hygiene/);
+    expect(summary).toMatch(/2 of them are a best-practice recommendation that violates no standard/);
+    expect(summary).not.toMatch(/thems|findings is|finding are/);
   });
 });
