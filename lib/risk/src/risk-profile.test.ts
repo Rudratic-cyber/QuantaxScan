@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeRiskProfile } from "./risk-profile";
+import { MAPPINGS_DATA_VERSION } from "@workspace/collectors";
 
 const NOW = new Date("2026-08-13T00:00:00Z");
 
@@ -111,7 +112,11 @@ describe("computeRiskProfile — the score is explainable", () => {
   });
 
   it("stamps the mappings dataVersion it derived from", () => {
-    expect(computeRiskProfile([RSA], { totalLines: 10, now: NOW }).dataVersion).toBe("0.3.0");
+    // Compared against the data, not a literal. The point of this assertion is that the profile
+    // reports whichever version it actually read — pinning a number here just means the test
+    // breaks every time the mappings are legitimately revised, which says nothing about the code.
+    expect(computeRiskProfile([RSA], { totalLines: 10, now: NOW }).dataVersion)
+      .toBe(MAPPINGS_DATA_VERSION);
   });
 
   it("names an unmapped algorithm instead of scoring it on either track", () => {

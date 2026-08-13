@@ -96,7 +96,7 @@ is not the moat, and community contribution is highest-leverage here.
 | # | Collector | Status | Edition | Note |
 |---|---|---|---|---|
 | B1 | Source code (regex) | `built` | **C** | Already exists |
-| B2 | Dependency / SBOM | `next` | **C** | |
+| B2 | Dependency / SBOM | `built`* | **C** | Collector only — nothing submits lockfiles or persists what it finds yet |
 | B3 | TLS / cipher suite prober | `planned` | **C** | |
 | B4 | Certificate / X.509 | `planned` | **C** | |
 | B5 | KMS / secret stores | `planned` | **C→E** | Collector open; **managed credential handling** Enterprise — customer secrets need audited storage |
@@ -106,8 +106,8 @@ is not the moat, and community contribution is highest-leverage here.
 | B9 | Vendor / third-party | `planned` | **E** | Vendor questionnaire tracking is workflow, not detection |
 | B10 | Binaries / firmware | `deferred` | **C** | See [G-16](09-open-gaps.md) — NIST treats this as core discovery, so it belongs open |
 
-\* A1/A2: schema, fingerprint, backfill, and `SourceRegexCollector` are built; read cutover and a
-second collector are not. See [03-features.md](03-features.md#a-inventory-core) for the exact
+\* A1/A2: schema, fingerprint, backfill, `SourceRegexCollector` and `DependencyCollector` (B2)
+are built; the read cutover and dependency-asset persistence are not. See [03-features.md](03-features.md#a-inventory-core) for the exact
 built/not-built split — this table mirrors its status column, not a separate assessment.
 
 ### C. Compliance and mapping

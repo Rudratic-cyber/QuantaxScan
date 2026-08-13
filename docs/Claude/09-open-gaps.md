@@ -21,7 +21,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-03 | OMB M-23-02 submission format unknown | Medium | Not researched | Human, 2 h |
 | G-04 | `controls.json` crosswalks all seeded | Low | Deliberate — C9 is P3 | Defer to C9 |
 | G-05 | **Key size is never detected** | **Critical, partially closed** | Design | B1 rework — model + source extraction landed; deadline resolution still pending, and **A4 shipped without it** — the risk engine keys on `quantumVulnerable`, not on security strength, so this now needs C1 |
-| G-06 | EdDSA not detected at all | High | Missing pattern | 1 line |
+| ~~G-06~~ | ~~EdDSA not detected at all~~ | **Closed** | Pattern added 2026-08-13 | — |
 | G-07 | DSA mis-framed as a future problem | High | Mapping data (now fixed) | Reporting change |
 | G-08 | SHA-1 rule is use-dependent; we alert blindly | Medium | Regex can't see context | Confidence + copy |
 | G-09 | AES-ECB framed as a compliance violation | Medium | Wrong citation (now fixed) | Copy change |
@@ -100,18 +100,32 @@ specifically, and another argument for prioritising B3/B4.
 
 ---
 
-## G-06 — EdDSA not detected `High`
+## G-06 — EdDSA not detected `Closed 2026-08-13`
 
 Ed25519/Ed448 are quantum-vulnerable, appear explicitly in IR 8547 Table 2, and were added to
 FIPS 186-5 as an approved algorithm — so they are in active new deployment. `SOURCE_PATTERNS`
 (`lib/collectors/src/source-regex-collector.ts`, formerly `scanner.ts`'s `VULNERABILITY_PATTERNS`)
-has no pattern for them.
+had no pattern for them.
 
-**What closes it:** one entry in the pattern table (aliases already recorded in
-`mappings/algorithms.json` under `eddsa`, tagged `detectionGap: true`).
+**Closed by** an eighth `SOURCE_PATTERNS` entry, `/\b(EdDSA|Ed25519|Ed448)/i`, placed after
+ECDSA and before ECDH/DH. Two things this exposed that "one line" understated:
 
-**Cross-ref:** B1 in [03-features.md](03-features.md), not a mappings issue — the data is there,
-the detection is not.
+- The rest of the plumbing existed but was **unreachable**: `KEY_SIZE_SOURCE` already had
+  `EdDSA: "curve"` and the curve table already had `ed25519`/`ed448`, yet with no pattern
+  emitting the algorithm neither entry could ever fire. Ed25519 → 256 and Ed448 → 448 are now
+  asserted (`source-regex-collector.test.ts`).
+- The pattern must **not** match `X25519`/`Curve25519`: those are Diffie-Hellman key agreement
+  and belong to the `ECDH/DH` entry. A bare `25519` alternative would have silently
+  reclassified them as signatures.
+- `algorithms.json`'s `eddsa` entry has had its `detectionGap: true` flag cleared, and its
+  `explanation` no longer tells the customer we cannot detect it (mappings `dataVersion 0.3.1`).
+
+**Still true:** one finding per line means a line naming both `ssh-rsa` and `ssh-ed25519`
+reports RSA only. That is a parser problem, not a pattern problem — tested and documented
+rather than papered over.
+
+**Cross-ref:** B1 in [03-features.md](03-features.md), not a mappings issue — the data was
+there, the detection was not.
 
 ---
 
@@ -236,6 +250,14 @@ design. Regex ≈ 0.7, TLS handshake ≈ 1.0.
 > reads or filters by it yet — an inventory that carries confidence in the database but never
 > shows it is not yet "an inventory whose findings can be filtered by evidence quality." That is
 > D3/reporting scope, not A1/A2.
+
+> **Update, 2026-08-13 (B2).** The dependency collector is the first evidence that the scale is
+> doing real work rather than being a constant: it emits `0.8` for a single-purpose crypto
+> library (`node-rsa`, `@noble/ed25519` — parse-exact presence of a package that exists to do
+> one thing, stronger evidence than a regex over prose at `0.7`) and `0.5` for a
+> general-purpose one (`cryptography`, `elliptic` — the primitive is *available*; which of
+> several the caller invokes is not in a lockfile). Two observations in the same inventory now
+> differ by evidence quality, which makes the missing consumer (D3) the visible next gap.
 
 ---
 
@@ -491,7 +513,7 @@ deleting is cheaper than auditing 20+ images. Note this does **not** remove it f
 1. ~~**G-13**~~ (closed 2026-08-03), **G-18** — minutes each, and free only while the repo is
    private
 2. **G-17** — the positioning is wrong *now*, and it is a document edit
-3. **G-06** — one pattern, closes a real detection hole
+3. ~~**G-06**~~ (closed 2026-08-13, alongside B2) — one pattern, closed a real detection hole
 4. **G-01** — 30 minutes, unblocks a whole customer segment
 5. **G-16** — a roadmap decision to make before committing to A2's surface priorities
 6. ~~**G-10**~~ (closed 2026-08-14 by A4), **G-05, G-11, G-15** — land together with A2/A4; they

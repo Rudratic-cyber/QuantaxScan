@@ -276,9 +276,13 @@ over the collector, kept because four existing routes call it synchronously; see
 why its copy text can now legitimately differ from the pre-refactor hardcoded strings.
 
 **Acceptance for this seam:** adding the dependency collector requires zero edits to
-`scanner.ts` and zero edits to the API routes. **Not yet demonstrated** — B2 is out of scope for
-this change, so this acceptance criterion is architecturally true (nothing in `Collector`/
-`RawObservation` assumes a source-only collector) but unverified by an actual second collector.
+`scanner.ts` and zero edits to the API routes. **Demonstrated** — B2's `DependencyCollector`
+(`lib/collectors/src/dependency-collector.ts`) implements the same `Collector` contract over the
+same `CollectionTarget` and touches neither file. It reads the lockfiles out of the submitted
+`files` array by basename, so no new target variant was needed either. What the seam does *not*
+yet cover is persistence: `asset-ingest.ts` computes a `surface: "source"` fingerprint from
+`repo`/`path`, so ingesting dependency observations needs a `surface: "dependency"` path
+(`ecosystem + package + algorithm`) and a route that submits lockfiles — a separate change.
 
 ### NIST reached the same conclusion — align with it
 

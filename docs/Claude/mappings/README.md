@@ -57,6 +57,15 @@ document, which is fetchable.
 
 ---
 
+## Changes in 0.3.1
+
+No standards claim changed. `eddsa`'s `detectionGap: true` flag was **cleared**, because the
+gap it recorded is closed: `SourceRegexCollector` now has an EdDSA pattern and the dependency
+collector maps Ed25519 libraries (09-open-gaps.md G-06). Its `explanation` no longer says "the
+current scanner does not detect it" — that sentence was customer-facing copy that stopped being
+true. Set the flag again if a future entry is in the same position; it is how an
+identified-but-undetected algorithm is tracked.
+
 ## Corrections made in 0.3.0
 
 Verified against FIPS 186-5, SP 800-131A Rev 2, SP 800-38A and SP 800-38D by downloading each
@@ -94,8 +103,8 @@ Two substantive additions:
 
 - **≥128-bit classical algorithms are also disallowed after 2035**, not just 112-bit ones. The
   seed only recorded the 112-bit row. Bigger keys do not buy time.
-- **EdDSA** appears in IR 8547 Table 2 and the current scanner does not detect it — flagged as
-  `detectionGap: true`.
+- **EdDSA** appears in IR 8547 Table 2 and the scanner did not detect it — flagged as
+  `detectionGap: true` (flag cleared in 0.3.1; see above).
 
 ---
 
