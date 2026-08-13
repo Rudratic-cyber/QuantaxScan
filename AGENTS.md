@@ -75,13 +75,22 @@ not a Postgres `ENUM` type — narrowing an `ENUM` requires recreating the type;
 from the same tuple is a one-line diff. Don't introduce a second definition of one of these enums
 anywhere else.
 
-**One recorded exception:** auth and tenancy enums (`ORG_ROLE_VALUES`, `IDENTITY_PROVIDER_VALUES`,
-`REPORT_VISIBILITY_VALUES`) live in `lib/db/src/schema/auth-enums.ts`, not in
-`@workspace/collectors`. The rule above exists because those enums are part of the *collector*
-contract and `lib/collectors` is deliberately dependency-free so it can ship as a standalone
-on-prem agent — an on-prem collector has no concept of an organisation role or an identity
-provider. The rule's mechanism (one const tuple, `text` + `CHECK` via `oneOf()`, never a Postgres
-`ENUM`) is preserved exactly.
+**Two recorded exceptions**, both in `lib/db` rather than `@workspace/collectors`: auth and
+tenancy enums (`ORG_ROLE_VALUES`, `IDENTITY_PROVIDER_VALUES`, `REPORT_VISIBILITY_VALUES`) in
+`lib/db/src/schema/auth-enums.ts`, and A3's `DATA_CLASSIFICATION_VALUES` in
+`lib/db/src/classification.ts`. The rule above exists because those enums are part of the
+*collector* contract and `lib/collectors` is deliberately dependency-free so it can ship as a
+standalone on-prem agent — an on-prem collector has no concept of an organisation role, an
+identity provider, or whether the data behind a key is Regulated. The rule's mechanism (one const
+tuple, `text` + `CHECK` via `oneOf()`, never a Postgres `ENUM`) is preserved exactly.
+
+**Null means "not supplied", and several columns depend on it.** `assets.key_size` (G-05) and
+A3's `data_classification` / `secrecy_lifetime_years` on both `assets` and `projects` are nullable
+with **no database default**, deliberately. Adding `NOT NULL DEFAULT ...` to any of them destroys
+the difference between a value a human supplied and one nobody ever set — which is what lets a
+report state that an X was assumed. Provenance is derived by `resolveSecrecyLifetime()`
+(`@workspace/db/classification`), never stored, so it cannot go stale when a project default
+changes.
 
 ## Tenant isolation
 

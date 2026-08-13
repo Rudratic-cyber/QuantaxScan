@@ -66,7 +66,7 @@ literals and named curves in source only; B2–B10 remain unbuilt.
 
 ---
 
-### A3. Data classification `next` **P0**
+### A3. Data classification `built`* **P0**
 
 `secrecyLifetimeYears` plus a classification label per asset/project. Sensible presets:
 
@@ -79,13 +79,39 @@ literals and named curves in source only; B2–B10 remain unbuilt.
 | Indefinite | 50 | State secrets, genomic data, identity roots |
 
 **Acceptance:** every asset has an X value, defaulting to a project-level setting, overridable
-per asset, with the default clearly marked as an assumption in reports.
+per asset, with the default clearly marked as an assumption in reports. The first two clauses are
+met by `resolveSecrecyLifetime()`, which always returns a number. The third is met **in the data
+rather than in report copy**: the resolved record carries `source` (`asset` | `project` |
+`default`) and `assumed`, so a report states the provenance instead of a caption asserting it.
+
+\* **Built:** the classification vocabulary and its preset X values, the `data_classification` +
+`secrecy_lifetime_years` pair on both `projects` (the default) and `assets` (the override) with
+`CHECK` constraints, and the pure resolver — all in `lib/db/src/classification.ts`, exported as
+`@workspace/db/classification` (a subpath with no drizzle/`pg`/`DATABASE_URL` dependency, so A4
+can import the contract on its own). `SecrecyLifetime` is A4's `X` input.
+
+All four columns are **nullable with no database default**, and that is what makes the third
+acceptance clause satisfiable: `NOT NULL DEFAULT 3` would destroy the difference between "a human
+chose Internal" and "nobody said anything" on the way into the database. Same reasoning as
+`assets.key_size` (G-05). Provenance is therefore *derived* by the resolver rather than stored — a
+persisted `classification_source` column would go stale the moment a project's default changed.
+
+**Not built:** no write path. There is no API route or UI control for setting either level yet,
+and `CreateProjectBody` is unchanged — A1's reads were never cut over to `assets`, so there is no
+asset API surface to hang an override on (see the route manifest in `cross-tenant.test.ts`).
+Nothing calls `resolveSecrecyLifetime()` in production code yet; A4 is its first consumer. Values
+can only be set by direct SQL today.
 
 ---
 
 ### A4. Mosca risk engine `next` **P0**
 
 Split risk from detection. Input `(asset, X, Y, Z-scenario)` → verdict + score.
+
+X comes from A3: `resolveSecrecyLifetime()` in `@workspace/db/classification` returns a
+`SecrecyLifetime` — `{ years, source, assumed, classification, classificationSource, basis }`.
+Take `years` as X and carry `assumed`/`basis` into the verdict, so "why" can distinguish a
+customer-supplied lifetime from a defaulted one.
 
 **Acceptance:** returns a verdict per Q-Day scenario, and the UI shows *why* — the three input
 values, not just a number.
