@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import algorithmsData from "../../../docs/Claude/mappings/algorithms.json" with { type: "json" };
 import { deriveAlgorithmMapping } from "./algorithm-mapping";
 
 describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappings/algorithms.json", () => {
@@ -32,6 +33,9 @@ describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappi
   });
 
   it("is sourced from the current mappings dataVersion, not a frozen copy", () => {
-    expect(deriveAlgorithmMapping("RSA")?.dataVersion).toBe("0.3.0");
+    // Compared against the file rather than a literal: a standards-data pull request
+    // bumps `dataVersion`, and that must not break a test in the detection layer.
+    expect(deriveAlgorithmMapping("RSA")?.dataVersion).toBe(algorithmsData.dataVersion);
+    expect(deriveAlgorithmMapping("RSA")?.dataVersion).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });

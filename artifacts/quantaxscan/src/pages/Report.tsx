@@ -6,11 +6,70 @@ import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/api";
 import { QuantaXscanLogo } from "@/components/QuantaXscanLogo";
 
+/** One resolved regulatory claim. Mirrors `Obligation` in @workspace/mappings. */
+interface Obligation {
+  framework: string; frameworkName?: string; requirement: string; severity: string;
+  deadline?: { label: string; inEffect: boolean; after?: string; in?: string; since?: string; appliesTo?: string };
+  replacement?: { algorithm: string; standard: string };
+  citation: { document: string; section?: string; url: string; retrievedAt?: string };
+  confidence: string; draftStatus?: string; caveats: string[]; source: string;
+}
+
+/**
+ * Output of the C1 mapping engine, carried on every finding.
+ *
+ * Optional because a report shared before this shipped has no compliance block in its
+ * frozen snapshot — the page falls back to severity grouping for those.
+ */
+interface FindingCompliance {
+  bucket: string; bucketLabel: string; bucketDescription: string;
+  complianceStatus: string; riskTrack: string; countsTowardPostQuantumScore: boolean;
+  headline: string; useDependent: boolean;
+  useConditions: { use: string; status: string; permitted: boolean; framework: string }[];
+  obligations: Obligation[];
+  detection: { multiplier: number; reviewRequired: boolean; reason: string | null };
+  reportingNote: string | null;
+  caveats: string[]; dataVersion: string; asOf: string;
+}
+
 interface GithubFinding {
   lineNumber: number; severity: "critical" | "alert" | "safe";
   algorithm: string; codeSnippet: string;
   nistReplacement: string | null; nistStandard: string | null;
   explanation: string; effortHours: number; fileName: string;
+  compliance?: FindingCompliance | null;
+}
+
+/**
+ * Report grouping, in the order a CISO should read it. Deliberately NOT severity order:
+ * a DSA signing site is non-compliant today and outranks an RSA certificate whose
+ * deadline is years out, even though both are "critical" (G-07). Colour is a cue, not
+ * the claim — the claim is the bucket label and the obligations under it.
+ */
+const BUCKET_ORDER = ["immediate-compliance-failure", "pqc-migration", "classical-hygiene", "best-practice", "no-obligation"] as const;
+
+const BUCKET_STYLE: Record<string, { fg: string; bg: string; border: string }> = {
+  "immediate-compliance-failure": { fg: "#b91c1c", bg: "#fef2f2", border: "#fecaca" },
+  "pqc-migration":                { fg: "#c2410c", bg: "#fff7ed", border: "#fed7aa" },
+  "classical-hygiene":            { fg: "#a16207", bg: "#fffbeb", border: "#fde68a" },
+  "best-practice":                { fg: "#4f46e5", bg: "#eef0fe", border: "#c7d2fe" },
+  "no-obligation":                { fg: "#059669", bg: "#ecfdf5", border: "#a7f3d0" },
+};
+
+const bucketStyle = (bucket: string) => BUCKET_STYLE[bucket] ?? BUCKET_STYLE["no-obligation"];
+
+const mappingsVersionForExport = (d: GithubScanResult) => d.findings.find(f => f.compliance)?.compliance?.dataVersion;
+
+function deadlineText(o: Obligation): string | null {
+  if (!o.deadline) return null;
+  const when = o.deadline.since
+    ? `since ${o.deadline.since}`
+    : o.deadline.after
+      ? `after ${o.deadline.after}`
+      : o.deadline.in
+        ? `in ${o.deadline.in}`
+        : "now";
+  return `${o.deadline.label} ${when}${o.deadline.inEffect ? " — in effect" : ""}`;
 }
 interface GithubFileResult {
   path: string; language: string; lines: number;
@@ -73,32 +132,113 @@ function SeverityBadge({ severity }: { severity: string }) {
 
 function FindingCard({ finding, index }: { finding: GithubFinding; index: number }) {
   const [open, setOpen] = useState(false);
+  const c = finding.compliance;
+  const style = c ? bucketStyle(c.bucket) : null;
+
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }}
-      className={cn("rounded-lg border overflow-hidden", finding.severity === "critical" ? "border-[#fecaca] bg-[#fef2f2]" : "border-[#fde68a] bg-[#fffbeb]")}>
-      <button onClick={() => setOpen(o => !o)} className="w-full flex items-start gap-3 p-3 text-left hover:bg-black/[0.02] transition-colors">
+      className="rounded-lg border overflow-hidden"
+      style={style
+        ? { borderColor: style.border, background: style.bg }
+        : undefined}>
+      <button onClick={() => setOpen(o => !o)}
+        className={cn("w-full flex items-start gap-3 p-3 text-left hover:bg-black/[0.02] transition-colors",
+          !style && (finding.severity === "critical" ? "border-[#fecaca] bg-[#fef2f2]" : "border-[#fde68a] bg-[#fffbeb]"))}>
         <SeverityBadge severity={finding.severity} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <span className="font-mono text-[11px] font-bold text-[#0a0e1a]">{finding.algorithm}</span>
             <span className="text-[10px] text-[#6b7280] font-mono truncate">{finding.fileName}:{finding.lineNumber}</span>
+            {c?.detection.reviewRequired && (
+              <span className="text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded bg-white/70 border border-[#e5e7eb] text-[#6b7280]">
+                NEEDS REVIEW
+              </span>
+            )}
           </div>
-          <p className="text-[11px] text-[#475569] line-clamp-2">{finding.explanation}</p>
+          {/* The headline is composed from the mapping data, not written in this file. */}
+          <p className="text-[11px] text-[#475569] line-clamp-2">{c ? c.headline : finding.explanation}</p>
         </div>
         <ChevronRight className={cn("h-3.5 w-3.5 text-[#9aa3b2] shrink-0 transition-transform mt-0.5", open && "rotate-90")} />
       </button>
+
       {open && (
-        <div className="px-3 pb-3 space-y-2 border-t border-[#e5e7eb] pt-2">
+        <div className="px-3 pb-3 space-y-3 border-t border-[#e5e7eb] pt-2">
           <pre className="bg-[#f7f8fa] rounded px-2.5 py-2 text-[10px] font-mono text-[#334155] overflow-x-auto border border-[#e5e7eb]">{finding.codeSnippet}</pre>
-          {finding.nistReplacement && (
+
+          {c?.detection.reviewRequired && c.detection.reason && (
+            <div className="rounded border border-[#e5e7eb] bg-white/80 px-2.5 py-2">
+              <p className="text-[10px] font-bold text-[#6b7280] tracking-wide uppercase mb-1">Confidence reduced — confirm the use</p>
+              <p className="text-[11px] text-[#475569] leading-relaxed">{c.detection.reason}</p>
+            </div>
+          )}
+
+          {/* G-08: when the standard's answer depends on the use, print the uses, not a verdict. */}
+          {c && c.useConditions.length > 0 && (
+            <div className="rounded border border-[#e5e7eb] bg-white/80 overflow-x-auto">
+              <table className="w-full text-[10px]">
+                <thead>
+                  <tr className="bg-[#f7f8fa] border-b border-[#e5e7eb] text-[#6b7280]">
+                    <th className="text-left px-2.5 py-1.5 font-semibold">Use</th>
+                    <th className="text-left px-2.5 py-1.5 font-semibold">Status</th>
+                    <th className="text-left px-2.5 py-1.5 font-semibold">Under</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {c.useConditions.map((u, i) => (
+                    <tr key={i} className="border-b border-[#eceef2] last:border-0">
+                      <td className="px-2.5 py-1.5 text-[#334155]">{u.use}</td>
+                      <td className="px-2.5 py-1.5 font-semibold" style={{ color: u.permitted ? "#059669" : "#b91c1c" }}>{u.status}</td>
+                      <td className="px-2.5 py-1.5 text-[#6b7280]">{u.framework}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {c && c.obligations.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-bold text-[#6b7280] tracking-wide uppercase">Obligations</p>
+              {c.obligations.map((o, i) => (
+                <div key={i} className="rounded border border-[#e5e7eb] bg-white/80 px-2.5 py-2">
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <span className="text-[10px] font-mono font-bold text-[#4f46e5]">{o.frameworkName ?? o.framework}</span>
+                    {deadlineText(o) && <span className="text-[10px] text-[#6b7280]">{deadlineText(o)}</span>}
+                    {o.confidence !== "verified" && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#fffbeb] text-[#a16207] border border-[#fde68a]">
+                        INDICATIVE — UNVERIFIED
+                      </span>
+                    )}
+                    {o.draftStatus && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#f1f3f7] text-[#475569] border border-[#e5e7eb]">
+                        DRAFT GUIDANCE
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#334155] leading-relaxed">{o.requirement}</p>
+                  {/* "Says who?" — the question the report exists to answer. */}
+                  <a href={o.citation.url} target="_blank" rel="noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-[10px] text-[#6b7280] hover:text-[#4f46e5]">
+                    {o.citation.document}{o.citation.section ? ` — ${o.citation.section}` : ""}
+                    {o.citation.retrievedAt ? ` (retrieved ${o.citation.retrievedAt})` : ""}
+                    <ExternalLink className="h-2.5 w-2.5" />
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!c && finding.nistReplacement && (
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-[#6b7280]">Replace with:</span>
               <code className="text-[10px] font-mono text-[#4f46e5] bg-[#eef0fe] px-1.5 py-0.5 rounded">{finding.nistReplacement}</code>
               {finding.nistStandard && <span className="text-[10px] text-[#9aa3b2]">({finding.nistStandard})</span>}
             </div>
           )}
-          <div className="flex items-center gap-1 text-[10px] text-[#6b7280]">
-            <Clock className="h-3 w-3" /> Est. {finding.effortHours}h remediation effort
+
+          <div className="flex items-center gap-3 flex-wrap text-[10px] text-[#6b7280]">
+            <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> Est. {finding.effortHours}h remediation effort</span>
+            {c && <span className="font-mono">mappings {c.dataVersion} · resolved {c.asOf}</span>}
           </div>
         </div>
       )}
@@ -148,11 +288,47 @@ export function Report() {
       ``,
       `## Findings`,
       ``,
-      ...d.findings.map(f =>
-        `### [${f.severity.toUpperCase()}] ${f.algorithm} — ${f.fileName}:${f.lineNumber}\n\n${f.explanation}\n\n**Replace with:** ${f.nistReplacement ?? "N/A"} (${f.nistStandard ?? ""})\n\n\`\`\`\n${f.codeSnippet}\n\`\`\`\n`
-      ),
+      // Every regulatory claim in the export carries its citation and its confidence, so
+      // the markdown an auditor receives is as defensible as the page it came from.
+      ...d.findings.map(f => {
+        const c = f.compliance;
+        const heading = c
+          ? `### [${c.bucketLabel}] ${f.algorithm} — ${f.fileName}:${f.lineNumber}`
+          : `### [${f.severity.toUpperCase()}] ${f.algorithm} — ${f.fileName}:${f.lineNumber}`;
+        const body = [heading, ``, c ? c.headline : f.explanation, ``];
+
+        if (c?.detection.reviewRequired && c.detection.reason) {
+          body.push(`> **Needs review — confidence reduced.** ${c.detection.reason}`, ``);
+        }
+        if (c && c.useConditions.length > 0) {
+          body.push(`| Use | Status | Under |`, `|---|---|---|`);
+          for (const u of c.useConditions) body.push(`| ${u.use} | ${u.status} | ${u.framework} |`);
+          body.push(``);
+        }
+        if (c && c.obligations.length > 0) {
+          body.push(`**Obligations**`, ``);
+          for (const o of c.obligations) {
+            const when = deadlineText(o);
+            const flags = [o.confidence !== "verified" ? "indicative, unverified" : null, o.draftStatus ? "draft guidance" : null]
+              .filter(Boolean).join("; ");
+            body.push(
+              `- **${o.frameworkName ?? o.framework}**${when ? ` (${when})` : ""}: ${o.requirement}` +
+                `\n  Source: ${o.citation.document}${o.citation.section ? ` — ${o.citation.section}` : ""} — ${o.citation.url}` +
+                `${o.citation.retrievedAt ? ` (retrieved ${o.citation.retrievedAt})` : ""}${flags ? ` [${flags}]` : ""}`,
+            );
+          }
+          body.push(``);
+        }
+        if (!c && f.nistReplacement) body.push(`**Replace with:** ${f.nistReplacement} (${f.nistStandard ?? ""})`, ``);
+
+        body.push("```", f.codeSnippet, "```", ``);
+        if (c) body.push(`_Resolved from standards data ${c.dataVersion} on ${c.asOf}._`, ``);
+        return body.join("\n");
+      }),
       `---`,
-      `*Generated by QuantaXscan Post-Quantum Security Scanner*`,
+      mappingsVersionForExport(d)
+        ? `*Generated by QuantaXscan Post-Quantum Security Scanner · standards data ${mappingsVersionForExport(d)}*`
+        : `*Generated by QuantaXscan Post-Quantum Security Scanner*`,
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
@@ -187,6 +363,19 @@ export function Report() {
   const criticalFindings = d.findings.filter(f => f.severity === "critical");
   const alertFindings    = d.findings.filter(f => f.severity === "alert");
   const totalEffort      = d.totalEffortHours ?? d.findings.reduce((s, f) => s + f.effortHours, 0);
+
+  // Reports shared before the mapping engine existed have no compliance block in their
+  // frozen snapshot; those still group by severity.
+  const hasCompliance = d.findings.some(f => f.compliance);
+  const complianceGroups = BUCKET_ORDER
+    .map(bucket => ({
+      bucket,
+      findings: d.findings.filter(f => f.compliance?.bucket === bucket),
+      label: d.findings.find(f => f.compliance?.bucket === bucket)?.compliance?.bucketLabel ?? bucket,
+      description: d.findings.find(f => f.compliance?.bucket === bucket)?.compliance?.bucketDescription ?? "",
+    }))
+    .filter(g => g.findings.length > 0);
+  const mappingsVersion = d.findings.find(f => f.compliance)?.compliance?.dataVersion;
 
   return (
     <div className="min-h-screen bg-[#f7f8fa] text-[#0a0e1a]" style={{ background: "radial-gradient(ellipse at 50% 0%, #ffffff 0%, #f7f8fa 60%)" }}>
@@ -266,8 +455,33 @@ export function Report() {
           </motion.div>
         )}
 
-        {/* ── Findings ── */}
-        {(criticalFindings.length > 0 || alertFindings.length > 0) && (
+        {/* ── Findings, grouped by compliance bucket ── */}
+        {hasCompliance && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="space-y-6">
+            {complianceGroups.map(group => {
+              const style = bucketStyle(group.bucket);
+              return (
+                <div key={group.bucket}>
+                  <h2 className="text-[11px] font-bold tracking-widest uppercase mb-1 flex items-center gap-2" style={{ color: style.fg }}>
+                    <AlertTriangle className="h-3.5 w-3.5" /> {group.label} ({group.findings.length})
+                  </h2>
+                  <p className="text-[11px] text-[#6b7280] leading-relaxed mb-3 max-w-3xl">{group.description}</p>
+                  <div className="space-y-2">
+                    {group.findings.map((f, i) => <FindingCard key={`${group.bucket}-${i}`} finding={f} index={i} />)}
+                  </div>
+                </div>
+              );
+            })}
+            {mappingsVersion && (
+              <p className="text-[10px] text-[#9aa3b2] font-mono">
+                Obligations resolved from versioned standards data, mappings {mappingsVersion}. Every claim above links to its primary source.
+              </p>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Findings (legacy reports with no compliance block) ── */}
+        {!hasCompliance && (criticalFindings.length > 0 || alertFindings.length > 0) && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="space-y-4">
             {criticalFindings.length > 0 && (
               <div>

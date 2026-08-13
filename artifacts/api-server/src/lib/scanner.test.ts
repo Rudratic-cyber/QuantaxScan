@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scanCode, computeScanResult } from "./scanner";
+import { scanCode, computeScanResult, generateExecutiveSummary } from "./scanner";
 import { DEMO_REPOS } from "./demo-repos";
 
 describe("scanCode — behaviour preserved through the SourceRegexCollector refactor", () => {
@@ -55,5 +55,65 @@ describe("scanCode — behaviour preserved through the SourceRegexCollector refa
     const result = computeScanResult(findings, 3);
     expect(result.criticalCount).toBe(1);
     expect(result.alertCount).toBe(2);
+  });
+});
+
+describe("every finding carries the mapping engine's answer, resolved at read time (C1)", () => {
+  it("attaches obligations, a bucket and a data version to each finding", () => {
+    const [finding] = scanCode("key = RSA.generate(2048)", "a.py", "python");
+    expect(finding.compliance).not.toBeNull();
+    expect(finding.compliance!.bucket).toBe("pqc-migration");
+    expect(finding.compliance!.obligations.length).toBeGreaterThan(0);
+    expect(finding.compliance!.dataVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    // Every regulatory claim carries a citation — the whole point of the provenance rule.
+    for (const obligation of finding.compliance!.obligations) {
+      expect(obligation.citation.url).toBeTruthy();
+      expect(obligation.citation.document).toBeTruthy();
+    }
+  });
+
+  it("separates the buckets G-07/G-08/G-09 are about", () => {
+    const bucketOf = (code: string) => scanCode(code, "a.py", "python")[0].compliance!.bucket;
+    expect(bucketOf("signer = DSA.new(key)")).toBe("immediate-compliance-failure");
+    expect(bucketOf("key = RSA.generate(2048)")).toBe("pqc-migration");
+    expect(bucketOf('c = Cipher.getInstance("AES/ECB/PKCS5Padding")')).toBe("best-practice");
+  });
+
+  it("keeps hygiene findings out of the post-quantum score (G-10 contract for A4)", () => {
+    const findings = scanCode(["RSA.generate(2048)", "md5(x)", "sha1(x)"].join("\n"), "a.py", "python");
+    const pqc = findings.filter((f) => f.compliance?.countsTowardPostQuantumScore);
+    expect(pqc.map((f) => f.algorithm)).toEqual(["RSA"]);
+  });
+});
+
+describe("executive summary states what is true of each bucket (G-08, G-09)", () => {
+  it("does not recommend a PQC migration for a scan that has no quantum-vulnerable finding", () => {
+    const findings = scanCode(["h = hashlib.md5(x)", "s = hashlib.sha1(x)"].join("\n"), "a.py", "python");
+    const summary = generateExecutiveSummary(findings, 2, "python");
+    expect(summary).not.toMatch(/FIPS 20[345]/);
+    expect(summary).not.toMatch(/Migrate the quantum-vulnerable findings/);
+    expect(summary).toMatch(/classical hygiene — unrelated to quantum computing/i);
+  });
+
+  it("recommends the replacement standards the obligations actually name when PQC work exists", () => {
+    const findings = scanCode("key = RSA.generate(2048)", "a.py", "python");
+    const summary = generateExecutiveSummary(findings, 1, "python");
+    expect(summary).toMatch(/FIPS 203/);
+    expect(summary).toMatch(/quantum-vulnerable/i);
+  });
+
+  it("leads with the findings that have no runway, and flags the ones needing review", () => {
+    const findings = scanCode(["signer = DSA.new(key)", "key = RSA.generate(2048)"].join("\n"), "a.py", "python");
+    const summary = generateExecutiveSummary(findings, 2, "python");
+    expect(summary).toMatch(/non-compliant now, with no migration runway \(DSA\)/);
+    expect(summary.indexOf("no migration runway")).toBeLessThan(summary.indexOf("published transition deadline"));
+    expect(summary).toMatch(/confirm the call site/i);
+  });
+
+  it("never asserts that a hygiene finding is non-PQC-safe", () => {
+    const findings = scanCode('c = Cipher.getInstance("AES/ECB/PKCS5Padding")', "a.java", "java");
+    const summary = generateExecutiveSummary(findings, 1, "python");
+    expect(summary).not.toMatch(/non-PQC-safe|quantum-critical|Q-Day/i);
+    expect(summary).toMatch(/violates no standard/i);
   });
 });

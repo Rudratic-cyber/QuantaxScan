@@ -115,6 +115,158 @@ export const GetScanResponse = zod.object({
         nistStandard: zod.string().nullish(),
         effortHours: zod.number(),
         explanation: zod.string().nullish(),
+        compliance: zod
+          .object({
+            algorithm: zod.string(),
+            algorithmId: zod.string(),
+            quantumVulnerable: zod.boolean(),
+            riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+            complianceStatus: zod.enum([
+              "immediate-failure",
+              "future-obligation",
+              "no-obligation",
+            ]),
+            bucket: zod.enum([
+              "immediate-compliance-failure",
+              "pqc-migration",
+              "classical-hygiene",
+              "best-practice",
+              "no-obligation",
+            ]),
+            bucketLabel: zod.string(),
+            bucketDescription: zod.string(),
+            countsTowardPostQuantumScore: zod
+              .boolean()
+              .describe(
+                "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+              ),
+            headline: zod.string(),
+            useDependent: zod
+              .boolean()
+              .describe(
+                "True when the standard's answer depends on how the algorithm is used.",
+              ),
+            useConditions: zod.array(
+              zod.object({
+                use: zod.string(),
+                status: zod.string(),
+                permitted: zod.boolean(),
+                framework: zod.string(),
+              }),
+            ),
+            obligations: zod.array(
+              zod.object({
+                framework: zod.string(),
+                frameworkName: zod.string().optional(),
+                requirement: zod.string(),
+                severity: zod.enum([
+                  "critical",
+                  "high",
+                  "medium",
+                  "informational",
+                ]),
+                replacement: zod
+                  .object({
+                    algorithm: zod.string(),
+                    standard: zod.string(),
+                    purpose: zod.string().optional(),
+                    note: zod.string().optional(),
+                  })
+                  .optional(),
+                deadline: zod
+                  .object({
+                    type: zod
+                      .string()
+                      .describe(
+                        "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                      ),
+                    label: zod.string(),
+                    effect: zod.enum(["prohibition", "caution", "permitted"]),
+                    inEffect: zod
+                      .boolean()
+                      .describe(
+                        "Whether the rule binds at the resolution date.",
+                      ),
+                    after: zod.string().optional(),
+                    in: zod.string().optional(),
+                    since: zod.string().optional(),
+                    appliesTo: zod
+                      .string()
+                      .optional()
+                      .describe(
+                        "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                      ),
+                    securityStrength: zod.string().optional(),
+                    source: zod.string().optional(),
+                    note: zod.string().optional(),
+                  })
+                  .optional(),
+                citation: zod
+                  .object({
+                    document: zod.string(),
+                    section: zod.string().optional(),
+                    url: zod.string(),
+                    retrievedAt: zod.string().optional(),
+                    published: zod.string().optional(),
+                  })
+                  .describe(
+                    "Provenance for a single regulatory claim. Required on every obligation.",
+                  ),
+                confidence: zod
+                  .string()
+                  .describe(
+                    "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+                  ),
+                draftStatus: zod
+                  .string()
+                  .optional()
+                  .describe(
+                    "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                  ),
+                caveats: zod.array(zod.string()),
+                source: zod.enum([
+                  "algorithm-deadline",
+                  "algorithm-replacement",
+                  "algorithm-best-practice",
+                  "framework",
+                ]),
+              }),
+            ),
+            detection: zod.object({
+              multiplier: zod.number(),
+              adjustedConfidence: zod.number().optional(),
+              reviewRequired: zod.boolean(),
+              reason: zod.string().nullable(),
+            }),
+            reportingNote: zod.string().nullable(),
+            caveats: zod.array(zod.string()),
+            citation: zod
+              .object({
+                document: zod.string(),
+                section: zod.string().optional(),
+                url: zod.string(),
+                retrievedAt: zod.string().optional(),
+                published: zod.string().optional(),
+              })
+              .describe(
+                "Provenance for a single regulatory claim. Required on every obligation.",
+              ),
+            dataVersion: zod
+              .string()
+              .describe(
+                "Pin this with the report. A report is only reproducible against the data version that produced it.",
+              ),
+            asOf: zod
+              .string()
+              .describe("ISO date the deadlines were evaluated against."),
+          })
+          .describe(
+            "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+          )
+          .nullish()
+          .describe(
+            "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+          ),
       }),
     )
     .optional(),
@@ -141,6 +293,151 @@ export const GetScanFindingsResponseItem = zod.object({
   nistStandard: zod.string().nullish(),
   effortHours: zod.number(),
   explanation: zod.string().nullish(),
+  compliance: zod
+    .object({
+      algorithm: zod.string(),
+      algorithmId: zod.string(),
+      quantumVulnerable: zod.boolean(),
+      riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+      complianceStatus: zod.enum([
+        "immediate-failure",
+        "future-obligation",
+        "no-obligation",
+      ]),
+      bucket: zod.enum([
+        "immediate-compliance-failure",
+        "pqc-migration",
+        "classical-hygiene",
+        "best-practice",
+        "no-obligation",
+      ]),
+      bucketLabel: zod.string(),
+      bucketDescription: zod.string(),
+      countsTowardPostQuantumScore: zod
+        .boolean()
+        .describe(
+          "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+        ),
+      headline: zod.string(),
+      useDependent: zod
+        .boolean()
+        .describe(
+          "True when the standard's answer depends on how the algorithm is used.",
+        ),
+      useConditions: zod.array(
+        zod.object({
+          use: zod.string(),
+          status: zod.string(),
+          permitted: zod.boolean(),
+          framework: zod.string(),
+        }),
+      ),
+      obligations: zod.array(
+        zod.object({
+          framework: zod.string(),
+          frameworkName: zod.string().optional(),
+          requirement: zod.string(),
+          severity: zod.enum(["critical", "high", "medium", "informational"]),
+          replacement: zod
+            .object({
+              algorithm: zod.string(),
+              standard: zod.string(),
+              purpose: zod.string().optional(),
+              note: zod.string().optional(),
+            })
+            .optional(),
+          deadline: zod
+            .object({
+              type: zod
+                .string()
+                .describe(
+                  "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                ),
+              label: zod.string(),
+              effect: zod.enum(["prohibition", "caution", "permitted"]),
+              inEffect: zod
+                .boolean()
+                .describe("Whether the rule binds at the resolution date."),
+              after: zod.string().optional(),
+              in: zod.string().optional(),
+              since: zod.string().optional(),
+              appliesTo: zod
+                .string()
+                .optional()
+                .describe(
+                  "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                ),
+              securityStrength: zod.string().optional(),
+              source: zod.string().optional(),
+              note: zod.string().optional(),
+            })
+            .optional(),
+          citation: zod
+            .object({
+              document: zod.string(),
+              section: zod.string().optional(),
+              url: zod.string(),
+              retrievedAt: zod.string().optional(),
+              published: zod.string().optional(),
+            })
+            .describe(
+              "Provenance for a single regulatory claim. Required on every obligation.",
+            ),
+          confidence: zod
+            .string()
+            .describe(
+              "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+            ),
+          draftStatus: zod
+            .string()
+            .optional()
+            .describe(
+              "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+            ),
+          caveats: zod.array(zod.string()),
+          source: zod.enum([
+            "algorithm-deadline",
+            "algorithm-replacement",
+            "algorithm-best-practice",
+            "framework",
+          ]),
+        }),
+      ),
+      detection: zod.object({
+        multiplier: zod.number(),
+        adjustedConfidence: zod.number().optional(),
+        reviewRequired: zod.boolean(),
+        reason: zod.string().nullable(),
+      }),
+      reportingNote: zod.string().nullable(),
+      caveats: zod.array(zod.string()),
+      citation: zod
+        .object({
+          document: zod.string(),
+          section: zod.string().optional(),
+          url: zod.string(),
+          retrievedAt: zod.string().optional(),
+          published: zod.string().optional(),
+        })
+        .describe(
+          "Provenance for a single regulatory claim. Required on every obligation.",
+        ),
+      dataVersion: zod
+        .string()
+        .describe(
+          "Pin this with the report. A report is only reproducible against the data version that produced it.",
+        ),
+      asOf: zod
+        .string()
+        .describe("ISO date the deadlines were evaluated against."),
+    })
+    .describe(
+      "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+    )
+    .nullish()
+    .describe(
+      "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+    ),
 });
 export const GetScanFindingsResponse = zod.array(GetScanFindingsResponseItem);
 
@@ -299,6 +596,158 @@ export const RunDemoScanResponse = zod.object({
         nistStandard: zod.string().nullish(),
         effortHours: zod.number(),
         explanation: zod.string().nullish(),
+        compliance: zod
+          .object({
+            algorithm: zod.string(),
+            algorithmId: zod.string(),
+            quantumVulnerable: zod.boolean(),
+            riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+            complianceStatus: zod.enum([
+              "immediate-failure",
+              "future-obligation",
+              "no-obligation",
+            ]),
+            bucket: zod.enum([
+              "immediate-compliance-failure",
+              "pqc-migration",
+              "classical-hygiene",
+              "best-practice",
+              "no-obligation",
+            ]),
+            bucketLabel: zod.string(),
+            bucketDescription: zod.string(),
+            countsTowardPostQuantumScore: zod
+              .boolean()
+              .describe(
+                "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+              ),
+            headline: zod.string(),
+            useDependent: zod
+              .boolean()
+              .describe(
+                "True when the standard's answer depends on how the algorithm is used.",
+              ),
+            useConditions: zod.array(
+              zod.object({
+                use: zod.string(),
+                status: zod.string(),
+                permitted: zod.boolean(),
+                framework: zod.string(),
+              }),
+            ),
+            obligations: zod.array(
+              zod.object({
+                framework: zod.string(),
+                frameworkName: zod.string().optional(),
+                requirement: zod.string(),
+                severity: zod.enum([
+                  "critical",
+                  "high",
+                  "medium",
+                  "informational",
+                ]),
+                replacement: zod
+                  .object({
+                    algorithm: zod.string(),
+                    standard: zod.string(),
+                    purpose: zod.string().optional(),
+                    note: zod.string().optional(),
+                  })
+                  .optional(),
+                deadline: zod
+                  .object({
+                    type: zod
+                      .string()
+                      .describe(
+                        "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                      ),
+                    label: zod.string(),
+                    effect: zod.enum(["prohibition", "caution", "permitted"]),
+                    inEffect: zod
+                      .boolean()
+                      .describe(
+                        "Whether the rule binds at the resolution date.",
+                      ),
+                    after: zod.string().optional(),
+                    in: zod.string().optional(),
+                    since: zod.string().optional(),
+                    appliesTo: zod
+                      .string()
+                      .optional()
+                      .describe(
+                        "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                      ),
+                    securityStrength: zod.string().optional(),
+                    source: zod.string().optional(),
+                    note: zod.string().optional(),
+                  })
+                  .optional(),
+                citation: zod
+                  .object({
+                    document: zod.string(),
+                    section: zod.string().optional(),
+                    url: zod.string(),
+                    retrievedAt: zod.string().optional(),
+                    published: zod.string().optional(),
+                  })
+                  .describe(
+                    "Provenance for a single regulatory claim. Required on every obligation.",
+                  ),
+                confidence: zod
+                  .string()
+                  .describe(
+                    "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+                  ),
+                draftStatus: zod
+                  .string()
+                  .optional()
+                  .describe(
+                    "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                  ),
+                caveats: zod.array(zod.string()),
+                source: zod.enum([
+                  "algorithm-deadline",
+                  "algorithm-replacement",
+                  "algorithm-best-practice",
+                  "framework",
+                ]),
+              }),
+            ),
+            detection: zod.object({
+              multiplier: zod.number(),
+              adjustedConfidence: zod.number().optional(),
+              reviewRequired: zod.boolean(),
+              reason: zod.string().nullable(),
+            }),
+            reportingNote: zod.string().nullable(),
+            caveats: zod.array(zod.string()),
+            citation: zod
+              .object({
+                document: zod.string(),
+                section: zod.string().optional(),
+                url: zod.string(),
+                retrievedAt: zod.string().optional(),
+                published: zod.string().optional(),
+              })
+              .describe(
+                "Provenance for a single regulatory claim. Required on every obligation.",
+              ),
+            dataVersion: zod
+              .string()
+              .describe(
+                "Pin this with the report. A report is only reproducible against the data version that produced it.",
+              ),
+            asOf: zod
+              .string()
+              .describe("ISO date the deadlines were evaluated against."),
+          })
+          .describe(
+            "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+          )
+          .nullish()
+          .describe(
+            "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+          ),
       }),
     )
     .optional(),
@@ -347,6 +796,156 @@ export const ScanGithubRepoResponse = zod.object({
       nistStandard: zod.string().nullish(),
       effortHours: zod.number(),
       explanation: zod.string().nullish(),
+      compliance: zod
+        .object({
+          algorithm: zod.string(),
+          algorithmId: zod.string(),
+          quantumVulnerable: zod.boolean(),
+          riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+          complianceStatus: zod.enum([
+            "immediate-failure",
+            "future-obligation",
+            "no-obligation",
+          ]),
+          bucket: zod.enum([
+            "immediate-compliance-failure",
+            "pqc-migration",
+            "classical-hygiene",
+            "best-practice",
+            "no-obligation",
+          ]),
+          bucketLabel: zod.string(),
+          bucketDescription: zod.string(),
+          countsTowardPostQuantumScore: zod
+            .boolean()
+            .describe(
+              "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+            ),
+          headline: zod.string(),
+          useDependent: zod
+            .boolean()
+            .describe(
+              "True when the standard's answer depends on how the algorithm is used.",
+            ),
+          useConditions: zod.array(
+            zod.object({
+              use: zod.string(),
+              status: zod.string(),
+              permitted: zod.boolean(),
+              framework: zod.string(),
+            }),
+          ),
+          obligations: zod.array(
+            zod.object({
+              framework: zod.string(),
+              frameworkName: zod.string().optional(),
+              requirement: zod.string(),
+              severity: zod.enum([
+                "critical",
+                "high",
+                "medium",
+                "informational",
+              ]),
+              replacement: zod
+                .object({
+                  algorithm: zod.string(),
+                  standard: zod.string(),
+                  purpose: zod.string().optional(),
+                  note: zod.string().optional(),
+                })
+                .optional(),
+              deadline: zod
+                .object({
+                  type: zod
+                    .string()
+                    .describe(
+                      "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                    ),
+                  label: zod.string(),
+                  effect: zod.enum(["prohibition", "caution", "permitted"]),
+                  inEffect: zod
+                    .boolean()
+                    .describe("Whether the rule binds at the resolution date."),
+                  after: zod.string().optional(),
+                  in: zod.string().optional(),
+                  since: zod.string().optional(),
+                  appliesTo: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                    ),
+                  securityStrength: zod.string().optional(),
+                  source: zod.string().optional(),
+                  note: zod.string().optional(),
+                })
+                .optional(),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  section: zod.string().optional(),
+                  url: zod.string(),
+                  retrievedAt: zod.string().optional(),
+                  published: zod.string().optional(),
+                })
+                .describe(
+                  "Provenance for a single regulatory claim. Required on every obligation.",
+                ),
+              confidence: zod
+                .string()
+                .describe(
+                  "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+                ),
+              draftStatus: zod
+                .string()
+                .optional()
+                .describe(
+                  "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                ),
+              caveats: zod.array(zod.string()),
+              source: zod.enum([
+                "algorithm-deadline",
+                "algorithm-replacement",
+                "algorithm-best-practice",
+                "framework",
+              ]),
+            }),
+          ),
+          detection: zod.object({
+            multiplier: zod.number(),
+            adjustedConfidence: zod.number().optional(),
+            reviewRequired: zod.boolean(),
+            reason: zod.string().nullable(),
+          }),
+          reportingNote: zod.string().nullable(),
+          caveats: zod.array(zod.string()),
+          citation: zod
+            .object({
+              document: zod.string(),
+              section: zod.string().optional(),
+              url: zod.string(),
+              retrievedAt: zod.string().optional(),
+              published: zod.string().optional(),
+            })
+            .describe(
+              "Provenance for a single regulatory claim. Required on every obligation.",
+            ),
+          dataVersion: zod
+            .string()
+            .describe(
+              "Pin this with the report. A report is only reproducible against the data version that produced it.",
+            ),
+          asOf: zod
+            .string()
+            .describe("ISO date the deadlines were evaluated against."),
+        })
+        .describe(
+          "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+        )
+        .nullish()
+        .describe(
+          "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+        ),
     }),
   ),
   criticalCount: zod.number(),
