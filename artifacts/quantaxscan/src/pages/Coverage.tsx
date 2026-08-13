@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Boxes, Check, Clock, ArrowRight, FileCode, Network, Lock, KeyRound, Server, Database, ShieldCheck, FileText } from "lucide-react";
+import { Boxes, Check, Clock, ArrowRight, FileCode, Network, Lock, KeyRound, Server, Database, ShieldCheck, FileText, Building2, Binary } from "lucide-react";
 import { Reveal, Eyebrow, PageHeader, StatusPill } from "@/components/marketing/primitives";
 
 // ── Collector surfaces (from docs/Claude/03-features.md §B) ───────────────────
@@ -7,7 +7,10 @@ const COLLECTORS: {
   name: string; icon: React.ReactNode; status: "now" | "planned"; blurb: string;
 }[] = [
   { name: "Source code", icon: <FileCode className="h-5 w-5" />, status: "now",
-    blurb: "Regex + pattern detection for RSA, ECDSA, ECDH/DH, DSA, MD5, SHA-1 and AES-ECB across many languages. Each finding maps to a NIST PQC replacement." },
+    // Only the four asymmetric algorithms have a PQC successor. MD5, SHA-1 and AES-ECB are
+    // classical hygiene, not quantum exposure — claiming a "NIST PQC replacement" for them is
+    // the same category error the register records as G-10 (and G-09 for the ECB citation).
+    blurb: "Regex + pattern detection across many languages. RSA, ECDSA, ECDH/DH and DSA are quantum-vulnerable and map to a NIST PQC replacement; MD5, SHA-1 and AES-ECB are classical hygiene findings with no PQC successor." },
   { name: "Dependencies / SBOM", icon: <Boxes className="h-5 w-5" />, status: "planned",
     blurb: "Parse lockfiles and map to known crypto libraries and versions — the single biggest coverage jump, because most enterprise crypto lives here, not in first-party code." },
   { name: "TLS & cipher suites", icon: <Network className="h-5 w-5" />, status: "planned",
@@ -22,6 +25,10 @@ const COLLECTORS: {
     blurb: "Database TDE and backup/archive encryption — the true harvest-now-decrypt-later targets." },
   { name: "Manual OT / embedded register", icon: <FileText className="h-5 w-5" />, status: "planned",
     blurb: "A structured form, not a scanner, for the estate no tool can reach automatically. It has the longest lead time, so it enters the plan first." },
+  { name: "Vendor / third-party", icon: <Building2 className="h-5 w-5" />, status: "planned",
+    blurb: "Questionnaire and contractual PQC clause tracking for the crypto you depend on but do not operate." },
+  { name: "Binaries / firmware", icon: <Binary className="h-5 w-5" />, status: "planned",
+    blurb: "Compiled artefacts with no source and no manifest. NIST SP 1800-38B places this inside core discovery; we have it deferred, and say so rather than omitting the surface." },
 ];
 
 const STANDARDS: { label: string; detail: string; status: "now" | "planned" }[] = [
