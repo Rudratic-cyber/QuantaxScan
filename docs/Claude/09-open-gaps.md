@@ -90,6 +90,18 @@ nothing resolves it yet.
   engine that would consume it and return both obligations is A4/C1, not built.
 - ✅ Never silently pick one — the ingestion boundary converts `undefined` → `null` explicitly;
   there is no code path that defaults a missing `keySize` to a number.
+- ✅ **The export boundary now has the same rule, and states the gap rather than hiding it.**
+  A5's CycloneDX exporter (`lib/cbom`) emits **no** numeric field for `keySize: null` — no
+  `parameterSetIdentifier`, no `relatedCryptoMaterialProperties.size` — and names the component
+  `RSA`, not `RSA-2048`. Because a missing optional field is indistinguishable from an exporter
+  that never considered key size, every crypto component additionally carries
+  `quantaxscan:asset:keySize`, valued either with the digits or with the literal `undetermined`.
+  That is the decision this gap forces on any consumer-facing serialisation: **absence must be
+  explicit**. `classicalSecurityLevel` and `nistQuantumSecurityLevel` are never populated —
+  deriving a security strength from a key size is A4's call, and doing it in a serialiser is this
+  gap's forbidden default wearing a different name. Asserted in
+  `lib/cbom/src/build-cbom.test.ts` and again over the HTTP response in
+  `artifacts/api-server/src/api-feature.test.ts`.
 
 **Blocks:** correct deadline reporting, therefore the certificate-expiry-vs-deadline chart
 (Row 5 of [06](06-cisa-dashboard.md)), therefore the strongest visual in the product.

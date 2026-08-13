@@ -47,6 +47,7 @@ vi.mock("@workspace/db", async () => {
 });
 
 import { executeRows } from "@workspace/db/org-scope";
+import { projectRepoId } from "@workspace/db/schema";
 import app from "./app";
 import router from "./routes";
 
@@ -86,6 +87,20 @@ beforeAll(async () => {
     await client.query(
       `insert into activity (organization_id, description) values ($1, 'their private activity'), ($2, 'our activity')`,
       [OTHER_ORG, OUR_ORG],
+    );
+
+    // Inventory rows for the CBOM export. Seeded on both sides because the
+    // interesting failure is not "we see nothing" — it is "we see theirs".
+    await client.query(
+      `insert into assets (organization_id, fingerprint, surface, algorithm, key_size, location, status)
+         values ($1, 'their-asset-fingerprint', 'source', 'RSA', 4096, $2, 'active'),
+                ($3, 'our-asset-fingerprint',   'source', 'MD5', null, $4, 'active')`,
+      [
+        OTHER_ORG,
+        `${projectRepoId(theirs.projectId)}:secrets/their_key.py`,
+        OUR_ORG,
+        `${projectRepoId(ours.projectId)}:ours.py`,
+      ],
     );
 
     await client.query(
@@ -130,6 +145,9 @@ describe("route manifest — a new route cannot ship without being considered", 
     "POST /scans/multi": "org-scoped",
     "POST /reports": "org-scoped",
     "GET /stats": "org-scoped",
+    // A CBOM is the whole inventory in one response — the single worst thing
+    // to leak across a tenant boundary, and the reason it is not public.
+    "GET /inventory/cbom": "org-scoped",
     // These touch no database at all: chat proxies to OpenAI and persists
     // nothing, and the github routes fetch from GitHub and hand the result
     // straight back. They still require an API key. When any of them starts
@@ -186,6 +204,22 @@ describe("list routes return this organisation's rows and only this organisation
 
     // one project + one scan in our organisation
     expect(res.body.totalReposScanned).toBe(2);
+  });
+
+  it("GET /api/inventory/cbom exports our inventory and no trace of theirs", async () => {
+    // The worst single response to get wrong: one document listing every
+    // cryptographic weakness an organisation has, including file paths.
+    const res = await auth(request.get("/api/inventory/cbom"));
+    expect(res.status).toBe(200);
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain("their-asset-fingerprint");
+    expect(serialised).not.toContain("secrets/their_key.py");
+    expect(serialised).not.toContain("their confidential project");
+    expect(serialised).toContain("our-asset-fingerprint");
+
+    const crypto = res.body.components.filter((c: { type: string }) => c.type === "cryptographic-asset");
+    expect(crypto).toHaveLength(1);
   });
 
   it("GET /api/projects/:id/findings returns nothing for another organisation's project", async () => {

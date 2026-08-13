@@ -92,12 +92,44 @@ values, not just a number.
 
 ---
 
-### A5. CBOM export (CycloneDX 1.7) `next` **P0**
+### A5. CBOM export (CycloneDX 1.7) `built` **P0**
 
-Target **1.7** — released 2025-10-21, standardised as ECMA-424. `verified 2026-08-01`. CBOM
-represents algorithms, keys and certificates and their relationships to software components.
+Target **1.7** — released 2025-10-21, standardised as ECMA-424. `verified 2026-08-01`,
+**re-verified 2026-08-13** against the specification repository's release list while vendoring the
+schema. CBOM represents algorithms, keys and certificates and their relationships to software
+components.
 
-**Acceptance:** output validates against the official CycloneDX 1.7 JSON schema.
+**Acceptance:** output validates against the official CycloneDX 1.7 JSON schema. ✅ — the schema is
+vendored verbatim under `lib/cbom/schema/` (provenance in its README) and asserted with ajv in
+`lib/cbom/src/build-cbom.test.ts`, including negative controls proving the validator rejects.
+
+**Landed 2026-08-13:**
+
+- `lib/cbom` — pure builder, no `@workspace/db` dependency, deterministic output (serial number
+  and timestamp are injected, components sorted by `bom-ref`) so two exports of an unchanged
+  inventory diff clean.
+- `GET /api/inventory/cbom` — the M1 exit criterion. Authenticated and organisation-scoped via
+  `withOrg`; deliberately **not** on the public allowlist, because a CBOM is a complete map of an
+  organisation's cryptographic weaknesses.
+- Surface → `cryptoProperties.assetType`: `source`/`dependency`/`binary`/`ot` → `algorithm`,
+  `tls`/`config` → `protocol`, `certificate` → `certificate`, `kms` →
+  `related-crypto-material`. Only `source` has a collector today; the rest are mapped now so the
+  asset model is tested against the standard before five more collectors are written against it.
+- Relationships: a project is exported as an `application` component, and `dependencies[].dependsOn`
+  links it to the crypto found inside it. An asset whose container is not in the export gets no
+  edge rather than a dangling `bom-ref` (JSON Schema cannot catch a dangling ref — a test does).
+
+**`keySize: null` (G-05):** no numeric field is emitted — no `parameterSetIdentifier`, no
+`relatedCryptoMaterialProperties.size` — and the component is named `RSA`, not `RSA-2048`.
+The absence is *stated*, via a `quantaxscan:asset:keySize` property valued `undetermined`, so a
+consumer can tell "we looked and do not know" from "this exporter never considered key size".
+`classicalSecurityLevel`/`nistQuantumSecurityLevel` are never populated: deriving a security
+strength is A4's job, and doing it here would be the forbidden default wearing a different name.
+
+**Not done:** A6 import, and therefore the round-trip half of
+[07-reports.md](07-reports.md)'s E3 acceptance. No `?surface=`/`?status=` filters — the export is
+the whole current inventory, excluding `status = 'gone'` (crypto a later run confirmed had been
+removed must not appear in a current-state inventory).
 
 ---
 

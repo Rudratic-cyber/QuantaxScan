@@ -10,7 +10,8 @@ The test architecture bridges the gap between unit-level pattern matching and en
 
 | Suite | Runner / Tool | Target / Location | Environment |
 |---|---|---|---|
-| **Library Unit Suites** | Vitest | `lib/collectors`, `lib/db` | Node + in-memory `@electric-sql/pglite` Postgres |
+| **Library Unit Suites** | Vitest | `lib/collectors`, `lib/db`, `lib/cbom` | Node + in-memory `@electric-sql/pglite` Postgres |
+| **CBOM Conformance Suite** | Vitest + ajv | `lib/cbom/src/build-cbom.test.ts` | Node, against the official CycloneDX 1.7 schema vendored in `lib/cbom/schema/` |
 | **API Feature Suite** | Vitest + Supertest | `artifacts/api-server/src/api-feature.test.ts` | In-memory `@electric-sql/pglite` Postgres + Express `app` |
 | **Tenant Isolation Suite** | Vitest | `lib/db/src/tenant-isolation.test.ts` | pglite with the real RLS policies, connected as `quantaxscan_app` |
 | **Cross-Tenant HTTP Suite** | Vitest + Supertest | `artifacts/api-server/src/cross-tenant.test.ts` | As above, through the real Express app |
@@ -58,7 +59,7 @@ What each covers:
 | File | Proves |
 |---|---|
 | `lib/db/src/tenant-isolation.test.ts` | The harness is subject to RLS · every scoped table has RLS enabled, FORCEd, and a policy with a real `USING` clause applying to the runtime role · `assertTenantIsolationInstalled()` rejects both a NULL-`USING` policy and a `NO FORCE` table · a query with no `where` clause returns only the scoped organisation · cross-tenant read/update/delete reach nothing · a wrong-organisation insert is rejected by `WITH CHECK` · scopes refuse to nest · the deliberate asymmetries (`activity` NULL rows, public share links, membership bootstrap) behave as designed |
-| `artifacts/api-server/src/cross-tenant.test.ts` | The same, end to end through Express, with the API key bound to organisation 2 and the fixtures in organisation 1 · a route manifest that fails if any route exists which it does not name · share links honouring visibility, revocation and expiry |
+| `artifacts/api-server/src/cross-tenant.test.ts` | The same, end to end through Express, with the API key bound to organisation 2 and the fixtures in organisation 1 · a route manifest that fails if any route exists which it does not name · share links honouring visibility, revocation and expiry · `GET /api/inventory/cbom` exports our inventory and no trace of the other organisation's, asserted on the serialised document (assets are seeded on *both* sides, because the interesting failure is not "we see nothing" but "we see theirs") |
 | `artifacts/api-server/src/db-import.test.ts` | No route file imports `db`; every route touching the database opens a scope |
 
 The manifest and the `db` guard are lint rules expressed as tests, because both are security
@@ -88,6 +89,12 @@ properties and a security property belongs in the suite that has to stay green.
    - `POST /api/community/posts` (creates post with enum types `question`/`article`/`migration-story`), `GET /api/community/posts`, `POST /api/community/posts/:id/vote`, `GET /api/community/leaderboard`.
 7. **Reports & Public Share Links**:
    - `POST /api/reports` (creates report with cryptographically random ID) and `GET /api/reports/:id` (public unauthenticated retrieval by share ID).
+8. **CBOM Export (A5, CycloneDX 1.7)**:
+   - `GET /api/inventory/cbom` after a real multi-file scan — the response is validated against the **official** vendored CycloneDX 1.7 schema via `@workspace/cbom/validate`, the same validator the library suite uses, rather than by spot-checking fields.
+   - `specVersion`, `bomFormat`, the `application/vnd.cyclonedx+json` media type and the `urn:uuid` serial number are asserted separately, because `bom-1.7.schema.json` constrains none of them (it carries `examples: ["1.7"]`, no `enum`).
+   - The project appears as a software component and `dependencies[].dependsOn` links it to the crypto found inside it, with every edge target resolving to a component in the same document — a dangling `bom-ref` passes JSON-Schema validation, so only a test catches it.
+   - Both key-size states from one scan: a same-line modulus becomes `parameterSetIdentifier`, a modulus behind a variable is reported as `undetermined` and emits no number anywhere (G-05).
+   - Unauthenticated access returns 401 — a CBOM is not, and must not become, a public route.
 
 ---
 

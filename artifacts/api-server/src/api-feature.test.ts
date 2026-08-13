@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import supertest from "supertest";
 import { vi } from "vitest";
 
@@ -35,6 +35,8 @@ vi.mock("@workspace/db", async () => {
 
 // Import app after setting env vars and mocking db
 import app from "./app";
+import { KEY_SIZE_UNDETERMINED, PROP_KEY_SIZE, type CycloneDxBom } from "@workspace/cbom";
+import { createCbomValidator, type CbomValidator } from "@workspace/cbom/validate";
 
 const request = supertest(app);
 
@@ -82,6 +84,10 @@ describe("API Feature Test Suite", () => {
         { method: "post", path: "/api/community/posts", body: {} },
         { method: "post", path: "/api/community/posts/999/vote", body: {} },
         { method: "post", path: "/api/reports", body: {} },
+        // A CBOM is a complete map of an organisation's cryptographic
+        // weaknesses. It is not on the public allowlist and must not become
+        // one — docs/Claude/13-auth-and-tenancy.md §6.2.
+        { method: "get", path: "/api/inventory/cbom" },
       ];
 
       for (const ep of protectedEndpoints) {
@@ -332,6 +338,97 @@ key = RSA.generate(1024)
       expect(res.body.filesScanned).toBe(2);
       expect(res.body.fileResults).toHaveLength(2);
       expect(res.body.criticalCount).toBeGreaterThan(0);
+    });
+  });
+
+  /**
+   * A5 / the M1 exit criterion: `GET /api/inventory/cbom` returns a CycloneDX
+   * 1.7 document that passes schema validation.
+   *
+   * The document is validated against the **official** vendored schema via
+   * `@workspace/cbom/validate` — the same validator the exporter's own unit
+   * tests use — rather than by asserting a handful of fields, because a
+   * field-by-field check is exactly the thing that passes while the document
+   * is unusable to a real CycloneDX consumer.
+   */
+  describe("CBOM Export (A5, CycloneDX 1.7)", () => {
+    let validate: CbomValidator;
+    let projectId: number;
+
+    beforeAll(async () => {
+      validate = createCbomValidator();
+
+      // Real ingestion, not hand-inserted rows: this must prove the *asset
+      // model* exports cleanly, which is the reason CBOM is sequenced second.
+      const res = await request
+        .post("/api/scans/multi")
+        .set("X-API-Key", API_KEY)
+        .send({
+          projectName: "CBOM Export Fixture",
+          language: "javascript",
+          files: [
+            // Same-line literal modulus → keySize 2048 is determined.
+            { filename: "keys.js", content: "const key = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });" },
+            // Modulus behind a variable → keySize stays null (G-05). Both
+            // states must be present or the null branch is untested.
+            { filename: "rotate.js", content: "const rotated = new RSA({ bits: modulusBits });" },
+            { filename: "digest.js", content: "const h = crypto.createHash('md5').update(x).digest('hex');" },
+          ],
+        });
+      expect(res.status).toBe(201);
+      projectId = res.body.projectId;
+    });
+
+    it("validates against the official CycloneDX 1.7 JSON schema", async () => {
+      const res = await request.get("/api/inventory/cbom").set("X-API-Key", API_KEY);
+      expect(res.status).toBe(200);
+      expect(validate(res.body), `schema validation failed:\n${validate.explain()}`).toBe(true);
+    });
+
+    it("declares CycloneDX 1.7 and serves the CycloneDX media type", async () => {
+      const res = await request.get("/api/inventory/cbom").set("X-API-Key", API_KEY);
+      // The schema constrains neither of these — bom-1.7.schema.json carries
+      // only `examples: ["1.7"]` for specVersion — so they are asserted here.
+      expect(res.body.bomFormat).toBe("CycloneDX");
+      expect(res.body.specVersion).toBe("1.7");
+      expect(res.headers["content-type"]).toContain("application/vnd.cyclonedx+json");
+      expect(res.body.serialNumber).toMatch(/^urn:uuid:[0-9a-f-]{36}$/);
+    });
+
+    it("relates the crypto it found to the software component containing it", async () => {
+      const res = await request.get("/api/inventory/cbom").set("X-API-Key", API_KEY);
+      const doc = res.body as CycloneDxBom;
+
+      const project = doc.components.find((c) => c["bom-ref"] === `project:${projectId}`);
+      expect(project?.name).toBe("CBOM Export Fixture");
+
+      const edge = doc.dependencies.find((d) => d.ref === `project:${projectId}`);
+      expect(edge?.dependsOn?.length).toBeGreaterThan(0);
+
+      // Every edge target must be a component in this same document; JSON
+      // Schema cannot check that, since a bom-ref is just a string.
+      const refs = new Set(doc.components.map((c) => c["bom-ref"]));
+      for (const target of edge?.dependsOn ?? []) expect(refs).toContain(target);
+    });
+
+    it("carries a determined key size, and reports an undetermined one as undetermined (G-05)", async () => {
+      const res = await request.get("/api/inventory/cbom").set("X-API-Key", API_KEY);
+      const doc = res.body as CycloneDxBom;
+      const crypto = doc.components.filter((c) => c.type === "cryptographic-asset");
+      const keySizeOf = (c: (typeof crypto)[number]) => c.properties?.find((p) => p.name === PROP_KEY_SIZE)?.value;
+
+      const rsa2048 = crypto.find((c) => c.name === "RSA-2048");
+      expect(rsa2048?.cryptoProperties?.algorithmProperties?.parameterSetIdentifier).toBe("2048");
+      expect(keySizeOf(rsa2048!)).toBe("2048");
+
+      // The asset whose modulus is behind a variable. The export must say so,
+      // not pick a number: A4 keys security strength off this field.
+      const undetermined = crypto.find((c) => c.name === "RSA" && keySizeOf(c) === KEY_SIZE_UNDETERMINED);
+      expect(undetermined, "an RSA asset with an undetermined key size should be in the export").toBeDefined();
+      expect(undetermined?.cryptoProperties?.algorithmProperties?.parameterSetIdentifier).toBeUndefined();
+
+      // Every crypto component states which of the two it is.
+      for (const c of crypto) expect(keySizeOf(c)).toBeDefined();
     });
   });
 

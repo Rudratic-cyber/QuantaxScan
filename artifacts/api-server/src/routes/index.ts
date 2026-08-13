@@ -8,6 +8,7 @@ import demoRouter from "./demo";
 import githubRouter from "./github";
 import chatRouter from "./chat";
 import reportsRouter from "./reports";
+import inventoryRouter from "./inventory";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(demoRouter);
 router.use(githubRouter);
 router.use(chatRouter);
 router.use(reportsRouter);
+router.use(inventoryRouter);
 
 export default router;

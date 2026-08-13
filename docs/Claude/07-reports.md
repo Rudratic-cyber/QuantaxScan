@@ -60,7 +60,9 @@ required format must be verified before we claim conformance (see `frameworks.js
 
 **Audience:** other tools, and auditors' tooling.
 
-CycloneDX 1.7 cryptographic BOM. `needs-check`: confirm the current spec version.
+CycloneDX 1.7 cryptographic BOM. `verified 2026-08-13` — 1.7 released 2025-10-21, confirmed
+against the specification repository's release list; the schema is vendored under
+`lib/cbom/schema/`. Export is built (A5); import (A6) is not.
 
 Why it is P0 despite being the least glamorous:
 
@@ -70,8 +72,11 @@ Why it is P0 despite being the least glamorous:
 - It makes us a **hub rather than a silo** — we can import what they already have (A6)
 - It is what the ecosystem actually consumes
 
-**Acceptance:** output validates against the official CycloneDX JSON schema; round-trips through
-import without loss; includes provenance for every component.
+**Acceptance:** output validates against the official CycloneDX JSON schema ✅ (vendored 1.7
+schema + ajv, `lib/cbom/src/build-cbom.test.ts`); round-trips through import without loss ⬜
+(needs A6); includes provenance for every component ✅ (each crypto component carries its
+`quantaxscan:asset:*` surface, status, fingerprint and first/last-seen properties, plus an
+`evidence.occurrences` entry for its stable locator).
 
 ---
 

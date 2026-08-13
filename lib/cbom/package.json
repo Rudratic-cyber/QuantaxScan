@@ -1,0 +1,21 @@
+{
+  "name": "@workspace/cbom",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./validate": "./src/validate.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
+    "typescript": "~5.9.2",
+    "vitest": "^4.1.10"
+  }
+}
