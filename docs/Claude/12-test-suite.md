@@ -15,6 +15,7 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Tenant Isolation Suite** | Vitest | `lib/db/src/tenant-isolation.test.ts` | pglite with the real RLS policies, connected as `quantaxscan_app` |
 | **Cross-Tenant HTTP Suite** | Vitest + Supertest | `artifacts/api-server/src/cross-tenant.test.ts` | As above, through the real Express app |
 | **Scope-Discipline Guard** | Vitest | `artifacts/api-server/src/db-import.test.ts` | Static — reads `routes/*.ts` source |
+| **Coverage Summariser Suite** | Vitest | `artifacts/api-server/src/lib/coverage.test.ts` | Pure — no database, no HTTP |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
 | **Continuous Integration** | GitHub Actions | `.github/workflows/ci.yml` | Ubuntu runner (`ubuntu-latest`) |
 
@@ -60,6 +61,8 @@ What each covers:
 | `lib/db/src/tenant-isolation.test.ts` | The harness is subject to RLS · every scoped table has RLS enabled, FORCEd, and a policy with a real `USING` clause applying to the runtime role · `assertTenantIsolationInstalled()` rejects both a NULL-`USING` policy and a `NO FORCE` table · a query with no `where` clause returns only the scoped organisation · cross-tenant read/update/delete reach nothing · a wrong-organisation insert is rejected by `WITH CHECK` · scopes refuse to nest · the deliberate asymmetries (`activity` NULL rows, public share links, membership bootstrap) behave as designed |
 | `artifacts/api-server/src/cross-tenant.test.ts` | The same, end to end through Express, with the API key bound to organisation 2 and the fixtures in organisation 1 · a route manifest that fails if any route exists which it does not name · share links honouring visibility, revocation and expiry |
 | `artifacts/api-server/src/db-import.test.ts` | No route file imports `db`; every route touching the database opens a scope |
+| `artifacts/api-server/src/lib/coverage.test.ts` | D3's honesty rules, as arithmetic: a failed collection run is not coverage · examined-and-found-nothing is distinct from never-examined · the confidence distribution is one point per active asset, so a re-scan cannot reweight it · the denominator stays the ten-surface catalogue even when the data contains a surface it does not know |
+| `lib/collectors/src/surface-catalogue.test.ts` | The ten collector surfaces are a bijection onto `SURFACE_VALUES` plus exactly two the asset model cannot record — so an eleventh surface, or a ninth `Surface` value, fails the build rather than silently changing what "1 of 10" means |
 
 The manifest and the `db` guard are lint rules expressed as tests, because both are security
 properties and a security property belongs in the suite that has to stay green.
