@@ -473,6 +473,24 @@ report generation.
 disproportionately longer than its raw hour count suggests, because the change touches many
 places and carries more regression risk.
 
+**As built (2026-08-14, A4).** `@workspace/risk` implements the sketch above with three
+deliberate differences, all recorded in the code:
+
+- `assessMoscaRisk()` takes `now` as an injected parameter. Z is *years remaining*, so a
+  function that reads the clock itself has no reproducible tests and quietly changes meaning
+  every January.
+- `MoscaInput` carries `hasQuantumVulnerableCrypto`. Without it, an asset holding a 50-year
+  secret and nothing but MD5 reports a Mosca breach — [G-10](09-open-gaps.md#g-10--hygiene-findings-inflate-the-pqc-risk-score)'s
+  error relocated from the score into the verdict.
+- `RiskInput` takes findings plus a line count rather than an `Asset`. Reads have not cut over
+  to the asset model (see "Migration path"), so the engine deliberately does not depend on it;
+  its input type is the structural minimum (`{ algorithm, effortHours }`), which an `Asset`
+  will also satisfy.
+
+`score` is decomposed into `detection` (0-60, density of quantum-vulnerable findings) and
+`moscaBreach` (0-40, proportion of scenarios breached) and both are returned, because a score a
+CISO cannot take apart in front of a board is the thing A4 exists to replace.
+
 ---
 
 ## Package layout
@@ -485,7 +503,10 @@ lib/
                     docs/Claude/mappings/algorithms.json — NOT the C1
                     loader/validator package below, which remains unbuilt.
   mappings/      NEW, unbuilt — loader + validator for docs/Claude/mappings/*.json (C1/C2)
-  risk/          NEW, unbuilt — Mosca engine, agility scoring (A4)
+  risk/          ✅ NEW — Mosca engine + the PQC/classical-hygiene track split (A4,
+                    closes G-10). Depends on @workspace/collectors for the
+                    algorithms.json lookup, never the reverse. Agility scoring
+                    (D5) is still unbuilt; Y uses a neutral agility of 1.
   cbom/          NEW, unbuilt — CycloneDX 1.7 import/export (A5)
   api-spec/      existing — extend OpenAPI, regenerate (not done here)
 artifacts/

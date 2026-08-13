@@ -69,7 +69,7 @@ B2 is now built as a collector (see below), B3–B10 remain unbuilt.
 
 ---
 
-### A3. Data classification `next` **P0**
+### A3. Data classification `built`* **P0**
 
 `secrecyLifetimeYears` plus a classification label per asset/project. Sensible presets:
 
@@ -82,16 +82,78 @@ B2 is now built as a collector (see below), B3–B10 remain unbuilt.
 | Indefinite | 50 | State secrets, genomic data, identity roots |
 
 **Acceptance:** every asset has an X value, defaulting to a project-level setting, overridable
-per asset, with the default clearly marked as an assumption in reports.
+per asset, with the default clearly marked as an assumption in reports. The first two clauses are
+met by `resolveSecrecyLifetime()`, which always returns a number. The third is met **in the data
+rather than in report copy**: the resolved record carries `source` (`asset` | `project` |
+`default`) and `assumed`, so a report states the provenance instead of a caption asserting it.
+
+\* **Built:** the classification vocabulary and its preset X values, the `data_classification` +
+`secrecy_lifetime_years` pair on both `projects` (the default) and `assets` (the override) with
+`CHECK` constraints, and the pure resolver — all in `lib/db/src/classification.ts`, exported as
+`@workspace/db/classification` (a subpath with no drizzle/`pg`/`DATABASE_URL` dependency, so A4
+can import the contract on its own). `SecrecyLifetime` is A4's `X` input.
+
+All four columns are **nullable with no database default**, and that is what makes the third
+acceptance clause satisfiable: `NOT NULL DEFAULT 3` would destroy the difference between "a human
+chose Internal" and "nobody said anything" on the way into the database. Same reasoning as
+`assets.key_size` (G-05). Provenance is therefore *derived* by the resolver rather than stored — a
+persisted `classification_source` column would go stale the moment a project's default changed.
+
+**Not built:** no write path. There is no API route or UI control for setting either level yet,
+and `CreateProjectBody` is unchanged — A1's reads were never cut over to `assets`, so there is no
+asset API surface to hang an override on (see the route manifest in `cross-tenant.test.ts`).
+Nothing calls `resolveSecrecyLifetime()` in production code yet; A4 is its first consumer. Values
+can only be set by direct SQL today.
 
 ---
 
-### A4. Mosca risk engine `next` **P0**
+### A4. Mosca risk engine `built`* **P0**
 
 Split risk from detection. Input `(asset, X, Y, Z-scenario)` → verdict + score.
 
+X comes from A3: `resolveSecrecyLifetime()` in `@workspace/db/classification` returns a
+`SecrecyLifetime` — `{ years, source, assumed, classification, classificationSource, basis }`.
+Take `years` as X and carry `assumed`/`basis` into the verdict, so "why" can distinguish a
+customer-supplied lifetime from a defaulted one.
+
 **Acceptance:** returns a verdict per Q-Day scenario, and the UI shows *why* — the three input
-values, not just a number.
+values, not just a number. **Engine half met, UI half not** — see the asterisk.
+
+\* `@workspace/risk` (`lib/risk/`, new package): `assessMoscaRisk()` returns one `MoscaVerdict`
+per Q-Day scenario (conservative 2030 / central 2035 / aggressive 2040, from
+[01-strategy.md](01-strategy.md)), each carrying `x`, `y`, `z`, `breached`, `breachMarginYears`
+and a narrative sentence naming all three inputs — the module exports no way to obtain a score
+without them. `computeRiskProfile()` is the scan-level entry point: it returns a **post-quantum
+exposure score** and a **separate classical-hygiene panel**, which is what closes
+[G-10](09-open-gaps.md#g-10--hygiene-findings-inflate-the-pqc-risk-score). The track split is
+derived from `algorithms.json`'s own `quantumVulnerable` flag and each entry's `reportingNote`,
+never from a list of algorithm names in code. `computeScanResult()` now reports the PQC score as
+`riskScore` and returns `pqc`/`hygiene`/`mosca` alongside it; the scan, multi-scan, demo and
+GitHub routes pass those through. Nothing about A4 is persisted — the profile is recomputed at
+read time, so a mappings or scenario change moves the verdict without a backfill.
+
+**Not built, deliberately:**
+
+- **The UI.** `pqc`, `hygiene` and `mosca` are the panel's data contract; no page renders them
+  yet, and `lib/api-spec/openapi.yaml` and the generated Orval client are not updated, so the
+  typed frontend client cannot see the new fields. That is D2 (Mosca exposure view) and the
+  hygiene panel's presentation, not A4's engine.
+- **X per asset.** A3 supplies it. Until then every verdict uses
+  `DEFAULT_SECRECY_LIFETIME_YEARS` (3 — A3's "Internal" preset) and reports
+  `mosca.secrecyLifetimeSource: "assumed-default"` so a report can mark it as an assumption.
+- **Agility in Y.** Y is `effortHours ÷ agilityScore ÷ hours-per-calendar-year` with
+  `agilityScore` fixed at 1 pending D5, and the hours-per-year constant is a stated guess with
+  no source in these documents. It is the least defensible number in the engine.
+- **Portfolio rollup and scenario management** — the Enterprise half per
+  [10-editions.md](10-editions.md). Scenarios are a parameter everywhere, which is the hook.
+
+**Know this before reading a score.** `riskScore` is `detection` (0-60) + `moscaBreach` (0-40).
+At the assumed default X of 3 years the conservative scenario (2030) is still further away than
+that, so nothing breaches and **the score cannot exceed 60 until A3 supplies a real secrecy
+lifetime** — or until 2027, when the conservative Q-Day comes inside three years. That is
+intended: the top 40% of the scale is reserved for an actual Mosca breach and must be earned,
+not asserted by detection volume. It does mean the headline number's range is narrower than it
+was before A4, which is the honest reading of a scan with no data classification behind it.
 
 ---
 

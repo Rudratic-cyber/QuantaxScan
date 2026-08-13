@@ -83,6 +83,11 @@ router.post("/reports", async (req: Request, res: Response): Promise<void> => {
  */
 router.get("/reports/:id", async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
+  // Express 5 types a route param as `string | string[]`. Reject anything that is not a single
+  // string rather than passing an array into the predicate: a repeated `:id` would otherwise
+  // build a comparison that matches nothing, and a share link that silently 404s on a
+  // malformed request is indistinguishable from one that was revoked.
+  if (typeof id !== "string") { res.status(404).json({ error: "Report not found" }); return; }
   try {
     const [row] = await withPublicShare((tx) =>
       tx.select().from(sharedReportsTable).where(eq(sharedReportsTable.id, id)),

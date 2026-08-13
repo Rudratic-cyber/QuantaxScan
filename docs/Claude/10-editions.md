@@ -84,7 +84,7 @@ paid extension
 | A1 | Asset/observation data model | `built`* | **C** | The schema is the foundation everything reads; forking it would fragment the ecosystem |
 | A2 | Collector interface | `built`* | **C** | The contract third parties write collectors against. Must be open or nobody writes one |
 | A3 | Data classification | `next` | **C→E** | Field and presets open; estate-wide classification management and inheritance Enterprise |
-| A4 | Mosca risk engine | `next` | **C→E** | Inequality open; scenario management + portfolio rollup Enterprise |
+| A4 | Mosca risk engine | `built`* | **C→E** | Inequality open (`lib/risk`, and scenarios are a parameter at every entry point); scenario management + portfolio rollup Enterprise |
 | A5 | CBOM export (CycloneDX 1.7) | `next` | **C** | Interoperability is the whole point. Paywalling export makes us the silo we criticise |
 | A6 | CBOM import | `planned` | **C** | Same |
 

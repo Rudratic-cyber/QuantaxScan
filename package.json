@@ -7,11 +7,13 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
-    "typecheck": "pnpm run typecheck:libs && pnpm run typecheck:tests && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "typecheck": "pnpm run typecheck:libs && pnpm run typecheck:tests && pnpm -r --no-bail --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "test:libs": "pnpm -r --filter \"./lib/**\" --if-present run test",
     "test:api": "pnpm --filter @workspace/api-server test",
     "test:ui": "playwright test",
-    "test": "pnpm run test:libs && pnpm run test:api && pnpm run test:ui"
+    "test": "pnpm run test:libs && pnpm run test:api && pnpm run test:ui",
+    "ci": "bash scripts/ci-local.sh",
+    "hooks:install": "git config core.hooksPath .githooks && echo 'pre-push hook active — pnpm run ci --skip-ui will gate every push'"
   },
   "private": true,
   "devDependencies": {

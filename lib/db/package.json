@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema/index.ts",
+    "./classification": "./src/classification.ts",
     "./org-scope": "./src/org-scope.ts",
     "./tenant-isolation": "./src/tenant-isolation.ts",
     "./test-support": "./src/test-support/test-db.ts"

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   useCreateProject, useCreateScan, useGetScan,
+  getGetScanQueryKey, getGetScanFindingsQueryKey,
   useGetScanFindings, CreateScanBodyMode, Finding,
 } from "@workspace/api-client-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -1262,7 +1263,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
   const [isStreaming, setIsStreaming]     = useState(false);
   const [showSessions, setShowSessions]  = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const sendFnRef = useRef<(overrideText?: string, overrideCtx?: string) => Promise<void>>();
+  const sendFnRef = useRef<((overrideText?: string, overrideCtx?: string) => Promise<void>) | undefined>(undefined);
   const formatAssistantText = useCallback((content: string) => content, []);
 
   // Load sessions from localStorage on mount
@@ -1503,7 +1504,9 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
             style={{ maxHeight: 80 }}
             disabled={isStreaming}
           />
-          <button onClick={sendMessage} disabled={!input.trim() || isStreaming}
+          {/* Wrapped, not passed directly: sendMessage's first parameter is `overrideText`, so
+              binding it to onClick handed the React MouseEvent in as the message body. */}
+          <button onClick={() => { void sendMessage(); }} disabled={!input.trim() || isStreaming}
             className="p-1 text-[#4f46e5]/70 hover:text-[#4f46e5] disabled:opacity-30 transition-colors shrink-0">
             <Send className="h-3.5 w-3.5" />
           </button>
@@ -1910,11 +1913,14 @@ function ActivityBar({ explorerOpen, chatOpen, onExplorer, onChat }: {
 }
 
 // ── Summary bar ───────────────────────────────────────────────────────────────
+// `children` is deliberately absent: this component renders a button and nothing else — the
+// dropdown is portalled by SummaryBar. It used to be declared and required, so every one of the
+// five call sites was a type error for failing to pass a prop that was never rendered.
 function SummaryPill({
-  id, label, dotColor, textColor, labelColor, isOpen, onToggle, children, noDot = false, dropdownStyle,
+  id, label, dotColor, textColor, labelColor, isOpen, onToggle, noDot = false, dropdownStyle,
 }: {
   id: string; label: string; dotColor?: string; textColor: string; labelColor?: string;
-  isOpen: boolean; onToggle: () => void; children: ReactNode; noDot?: boolean;
+  isOpen: boolean; onToggle: () => void; noDot?: boolean;
   dropdownStyle?: React.CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -2265,8 +2271,15 @@ export function Scan() {
   // API
   const createProject = useCreateProject();
   const createScan    = useCreateScan();
-  const { data: scan }     = useGetScan(activeScanId ?? 0, { query: { enabled: !!activeScanId } });
-  const { data: findings } = useGetScanFindings(activeScanId ?? 0, { query: { enabled: !!activeScanId } });
+  // queryKey is passed explicitly because the generated options type requires it. The value is
+  // the same one the hook derives internally (`queryOptions?.queryKey ?? getGetScanQueryKey(id)`),
+  // so this is the type made honest, not a behaviour change.
+  const { data: scan }     = useGetScan(activeScanId ?? 0, {
+    query: { queryKey: getGetScanQueryKey(activeScanId ?? 0), enabled: !!activeScanId },
+  });
+  const { data: findings } = useGetScanFindings(activeScanId ?? 0, {
+    query: { queryKey: getGetScanFindingsQueryKey(activeScanId ?? 0), enabled: !!activeScanId },
+  });
 
   const onExplorerResizeMD = makeResizeMD(setExplorerWidth, explorerWidth, "x",  1, 150, 500);
   const onChatResizeMD     = makeResizeMD(setChatWidth,     chatWidth,     "x", -1, 200, 540);
