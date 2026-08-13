@@ -73,6 +73,11 @@ router.get("/inventory/cbom", async (req, res): Promise<void> => {
     {
       serialNumber: `urn:uuid:${randomUUID()}`,
       timestamp: new Date(),
+      // Optional and currently unwired: nothing in .env.example, the
+      // Dockerfiles or CI sets this, so `metadata.tools` carries the tool name
+      // with no version until a release process exists to stamp one. Left as a
+      // read rather than a hardcoded "0.0.0", which would be a lie in an
+      // auditor-facing document.
       toolVersion: process.env.QUANTAXSCAN_VERSION,
     },
   );
