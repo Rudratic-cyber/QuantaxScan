@@ -116,21 +116,35 @@ The rules that matter day to day:
 `@workspace/collectors` (for the enum tuples above), not the other way around. Keep that direction
 when adding new collectors or schema.
 
-## `pnpm run typecheck` pre-existing failures
+## `pnpm run typecheck` — there is no baseline any more
 
-Root `pnpm run typecheck` fails today independent of any particular change — 14 errors in
-`artifacts/api-server`: `github.ts` (Express `Response` typing mismatches), `reports.ts` (a
-drizzle query-builder overload), and `chat.ts`/etc. (`lib/integrations-openai-ai-server` isn't in
-the root `tsconfig.json` project references, so its `dist/` is never built by `tsc --build`).
-Confirmed present on `main` via `git stash` before this note was written. Don't attribute these to your own changes without checking — diff the error
-list against `git stash && pnpm run typecheck && git stash pop` first.
+**This section previously told you to expect 14 errors in `artifacts/api-server` and 13 more in
+`artifacts/quantaxscan`, and to diff against them rather than fix them. That is obsolete: the
+tree is type-clean. A single new error is yours.**
 
-`artifacts/quantaxscan` (frontend) independently has its own 13-error pre-existing baseline
-(`Typewriter.tsx`, `quantaxscan-terminal.tsx`, `Dashboard.tsx`, `Scan.tsx` — mostly implicit-`any`
-and a couple of real-but-minor type mismatches). `pnpm run build` gates on `pnpm run typecheck`
-and so reports "failed" even though the app itself builds and runs fine — api-server builds with
-esbuild (no typechecking) and vite doesn't block on `tsc` errors either. To get real build output,
-run `pnpm -r --if-present run build` directly, bypassing the typecheck gate.
+Two traps that produced that baseline, both now closed — do not reopen them:
+
+- The root script used a plain `pnpm -r`, which **bails at the first failing package**. api-server
+  failed, so the frontend's thirteen errors were never printed by the root command and nobody
+  knew they existed. The script now passes `--no-bail`; every package reports.
+- `lib/integrations-openai-ai-server` was missing from the root `tsconfig.json` project
+  references, so `tsc --build` never built its `dist/` — which both broke `chat.ts` with TS6305
+  *and* hid four real errors inside that library. It is referenced now.
+
+## Local CI is the gate
+
+The hosted workflow marks typecheck **non-blocking**, and cannot be relied on here. Run the
+pipeline locally before you push:
+
+```
+pnpm run ci              # install, typecheck, build, lib + api + UI tests
+pnpm run ci --quick      # typecheck + unit tests, no install/build/UI
+pnpm run ci --skip-ui    # everything except Playwright
+pnpm run hooks:install   # gate every push on it automatically
+```
+
+Typecheck is blocking in local CI. A green run is the standard for "ready to merge", not a green
+check on the PR.
 
 ## Merging across a directory rename
 

@@ -27,7 +27,7 @@ export function Typewriter({
   const [display, setDisplay]   = useState("");
   const [phase, setPhase]       = useState<"wait"|"typing"|"pause"|"deleting">("wait");
   const [textIdx, setTextIdx]   = useState(0);
-  const rafRef                  = useRef<ReturnType<typeof setTimeout>>();
+  const rafRef                  = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (startDelay > 0) {
@@ -35,6 +35,7 @@ export function Typewriter({
       return () => clearTimeout(t);
     }
     setPhase("typing");
+    return undefined;
   }, [startDelay]);
 
   useEffect(() => {
