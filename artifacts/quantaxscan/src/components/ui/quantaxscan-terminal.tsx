@@ -74,7 +74,8 @@ function useInView(ref: React.RefObject<HTMLElement | null>) {
 function PythonLine({ text }: { text: string }) {
   if (text.startsWith("#")) return <span className="text-neutral-500 italic">{text}</span>;
 
-  const parts: JSX.Element[] = [];
+  // React 19 removed the global JSX namespace; it lives under React now.
+  const parts: React.JSX.Element[] = [];
   const tokens = text.split(/(\s+|[().,='])/);
   const keywords = new Set(["import","from","as","def","class","return","if","else","for","in","and","or","not","True","False","None"]);
 

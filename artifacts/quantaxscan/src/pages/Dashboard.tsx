@@ -365,6 +365,7 @@ function AISummaryPanel({ project, findings }: {
       const t = setTimeout(() => { void run(); }, 400);
       return () => clearTimeout(t);
     }
+    return undefined;
   }, [project?.name]);
 
   function renderMarkdown(raw: string) {

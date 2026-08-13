@@ -1,4 +1,7 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+// `Response` is deliberately NOT imported bare: this module also calls fetch(), and an
+// unaliased express Response shadows the global one, so every `res.ok` / `res.headers` /
+// `res.json()` on a fetch result silently type-checked against express's object instead.
+import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
 import { scanCode, computeScanResult, generateExecutiveSummary } from "../lib/scanner";
 import { logger } from "../lib/logger";
 
@@ -180,7 +183,9 @@ async function fetchRepoTree(
 
     const data = await res.json() as { tree: Array<{ path: string; type: string; size?: number }>; truncated?: boolean };
     const branch = await detectBranch(owner, repo, headers);
-    const result: CachedTree = { tree: data.tree, truncated: data.truncated ?? false, branch };
+    const result: CachedTree = {
+      tree: data.tree, truncated: data.truncated ?? false, branch, ts: Date.now(),
+    };
     setCachedTree(cacheKey, result);
     return result;
   } catch (err) {
@@ -254,7 +259,7 @@ async function fetchAndScanFiles(
 }
 
 // ── Route: rate limit status ──────────────────────────────────────────────────
-router.get("/github/rate-limit", async (_req: Request, res: Response): Promise<void> => {
+router.get("/github/rate-limit", async (_req: Request, res: ExpressResponse): Promise<void> => {
   const headers = makeGitHubHeaders();
   try {
     const r = await fetch("https://api.github.com/rate_limit", { headers });
@@ -274,7 +279,7 @@ router.get("/github/rate-limit", async (_req: Request, res: Response): Promise<v
 });
 
 // ── Route: one-shot scan ──────────────────────────────────────────────────────
-router.post("/github/scan", async (req: Request, res: Response): Promise<void> => {
+router.post("/github/scan", async (req: Request, res: ExpressResponse): Promise<void> => {
   const { repoUrl } = req.body as { repoUrl?: string };
   if (!repoUrl || typeof repoUrl !== "string") { res.status(400).json({ error: "repoUrl is required" }); return; }
   const parsed = parseGithubUrl(repoUrl.trim());
@@ -315,7 +320,7 @@ router.post("/github/scan", async (req: Request, res: Response): Promise<void> =
 });
 
 // ── Route: PHASE 1 — fetch repo tree + file contents ─────────────────────────
-router.post("/github/fetch", async (req: Request, res: Response): Promise<void> => {
+router.post("/github/fetch", async (req: Request, res: ExpressResponse): Promise<void> => {
   const { repoUrl } = req.body as { repoUrl?: string };
   if (!repoUrl || typeof repoUrl !== "string") { res.status(400).json({ error: "repoUrl is required" }); return; }
   const parsed = parseGithubUrl(repoUrl.trim());
@@ -356,7 +361,7 @@ router.post("/github/fetch", async (req: Request, res: Response): Promise<void> 
 });
 
 // ── Route: PHASE 2 — scan pre-fetched files (zero GitHub API calls) ───────────
-router.post("/github/scan-files", async (req: Request, res: Response): Promise<void> => {
+router.post("/github/scan-files", async (req: Request, res: ExpressResponse): Promise<void> => {
   const { repoUrl, owner, repo, files } = req.body as {
     repoUrl: string; owner: string; repo: string;
     files: Array<{ path: string; content: string; language: string; lines: number }>;
