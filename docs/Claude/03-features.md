@@ -160,7 +160,7 @@ Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 |---|---|---|---|
 | D1 | CISA quantum-readiness dashboard | `planned` | **P1** |
 | D2 | Mosca exposure view (per scenario) | `planned` | **P1** |
-| D3 | Coverage/confidence meter — *what we haven't looked at* | `planned` | **P1** |
+| D3 | Coverage/confidence meter — *what we haven't looked at* | `partial` | **P1** |
 | D4 | Drift detection + alerting | `planned` | **P1** |
 | D5 | Crypto-agility score | `planned` | **P1** |
 | D6 | Migration wave planner | `planned` | **P2** |
@@ -175,6 +175,18 @@ on the page.
 
 Show unscanned surfaces as explicit gaps with an estimated blind-spot size. **The honest
 version is the more sellable one**, because it converts the gap into next quarter's budget ask.
+
+**D3 `partial` — built per project, on the dashboard.** `GET /api/projects/:id/coverage` and the
+dashboard's coverage meter report which of the ten collector surfaces have been examined for a
+project, which never have, and the confidence distribution of what was found (the first consumer
+of `observations.confidence` — see [09-open-gaps.md](09-open-gaps.md) G-11). The ten surfaces come
+from one catalogue, `@workspace/collectors/surface-catalogue`, which the public coverage page reads
+too, so the two cannot disagree again.
+
+Two things it deliberately does **not** do. There is **no estimated blind-spot size**: nothing we
+hold supports a number for how much cryptography sits in the nine unexamined surfaces, so the meter
+states that it is not estimable rather than printing a figure. And the meter is per project — the
+estate-wide roll-up belongs with D1, which needs an asset model that spans projects.
 
 Detail: [06-cisa-dashboard.md](06-cisa-dashboard.md)
 

@@ -283,4 +283,138 @@ test.describe("UI Journey Tests", () => {
     await expect(page.getByText(/Report not found/i).first()).toBeVisible({ timeout: 10000 });
     await expect(page.locator("body")).toBeVisible();
   });
+
+  /**
+   * D3 — docs/Claude/03-features.md §D3. The claim under test is not "a panel
+   * renders", it is "the panel states the size of the blind spot". A coverage
+   * meter that quietly drifts toward reassurance is the specific failure this
+   * feature exists to prevent, so these assertions are mostly about wording and
+   * about the *absence* of a comforting reading.
+   */
+  const coverageProject = {
+    id: 7,
+    name: "Coverage Subject",
+    description: "",
+    language: "python",
+    riskScore: 62,
+    lastScanAt: "2026-08-10T09:00:00.000Z",
+    createdAt: "2026-08-01T09:00:00.000Z",
+    totalScans: 1,
+    criticalCount: 2,
+    alertCount: 1,
+    cleanCount: 40,
+  };
+
+  /**
+   * The `beforeEach` stats stub is shaped for the empty-dashboard journeys and
+   * omits `totalReposScanned`, which the Dashboard's platform-stats block reads
+   * — and that block only renders once at least one project is in scope. Both
+   * coverage journeys have a project, so they need the full shape or the page
+   * throws before the meter is ever mounted.
+   */
+  const dashboardStats = {
+    totalReposScanned: 1,
+    totalVulnerabilitiesFound: 3,
+    totalLinesScanned: 120,
+    totalCommunityPosts: 0,
+    totalMigrationsAssisted: 0,
+    mostCommonAlgorithm: "RSA",
+    recentActivity: [],
+  };
+
+  const coveragePayload = {
+    projectId: 7,
+    generatedAt: "2026-08-10T09:05:00.000Z",
+    examinedSurfaces: 1,
+    totalSurfaces: 10,
+    surfaces: [
+      {
+        surface: "source",
+        surfaceId: "source",
+        state: "examined",
+        completedRuns: 3,
+        failedRuns: 0,
+        lastExaminedAt: "2026-08-10T09:00:00.000Z",
+        assets: 5,
+        activeAssets: 4,
+      },
+    ],
+    confidence: {
+      basis: "latest observation per active asset",
+      scored: 4,
+      unscored: 0,
+      excludedByAssetStatus: { gone: 1 },
+      distinctValues: 1,
+      min: 0.7,
+      max: 0.7,
+      mean: 0.7,
+      buckets: [
+        { label: "0.0–0.2", lower: 0, upper: 0.2, count: 0 },
+        { label: "0.2–0.4", lower: 0.2, upper: 0.4, count: 0 },
+        { label: "0.4–0.6", lower: 0.4, upper: 0.6, count: 0 },
+        { label: "0.6–0.8", lower: 0.6, upper: 0.8, count: 4 },
+        { label: "0.8–1.0", lower: 0.8, upper: 1, count: 0 },
+      ],
+    },
+  };
+
+  test("the dashboard coverage meter states how many surfaces were never examined", async ({ page }) => {
+    // Registered after the beforeEach defaults, and Playwright matches the most
+    // recently registered route first — so these win over the empty-list stubs.
+    await page.route("**/api/stats*", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(dashboardStats) })
+    );
+    await page.route("**/api/projects", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([coverageProject]) })
+    );
+    await page.route("**/api/projects/7/findings", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
+    );
+    await page.route("**/api/projects/7/coverage", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(coveragePayload) })
+    );
+
+    await page.goto("/dashboard");
+    await expect(page.getByRole("heading", { name: "Security Intelligence" })).toBeVisible({ timeout: 10000 });
+
+    await expect(page.getByText(/collector surfaces examined/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/9 of 10 have never been examined/i)).toBeVisible();
+
+    // Every planned surface is labelled, individually, rather than being summarised away.
+    await expect(page.getByText("Never examined", { exact: true })).toHaveCount(9);
+    await expect(page.getByText("Data-at-rest")).toBeVisible();
+    await expect(page.getByText(/the inventory model has no place to record it yet/i).first()).toBeVisible();
+
+    // The denominator is surfaces. Reading it as a fraction of the estate is
+    // explicitly forbidden on the page, because we cannot size the blind spot.
+    await expect(page.getByText(/not a percentage of your estate/i)).toBeVisible();
+    await expect(page.getByText(/not estimable/i)).toBeVisible();
+
+    // G-11: confidence is read and shown, and the empty top band is the point.
+    await expect(page.getByText(/Nothing in this inventory is high-confidence evidence/i)).toBeVisible();
+    await expect(page.getByText("0.8–1.0")).toBeVisible();
+  });
+
+  test("the coverage meter reports a failure instead of rendering a reassuring zero", async ({ page }) => {
+    await page.route("**/api/stats*", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(dashboardStats) })
+    );
+    await page.route("**/api/projects", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([coverageProject]) })
+    );
+    await page.route("**/api/projects/7/findings", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
+    );
+    await page.route("**/api/projects/7/coverage", (route) =>
+      route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "boom" }) })
+    );
+
+    await page.goto("/dashboard");
+    await expect(page.getByRole("heading", { name: "Security Intelligence" })).toBeVisible({ timeout: 10000 });
+
+    await expect(page.getByText(/Coverage could not be read/i)).toBeVisible({ timeout: 10000 });
+    // A failed read must not present itself as a measurement of any kind.
+    await expect(page.getByText(/collector surfaces examined/i)).toHaveCount(0);
+    await expect(page.getByText(/have never been examined/i)).toHaveCount(0);
+  });
 });

@@ -16,6 +16,7 @@ import {
 import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { apiUrl } from "@/lib/api";
+import { CoverageMeter } from "@/components/CoverageMeter";
 
 // ── THEME: Clean light enterprise ──
 const THEME = {
@@ -1274,6 +1275,17 @@ export function Dashboard() {
                     </div>
                   </Reveal>
                 </div>
+
+                {/* Coverage & confidence (D3) — deliberately above the platform
+                    stats and below the findings: the reader should reach "here
+                    is what we found" and immediately after it "here is what we
+                    never looked at", rather than finding that caveat in a
+                    footer. docs/Claude/03-features.md §D3. */}
+                <Reveal delay={0.29}>
+                  <div className="mb-5">
+                    <CoverageMeter projectId={project?.id ?? null} />
+                  </div>
+                </Reveal>
 
                 {/* Global platform stats */}
                 {globalStats && (

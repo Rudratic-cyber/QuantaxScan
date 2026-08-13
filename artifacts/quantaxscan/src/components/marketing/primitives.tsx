@@ -49,12 +49,32 @@ export function PageHeader({
   );
 }
 
-export function StatusPill({ status }: { status: "now" | "planned" }) {
-  return status === "now" ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-[#ecfdf5] px-2.5 py-1 text-[11px] font-semibold text-[#059669]">
-      Available now
-    </span>
-  ) : (
+/**
+ * The single home of the coverage vocabulary.
+ *
+ * `now`/`planned` describe the *product*: whether a collector exists at all.
+ * `never-examined` describes a *particular customer's inventory*: this surface
+ * has no collection run against it, so we have looked at none of it and cannot
+ * say what is there. The D3 coverage meter uses that third state, and it lives
+ * here rather than inline in the meter so the words stay identical to the ones
+ * the public coverage page uses.
+ */
+export function StatusPill({ status }: { status: "now" | "planned" | "never-examined" }) {
+  if (status === "now") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#ecfdf5] px-2.5 py-1 text-[11px] font-semibold text-[#059669]">
+        Available now
+      </span>
+    );
+  }
+  if (status === "never-examined") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#fffbeb] px-2.5 py-1 text-[11px] font-semibold text-[#b45309]">
+        Never examined
+      </span>
+    );
+  }
+  return (
     <span className="inline-flex items-center gap-1 rounded-full bg-[#f1f3f7] px-2.5 py-1 text-[11px] font-semibold text-[#6b7280]">
       Planned
     </span>
