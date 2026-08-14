@@ -398,13 +398,20 @@ sign-in design is specified in [13-auth-and-tenancy.md](13-auth-and-tenancy.md) 
 built. Do not read `partial` as "nearly done" — it is the larger and more visible half that
 remains.
 
-**F2 `partial` — the isolation is real; the tenants are not yet.** Every organisation-scoped table
-carries `organization_id` under a PostgreSQL row-level-security policy, the runtime connects as a
-role without `BYPASSRLS`, and every route goes through `withOrg`, so a forgotten `where` clause
-returns zero rows rather than another tenant's data. An automated cross-tenant suite proves it,
-with a negative control demonstrated able to fail. What is missing is the ability to *create* a
-second tenant: there is one organisation, and the shared API key is bound to it. Detail and
-deploy order: [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §5, §9, §10.
+**F2 `partial` — the isolation is real, and a second tenant can now exist.** Every
+organisation-scoped table carries `organization_id` under a PostgreSQL row-level-security policy,
+the runtime connects as a role without `BYPASSRLS`, and every route goes through `withOrg`, so a
+forgotten `where` clause returns zero rows rather than another tenant's data. An automated
+cross-tenant suite proves it, with a negative control demonstrated able to fail. What used to be
+missing — the ability to *create* a second tenant and bind more than one API key to it — is
+closed: `pnpm --filter @workspace/db run create-organization` creates an organisation (and purges
+the legacy NULL-org `activity` rows the design doc's §10 flags as a leak once a second tenant
+exists), and `QUANTAXSCAN_API_KEY_ORG_IDS` binds N keys to N organisations positionally, replacing
+the single `QUANTAXSCAN_API_KEY_ORG_ID`. Proven cross-tenant with two live keys, two organisations,
+through the real stack (`cross-tenant.test.ts`, `tests/e2e/07-multi-org.spec.ts`). Still missing:
+everything that needs a *person* rather than a machine key — self-serve organisation creation over
+HTTP, and per-user membership — both of which need F1's sign-in first. Detail and deploy order:
+[13-auth-and-tenancy.md](13-auth-and-tenancy.md) §5, §9, §10.
 
 **F7 `partial`** — `.env` is out of git and gitignored (S5/G-13). Secret scanning in CI is not
 done.

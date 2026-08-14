@@ -15,6 +15,8 @@ import {
   API_PORT,
   API_URL,
   HOST,
+  SECOND_API_KEY,
+  SECOND_ORG_ENABLED,
   STATE_FILE,
   UI_PORT,
   UI_URL,
@@ -24,6 +26,7 @@ import {
 import {
   assertRuntimeRoleIsSubjectToRls,
   ensurePostgres,
+  ensureSecondOrganization,
   migrate,
   resetDatabase,
 } from "./support/database";
@@ -56,6 +59,18 @@ export default async function globalSetup(): Promise<void> {
     await migrate();
     await assertRuntimeRoleIsSubjectToRls();
 
+    // Opt-in only (07-multi-org.spec.ts's own run sets E2E_SECOND_ORG=1). Every
+    // other spec, and every other lane's invocation of this same global setup,
+    // takes the branch below unchanged: one key, one org, exactly as before.
+    let secondOrganizationId: number | null = null;
+    if (SECOND_ORG_ENABLED) {
+      log("second organisation");
+      secondOrganizationId = await ensureSecondOrganization();
+      started.secondApiKey = SECOND_API_KEY;
+      started.secondOrganizationId = secondOrganizationId;
+      persist();
+    }
+
     if (process.env["E2E_SKIP_BUILD"] !== "1") {
       log("build api-server");
       await run("build", "pnpm", ["--filter", "@workspace/api-server", "run", "build"]);
@@ -65,8 +80,19 @@ export default async function globalSetup(): Promise<void> {
     const api = start("api-server", "pnpm", ["--filter", "@workspace/api-server", "run", "start"], {
       PORT: String(API_PORT),
       DATABASE_URL: runtimeUrl(),
-      QUANTAXSCAN_API_KEYS: API_KEY,
-      QUANTAXSCAN_API_KEY_ORG_ID: API_KEY_ORG_ID,
+      // N keys -> N orgs, positionally paired — see
+      // artifacts/api-server/src/lib/principal.ts. Without a second
+      // organisation, QUANTAXSCAN_API_KEY_ORG_ID keeps the single-key,
+      // single-org shape every other spec relies on.
+      ...(secondOrganizationId !== null
+        ? {
+            QUANTAXSCAN_API_KEYS: `${API_KEY},${SECOND_API_KEY}`,
+            QUANTAXSCAN_API_KEY_ORG_IDS: `${API_KEY_ORG_ID},${secondOrganizationId}`,
+          }
+        : {
+            QUANTAXSCAN_API_KEYS: API_KEY,
+            QUANTAXSCAN_API_KEY_ORG_ID: API_KEY_ORG_ID,
+          }),
       // The frontend is served from a different origin, so this is what makes
       // the browser's requests legal. Character-for-character: `localhost` and
       // `127.0.0.1` are different origins.

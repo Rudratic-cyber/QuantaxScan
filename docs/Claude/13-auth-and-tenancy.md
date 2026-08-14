@@ -1441,6 +1441,14 @@ NULL`, to be run before the second tenant is created, not a code change. It belo
 existing "purging real project names needs database access" item in
 [08-security.md](08-security.md).
 
+**Closed, not merely noted.** `pnpm --filter @workspace/db run create-organization`
+(`lib/db/scripts/create-organization.ts`) is what makes a second organisation possible at all (see
+§14 deviation 10), so it is also where this purge had to land — leaving it a separate manual step
+would have meant the one operator action that *creates* the leak window never mentions closing it.
+The script runs the `DELETE` above, inside the same transaction as the `INSERT INTO organizations`,
+every time it actually creates a new organisation (idempotent re-runs on an existing slug do not
+re-run it, which is harmless — the delete is itself idempotent).
+
 The README sentence **"Do not scan private or proprietary code on the hosted instance"**
 (`README.md:316`) is removable at the end of **P4**, not P5 — because P4 is what stops persisting
 full source and closes the fetcher findings. P5 then adds private repositories to an instance that
@@ -1583,6 +1591,7 @@ written.
 | 7 | `apply-rls` creates roles with passwords | Roles are created without one; `apply-rls` sets them from `QUANTAXSCAN_APP_DB_PASSWORD` / `QUANTAXSCAN_MIGRATOR_DB_PASSWORD` when supplied | A password must not be a literal in committed SQL. Without the variables the roles cannot log in, which fails closed |
 | 8 | `DELETE /api/projects/:id` on another organisation's id returns 404 (§9.3) | 204, having changed nothing | The handler issues a scoped delete that matches zero rows; distinguishing "not yours" from "already gone" would need an extra read whose only purpose is to produce a different status code. 204-for-everything is no worse an existence oracle than 404-for-everything, and it is what the route already did for an unknown id. The suite asserts the row survives intact, which is the property that matters |
 | 9 | — | `quantaxscan_migrator` is granted `BYPASSRLS` | `FORCE ROW LEVEL SECURITY` subjects the table *owner* to the policies, and the policies name `quantaxscan_app` — so without this a future data migration would silently see zero rows. It is also exactly why the runtime must not use this role |
+| 10 | §6.1: the shared API key is "explicitly bound to one organisation by configuration" (`QUANTAXSCAN_API_KEY_ORG_ID`) | `QUANTAXSCAN_API_KEY_ORG_IDS` binds **N** keys to **N** organisations, positionally paired with `QUANTAXSCAN_API_KEYS`; the single-value `QUANTAXSCAN_API_KEY_ORG_ID` is kept as a legacy fallback (applies to every key when the plural variable is unset) rather than removed. A new operator script, `pnpm --filter @workspace/db run create-organization`, creates the second (or Nth) organisation that binding needs — the piece this document's F2 gap (§10, "what is missing is the ability to *create* a second tenant") named as absent | This is F1's scope, not P2's — no sign-in, no sessions, no per-user identity was added; it is still exactly one *kind* of principal (the API key), now able to be more than one *instance* of it. A length mismatch between the two env vars is a startup error, matching this document's own standard elsewhere ("a key with no explicit organisation binding must not silently become organisation 1"). See `artifacts/api-server/src/lib/principal.ts` |
 
 ### What P1 did **not** do
 

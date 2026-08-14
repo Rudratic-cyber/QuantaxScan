@@ -1,0 +1,118 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import type { Request } from "express";
+
+/**
+ * The pure key-to-organisation binding logic in `principal.ts` — no database,
+ * no HTTP. `cross-tenant.test.ts` proves the binding holds end to end through
+ * real routes and real RLS; this file proves the parsing and validation rules
+ * themselves, including the ones that are startup errors rather than reachable
+ * HTTP behaviour (a length mismatch never gets far enough to serve a request).
+ *
+ * Both `auth.ts` and `principal.ts` compute their exported values once, at
+ * import time, from `process.env` — the same pattern `assertApiKeysConfigured`
+ * uses so a misconfiguration is a boot-time failure. That means each scenario
+ * here needs a fresh module graph: set the environment, `vi.resetModules()`,
+ * then `import("./principal")` fresh.
+ */
+
+const ENV_KEYS = [
+  "QUANTAXSCAN_API_KEYS",
+  "QUANTAXSCAN_API_KEY_ORG_IDS",
+  "QUANTAXSCAN_API_KEY_ORG_ID",
+] as const;
+
+let saved: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>;
+
+beforeEach(() => {
+  saved = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
+});
+
+afterEach(() => {
+  for (const key of ENV_KEYS) {
+    if (saved[key] === undefined) delete process.env[key];
+    else process.env[key] = saved[key];
+  }
+  vi.resetModules();
+});
+
+/** Fresh import of principal.ts (and, transitively, auth.ts) against the
+ * environment set by the calling test. */
+async function importPrincipal(): Promise<typeof import("./principal")> {
+  vi.resetModules();
+  return import("./principal");
+}
+
+function requestWithKey(key: string): Request {
+  return { headers: { "x-api-key": key } } as unknown as Request;
+}
+
+describe("principal.ts — API key to organisation binding (F1)", () => {
+  it("no QUANTAXSCAN_API_KEY_ORG_IDS, one key: defaults to organisation 1 (unchanged pre-F1 behaviour)", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "solo-key-abcdefghijklmnopqrstuvwx";
+    delete process.env.QUANTAXSCAN_API_KEY_ORG_IDS;
+    delete process.env.QUANTAXSCAN_API_KEY_ORG_ID;
+
+    const { API_KEY_ORG_IDS } = await importPrincipal();
+    expect(API_KEY_ORG_IDS).toEqual([1]);
+  });
+
+  it("no QUANTAXSCAN_API_KEY_ORG_IDS, several keys: the legacy QUANTAXSCAN_API_KEY_ORG_ID binds all of them to the same organisation", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "key-one-abcdefghijklmnopqrstuvwx,key-two-abcdefghijklmnopqrstuvwx";
+    process.env.QUANTAXSCAN_API_KEY_ORG_ID = "5";
+    delete process.env.QUANTAXSCAN_API_KEY_ORG_IDS;
+
+    const { API_KEY_ORG_IDS } = await importPrincipal();
+    expect(API_KEY_ORG_IDS).toEqual([5, 5]);
+  });
+
+  it("QUANTAXSCAN_API_KEY_ORG_IDS set: binds positionally, one id per key, in order", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "key-one-abcdefghijklmnopqrstuvwx,key-two-abcdefghijklmnopqrstuvwx";
+    process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "7,9";
+
+    const { API_KEY_ORG_IDS } = await importPrincipal();
+    expect(API_KEY_ORG_IDS).toEqual([7, 9]);
+  });
+
+  it("a shorter QUANTAXSCAN_API_KEY_ORG_IDS than QUANTAXSCAN_API_KEYS is a startup error, not a silent default to organisation 1", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "key-one-abcdefghijklmnopqrstuvwx,key-two-abcdefghijklmnopqrstuvwx";
+    process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "3"; // only one id for two keys
+
+    await expect(importPrincipal()).rejects.toThrow(/QUANTAXSCAN_API_KEY_ORG_IDS/);
+  });
+
+  it("a longer QUANTAXSCAN_API_KEY_ORG_IDS than QUANTAXSCAN_API_KEYS is also a startup error", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "solo-key-abcdefghijklmnopqrstuvwx";
+    process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "1,2";
+
+    await expect(importPrincipal()).rejects.toThrow(/QUANTAXSCAN_API_KEY_ORG_IDS/);
+  });
+
+  it("a non-integer or non-positive entry in QUANTAXSCAN_API_KEY_ORG_IDS is rejected", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "solo-key-abcdefghijklmnopqrstuvwx";
+    process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "0";
+    await expect(importPrincipal()).rejects.toThrow(/QUANTAXSCAN_API_KEY_ORG_IDS/);
+  });
+
+  it("orgContextFor resolves the organisation from *which* configured key was presented", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "key-one-abcdefghijklmnopqrstuvwx,key-two-abcdefghijklmnopqrstuvwx";
+    process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "10,20";
+
+    const { orgContextFor } = await importPrincipal();
+    expect(orgContextFor(requestWithKey("key-one-abcdefghijklmnopqrstuvwx"))).toEqual({
+      organizationId: 10,
+      userId: "",
+    });
+    expect(orgContextFor(requestWithKey("key-two-abcdefghijklmnopqrstuvwx"))).toEqual({
+      organizationId: 20,
+      userId: "",
+    });
+  });
+
+  it("orgContextFor throws rather than defaulting an unrecognised key to any organisation", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "solo-key-abcdefghijklmnopqrstuvwx";
+    delete process.env.QUANTAXSCAN_API_KEY_ORG_IDS;
+
+    const { orgContextFor } = await importPrincipal();
+    expect(() => orgContextFor(requestWithKey("something-nobody-configured-00000000"))).toThrow();
+  });
+});

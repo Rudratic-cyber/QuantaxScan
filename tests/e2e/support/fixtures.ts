@@ -10,14 +10,45 @@ import { readFileSync } from "node:fs";
 import { test as base, type APIRequestContext, type Page, request } from "@playwright/test";
 import { API_URL, STATE_FILE, UI_URL, type StackState } from "./config";
 
+function stackState(): StackState {
+  return JSON.parse(readFileSync(STATE_FILE, "utf8")) as StackState;
+}
+
 /**
  * The API key global setup generated. Read from the state file rather than
  * regenerated: each Playwright worker is its own process, so a key derived at
  * module load would differ from the one the server was started with.
  */
 export function apiKey(): string {
-  const state = JSON.parse(readFileSync(STATE_FILE, "utf8")) as StackState;
-  return state.apiKey;
+  return stackState().apiKey;
+}
+
+/**
+ * The second organisation's key and id — set only when the stack was started
+ * with `E2E_SECOND_ORG=1` (07-multi-org.spec.ts). Throws for any other spec,
+ * on the theory that a fixture silently returning `undefined` here would be a
+ * confusing way to find out the flag was never set.
+ */
+export function secondApiKey(): string {
+  const key = stackState().secondApiKey;
+  if (!key) {
+    throw new Error(
+      "secondApiKey() called but the stack was not started with a second organisation " +
+        "(set E2E_SECOND_ORG=1) — see support/config.ts.",
+    );
+  }
+  return key;
+}
+
+export function secondOrganizationId(): number {
+  const id = stackState().secondOrganizationId;
+  if (id === undefined) {
+    throw new Error(
+      "secondOrganizationId() called but the stack was not started with a second organisation " +
+        "(set E2E_SECOND_ORG=1) — see support/config.ts.",
+    );
+  }
+  return id;
 }
 
 /**
@@ -77,6 +108,9 @@ type Fixtures = {
   api: APIRequestContext;
   /** Direct HTTP to the API with no credential and no Origin header. */
   publicApi: APIRequestContext;
+  /** Direct HTTP to the API, authenticated as the *second* organisation's key.
+   *  Only usable when the stack was started with `E2E_SECOND_ORG=1`. */
+  secondOrgApi: APIRequestContext;
 };
 
 export const test = base.extend<Fixtures>({
@@ -102,6 +136,15 @@ export const test = base.extend<Fixtures>({
 
   publicApi: async ({}, use) => {
     const context = await request.newContext({ baseURL: API_URL });
+    await use(context);
+    await context.dispose();
+  },
+
+  secondOrgApi: async ({}, use) => {
+    const context = await request.newContext({
+      baseURL: API_URL,
+      extraHTTPHeaders: { "X-API-Key": secondApiKey() },
+    });
     await use(context);
     await context.dispose();
   },
