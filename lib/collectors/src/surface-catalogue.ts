@@ -39,9 +39,15 @@ export interface CollectorSurfaceEntry {
   /**
    * The `Surface` enum value this collector's assets and collection runs are
    * recorded under — or `null` when the asset model has no value for it at
-   * all. Two of the ten are `null` today (`data-at-rest`, `vendor`): the
-   * database could not store a finding from them even if a collector existed,
-   * which is a *deeper* absence than "planned" and the meter says so.
+   * all, a *deeper* absence than "planned" which the meter reports separately.
+   *
+   * No entry is `null` as of 2026-08-14: `data-at-rest` and `vendor` were the
+   * last two, and their enum values landed ahead of their collectors (see
+   * `SURFACE_VALUES` in enums.ts for why both at once). The type stays
+   * nullable because the distinction is real and a future surface can be
+   * catalogued before the schema can store it — that a collector is planned
+   * and that its findings are unstorable are different facts, and collapsing
+   * them would make the meter overstate what this product is ready to record.
    */
   surface: Surface | null;
 }
@@ -61,9 +67,9 @@ export const COLLECTOR_SURFACES = [
   { id: "certificate", name: "Certificates (X.509)", status: "live", surface: "certificate" },
   { id: "kms", name: "KMS & secret stores", status: "planned", surface: "kms" },
   { id: "config", name: "Protocol config", status: "planned", surface: "config" },
-  { id: "data-at-rest", name: "Data-at-rest", status: "planned", surface: null },
+  { id: "data-at-rest", name: "Data-at-rest", status: "planned", surface: "data-at-rest" },
   { id: "ot", name: "Manual OT / embedded register", status: "planned", surface: "ot" },
-  { id: "vendor", name: "Vendor / third-party", status: "planned", surface: null },
+  { id: "vendor", name: "Vendor / third-party", status: "planned", surface: "vendor" },
   { id: "binary", name: "Binaries / firmware", status: "planned", surface: "binary" },
 ] as const satisfies readonly CollectorSurfaceEntry[];
 

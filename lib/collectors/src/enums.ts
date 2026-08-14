@@ -43,6 +43,17 @@ export type DiscoveryModality = (typeof DISCOVERY_MODALITY_VALUES)[number];
  * table. `binary` is added per the qx-sp1800-38b investigation report so the
  * schema accommodates a future binary collector — no binary collector is
  * implemented in this change.
+ *
+ * `data-at-rest` and `vendor` were added 2026-08-14 ahead of their collectors
+ * (B7, B9), deliberately and as a single change. They were the only two
+ * catalogue entries whose `surface` was `null` — meaning the database could
+ * not have stored a finding from them even if a collector existed. Adding a
+ * value here rewrites the `CHECK` on `assets.surface` and
+ * `collection_runs.surface`, so it needs a migration; doing both at once, in
+ * one migration, is what stops two parallel collector lanes each generating a
+ * `0005_*` and colliding in `drizzle/meta/_journal.json`, which no merge can
+ * resolve. Neither collector exists yet: the catalogue still reports both
+ * `planned`, which is the honest state.
  */
 export const SURFACE_VALUES = [
   "source",
@@ -53,6 +64,8 @@ export const SURFACE_VALUES = [
   "config",
   "ot",
   "binary",
+  "data-at-rest",
+  "vendor",
 ] as const;
 
 export type Surface = (typeof SURFACE_VALUES)[number];

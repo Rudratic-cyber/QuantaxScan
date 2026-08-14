@@ -32,12 +32,18 @@ describe("collector surface catalogue", () => {
     expect([...claimed].sort()).toEqual([...SURFACE_VALUES].sort());
   });
 
-  it("records that exactly two surfaces have no `Surface` value at all", () => {
-    // Not an oversight to be fixed by inventing enum values: the asset model
-    // genuinely cannot store a data-at-rest or vendor finding today, and the
-    // meter reports that as a deeper gap than "planned".
+  it("records that every catalogued surface is now storable", () => {
+    // `data-at-rest` and `vendor` were the last two with no `Surface` value —
+    // a deeper gap than "planned", because the database could not have stored
+    // a finding from them even if a collector existed. Both enum values landed
+    // 2026-08-14, ahead of their collectors, in one migration.
+    //
+    // This asserts the current state, not a rule: a future surface may well be
+    // catalogued before the schema can record it, and `surface: null` is still
+    // the honest way to say so. What must not happen is an entry claiming a
+    // `Surface` the enum does not have — the test above covers that.
     const unrecordable = COLLECTOR_SURFACES.filter((entry) => entry.surface === null).map((e) => e.id);
-    expect(unrecordable).toEqual(["data-at-rest", "vendor"]);
+    expect(unrecordable).toEqual([]);
   });
 
   it("has exactly four live collectors: source, dependency, tls and certificate", () => {
