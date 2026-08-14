@@ -16,3 +16,4 @@ export * from "./protocol-config";
 export * from "./protocol-config-collector";
 export * from "./kms-key-specs";
 export * from "./kms-collector";
+export * from "./data-at-rest-collector";

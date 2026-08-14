@@ -78,7 +78,10 @@ export const COLLECTOR_SURFACES = [
   // submitted file *declares*, which is a weaker claim than what B3 observed
   // being negotiated on the wire.
   { id: "config", name: "Protocol config", status: "live", surface: "config" },
-  { id: "data-at-rest", name: "Data-at-rest", status: "planned", surface: "data-at-rest" },
+  // `live` since B7's ingest path landed — `POST /projects/:id/data-at-rest`.
+  // Same bar as the four above: the collector is a submission mapper, and what
+  // earned the status is a route that persists what it maps.
+  { id: "data-at-rest", name: "Data-at-rest", status: "live", surface: "data-at-rest" },
   { id: "ot", name: "Manual OT / embedded register", status: "planned", surface: "ot" },
   { id: "vendor", name: "Vendor / third-party", status: "planned", surface: "vendor" },
   { id: "binary", name: "Binaries / firmware", status: "planned", surface: "binary" },

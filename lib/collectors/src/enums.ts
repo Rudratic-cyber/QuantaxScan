@@ -118,7 +118,25 @@ export type AssetStatus = (typeof ASSET_STATUS_VALUES)[number];
  * constraint is derived from it — `assets.location_detail` is `jsonb`,
  * validated at the application boundary by `LocationDetailSchema`. Adding a
  * kind therefore needs no migration.
+ *
+ * `data-at-rest` is B7's profile for a *described* encrypted store. It carries
+ * no path, host or artefact of its own because there is none to carry: the
+ * evidence is a configuration reading or an attestation about a database,
+ * bucket or backup set, and the fields that matter (which half of the key
+ * hierarchy, whether the store is encrypted at all, what the caller actually
+ * reported before it was canonicalised) fit none of the profiles above. Adding
+ * a value here needs no migration — `assets.location_detail` is `jsonb`, with
+ * the shape validated at the application boundary rather than by a `CHECK`.
  */
-export const LOCATION_DETAIL_KIND_VALUES = ["source", "network", "dependency", "binary", "certificate", "config", "kms"] as const;
+export const LOCATION_DETAIL_KIND_VALUES = [
+  "source",
+  "network",
+  "dependency",
+  "binary",
+  "certificate",
+  "config",
+  "kms",
+  "data-at-rest",
+] as const;
 
 export type LocationDetailKind = (typeof LOCATION_DETAIL_KIND_VALUES)[number];

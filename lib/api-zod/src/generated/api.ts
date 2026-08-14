@@ -4975,3 +4975,303 @@ export const GetProjectKmsKeysResponse = zod.object({
       .describe("A persisted KMS key asset, as the inventory read returns it."),
   ),
 });
+
+/**
+ * Records what a database, backup, archive, volume or object store reports about its own encryption, and persists it as assets on the `data-at-rest` surface — which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+Nothing is connected to. The caller submits what their engine's configuration already reports (`pg_settings`, `sys.dm_database_encryption_keys`, `V$ENCRYPTED_TABLESPACES`, a bucket's SSE configuration, a backup job definition). Credentialed collection against a live database is deliberately not offered: it would need a secret-handling design this product does not have yet (F4).
+
+**Each store produces up to two assets, not one.** `dataEncryption` is the bulk cipher over the stored data — usually AES, which NIST does not consider quantum-vulnerable. `keyProtection` is how that data key is wrapped, and that is where Shor applies: an AES-256 store whose key is wrapped with RSA-2048 is a harvest-now-decrypt-later target however strong the bulk cipher is.
+
+**A store reported as encrypted with no cipher named records nothing and is returned as a `cipher-not-reported` gap.** It never becomes AES-256. That case is also excluded from the reobservation scope, so leaving the field blank on a resubmission cannot mark a previously recorded cipher `gone`.
+
+`dataClassification` / `secrecyLifetimeYears` are persisted on the store's assets and are what `GET /api/inventory/assets` resolves X from. Omit them and X falls back to the project's default and then the product's, flagged as assumed — see `classificationSource` on the read below.
+ * @summary Submit a description of encrypted stores for data-at-rest collection (B7)
+ */
+export const SubmitProjectDataAtRestParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const submitProjectDataAtRestBodyStoresItemSecrecyLifetimeYearsMin = 0;
+
+export const SubmitProjectDataAtRestBody = zod.object({
+  stores: zod.array(
+    zod.object({
+      storeId: zod
+        .string()
+        .describe(
+          "The caller's stable identifier for this store — an instance\/database name, a bucket ARN, a backup job name. Part of the asset identity, so changing it orphans the previous asset and creates a new one.",
+        ),
+      engine: zod
+        .string()
+        .describe(
+          "Engine or product, e.g. `postgresql`, `mssql`, `oracle`, `s3`, `veeam`. Part of the asset identity.",
+        ),
+      storeKind: zod
+        .enum([
+          "database",
+          "backup",
+          "archive",
+          "volume",
+          "object-store",
+          "other",
+        ])
+        .optional()
+        .describe(
+          "Grouping and presentation only — deliberately not part of the asset identity.",
+        ),
+      encryptionState: zod
+        .enum(["encrypted", "not-encrypted", "unknown"])
+        .optional()
+        .describe(
+          "`unknown` (the default when omitted) is not a synonym for `not-encrypted`: one means nobody has checked, the other means someone checked and there is none. Only the second is a statement this route reconciles against, so only the second can mark a previously recorded cipher `gone`.",
+        ),
+      evidenceSource: zod
+        .enum(["configuration-report", "attestation"])
+        .optional()
+        .describe(
+          "Drives the discovery modality and the confidence recorded on the observation: `configuration-report` reads a real setting (0.6, `configuration_information`), `attestation` is a human's statement with no artefact behind it (0.4, `manual_attestation`). Defaults to `attestation`, the weaker of the two, so an unstated evidence source understates rather than overstates what is known.",
+        ),
+      description: zod
+        .string()
+        .optional()
+        .describe(
+          'Free text for the report, e.g. \"nightly full backups, 7-year retention\".',
+        ),
+      dataEncryption: zod
+        .object({
+          algorithm: zod
+            .string()
+            .nullish()
+            .describe(
+              "As the caller's tooling reports it — `AES-256-CBC`, `aes256`, `RSA-2048`, `ECDH`. Canonicalised on the way in; the original string is kept on the asset's `locationDetail.reportedAlgorithm` so the canonicalisation stays auditable. A string that resolves to no entry in the standards data records nothing and is returned as an `algorithm-not-recognised` gap.",
+            ),
+          keySize: zod
+            .number()
+            .nullish()
+            .describe(
+              "The stated parameter size, when the caller supplies one separately. Wins over any size parsed out of `algorithm`. Bare `AES` yields no key size at all rather than an assumed 256 (G-05).",
+            ),
+          source: zod
+            .string()
+            .nullish()
+            .describe(
+              "Free text, e.g. `aws-kms`, `pkcs11-hsm`, `software-keystore`, `passphrase`. Recorded as evidence, never parsed into a verdict.",
+            ),
+        })
+        .optional()
+        .describe(
+          "One reported cryptographic setting. Every field is optional because every field is genuinely often unreported, and an unreported field must stay unreported — see the `cipher-not-reported` gap reason.",
+        ),
+      keyProtection: zod
+        .object({
+          algorithm: zod
+            .string()
+            .nullish()
+            .describe(
+              "As the caller's tooling reports it — `AES-256-CBC`, `aes256`, `RSA-2048`, `ECDH`. Canonicalised on the way in; the original string is kept on the asset's `locationDetail.reportedAlgorithm` so the canonicalisation stays auditable. A string that resolves to no entry in the standards data records nothing and is returned as an `algorithm-not-recognised` gap.",
+            ),
+          keySize: zod
+            .number()
+            .nullish()
+            .describe(
+              "The stated parameter size, when the caller supplies one separately. Wins over any size parsed out of `algorithm`. Bare `AES` yields no key size at all rather than an assumed 256 (G-05).",
+            ),
+          source: zod
+            .string()
+            .nullish()
+            .describe(
+              "Free text, e.g. `aws-kms`, `pkcs11-hsm`, `software-keystore`, `passphrase`. Recorded as evidence, never parsed into a verdict.",
+            ),
+        })
+        .optional()
+        .describe(
+          "One reported cryptographic setting. Every field is optional because every field is genuinely often unreported, and an unreported field must stay unreported — see the `cipher-not-reported` gap reason.",
+        ),
+      dataClassification: zod
+        .enum(["public", "internal", "confidential", "regulated", "indefinite"])
+        .optional()
+        .describe(
+          "A3's classification for the data \*in\* this store, persisted on both of its assets. Omit it and X is inherited from the project, then from the product default, and the read below reports it as assumed. Omitting it on a resubmission leaves a previously supplied value in place rather than clearing it.",
+        ),
+      secrecyLifetimeYears: zod
+        .number()
+        .min(submitProjectDataAtRestBodyStoresItemSecrecyLifetimeYearsMin)
+        .optional()
+        .describe(
+          "X in years, overriding the preset implied by `dataClassification`.",
+        ),
+    }),
+  ),
+});
+
+export const SubmitProjectDataAtRestResponse = zod.object({
+  projectId: zod.number(),
+  storesSubmitted: zod.number(),
+  storesWithRecordedCrypto: zod
+    .number()
+    .describe(
+      "How many submitted stores produced at least one asset. The difference between this and `storesSubmitted` is the honest measure of how much of the estate was described rather than merely listed — every shortfall is itemised in `stores[].gaps`.",
+    ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe(
+      "Null when the submission said nothing reconcilable about any store (every store `unknown`, or every crypto field blank), in which case no run is recorded and the surface stays un-examined for this project. A submission of stores that are all `not-encrypted` DOES record a run: that is a real examination with a real result.",
+    ),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Assets at a store slot this submission made a statement about and no longer found there — a rekey, or encryption turned off. Never a store whose cipher field was simply left blank.",
+    ),
+  stores: zod.array(
+    zod.object({
+      storeId: zod.string(),
+      engine: zod.string(),
+      recorded: zod.array(
+        zod
+          .object({
+            role: zod.enum(["data-encryption", "key-protection"]),
+            algorithm: zod
+              .string()
+              .describe(
+                "The canonical name, which is what the standards data is resolved against.",
+              ),
+            keySize: zod.number().nullable(),
+            reportedAlgorithm: zod
+              .string()
+              .describe(
+                "The caller's original string, kept so the canonicalisation can be audited.",
+              ),
+            location: zod.string(),
+          })
+          .describe(
+            "One crypto fact this submission actually recorded for a store.",
+          ),
+      ),
+      gaps: zod.array(
+        zod
+          .object({
+            role: zod.enum(["data-encryption", "key-protection"]),
+            reason: zod.enum([
+              "encryption-state-unknown",
+              "cipher-not-reported",
+              "key-protection-not-reported",
+              "algorithm-not-recognised",
+            ]),
+            reported: zod
+              .string()
+              .nullable()
+              .describe(
+                "The string the caller supplied, present only for `algorithm-not-recognised`.",
+              ),
+          })
+          .describe(
+            "Something this submission did not say, reported rather than filled in. The whole reason this surface earns its keep is being able to tell a CISO which of their long-lived ciphertext they actually know something about.",
+          ),
+      ),
+    }),
+  ),
+  evidenceCaveat: zod.string(),
+});
+
+/**
+ * Every data-at-rest asset attributed to this project, grouped back into the store it belongs to, with X resolved and Mosca evaluated at read time — never persisted, because the Q-Day scenario years and the standards data behind `quantumVulnerable` are both revisable and a stored verdict would go stale exactly the way C1 exists to prevent.
+
+`xAssumed` and `classificationSource` are the honesty half: a store nobody classified is reported with the product's default X and says so, rather than quietly presenting an assumption as a measurement.
+ * @summary The project's data-at-rest inventory with its Mosca verdict (B7)
+ */
+export const GetProjectDataAtRestParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectDataAtRestResponse = zod.object({
+  projectId: zod.number(),
+  generatedAt: zod.coerce.date(),
+  stores: zod.array(
+    zod.object({
+      storeId: zod.string(),
+      engine: zod.string(),
+      storeKind: zod.string(),
+      encryptionState: zod.string(),
+      description: zod.string().nullable(),
+      dataClassification: zod
+        .string()
+        .nullable()
+        .describe(
+          "What was supplied for this store. Null means nobody classified it — see `classificationSource`.",
+        ),
+      secrecyLifetimeYears: zod.number().nullable(),
+      classificationSource: zod
+        .enum(["asset", "project", "default"])
+        .describe(
+          "Where the classification \*label\* came from — the same meaning this field carries on `GET \/inventory\/assets`. Never re-derived by the client. It is not always the provenance of X: a store may supply `secrecyLifetimeYears` without a label, in which case the years are asset-supplied while the label is still inherited. Read `xAssumed` for X's own provenance.",
+        ),
+      xAssumed: zod
+        .boolean()
+        .describe(
+          "True whenever X was not supplied for this store, whatever the label's provenance. Reports must say so.",
+        ),
+      secrecyLifetimeBasis: zod
+        .string()
+        .describe(
+          "One report-ready sentence stating the provenance of X in plain English.",
+        ),
+      components: zod.array(
+        zod
+          .object({
+            assetId: zod.number(),
+            role: zod.enum(["data-encryption", "key-protection"]),
+            algorithm: zod.string(),
+            keySize: zod.number().nullable(),
+            reportedAlgorithm: zod.string(),
+            keySource: zod.string().nullable(),
+            status: zod
+              .string()
+              .describe(
+                "Lifecycle status. `gone`\/`remediated`\/`waived` assets are included — a record of what was found must keep them.",
+              ),
+            firstSeen: zod.coerce.date(),
+            lastSeen: zod.coerce.date(),
+            quantumVulnerable: zod
+              .boolean()
+              .nullable()
+              .describe(
+                "From the standards data, null when it has no entry for this algorithm. False for the bulk cipher of a typical TDE'd store — which is exactly why `key-protection` is recorded separately rather than folded into one verdict per store.",
+              ),
+            mosca: zod.object({
+              x: zod
+                .number()
+                .describe(
+                  "Secrecy lifetime in years, as resolved for this asset.",
+                ),
+              y: zod.number().describe("Migration time in years."),
+              applicable: zod
+                .boolean()
+                .describe(
+                  "False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break.",
+                ),
+              breachedScenarios: zod.array(zod.string()),
+            }),
+          })
+          .describe(
+            "One persisted data-at-rest asset, with its Mosca verdict derived at read time.",
+          ),
+      ),
+    }),
+  ),
+  scenarios: zod.array(
+    zod.object({
+      name: zod.string(),
+      qDayYear: zod.number(),
+      rationale: zod.string(),
+      confidence: zod.string(),
+    }),
+  ),
+  framing: zod
+    .string()
+    .describe("Mandatory wherever a scenario year is shown."),
+});

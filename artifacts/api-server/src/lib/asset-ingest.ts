@@ -4,24 +4,28 @@ import {
   collectSourceObservations,
   collectDependencyObservations,
   collectCertificateObservations,
-  collectProtocolConfigObservations,
   certificatesIn,
+  collectDataAtRestObservations,
   computeFingerprint,
   dependencyLocationPrefix,
   ecosystemsIn,
   fingerprintForObservation,
   lockfilesIn,
   observationsFromTlsHandshake,
-  protocolConfigLocation,
-  protocolConfigsIn,
+  type DataAtRestStoreInput,
+  type DataAtRestStoreResult,
   type RawObservation,
-  type RecognisedProtocolConfig,
   type Surface,
   type TlsHandshakeResult,
+  collectProtocolConfigObservations,
+  protocolConfigLocation,
+  protocolConfigsIn,
   classifyKmsKeys,
+  type RecognisedProtocolConfig,
   type KmsKeyDescription,
   type KmsKeyOutcome,
 } from "@workspace/collectors";
+import type { DataClassification } from "@workspace/db/classification";
 import { and, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
 
 /**
@@ -96,6 +100,29 @@ interface IngestSpec {
   surface: Surface;
   observations: RawObservation[];
   reobserved: ReobservationScope;
+  /**
+   * B7 — per-asset data classification, keyed by `RawObservation.location`.
+   *
+   * **Deliberately not a field on `RawObservation`.** A collector observes
+   * cryptography and has no idea whether the data behind it is Regulated —
+   * that is why `DATA_CLASSIFICATION_VALUES` lives in `@workspace/db` rather
+   * than in the dependency-free collector contract (see
+   * `lib/db/src/classification.ts`'s own comment on the deviation). The
+   * classification is a statement the *caller* makes about their data in the
+   * same request body, so it is carried here, on the ingest spec, rather than
+   * smuggled through the collector.
+   *
+   * Only the data-at-rest ingest supplies this today, and the upsert only
+   * touches those two columns when it is present — so the four collectors that
+   * do not supply it run through provably unchanged SQL.
+   */
+  classificationByLocation?: ReadonlyMap<string, AssetClassificationInput>;
+}
+
+/** The two A3 columns a caller may supply per asset. Null/absent means "not supplied" and stays null — never a default. */
+export interface AssetClassificationInput {
+  dataClassification?: DataClassification | null;
+  secrecyLifetimeYears?: number | null;
 }
 
 function reobservationPredicate(scope: ReobservationScope): SQL | undefined {
@@ -142,6 +169,11 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
 
     const fingerprint = computeFingerprint(fingerprintInput);
 
+    // Null when the caller supplied nothing — the same "not supplied stays
+    // null" rule as `keySize` above, and load-bearing for the same reason:
+    // it is what lets `resolveSecrecyLifetime()` report an X as assumed.
+    const classification = spec.classificationByLocation?.get(raw.location);
+
     assetValuesByFingerprint.set(fingerprint, {
       organizationId,
       fingerprint,
@@ -151,6 +183,8 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
       location: raw.location,
       locationDetail: raw.locationDetail,
       status: "active",
+      dataClassification: classification?.dataClassification ?? null,
+      secrecyLifetimeYears: classification?.secrecyLifetimeYears ?? null,
     });
 
     pendingObservations.push({
@@ -203,24 +237,48 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
     assetsUpdated = existing.length;
     assetsCreated = fingerprints.length - existing.length;
 
+    // `COALESCE`, not `excluded.*`, and only for an ingest that actually
+    // carries classifications. Two failures avoided, in order of severity:
+    //
+    //   1. Writing `excluded.data_classification` unconditionally would null
+    //      out a classification on every re-ingest of *any* other surface,
+    //      since none of them supply one. That is why this is spread in
+    //      conditionally rather than merged into the set below.
+    //   2. Within this ingest, a resubmission that omits the classification
+    //      would still null out what a human previously asserted. "Not
+    //      supplied" is not "no longer classified", and silently erasing an
+    //      assertion because a nightly config export left a field blank is a
+    //      worse failure than being unable to clear it from here. Clearing is
+    //      a per-asset edit that does not exist yet.
+    const classificationSet =
+      spec.classificationByLocation === undefined
+        ? {}
+        : {
+            dataClassification: sql`COALESCE(excluded.data_classification, ${assetsTable.dataClassification})`,
+            secrecyLifetimeYears: sql`COALESCE(excluded.secrecy_lifetime_years, ${assetsTable.secrecyLifetimeYears})`,
+          };
+
+    const conflictSet = {
+      lastSeen: new Date(),
+      keySize: sql`excluded.key_size`,
+      location: sql`excluded.location`,
+      locationDetail: sql`excluded.location_detail`,
+      // Reactivation is only ever gone -> active. `waived` (a human
+      // explicitly accepted the risk) and `remediated` are decisions
+      // about the asset, not observations of it, so re-seeing the same
+      // line must not silently undo them. The gone-reconciliation below
+      // is already one-directional in the same way: it only ever moves
+      // `active` assets.
+      status: sql`CASE WHEN ${assetsTable.status} = 'gone' THEN 'active' ELSE ${assetsTable.status} END`,
+      ...classificationSet,
+    };
+
     const upserted = await tx
       .insert(assetsTable)
       .values([...assetValuesByFingerprint.values()])
       .onConflictDoUpdate({
         target: [assetsTable.organizationId, assetsTable.fingerprint],
-        set: {
-          lastSeen: new Date(),
-          keySize: sql`excluded.key_size`,
-          location: sql`excluded.location`,
-          locationDetail: sql`excluded.location_detail`,
-          // Reactivation is only ever gone -> active. `waived` (a human
-          // explicitly accepted the risk) and `remediated` are decisions
-          // about the asset, not observations of it, so re-seeing the same
-          // line must not silently undo them. The gone-reconciliation below
-          // is already one-directional in the same way: it only ever moves
-          // `active` assets.
-          status: sql`CASE WHEN ${assetsTable.status} = 'gone' THEN 'active' ELSE ${assetsTable.status} END`,
-        },
+        set: conflictSet,
       })
       .returning({ id: assetsTable.id, fingerprint: assetsTable.fingerprint });
     // Keyed by fingerprint, never by position: the order rows come back
@@ -509,6 +567,88 @@ export async function ingestTlsObservations(
       locations: [...new Set(params.probed.map((p) => `${params.repo}:${p.host}:${p.port}`))],
     },
   });
+}
+
+/**
+ * B7 — persist a data-at-rest collection (docs/Claude/03-features.md §B7).
+ *
+ * The fifth `IngestSpec` shape through the same shared `ingestObservations()`,
+ * and the first to carry `classificationByLocation`. That is what makes this
+ * surface reach the risk engine rather than just the inventory: `GET
+ * /api/inventory/assets` resolves each asset's X with `resolveSecrecyLifetime()`
+ * and runs Mosca over it, so a store submitted as Regulated arrives at the risk
+ * calculation with X = 25 and `xAssumed: false`, while one submitted with no
+ * classification arrives with the product default and says so. Data at rest is
+ * where that distinction is worth the most — the ciphertext can be copied today
+ * and decrypted after Q-Day, so X is the whole question.
+ *
+ * Same "examine nothing, record nothing" discipline as its four siblings: a
+ * submission that produced no observation *and* stated nothing to reconcile
+ * must not write a `completed` collection run, or the D3 meter would report
+ * data-at-rest as examined-and-empty. Note the *and*: a submission of stores
+ * that are all `not-encrypted` produces zero observations but is a real
+ * examination with a real result, so it does record a run.
+ */
+export interface DataAtRestIngestResult extends IngestResult {
+  stores: DataAtRestStoreResult[];
+}
+
+export async function ingestDataAtRestObservations(
+  tx: ScopedTx,
+  params: {
+    repo: string;
+    stores: DataAtRestStoreInput[];
+    organizationId: number;
+    /** Per-store A3 classification, keyed by `storeId`. Absent = not supplied, which stays null on the row. */
+    classificationByStoreId?: ReadonlyMap<string, AssetClassificationInput>;
+  },
+): Promise<DataAtRestIngestResult> {
+  const stores = collectDataAtRestObservations(params.repo, params.stores);
+  const observations = stores.flatMap((store) => store.observations);
+  const reobservedLocations = [...new Set(stores.flatMap((store) => store.reobservedLocations))];
+
+  if (observations.length === 0 && reobservedLocations.length === 0) {
+    throw new Error("data-at-rest ingest was given no store it could say anything about — a run must not be recorded");
+  }
+
+  // The classification is supplied per *store*, but the upsert needs it per
+  // *asset*, and one store produces up to two assets (its bulk cipher and its
+  // key wrapping). Both inherit the store's classification: X is a property of
+  // the data in the store, and both halves of the key hierarchy protect the
+  // same data.
+  const classificationByLocation = new Map<string, AssetClassificationInput>();
+  if (params.classificationByStoreId !== undefined) {
+    for (const store of stores) {
+      const classification = params.classificationByStoreId.get(store.storeId);
+      if (classification === undefined) continue;
+      for (const observation of store.observations) classificationByLocation.set(observation.location, classification);
+    }
+  }
+
+  const result = await ingestObservations(tx, {
+    organizationId: params.organizationId,
+    repo: params.repo,
+    collector: "data-at-rest-config",
+    collectorVersion: "1.0.0",
+    surface: "data-at-rest",
+    observations,
+    /**
+     * Scoped to exactly the slots this submission made an observation-producing
+     * statement about — see `observationsFromDataAtRestStore`'s reobservation
+     * rule, which is where the three-way split lives. The case that rule exists
+     * for: a store resubmitted as encrypted but with the cipher field left
+     * blank is NOT in scope, so its previously recorded cipher stays `active`.
+     * Putting it in scope would mark it `gone` because a field was blank, which
+     * is the silent false remediation `ReobservationScope` above warns about.
+     */
+    reobserved: { kind: "locations", locations: reobservedLocations },
+    // Passed even when empty, because its presence is what switches the upsert
+    // to preserving these two columns; an ingest on this surface must never
+    // reach the `excluded.*` path meant for the other four.
+    classificationByLocation,
+  });
+
+  return { ...result, stores };
 }
 
 export interface ProtocolConfigIngestResult extends IngestResult {

@@ -267,6 +267,10 @@ describe("route manifest — a new route cannot ship without being considered", 
     // scope. The GET reads those assets with no where clause of its own.
     "POST /projects/:id/kms": "org-scoped",
     "GET /projects/:id/kms": "org-scoped",
+    // B7 — same shape again: assets attributed by location prefix, no
+    // foreign key, so the parent is confirmed inside the scope.
+    "POST /projects/:id/data-at-rest": "org-scoped",
+    "GET /projects/:id/data-at-rest": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",
@@ -670,6 +674,46 @@ describe("addressing another organisation's row by id is indistinguishable from 
     // A key inventory names every key a customer holds — as bad a thing to
     // leak across a tenant boundary as the CBOM.
     const res = await auth(request.get(`/api/projects/${theirs.projectId}/kms`));
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/projects/:id/data-at-rest naming another organisation's project writes nothing", async () => {
+    // Same shape again, with one addition worth stating: this route also
+    // persists a caller-supplied `dataClassification` onto the asset, so a
+    // successful cross-tenant write would let one organisation assert how long
+    // another's data has to stay secret — an input the risk engine then uses.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirDataAtRestAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'data-at-rest'`,
+        ),
+      );
+    const before = await countTheirDataAtRestAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/data-at-rest`).send({
+        stores: [
+          {
+            storeId: "billing",
+            engine: "postgresql",
+            encryptionState: "encrypted",
+            dataEncryption: { algorithm: "AES-256-CBC" },
+            keyProtection: { algorithm: "RSA-2048" },
+            dataClassification: "regulated",
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirDataAtRestAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("GET /api/projects/:id/data-at-rest → 404 for another organisation's project, not their store inventory", async () => {
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/data-at-rest`));
     expect(res.status).toBe(404);
   });
 });

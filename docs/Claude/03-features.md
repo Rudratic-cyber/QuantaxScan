@@ -217,7 +217,7 @@ another silo.
 | B6 | Protocol config | `built` | **P2** | `ProtocolConfigCollector` (`lib/collectors/src/protocol-config.ts` + `protocol-config-collector.ts`) parses `sshd_config`/`ssh_config`/`authorized_keys`, `ipsec.conf`/`swanctl.conf`, a JWKS, an OIDC discovery document and SAML metadata, and `POST /api/projects/:id/protocol-config` persists them as `surface: "config"` assets — **`config` is the fifth `live` surface**. Reads what a file *declares*, never what a peer negotiates (that is B3), at `configuration_information` modality and two confidence tiers: `0.6` for a permitted-algorithm list, `0.8` for a materialised key (an `authorized_keys` entry, a published JWK, the method a SAML document was signed with). Whole-token matching only, so hybrid PQC key exchange (`sntrup761x25519-sha512`) is silently absent rather than misreported as vulnerable `ECDH/DH`. `Include` is not followed and an absent directive is not read as the compiled-in default |
 | B5 | KMS / secret stores | `built` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS — **submission-based, not credentialed**. `POST /api/projects/:id/kms` takes the key inventory your own `describe-key`/`keys list` produced; `GET` returns the persisted inventory with rotation posture. Spec → algorithm resolution is cited data in [`mappings/kms-key-specs.json`](mappings/kms-key-specs.json) (84 specs, four primary sources). **`kms` is the fifth `live` surface** |
 | B6 | Protocol config | `planned` | **P2** | SSH, IPsec, JWT `alg`, SAML/OIDC signing |
-| B7 | Data-at-rest | `planned` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets |
+| B7 | Data-at-rest | `built` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets. Submission-based (`POST/GET /api/projects/:id/data-at-rest`), no database credentials. **Two assets per store**: the bulk cipher and the key-wrapping algorithm, because only the second is what Shor breaks. **The only ingest that accepts a data classification**, so a Regulated archive reaches the risk engine with X = 25 rather than an assumed 3. A store reported as encrypted with no cipher named records nothing and is returned as a gap. **`data-at-rest` is the fifth `live` surface** |
 | B8 | Manual OT/embedded register | `built` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first |
 | B9 | Vendor / third-party | `built` | **P3** | A *form*, not a scanner — the only route to crypto the customer does not operate. Org-scoped `vendor_assessments` table, CRUD at `/api/vendor-assessments`, register page at `/vendor-register`. Every answer is stamped `manual_attestation` at confidence 0.3 (below every collector's) and `null` when the vendor has answered nothing. The `vendor` surface stays `planned`: nothing here was examined |
 | B10 | Binaries / firmware | `deferred` | **P3** | Hard. Defer until coverage elsewhere is complete |
@@ -358,6 +358,33 @@ surface as never examined even when this register is full. That is the honest re
 was examined; somebody was asked. It is the same unresolved inconsistency B8 left on `ot`, and
 resolving it properly means teaching the coverage meter that "a manual register exists" is a
 third state alongside `live` and `planned`, which is D3's work rather than a collector lane's.
+**B7, as shipped 2026-08-14.** `POST /api/projects/:id/data-at-rest` takes a *description* of an
+encrypted store — engine, store id, encryption state, cipher, key protection, key source — and
+persists it as `data-at-rest` assets; `GET` returns the same stores with X resolved and Mosca
+evaluated at read time. `DataAtRestCollector` is pure and does no I/O
+(`lib/collectors/src/data-at-rest-collector.ts`), the same split B3 uses.
+
+Four decisions worth stating:
+
+- **Submission, not credentials.** Connecting to a live database needs somewhere to put a
+  production credential, and F4 is unbuilt. Inventing a secret-handling design inside a collector
+  lane is how a product ends up storing database passwords by accident — the same reasoning B5
+  applies to KMS.
+- **Two assets per store, not one.** The bulk cipher (usually AES, which NIST does not treat as
+  quantum-vulnerable) and the algorithm wrapping the data key are separate facts, and only the
+  second is a Shor target. A collector that recorded the cipher alone would report an AES-256
+  store whose key is wrapped with RSA-2048 as carrying nothing quantum-vulnerable. The role is
+  part of the fingerprint so an AES-wrapped-with-AES hierarchy cannot collapse into one asset.
+- **The only ingest that accepts a data classification.** Data at rest is the case where the
+  ciphertext really can be copied today and decrypted after Q-Day, so X is the whole question and
+  the caller knows it at submission time. It is persisted on the asset, which is what makes
+  `GET /api/inventory/assets` resolve X = 25 for a Regulated archive rather than the product's
+  assumed 3. The upsert `COALESCE`s it: omitting it on a later submission leaves a human's earlier
+  assertion in place rather than blanking it.
+- **"Encrypted: yes, cipher unknown" records nothing.** It is returned as a `cipher-not-reported`
+  gap and — the sharp edge — is excluded from the reobservation scope, so leaving the field blank
+  on a resubmission cannot mark a previously recorded cipher `gone`. `not-encrypted` *is* in
+  scope, because that is a positive statement of absence rather than a missing field.
 
 ---
 

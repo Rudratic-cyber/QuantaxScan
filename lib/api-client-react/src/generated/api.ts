@@ -28,6 +28,7 @@ import type {
   CreateSharedReportBody,
   CreateSharedReportResponse,
   CreateVendorAssessmentBody,
+  DataAtRestIngestSummary,
   DemoRepo,
   DemoScanResult,
   DependencyIngestSummary,
@@ -52,6 +53,7 @@ import type {
   Project,
   ProjectCertificates,
   ProjectCoverage,
+  ProjectDataAtRest,
   ProjectKmsKeys,
   ProtocolConfigIngestSummary,
   RateLimitedResponse,
@@ -59,6 +61,7 @@ import type {
   Scan,
   SharedReport,
   SubmitProjectCertificatesBody,
+  SubmitProjectDataAtRestBody,
   SubmitProjectDependenciesBody,
   SubmitProjectKmsBody,
   SubmitProjectProtocolConfigBody,
@@ -4037,6 +4040,197 @@ export function useGetProjectKmsKeys<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetProjectKmsKeysQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Records what a database, backup, archive, volume or object store reports about its own encryption, and persists it as assets on the `data-at-rest` surface — which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+Nothing is connected to. The caller submits what their engine's configuration already reports (`pg_settings`, `sys.dm_database_encryption_keys`, `V$ENCRYPTED_TABLESPACES`, a bucket's SSE configuration, a backup job definition). Credentialed collection against a live database is deliberately not offered: it would need a secret-handling design this product does not have yet (F4).
+
+**Each store produces up to two assets, not one.** `dataEncryption` is the bulk cipher over the stored data — usually AES, which NIST does not consider quantum-vulnerable. `keyProtection` is how that data key is wrapped, and that is where Shor applies: an AES-256 store whose key is wrapped with RSA-2048 is a harvest-now-decrypt-later target however strong the bulk cipher is.
+
+**A store reported as encrypted with no cipher named records nothing and is returned as a `cipher-not-reported` gap.** It never becomes AES-256. That case is also excluded from the reobservation scope, so leaving the field blank on a resubmission cannot mark a previously recorded cipher `gone`.
+
+`dataClassification` / `secrecyLifetimeYears` are persisted on the store's assets and are what `GET /api/inventory/assets` resolves X from. Omit them and X falls back to the project's default and then the product's, flagged as assumed — see `classificationSource` on the read below.
+ * @summary Submit a description of encrypted stores for data-at-rest collection (B7)
+ */
+export const getSubmitProjectDataAtRestUrl = (id: number) => {
+  return `/api/projects/${id}/data-at-rest`;
+};
+
+export const submitProjectDataAtRest = async (
+  id: number,
+  submitProjectDataAtRestBody: SubmitProjectDataAtRestBody,
+  options?: RequestInit,
+): Promise<DataAtRestIngestSummary> => {
+  return customFetch<DataAtRestIngestSummary>(
+    getSubmitProjectDataAtRestUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(submitProjectDataAtRestBody),
+    },
+  );
+};
+
+export const getSubmitProjectDataAtRestMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectDataAtRest>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectDataAtRestBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectDataAtRest>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectDataAtRestBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectDataAtRest"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectDataAtRest>>,
+    { id: number; data: BodyType<SubmitProjectDataAtRestBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectDataAtRest(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectDataAtRestMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectDataAtRest>>
+>;
+export type SubmitProjectDataAtRestMutationBody =
+  BodyType<SubmitProjectDataAtRestBody>;
+export type SubmitProjectDataAtRestMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit a description of encrypted stores for data-at-rest collection (B7)
+ */
+export const useSubmitProjectDataAtRest = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectDataAtRest>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectDataAtRestBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectDataAtRest>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectDataAtRestBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectDataAtRestMutationOptions(options));
+};
+
+/**
+ * Every data-at-rest asset attributed to this project, grouped back into the store it belongs to, with X resolved and Mosca evaluated at read time — never persisted, because the Q-Day scenario years and the standards data behind `quantumVulnerable` are both revisable and a stored verdict would go stale exactly the way C1 exists to prevent.
+
+`xAssumed` and `classificationSource` are the honesty half: a store nobody classified is reported with the product's default X and says so, rather than quietly presenting an assumption as a measurement.
+ * @summary The project's data-at-rest inventory with its Mosca verdict (B7)
+ */
+export const getGetProjectDataAtRestUrl = (id: number) => {
+  return `/api/projects/${id}/data-at-rest`;
+};
+
+export const getProjectDataAtRest = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProjectDataAtRest> => {
+  return customFetch<ProjectDataAtRest>(getGetProjectDataAtRestUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectDataAtRestQueryKey = (id: number) => {
+  return [`/api/projects/${id}/data-at-rest`] as const;
+};
+
+export const getGetProjectDataAtRestQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectDataAtRest>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectDataAtRest>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProjectDataAtRestQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectDataAtRest>>
+  > = ({ signal }) => getProjectDataAtRest(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectDataAtRest>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectDataAtRestQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectDataAtRest>>
+>;
+export type GetProjectDataAtRestQueryError = ErrorType<void>;
+
+/**
+ * @summary The project's data-at-rest inventory with its Mosca verdict (B7)
+ */
+
+export function useGetProjectDataAtRest<
+  TData = Awaited<ReturnType<typeof getProjectDataAtRest>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectDataAtRest>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectDataAtRestQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
