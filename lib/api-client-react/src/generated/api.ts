@@ -50,12 +50,14 @@ import type {
   Project,
   ProjectCertificates,
   ProjectCoverage,
+  ProtocolConfigIngestSummary,
   RateLimitedResponse,
   ReadinessSummary,
   Scan,
   SharedReport,
   SubmitProjectCertificatesBody,
   SubmitProjectDependenciesBody,
+  SubmitProjectProtocolConfigBody,
   SubmitProjectTlsBody,
   TlsProbeSummary,
   UpdateOtFleetBody,
@@ -3321,4 +3323,104 @@ export const useSubmitProjectTls = <
   TContext
 > => {
   return useMutation(getSubmitProjectTlsMutationOptions(options));
+};
+
+/**
+ * Parses submitted SSH (`sshd_config`, `ssh_config`, `authorized_keys`), IPsec/IKE (`ipsec.conf`, `swanctl.conf`), JOSE (a JWKS, an OpenID Connect discovery document) and SAML metadata files, and persists the algorithms they *declare* as assets on the `config` surface — which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+**A declaration is not a negotiation.** This route records what a file states, at `configuration_information` modality and a confidence well below `POST /projects/{id}/tls`'s observed handshake: a `Ciphers` list is an upper bound on what a daemon will accept, not evidence any peer selected an entry from it. Each declaration carries a `strength` — `permitted` (an algorithm the endpoint would accept) or `materialised` (a specific key or a chosen algorithm, such as an `authorized_keys` entry or a published JWK) — because those are different claims.
+
+The SSH and IPsec families are recognised by filename (including `sshd_config.d/` drop-ins); JOSE and SAML files have no conventional filename and are recognised by an unambiguous structural marker instead (a `keys` array of JWKs, an `*_alg_values_supported` field, an `EntityDescriptor` element).
+
+**If no submitted file is a configuration this collector understands, no collection run is recorded** and `configFilesRecognised` is 0 — the same "examined nothing, not found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an error. A recognised file that declares no crypto is the *other* case and **does** record a run: it was read, and it states nothing. Removing a directive and resubmitting the file marks its assets `gone`, scoped to exactly the files this submission read.
+
+Three deliberate silences, all restated in `evidenceCaveat`: `Include` directives are not followed (the caller submits contents, not a filesystem); the absence of a directive is not read as the compiled-in default; and an algorithm token with no canonical name — including hybrid post-quantum key exchange such as `sntrup761x25519-sha512` — produces no declaration rather than a guess.
+ * @summary Read the crypto a project's protocol configuration declares (B6)
+ */
+export const getSubmitProjectProtocolConfigUrl = (id: number) => {
+  return `/api/projects/${id}/protocol-config`;
+};
+
+export const submitProjectProtocolConfig = async (
+  id: number,
+  submitProjectProtocolConfigBody: SubmitProjectProtocolConfigBody,
+  options?: RequestInit,
+): Promise<ProtocolConfigIngestSummary> => {
+  return customFetch<ProtocolConfigIngestSummary>(
+    getSubmitProjectProtocolConfigUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(submitProjectProtocolConfigBody),
+    },
+  );
+};
+
+export const getSubmitProjectProtocolConfigMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectProtocolConfig>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectProtocolConfigBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectProtocolConfig>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectProtocolConfigBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectProtocolConfig"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectProtocolConfig>>,
+    { id: number; data: BodyType<SubmitProjectProtocolConfigBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectProtocolConfig(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectProtocolConfigMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectProtocolConfig>>
+>;
+export type SubmitProjectProtocolConfigMutationBody =
+  BodyType<SubmitProjectProtocolConfigBody>;
+export type SubmitProjectProtocolConfigMutationError = ErrorType<void>;
+
+/**
+ * @summary Read the crypto a project's protocol configuration declares (B6)
+ */
+export const useSubmitProjectProtocolConfig = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectProtocolConfig>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectProtocolConfigBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectProtocolConfig>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectProtocolConfigBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectProtocolConfigMutationOptions(options));
 };

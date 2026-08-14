@@ -17,8 +17,9 @@ import {
   SubmitProjectDependenciesBody,
   SubmitProjectCertificatesBody,
   SubmitProjectTlsBody,
+  SubmitProjectProtocolConfigBody,
 } from "@workspace/api-zod";
-import { lockfilesIn, certificatesIn } from "@workspace/collectors";
+import { lockfilesIn, certificatesIn, protocolConfigsIn } from "@workspace/collectors";
 import { scanCode, computeScanResult } from "../lib/scanner";
 import { summariseProjectCoverage } from "../lib/coverage";
 import { withComplianceAll } from "../lib/compliance";
@@ -26,6 +27,7 @@ import {
   ingestDependencyObservations,
   ingestCertificateObservations,
   ingestTlsObservations,
+  ingestProtocolConfigObservations,
   type CertificateSummary,
 } from "../lib/asset-ingest";
 import { evaluateCertificateExpiryAgainstQDay } from "../lib/certificate-risk";
@@ -712,6 +714,144 @@ router.post("/projects/:id/tls", async (req, res): Promise<void> => {
     observationsCreated: result.observationsCreated,
     assetsMarkedGone: result.assetsMarkedGone,
     evidenceCaveat: TLS_EVIDENCE_CAVEAT,
+  });
+});
+
+/**
+ * B6 — `POST /api/projects/:id/protocol-config`. docs/Claude/03-features.md
+ * §B6: "SSH, IPsec, JWT `alg`, SAML/OIDC signing".
+ *
+ * Same shape as the dependency and certificate routes above — org-scoped,
+ * parent confirmed inside the scope (a foreign key is not subject to RLS, and
+ * `assets` has none to `projects` at all: the association is the
+ * `project:<id>:` location prefix this route is about to write), a run
+ * recorded only when something was actually examined. It reuses their
+ * submission shape (path + content) deliberately rather than inventing a
+ * third: reading a config file is the same job as reading a lockfile, and the
+ * caller that can produce one can produce the other.
+ *
+ * **Where it differs, and why the difference is the interesting part.** The
+ * three routes above collapse "examined nothing" and "found nothing" at the
+ * same boundary — no lockfile, no certificate, no completed handshake all mean
+ * the collector had nothing to work with. This surface separates them one
+ * level further, because a configuration file can be perfectly readable and
+ * declare no crypto at all: an `sshd_config` that leaves every algorithm
+ * directive at the compiled-in default was *examined*, and the honest answer
+ * is a recorded run with zero observations, not silence. So the gate here is
+ * "did we recognise a configuration file", not "did we find an algorithm" —
+ * see `ingestProtocolConfigObservations`, which enforces the same rule so it
+ * cannot depend on this route remembering it.
+ *
+ * No `GET` counterpart, unlike B4. The certificate route needed one because
+ * "outlives Q-Day" is derived on read and had nowhere else to live; a config
+ * declaration is a plain asset with no read-time derivation, and
+ * `GET /api/inventory/assets?surface=config` already returns it.
+ */
+
+/** Mirrors `MAX_LOCKFILES_PER_SUBMISSION` — a bound on parse work, not on request size (the body limit already caps that). */
+const MAX_CONFIG_FILES_PER_SUBMISSION = 100;
+
+const PROTOCOL_CONFIG_EVIDENCE_CAVEAT =
+  "This collector reads what a configuration file declares, not what an endpoint negotiates — a permitted-algorithm " +
+  "list is an upper bound on what would be accepted, not evidence any peer selected it (see B3 for what was actually " +
+  "agreed on the wire). Three things it deliberately does not do: it does not follow `Include`/`@include` directives, " +
+  "because the caller submits file contents rather than a filesystem; it does not infer the compiled-in default set " +
+  "when a directive is absent, because that set varies by version and distribution; and it reports nothing at all for " +
+  "an algorithm token it does not recognise, including hybrid post-quantum key exchange such as " +
+  "sntrup761x25519-sha512, rather than guessing at it.";
+
+router.post("/projects/:id/protocol-config", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const body = SubmitProjectProtocolConfigBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+  const files = body.data.files;
+
+  // Which submitted files are a configuration this collector understands.
+  // Computed before the scope is opened, same reason `lockfilesIn` and
+  // `certificatesIn` are above: it decides whether there is anything to write
+  // at all, and `@workspace/collectors` is pure.
+  const recognised = protocolConfigsIn({ kind: "source", repo, files: files.map((f) => ({ ...f, language: "config" })) });
+  if (recognised.length > MAX_CONFIG_FILES_PER_SUBMISSION) {
+    res.status(400).json({
+      error: `Too many configuration files in one submission (${recognised.length} > ${MAX_CONFIG_FILES_PER_SUBMISSION}). Split the request rather than truncating it.`,
+    });
+    return;
+  }
+
+  const ctx = orgContextFor(req);
+  const outcome = await withOrg(ctx, async (tx) => {
+    const [parent] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!parent) return null;
+
+    // Nothing recognised means we examined nothing. Note what this branch is
+    // NOT: a recognised file that declares no algorithm falls through to the
+    // ingest, records a run and reports zero observations, because "we read
+    // your sshd_config and it configures no crypto" is a true and useful
+    // answer. Collapsing the two would make `GET /projects/:id/coverage`
+    // either overstate or understate what was looked at, depending on which
+    // way it collapsed.
+    if (recognised.length === 0) return { kind: "no-config-files" as const };
+
+    return {
+      kind: "ingested" as const,
+      result: await ingestProtocolConfigObservations(tx, { repo, files, organizationId: ctx.organizationId }),
+    };
+  });
+
+  if (outcome === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  if (outcome.kind === "no-config-files") {
+    res.json({
+      projectId: id,
+      configFilesRecognised: 0,
+      configFiles: [],
+      collectionRunId: null,
+      assetsCreated: 0,
+      assetsUpdated: 0,
+      observationsCreated: 0,
+      assetsMarkedGone: 0,
+      declarations: [],
+      evidenceCaveat: PROTOCOL_CONFIG_EVIDENCE_CAVEAT,
+    });
+    return;
+  }
+
+  const { result } = outcome;
+  logger.info(
+    {
+      projectId: id,
+      configFiles: result.configFiles.length,
+      observations: result.observationsCreated,
+      route: "POST /projects/:id/protocol-config",
+    },
+    "protocol configuration collection complete",
+  );
+
+  res.json({
+    projectId: id,
+    configFilesRecognised: result.configFiles.length,
+    configFiles: result.configFiles,
+    collectionRunId: result.collectionRunId,
+    assetsCreated: result.assetsCreated,
+    assetsUpdated: result.assetsUpdated,
+    observationsCreated: result.observationsCreated,
+    assetsMarkedGone: result.assetsMarkedGone,
+    declarations: result.declarations,
+    evidenceCaveat: PROTOCOL_CONFIG_EVIDENCE_CAVEAT,
   });
 });
 

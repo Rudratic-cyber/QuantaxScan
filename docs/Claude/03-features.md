@@ -214,7 +214,7 @@ another silo.
 | B3 | TLS / cipher suite prober | `planned` | **P1** | Active handshake against hosts. Records *negotiated* KEX, not configured |
 | B4 | Certificate / X.509 | `planned` | **P1** | Key type, size, expiry. Expiry-vs-Q-Day is the killer chart |
 | B5 | KMS / secret stores | `planned` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS. Read-only creds |
-| B6 | Protocol config | `planned` | **P2** | SSH, IPsec, JWT `alg`, SAML/OIDC signing |
+| B6 | Protocol config | `built` | **P2** | `ProtocolConfigCollector` (`lib/collectors/src/protocol-config.ts` + `protocol-config-collector.ts`) parses `sshd_config`/`ssh_config`/`authorized_keys`, `ipsec.conf`/`swanctl.conf`, a JWKS, an OIDC discovery document and SAML metadata, and `POST /api/projects/:id/protocol-config` persists them as `surface: "config"` assets — **`config` is the fifth `live` surface**. Reads what a file *declares*, never what a peer negotiates (that is B3), at `configuration_information` modality and two confidence tiers: `0.6` for a permitted-algorithm list, `0.8` for a materialised key (an `authorized_keys` entry, a published JWK, the method a SAML document was signed with). Whole-token matching only, so hybrid PQC key exchange (`sntrup761x25519-sha512`) is silently absent rather than misreported as vulnerable `ECDH/DH`. `Include` is not followed and an absent directive is not read as the compiled-in default |
 | B7 | Data-at-rest | `planned` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets |
 | B8 | Manual OT/embedded register | `built` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first |
 | B9 | Vendor / third-party | `planned` | **P3** | Questionnaire + contractual PQC clause tracking |

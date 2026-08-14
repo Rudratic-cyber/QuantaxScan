@@ -66,7 +66,10 @@ export const COLLECTOR_SURFACES = [
   { id: "tls", name: "TLS & cipher suites", status: "live", surface: "tls" },
   { id: "certificate", name: "Certificates (X.509)", status: "live", surface: "certificate" },
   { id: "kms", name: "KMS & secret stores", status: "planned", surface: "kms" },
-  { id: "config", name: "Protocol config", status: "planned", surface: "config" },
+  // `live` since B6's `POST /projects/:id/protocol-config` landed. Same bar as
+  // the four above: what earns it is a route that persists what the collector
+  // reads, not the collector.
+  { id: "config", name: "Protocol config", status: "live", surface: "config" },
   { id: "data-at-rest", name: "Data-at-rest", status: "planned", surface: "data-at-rest" },
   { id: "ot", name: "Manual OT / embedded register", status: "planned", surface: "ot" },
   { id: "vendor", name: "Vendor / third-party", status: "planned", surface: "vendor" },

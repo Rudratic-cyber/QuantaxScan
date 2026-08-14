@@ -68,7 +68,7 @@ export const assetsTable = pgTable("assets", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").notNull(),  // no FK yet — no organizations table (F2 is out of scope)
   fingerprint: text("fingerprint").notNull(),      // deterministic identity — unique per (organizationId, fingerprint), not globally
-  surface: text("surface").notNull(),              // source | dependency | tls | certificate | kms | config | ot | binary — CHECK constraint
+  surface: text("surface").notNull(),              // source | dependency | tls | certificate | kms | config | ot | binary | data-at-rest | vendor — CHECK constraint
   algorithm: text("algorithm").notNull(),
   keySize: integer("key_size"),                    // parameter size (2048, 384, ...), null when undetermined — never a guessed default. See G-05.
   location: text("location").notNull(),            // path, host:port, cert serial, key ARN
@@ -125,6 +125,7 @@ Identity must be stable across re-scans but sensitive to real change.
 | Dependency | `repo + ecosystem + package + algorithm` — amended 2026-08-14 when B2's ingest landed; see below |
 | TLS | `host + port + algorithm` |
 | Certificate | `issuer + serial` |
+| Protocol config | `repo + path + directive + algorithm + token` — added 2026-08-14 when B6's collector landed; see below |
 | KMS | `provider + key ARN/ID` |
 | Binary (added — see below) | `target-or-repository + packageIdentity-or-componentName + artifactPath + binaryFormat + architecture + algorithm + evidenceDiscriminator` — **not** a content digest/sha256 |
 
@@ -154,8 +155,20 @@ does not change.
 JSON-encoded, explicitly ordered array of the fields above per surface — not a delimiter-joined
 string — so a field value that happens to contain the delimiter cannot collide two distinct
 inputs into the same fingerprint. It currently implements `source`, `dependency`, `tls`,
-`certificate`, `kms` and `binary`; `config`/`ot` have no fingerprint rule yet because no
-collector for them exists.
+`certificate`, `config`, `kms` and `binary`; `ot` has no fingerprint rule yet, and does not
+need one — B8's register is a form whose rows are fleets, not fingerprinted assets.
+
+**Why `config` is the `source` shape and carries a `token`.** A configuration file is a stable
+slot that gets edited in place, not an artefact that gets minted, so the file's path belongs in
+the identity and the asset must survive an edit that leaves the declaration alone — which is why
+it is not the `certificate` shape. `directive` is in the identity because the same token under
+two keywords is two different facts (`ssh-rsa` under `HostKeyAlgorithms` is the server's own host
+key; under `PubkeyAcceptedAlgorithms` it is a client key the server accepts, and remediating one
+does not remediate the other). `token` sits alongside `algorithm` exactly as `symbol` does for
+`source`: without it, `Ciphers aes128-ctr,aes256-ctr` collapses into one `AES` asset whose key
+size depends on list order, reporting a 128-bit and a 256-bit cipher as the same thing. The token
+is not a content digest — reformatting the file or moving the line leaves every fingerprint
+intact.
 
 ### Migration path
 

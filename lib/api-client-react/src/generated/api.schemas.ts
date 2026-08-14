@@ -1616,6 +1616,74 @@ export interface TlsProbeSummary {
   evidenceCaveat: string;
 }
 
+export type SubmitProjectProtocolConfigBodyFilesItem = {
+  path: string;
+  content: string;
+};
+
+export interface SubmitProjectProtocolConfigBody {
+  /** Configuration files, submitted as path + content — the same shape `POST /projects/{id}/dependencies` and `POST /projects/{id}/certificates` use. The path matters: the SSH and IPsec families are recognised by basename, so `/etc/ssh/sshd_config` is read and a copy renamed `sshd_config.bak.txt` is not. Anything unrecognised is ignored rather than rejected, so a caller may submit a whole tree. */
+  files: SubmitProjectProtocolConfigBodyFilesItem[];
+}
+
+/**
+ * `permitted` — an algorithm the endpoint would accept if a peer asked, which it may never select. `materialised` — a specific key or a chosen algorithm that exists now. Priced into `confidence`, but reported separately because they are different claims.
+ */
+export type ProtocolConfigDeclarationStrength =
+  (typeof ProtocolConfigDeclarationStrength)[keyof typeof ProtocolConfigDeclarationStrength];
+
+export const ProtocolConfigDeclarationStrength = {
+  permitted: "permitted",
+  materialised: "materialised",
+} as const;
+
+/**
+ * One algorithm a configuration file declares, read verbatim from a named directive.
+ */
+export interface ProtocolConfigDeclaration {
+  path: string;
+  /** Which configuration format the file was read as — `sshd-config`, `ssh-config`, `authorized-keys`, `ipsec-config`, `jwks`, `oidc-discovery`, `saml-metadata`. */
+  format: string;
+  /** The keyword or field the token was written under, e.g. `KexAlgorithms`, `alg`, `SignatureMethod`, `esp`. */
+  directive: string;
+  /** The token exactly as the file wrote it, so a reader can go back to the line and check. */
+  declaredValue: string;
+  /** Canonical name, resolving in the mappings data. A token with no canonical name produces no declaration at all. */
+  algorithm: string;
+  /** The stated parameter size where the token names one (a curve, a MODP group, an AES width, a JWK modulus). Null means undetermined — an `ssh-rsa` authorized_keys entry does not state its modulus and this collector does not decode the blob to guess one. */
+  keySize: number | null;
+  /** `permitted` — an algorithm the endpoint would accept if a peer asked, which it may never select. `materialised` — a specific key or a chosen algorithm that exists now. Priced into `confidence`, but reported separately because they are different claims. */
+  strength: ProtocolConfigDeclarationStrength;
+  /** The enclosing `Match`/`Host` block. Null when the directive applies unconditionally. */
+  condition: string | null;
+  /** 0.6 for a permitted declaration, 0.8 for a materialised one — both well below an observed TLS handshake's 1.0. */
+  confidence: number;
+}
+
+export type ProtocolConfigIngestSummaryConfigFilesItem = {
+  path: string;
+  format: string;
+  declarationCount: number;
+};
+
+export interface ProtocolConfigIngestSummary {
+  projectId: number;
+  /** How many submitted files were a protocol configuration this collector understands. Zero means no collection run was recorded and the config surface is still un-examined for this project. A recognised file that declares nothing still counts here — it was examined. */
+  configFilesRecognised: number;
+  /** The recognised files, each with how many declarations it carried. A `declarationCount` of 0 is read-and-states-nothing, not unreadable. */
+  configFiles: ProtocolConfigIngestSummaryConfigFilesItem[];
+  /** Null when no run was recorded (`configFilesRecognised` is 0). */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Declarations previously read from one of the files in this submission and no longer present in it — an administrator removed the directive. Scoped to exactly the files this submission read, so a file that was not submitted is untouched. */
+  assetsMarkedGone: number;
+  declarations: ProtocolConfigDeclaration[];
+  /** Stated on every response: this collector reads what a configuration file declares, not what an endpoint negotiates; `Include` directives are not followed; the absence of a directive is not read as the compiled-in default; and an unrecognised token, including hybrid post-quantum key exchange, contributes nothing rather than a guess. */
+  evidenceCaveat: string;
+}
+
 export type RateLimitedResponse = {
   error: string;
 };

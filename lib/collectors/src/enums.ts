@@ -94,7 +94,17 @@ export type AssetStatus = (typeof ASSET_STATUS_VALUES)[number];
  * live-TLS-fetch collector for certificates (out of scope here — see B4's
  * task notes) would emit `network`, the same as the TLS surface; this kind is
  * for the case where no network observation happened at all.
+ *
+ * `config` is B6's profile, and is likewise its own kind rather than a variant
+ * of `source`. A configuration file *is* a file at a path, so `source` looks
+ * like a fit — but a source observation's identity is a matched symbol on a
+ * line, while a configuration observation's is a directive and the token it
+ * was given, and `source`'s schema has nowhere to record whether the value was
+ * a specific key or merely a permitted one. That distinction is the entire
+ * evidential content of the surface, so folding it into `source` would lose
+ * it. Adding this kind needs no migration: `assets.location_detail` is bare
+ * `jsonb` validated at the application boundary, not a constrained column.
  */
-export const LOCATION_DETAIL_KIND_VALUES = ["source", "network", "dependency", "binary", "certificate"] as const;
+export const LOCATION_DETAIL_KIND_VALUES = ["source", "network", "dependency", "binary", "certificate", "config"] as const;
 
 export type LocationDetailKind = (typeof LOCATION_DETAIL_KIND_VALUES)[number];

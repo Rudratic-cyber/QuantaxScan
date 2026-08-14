@@ -111,11 +111,37 @@ export const CertificateLocationDetailSchema = z.object({
 });
 export type CertificateLocationDetail = z.infer<typeof CertificateLocationDetailSchema>;
 
+/**
+ * B6 — what a protocol-configuration file *declares*. Every field is read
+ * straight off the file, never inferred: `directive` and `declaredValue` are
+ * the keyword and the token verbatim, so a reader can go back to the line and
+ * check.
+ *
+ * `strength` is carried here and not only folded into the observation's
+ * numeric confidence because the two claims it separates ("this endpoint would
+ * accept X" vs "this specific key is X") are different in kind, and a consumer
+ * that shows a number without that distinction is showing a weaker fact than
+ * the data supports — or a stronger one. `condition` is the enclosing
+ * `Match`/`Host` block, present only when the directive applies conditionally.
+ */
+export const ConfigLocationDetailSchema = z.object({
+  path: z.string(),
+  /** `ProtocolConfigFormat` — kept as a plain string here so the schema does not have to be regenerated when a format is added. */
+  format: z.string(),
+  directive: z.string(),
+  /** The token as the file wrote it, e.g. `ecdsa-sha2-nistp384`, `RS256`, `http://www.w3.org/2001/04/xmldsig-more#rsa-sha256`. */
+  declaredValue: z.string(),
+  strength: z.enum(["materialised", "permitted"]),
+  condition: z.string().optional(),
+});
+export type ConfigLocationDetail = z.infer<typeof ConfigLocationDetailSchema>;
+
 export const LocationDetailSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("source"), source: SourceLocationDetailSchema }),
   z.object({ kind: z.literal("network"), network: NetworkLocationDetailSchema }),
   z.object({ kind: z.literal("dependency"), dependency: DependencyLocationDetailSchema }),
   z.object({ kind: z.literal("binary"), binary: BinaryLocationDetailSchema }),
   z.object({ kind: z.literal("certificate"), certificate: CertificateLocationDetailSchema }),
+  z.object({ kind: z.literal("config"), config: ConfigLocationDetailSchema }),
 ]);
 export type LocationDetail = z.infer<typeof LocationDetailSchema>;

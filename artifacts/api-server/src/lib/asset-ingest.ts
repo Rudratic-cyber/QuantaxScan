@@ -4,6 +4,7 @@ import {
   collectSourceObservations,
   collectDependencyObservations,
   collectCertificateObservations,
+  collectProtocolConfigObservations,
   certificatesIn,
   computeFingerprint,
   dependencyLocationPrefix,
@@ -11,7 +12,10 @@ import {
   fingerprintForObservation,
   lockfilesIn,
   observationsFromTlsHandshake,
+  protocolConfigLocation,
+  protocolConfigsIn,
   type RawObservation,
+  type RecognisedProtocolConfig,
   type Surface,
   type TlsHandshakeResult,
 } from "@workspace/collectors";
@@ -502,4 +506,115 @@ export async function ingestTlsObservations(
       locations: [...new Set(params.probed.map((p) => `${params.repo}:${p.host}:${p.port}`))],
     },
   });
+}
+
+export interface ProtocolConfigIngestResult extends IngestResult {
+  /** The submitted files this collector recognised as a protocol configuration, and how much each declared. A file here with `declarationCount: 0` was read and states no crypto. */
+  configFiles: RecognisedProtocolConfig[];
+  /** One entry per declaration this run read — the route's material for a response, without re-parsing. */
+  declarations: ProtocolConfigDeclarationSummary[];
+}
+
+export interface ProtocolConfigDeclarationSummary {
+  path: string;
+  format: string;
+  directive: string;
+  declaredValue: string;
+  algorithm: string;
+  keySize: number | null;
+  strength: string;
+  /** The enclosing `Match`/`Host` block, when the directive applies conditionally. Null when it applies globally. */
+  condition: string | null;
+  confidence: number;
+}
+
+function toProtocolConfigSummary(observation: RawObservation): ProtocolConfigDeclarationSummary {
+  const detail = observation.locationDetail;
+  if (detail?.kind !== "config") {
+    // Cannot happen: every observation reaching here came from
+    // collectProtocolConfigObservations(), which always sets this. Guarded
+    // rather than cast, so a future change to the collector fails loudly here
+    // instead of producing a summary with the wrong shape.
+    throw new Error(`protocol-config observation at ${observation.location} carries no config locationDetail`);
+  }
+  return {
+    path: detail.config.path,
+    format: detail.config.format,
+    directive: detail.config.directive,
+    declaredValue: detail.config.declaredValue,
+    algorithm: observation.algorithm,
+    keySize: observation.keySize ?? null,
+    strength: detail.config.strength,
+    condition: detail.config.condition ?? null,
+    confidence: observation.confidence,
+  };
+}
+
+/**
+ * B6 — persist a protocol-configuration collection (docs/Claude/03-features.md
+ * §B6).
+ *
+ * **The "examined nothing" gate is on recognised *files*, not on
+ * observations**, and that is the one place this differs from its three
+ * predecessors in a way that matters. A valid `sshd_config` that leaves every
+ * algorithm directive at the compiled-in default is *examined and found
+ * nothing* — a real, useful answer, and a collection run must be recorded for
+ * it, exactly as a `package-lock.json` full of non-crypto packages records a
+ * run with zero observations. Only a submission where **no** file is a
+ * configuration this collector understands has examined nothing, and that is
+ * what must not write a run. So this function throws on
+ * `configFiles.length === 0` and deliberately does not throw when the
+ * observation list is empty.
+ *
+ * **`reobserved` is built from the recognised files, not from the
+ * observations** — the opposite of `ingestCertificateObservations` above, and
+ * for a reason worth stating rather than inferring. A certificate's `location`
+ * *is* its identity, so a certificate absent from a submission is outside the
+ * scope by construction. A configuration file is a *slot*: deleting the last
+ * `HostKeyAlgorithms` line and resubmitting produces zero observations for
+ * that file, and if the scope were derived from observations the file's
+ * location would never enter it — the removed declaration's asset would stay
+ * `active` forever, breaking the A1 acceptance criterion ("removing the
+ * vulnerable line marks the asset `gone`") for precisely the edit the feature
+ * is meant to detect. Deriving it from the files that were read makes the
+ * removal visible.
+ */
+export async function ingestProtocolConfigObservations(
+  tx: ScopedTx,
+  params: {
+    repo: string;
+    files: Array<{ path: string; content: string }>;
+    organizationId: number;
+  },
+): Promise<ProtocolConfigIngestResult> {
+  // `language` is part of the shared `CollectionTarget` shape and means
+  // nothing here; the collector selects files by basename and structure.
+  const target = {
+    kind: "source" as const,
+    repo: params.repo,
+    files: params.files.map((f) => ({ ...f, language: "config" })),
+  };
+
+  const configFiles = protocolConfigsIn(target);
+  if (configFiles.length === 0) {
+    throw new Error("protocol-config ingest was given no recognised configuration file — a run must not be recorded");
+  }
+
+  const observations = collectProtocolConfigObservations(target);
+  const declarations = observations.map(toProtocolConfigSummary);
+
+  const result = await ingestObservations(tx, {
+    organizationId: params.organizationId,
+    repo: params.repo,
+    collector: "protocol-config",
+    collectorVersion: "1.0.0",
+    surface: "config",
+    observations,
+    reobserved: {
+      kind: "locations",
+      locations: [...new Set(configFiles.map((file) => protocolConfigLocation(params.repo, file.path)))],
+    },
+  });
+
+  return { ...result, configFiles, declarations };
 }
