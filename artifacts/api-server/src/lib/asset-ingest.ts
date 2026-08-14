@@ -3,6 +3,8 @@ import type { ScopedTx } from "@workspace/db/org-scope";
 import {
   collectSourceObservations,
   collectDependencyObservations,
+  collectCertificateObservations,
+  certificatesIn,
   computeFingerprint,
   dependencyLocationPrefix,
   ecosystemsIn,
@@ -30,6 +32,9 @@ import { and, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
  * `fingerprintForObservation()` in `@workspace/collectors`, from the
  * `locationDetail` discriminator the collector already sets — so a third
  * collector needs a fingerprint rule and a run descriptor, not an edit here.
+ * B4's `ingestCertificateObservations()` below is exactly that: a fourth
+ * `IngestSpec` shape reusing the same shared `ingestObservations()`, proving
+ * the claim rather than repeating it.
  *
  * Takes the caller's already-scoped transaction and uses it directly rather
  * than opening one of its own. That is not a style preference: a second scope
@@ -337,4 +342,112 @@ export async function ingestDependencyObservations(
   });
 
   return { ...result, lockfiles };
+}
+
+export interface CertificateIngestResult extends IngestResult {
+  /** The submitted files this collector could actually read at least one certificate from, and how many. */
+  certificateFiles: Array<{ path: string; certificateCount: number }>;
+  /** One entry per certificate this run parsed — the route's material for building a response and evaluating Q-Day, without re-parsing. */
+  certificates: CertificateSummary[];
+}
+
+export interface CertificateSummary {
+  location: string;
+  algorithm: string;
+  keySize: number | null;
+  issuer: string;
+  serialNumber: string;
+  subject: string | null;
+  notBefore: string;
+  notAfter: string;
+  signatureAlgorithm: string | null;
+}
+
+function toCertificateSummary(observation: RawObservation): CertificateSummary {
+  const detail = observation.locationDetail;
+  if (detail?.kind !== "certificate") {
+    // Cannot happen: every observation reaching here came from
+    // collectCertificateObservations(), which always sets this. Guarded
+    // rather than cast, so a future change to the collector fails loudly
+    // here instead of producing a summary with the wrong shape.
+    throw new Error(`certificate observation at ${observation.location} carries no certificate locationDetail`);
+  }
+  return {
+    location: observation.location,
+    algorithm: observation.algorithm,
+    keySize: observation.keySize ?? null,
+    issuer: detail.certificate.issuer,
+    serialNumber: detail.certificate.serialNumber,
+    subject: detail.certificate.subject ?? null,
+    notBefore: detail.certificate.notBefore,
+    notAfter: detail.certificate.notAfter,
+    signatureAlgorithm: detail.certificate.signatureAlgorithm ?? null,
+  };
+}
+
+/**
+ * B4 — persist a certificate collection (docs/Claude/03-features.md §B4).
+ *
+ * Same "examine nothing, record nothing" discipline as
+ * `ingestDependencyObservations`: a submission with no parseable certificate
+ * must not write a `completed` collection run, or the D3 meter would report
+ * the certificate surface as examined-and-empty when nothing readable was
+ * submitted at all.
+ */
+export async function ingestCertificateObservations(
+  tx: ScopedTx,
+  params: {
+    repo: string;
+    files: Array<{ path: string; content: string }>;
+    organizationId: number;
+  },
+): Promise<CertificateIngestResult> {
+  // `language` means nothing for a certificate file; the collector reads
+  // content, never the extension or this field.
+  const target = {
+    kind: "source" as const,
+    repo: params.repo,
+    files: params.files.map((f) => ({ ...f, language: "certificate" })),
+  };
+  const certificateFiles = certificatesIn(target);
+  if (certificateFiles.length === 0) {
+    throw new Error("certificate ingest was given no parseable certificate — a run must not be recorded");
+  }
+
+  const observations = collectCertificateObservations(target);
+  const certificates = observations.map(toCertificateSummary);
+
+  const result = await ingestObservations(tx, {
+    organizationId: params.organizationId,
+    repo: params.repo,
+    collector: "certificate-x509",
+    collectorVersion: "1.0.0",
+    surface: "certificate",
+    observations,
+    /**
+     * Scoped to the exact certificates this submission actually parsed — the
+     * same per-file discipline `ingestSourceObservations` uses (see
+     * `ReobservationScope` above), one level finer, because each
+     * certificate's `location` already encodes its full identity (issuer +
+     * serial: `fingerprint.ts`'s `certificate` variant), not a stable slot
+     * the way a source file path or a dependency's ecosystem prefix is.
+     *
+     * The consequence is worth stating explicitly, because it differs from
+     * both existing surfaces: renewing a certificate mints a new serial, so
+     * the renewed certificate is a NEW `location`, outside this round's
+     * scope. A submission that omits the old (superseded) certificate does
+     * NOT mark it `gone` — there is no shared slot for the two to occupy,
+     * unlike a source file being edited in place or a package version bump.
+     * A specific issued certificate is a permanent historical fact once
+     * observed; retiring one is a lifecycle decision (`waived`/
+     * `remediated`) or a project deletion, not something a later, unrelated
+     * submission can infer by its absence. What this scope DOES correctly
+     * do is reactivate a certificate marked `gone` if its exact bytes are
+     * resubmitted — the mechanism scheduled re-collection (roadmap M3) would
+     * rely on for an unchanged certificate.
+     */
+    reobserved: { kind: "locations", locations: [...new Set(observations.map((o) => o.location))] },
+  });
+
+  return { ...result, certificateFiles, certificates };
 }

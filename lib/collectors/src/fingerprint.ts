@@ -9,7 +9,7 @@ import type { RawObservation } from "./types";
  *   source:      repo + path + algorithm + normalised-symbol (NOT line number)
  *   dependency:  repo + ecosystem + package + algorithm  (see below)
  *   tls:         host + port + algorithm
- *   certificate: issuer + serial
+ *   certificate: repo + issuer + serial  (see below — same amendment as dependency)
  *   kms:         provider + key ARN/ID
  *
  * qx-sp1800-38b investigation report §"Binary fingerprint rule":
@@ -39,12 +39,25 @@ import type { RawObservation } from "./types";
  * That is the right trade — a query can aggregate rows, but no query can
  * split one row back into the two projects it stands for. Stability is
  * unaffected: `repo` is `project:<id>`, which does not change.
+ *
+ * **`repo` was added to the `certificate` variant for the identical reason,
+ * when B4's ingest path was built.** The architecture table above still read
+ * `issuer + serial` at the time; the same three mechanisms that motivated
+ * `dependency`'s amendment apply verbatim to a certificate submitted to two
+ * different projects — a shared wildcard certificate, or two projects
+ * uploading the same CA bundle, would otherwise collide into one asset row
+ * and the loser's `location` (and therefore its project attribution) would
+ * be silently overwritten by the upsert. Unlike `dependency`, this was not
+ * discovered as a live bug — B2's precedent made it obvious to apply up
+ * front — but the reasoning, and the trade (one certificate now belongs to
+ * exactly the project it was submitted under, not to the organisation at
+ * large), is the same.
  */
 export type FingerprintInput =
   | { surface: "source"; repo: string; path: string; algorithm: string; symbol: string }
   | { surface: "dependency"; repo: string; ecosystem: string; package: string; algorithm: string }
   | { surface: "tls"; host: string; port: number; algorithm: string }
-  | { surface: "certificate"; issuer: string; serial: string }
+  | { surface: "certificate"; repo: string; issuer: string; serial: string }
   | { surface: "kms"; provider: string; keyId: string }
   | {
       surface: "binary";
@@ -71,7 +84,7 @@ function orderedFields(input: FingerprintInput): string[] {
     case "tls":
       return [input.surface, input.host, String(input.port), input.algorithm];
     case "certificate":
-      return [input.surface, input.issuer, input.serial];
+      return [input.surface, input.repo, input.issuer, input.serial];
     case "kms":
       return [input.surface, input.provider, input.keyId];
     case "binary":
@@ -148,6 +161,13 @@ export function fingerprintForObservation(
         // and folding it into identity would orphan and recreate the asset on
         // every patch bump — the same anti-requirement as line numbers above.
         algorithm: observation.algorithm,
+      };
+    case "certificate":
+      return {
+        surface: "certificate",
+        repo: context.repo,
+        issuer: detail.certificate.issuer,
+        serial: detail.certificate.serialNumber,
       };
     default:
       return undefined;

@@ -62,10 +62,21 @@ describe("computeFingerprint — other surfaces", () => {
     expect(a).not.toBe(b);
   });
 
-  it("certificate: issuer + serial", () => {
-    const a = computeFingerprint({ surface: "certificate", issuer: "DigiCert", serial: "01AB" });
-    const b = computeFingerprint({ surface: "certificate", issuer: "DigiCert", serial: "01AB" });
+  it("certificate: repo + issuer + serial", () => {
+    const a = computeFingerprint({ surface: "certificate", repo: "project:1", issuer: "DigiCert", serial: "01AB" });
+    const b = computeFingerprint({ surface: "certificate", repo: "project:1", issuer: "DigiCert", serial: "01AB" });
     expect(a).toBe(b);
+  });
+
+  it("certificate: the same issuer+serial submitted to two projects is two assets", () => {
+    // Same reasoning as the dependency case above: `assets.location` carries
+    // only one project's prefix, so a shared certificate (a wildcard cert
+    // reused across projects, or the same CA bundle uploaded twice) must not
+    // collide into one row — the second upsert would silently overwrite the
+    // first project's `location` and un-attribute its certificate.
+    const one = computeFingerprint({ surface: "certificate", repo: "project:1", issuer: "DigiCert", serial: "01AB" });
+    const two = computeFingerprint({ surface: "certificate", repo: "project:2", issuer: "DigiCert", serial: "01AB" });
+    expect(one).not.toBe(two);
   });
 
   it("binary: excludes content digest/sha256 by construction — the type has no such field", () => {

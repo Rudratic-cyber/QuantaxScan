@@ -18,6 +18,7 @@ import type {
 
 import type {
   CbomDocument,
+  CertificateIngestSummary,
   ChatBody,
   CommunityPost,
   CreateCommunityPostBody,
@@ -43,10 +44,12 @@ import type {
   MultiScanResult,
   PostureTimeline,
   Project,
+  ProjectCertificates,
   ProjectCoverage,
   RateLimitedResponse,
   Scan,
   SharedReport,
+  SubmitProjectCertificatesBody,
   SubmitProjectDependenciesBody,
   VoteBody,
 } from "./api.schemas";
@@ -743,6 +746,193 @@ export const useSubmitProjectDependencies = <
 > => {
   return useMutation(getSubmitProjectDependenciesMutationOptions(options));
 };
+
+/**
+ * Runs the certificate collector over the submitted PEM/DER files and persists what it finds as assets on the `certificate` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+`content` is PEM text (one or more concatenated `-----BEGIN/END CERTIFICATE-----` blocks — a full chain is read entirely, not just its leaf) or base64-encoded DER. A file that is neither contributes nothing, silently.
+
+**If no submitted file contains a parseable certificate, no collection run is recorded** and `certificatesRecognised` is 0 — the same "examined nothing, not found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an error.
+
+Each returned certificate carries `qDay`: whether its `notAfter` falls on or after each Q-Day scenario's year, derived fresh on every call rather than stored — see `GET /projects/{id}/certificates` for the persisted-inventory read this backs.
+ * @summary Submit certificates for X.509 collection (B4)
+ */
+export const getSubmitProjectCertificatesUrl = (id: number) => {
+  return `/api/projects/${id}/certificates`;
+};
+
+export const submitProjectCertificates = async (
+  id: number,
+  submitProjectCertificatesBody: SubmitProjectCertificatesBody,
+  options?: RequestInit,
+): Promise<CertificateIngestSummary> => {
+  return customFetch<CertificateIngestSummary>(
+    getSubmitProjectCertificatesUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(submitProjectCertificatesBody),
+    },
+  );
+};
+
+export const getSubmitProjectCertificatesMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectCertificates>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectCertificatesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectCertificates>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectCertificatesBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectCertificates"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectCertificates>>,
+    { id: number; data: BodyType<SubmitProjectCertificatesBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectCertificates(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectCertificatesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectCertificates>>
+>;
+export type SubmitProjectCertificatesMutationBody =
+  BodyType<SubmitProjectCertificatesBody>;
+export type SubmitProjectCertificatesMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit certificates for X.509 collection (B4)
+ */
+export const useSubmitProjectCertificates = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectCertificates>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectCertificatesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectCertificates>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectCertificatesBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectCertificatesMutationOptions(options));
+};
+
+/**
+ * Every certificate asset attributed to this project, each evaluated against every Q-Day scenario at read time — never persisted, because Q-Day scenarios are customer-overridable (see `lib/risk`) and a stored verdict would go stale exactly the way C1 exists to prevent. Includes assets of every lifecycle status, not only `active`; a report of what was found must keep what was later remediated or waived in the record.
+ * @summary The project's certificate inventory, evaluated against Q-Day (B4)
+ */
+export const getGetProjectCertificatesUrl = (id: number) => {
+  return `/api/projects/${id}/certificates`;
+};
+
+export const getProjectCertificates = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProjectCertificates> => {
+  return customFetch<ProjectCertificates>(getGetProjectCertificatesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectCertificatesQueryKey = (id: number) => {
+  return [`/api/projects/${id}/certificates`] as const;
+};
+
+export const getGetProjectCertificatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectCertificates>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectCertificates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProjectCertificatesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectCertificates>>
+  > = ({ signal }) => getProjectCertificates(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectCertificates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectCertificatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectCertificates>>
+>;
+export type GetProjectCertificatesQueryError = ErrorType<void>;
+
+/**
+ * @summary The project's certificate inventory, evaluated against Q-Day (B4)
+ */
+
+export function useGetProjectCertificates<
+  TData = Awaited<ReturnType<typeof getProjectCertificates>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectCertificates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectCertificatesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Observed history from real collection instants, plus a projected horizon and the obligation deadlines that fall in it. Observed points come only from instants at which a collection actually happened — the series is never resampled onto a regular grid, because that would draw a smooth trend on an estate that never changed. When fewer than two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
