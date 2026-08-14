@@ -222,6 +222,11 @@ describe("route manifest — a new route cannot ship without being considered", 
     // in the organisation with no where clause at all — the same shape as
     // `GET /projects`, and for the same reason.
     "GET /inventory/timeline": "org-scoped",
+    // D1 — same estate-wide read shape as the timeline above: every asset,
+    // project, collection run and observation in the organisation, no
+    // `where organization_id` in the handler.
+    "GET /inventory/readiness": "org-scoped",
+    "GET /inventory/assets": "org-scoped",
     // These touch no database at all: chat proxies to OpenAI and persists
     // nothing, and the github routes fetch from GitHub and hand the result
     // straight back. They still require an API key. When any of them starts
@@ -324,6 +329,46 @@ describe("list routes return this organisation's rows and only this organisation
     // Ours is MD5; theirs is the only RSA in the fixture. An RSA deadline
     // marker here would mean their asset was scored into our estate.
     expect(res.body.deadlines.every((d: { algorithms: string[] }) => !d.algorithms.includes("RSA"))).toBe(true);
+  });
+
+  it("GET /api/inventory/readiness scores none of another organisation's coverage or assets", async () => {
+    // Same adversarial fixture as the timeline test: their completed run and
+    // their asset are addressed at OUR project's identity, and this handler
+    // reads the whole organisation with no `where` clause. If the policy
+    // leaked, their source-surface run would mark "source" examined for us.
+    const res = await auth(request.get("/api/inventory/readiness"));
+    expect(res.status).toBe(200);
+
+    // Our own MD5 source asset is real evidence — "source" is examined for us.
+    // The claim under test is that THEIRS is not counted alongside it: their
+    // completed run at our project's `target` would additionally mark
+    // `completedRuns` on our "source" entry if the policy leaked.
+    expect(res.body.coverage.examinedSurfaces).toBe(1);
+    expect(res.body.coverage.surfaces).toEqual([
+      expect.objectContaining({ surface: "source", assets: 1, completedRuns: 0 }),
+    ]);
+
+    const inventorySection = res.body.sections.find((s: { id: string }) => s.id === "cryptographic-inventory");
+    expect(inventorySection.numerator).toBe(1);
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain("their confidential project");
+  });
+
+  it("GET /api/inventory/assets lists only our own asset, not theirs", async () => {
+    const res = await auth(request.get("/api/inventory/assets"));
+    expect(res.status).toBe(200);
+
+    expect(res.body.assets).toHaveLength(1);
+    expect(res.body.assets[0].fingerprint).toBe("our-asset-fingerprint");
+    expect(res.body.assets[0].algorithm).toBe("MD5");
+
+    // Their `active` asset must not be folded into our status counts.
+    expect(res.body.statusCounts).toEqual({ active: 1 });
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain("their-asset-fingerprint");
+    expect(serialised).not.toContain("secrets/their_key.py");
   });
 
   it("GET /api/projects/:id/findings returns nothing for another organisation's project", async () => {

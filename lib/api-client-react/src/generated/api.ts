@@ -30,6 +30,7 @@ import type {
   DemoScanResult,
   DependencyIngestSummary,
   Finding,
+  GetInventoryAssetsParams,
   GetLeaderboardParams,
   GithubFetchResult,
   GithubRateLimit,
@@ -38,6 +39,7 @@ import type {
   GithubScanResult,
   GlobalStats,
   HealthStatus,
+  InventoryAssetsSummary,
   LeaderboardEntry,
   ListCommunityPostsParams,
   MultiScanBody,
@@ -47,6 +49,7 @@ import type {
   Project,
   ProjectCoverage,
   RateLimitedResponse,
+  ReadinessSummary,
   Scan,
   SharedReport,
   SubmitProjectDependenciesBody,
@@ -1314,6 +1317,180 @@ export function useGetInventoryCbom<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetInventoryCbomQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Five sections tracking the named parts of the joint CISA/NSA/NIST quantum-readiness factsheet (August 2023), plus the estate-wide coverage meter the first section is defined against — bundled in one payload so the two cannot disagree. A section with no data source in this product (roadmap document attachment, the vendor register) reports `percentComplete: null` and `state: "not-tracked"`, never `0`. There is no combined/overall readiness score.
+ * @summary CISA quantum-readiness posture tracker (D1)
+ */
+export const getGetInventoryReadinessUrl = () => {
+  return `/api/inventory/readiness`;
+};
+
+export const getInventoryReadiness = async (
+  options?: RequestInit,
+): Promise<ReadinessSummary> => {
+  return customFetch<ReadinessSummary>(getGetInventoryReadinessUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetInventoryReadinessQueryKey = () => {
+  return [`/api/inventory/readiness`] as const;
+};
+
+export const getGetInventoryReadinessQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInventoryReadiness>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryReadiness>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetInventoryReadinessQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getInventoryReadiness>>
+  > = ({ signal }) => getInventoryReadiness({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryReadiness>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInventoryReadinessQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInventoryReadiness>>
+>;
+export type GetInventoryReadinessQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary CISA quantum-readiness posture tracker (D1)
+ */
+
+export function useGetInventoryReadiness<
+  TData = Awaited<ReturnType<typeof getInventoryReadiness>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryReadiness>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInventoryReadinessQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Present assets only (`status !== "gone"`), each carrying its resolved compliance track (post-quantum vs. classical hygiene — G-10) and which Q-Day scenarios it breaches. `statusCounts` covers every asset in the organisation regardless of status, `gone` included, so drift can be reported without listing removed assets as present.
+ * @summary Estate inventory table, PQC track and Mosca breach per asset (D1 Row 4)
+ */
+export const getGetInventoryAssetsUrl = (params?: GetInventoryAssetsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/inventory/assets?${stringifiedParams}`
+    : `/api/inventory/assets`;
+};
+
+export const getInventoryAssets = async (
+  params?: GetInventoryAssetsParams,
+  options?: RequestInit,
+): Promise<InventoryAssetsSummary> => {
+  return customFetch<InventoryAssetsSummary>(getGetInventoryAssetsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetInventoryAssetsQueryKey = (
+  params?: GetInventoryAssetsParams,
+) => {
+  return [`/api/inventory/assets`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetInventoryAssetsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInventoryAssets>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(
+  params?: GetInventoryAssetsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInventoryAssets>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetInventoryAssetsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getInventoryAssets>>
+  > = ({ signal }) => getInventoryAssets(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryAssets>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInventoryAssetsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInventoryAssets>>
+>;
+export type GetInventoryAssetsQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Estate inventory table, PQC track and Mosca breach per asset (D1 Row 4)
+ */
+
+export function useGetInventoryAssets<
+  TData = Awaited<ReturnType<typeof getInventoryAssets>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(
+  params?: GetInventoryAssetsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInventoryAssets>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInventoryAssetsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

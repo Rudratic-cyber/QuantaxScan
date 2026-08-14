@@ -404,6 +404,54 @@ paths:
               schema:
                 $ref: "#/components/schemas/CbomDocument"
 
+  /inventory/readiness:
+    get:
+      operationId: getInventoryReadiness
+      tags: [inventory]
+      summary: CISA quantum-readiness posture tracker (D1)
+      description: >-
+        Five sections tracking the named parts of the joint CISA/NSA/NIST quantum-readiness
+        factsheet (August 2023), plus the estate-wide coverage meter the first section is
+        defined against — bundled in one payload so the two cannot disagree. A section with
+        no data source in this product (roadmap document attachment, the vendor register)
+        reports `percentComplete: null` and `state: "not-tracked"`, never `0`. There is no
+        combined/overall readiness score.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Readiness posture and estate coverage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessSummary"
+
+  /inventory/assets:
+    get:
+      operationId: getInventoryAssets
+      tags: [inventory]
+      summary: Estate inventory table, PQC track and Mosca breach per asset (D1 Row 4)
+      description: >-
+        Present assets only (`status !== "gone"`), each carrying its resolved compliance
+        track (post-quantum vs. classical hygiene — G-10) and which Q-Day scenarios it
+        breaches. `statusCounts` covers every asset in the organisation regardless of status,
+        `gone` included, so drift can be reported without listing removed assets as present.
+      parameters:
+        - name: surface
+          in: query
+          description: Filter to one collector surface, e.g. `certificate` for the cert-expiry panel.
+          schema:
+            type: string
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Enriched asset inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryAssetsSummary"
+
   /scans:
     post:
       operationId: createScan
@@ -3178,3 +3226,235 @@ components:
         - metadata
         - components
         - dependencies
+
+    ReadinessSection:
+      type: object
+      description: >-
+        One named part of the CISA/NSA/NIST factsheet. `state: "not-tracked"` means this
+        product has no data source for the section at all (e.g. no roadmap-document
+        attachment, no vendor register) — `percentComplete` is null in that case, never 0,
+        because 0 would assert a measurement nobody took.
+      properties:
+        id:
+          type: string
+          enum: [roadmap, cryptographic-inventory, prioritisation, vendor-engagement, supply-chain]
+        label:
+          type: string
+        definition:
+          type: string
+          description: What "complete" means for this section, stated plainly rather than left implicit.
+        state:
+          type: string
+          enum: [tracked, not-tracked]
+        percentComplete:
+          type: integer
+          nullable: true
+        numerator:
+          type: integer
+          nullable: true
+        denominator:
+          type: integer
+          nullable: true
+        reason:
+          type: string
+      required:
+        - id
+        - label
+        - definition
+        - state
+        - percentComplete
+        - numerator
+        - denominator
+        - reason
+
+    ReadinessSummary:
+      type: object
+      description: >-
+        D1 Row 1 plus the estate coverage meter (Row 3) it is partly defined against, in one
+        payload so the two cannot disagree. Deliberately carries no combined/overall
+        readiness score — averaging a measured section with an untracked one would invent a
+        denominator, and that is the one number a buyer would screenshot and nobody could
+        defend.
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        framing:
+          type: string
+          description: >-
+            States the factsheet's name and date. The factsheet is organised into named
+            sections, not a numbered stage sequence — this must never read as a CISA-authored
+            numbering.
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReadinessSection"
+        coverage:
+          $ref: "#/components/schemas/EstateCoverage"
+      required:
+        - generatedAt
+        - framing
+        - sections
+        - coverage
+
+    EstateCoverage:
+      type: object
+      description: >-
+        The same shape and the same honesty rules as `ProjectCoverage` (D3's per-project
+        meter), computed over the whole organisation instead of one project — reusing
+        `summariseProjectCoverage` verbatim, since its output never depended on a project
+        scope in the first place. No `projectId`: the whole point is that it is not one.
+      properties:
+        examinedSurfaces:
+          type: integer
+        totalSurfaces:
+          type: integer
+        surfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/SurfaceCoverage"
+        confidence:
+          $ref: "#/components/schemas/ConfidenceSummary"
+      required:
+        - examinedSurfaces
+        - totalSurfaces
+        - surfaces
+        - confidence
+
+    InventoryMoscaSummary:
+      type: object
+      description: >-
+        Reuses the same exported Mosca primitives `PostureTimeline` scores its estate-wide
+        series with, so the two panels cannot disagree about what "breached" means.
+      properties:
+        x:
+          type: number
+          description: Secrecy lifetime in years, as resolved through A3 (asset → project → product default).
+        y:
+          type: number
+          description: Migration time in years, from effort hours. Zero across the board until effort estimation ships.
+        xAssumed:
+          type: boolean
+          description: True when X was defaulted rather than supplied at the asset or project level.
+        applicable:
+          type: boolean
+          description: False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break.
+        breachedScenarios:
+          type: array
+          items:
+            type: string
+          description: Q-Day scenario names this asset breaches under. Empty when not applicable.
+      required:
+        - x
+        - y
+        - xAssumed
+        - applicable
+        - breachedScenarios
+
+    EnrichedInventoryAsset:
+      type: object
+      properties:
+        id:
+          type: integer
+        fingerprint:
+          type: string
+        projectId:
+          type: integer
+          nullable: true
+          description: Null for a surface with no project association (TLS, certificate, KMS).
+        surface:
+          type: string
+        algorithm:
+          type: string
+        keySize:
+          type: integer
+          nullable: true
+        location:
+          type: string
+        status:
+          type: string
+        firstSeen:
+          type: string
+          format: date-time
+        lastSeen:
+          type: string
+          format: date-time
+        ownerId:
+          type: integer
+          nullable: true
+        dataClassification:
+          type: string
+          nullable: true
+        secrecyLifetimeYears:
+          type: integer
+          nullable: true
+        classificationSource:
+          type: string
+          enum: [asset, project, default]
+          description: Where the classification behind `mosca.x` actually came from.
+        latestConfidence:
+          type: number
+          nullable: true
+          description: Most recent observation's confidence. Null when the asset has never been observed.
+        compliance:
+          allOf:
+            - $ref: "#/components/schemas/FindingCompliance"
+          nullable: true
+          description: Null when the mapping data has no entry for this algorithm.
+        mosca:
+          $ref: "#/components/schemas/InventoryMoscaSummary"
+      required:
+        - id
+        - fingerprint
+        - projectId
+        - surface
+        - algorithm
+        - keySize
+        - location
+        - status
+        - firstSeen
+        - lastSeen
+        - ownerId
+        - dataClassification
+        - secrecyLifetimeYears
+        - classificationSource
+        - latestConfidence
+        - compliance
+        - mosca
+
+    InventoryAssetsSummary:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        assets:
+          type: array
+          items:
+            $ref: "#/components/schemas/EnrichedInventoryAsset"
+        statusCounts:
+          type: object
+          additionalProperties:
+            type: integer
+          description: >-
+            Every asset status in the organisation, `gone` included — so drift can be
+            reported without a removed asset ever appearing in `assets` as if still present.
+        scenarios:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              qDayYear: { type: integer }
+              rationale: { type: string }
+              confidence: { type: string }
+            required: [name, qDayYear, rationale, confidence]
+        framing:
+          type: string
+          description: Mandatory wherever a scenario year is shown.
+      required:
+        - generatedAt
+        - assets
+        - statusCounts
+        - scenarios
+        - framing

@@ -918,6 +918,367 @@ export const GetInventoryTimelineResponse = zod.object({
 });
 
 /**
+ * Five sections tracking the named parts of the joint CISA/NSA/NIST quantum-readiness factsheet (August 2023), plus the estate-wide coverage meter the first section is defined against — bundled in one payload so the two cannot disagree. A section with no data source in this product (roadmap document attachment, the vendor register) reports `percentComplete: null` and `state: "not-tracked"`, never `0`. There is no combined/overall readiness score.
+ * @summary CISA quantum-readiness posture tracker (D1)
+ */
+export const GetInventoryReadinessResponse = zod
+  .object({
+    generatedAt: zod.coerce.date(),
+    framing: zod
+      .string()
+      .describe(
+        "States the factsheet's name and date. The factsheet is organised into named sections, not a numbered stage sequence — this must never read as a CISA-authored numbering.",
+      ),
+    sections: zod.array(
+      zod
+        .object({
+          id: zod.enum([
+            "roadmap",
+            "cryptographic-inventory",
+            "prioritisation",
+            "vendor-engagement",
+            "supply-chain",
+          ]),
+          label: zod.string(),
+          definition: zod
+            .string()
+            .describe(
+              'What \"complete\" means for this section, stated plainly rather than left implicit.',
+            ),
+          state: zod.enum(["tracked", "not-tracked"]),
+          percentComplete: zod.number().nullable(),
+          numerator: zod.number().nullable(),
+          denominator: zod.number().nullable(),
+          reason: zod.string(),
+        })
+        .describe(
+          'One named part of the CISA\/NSA\/NIST factsheet. `state: \"not-tracked\"` means this product has no data source for the section at all (e.g. no roadmap-document attachment, no vendor register) — `percentComplete` is null in that case, never 0, because 0 would assert a measurement nobody took.',
+        ),
+    ),
+    coverage: zod
+      .object({
+        examinedSurfaces: zod.number(),
+        totalSurfaces: zod.number(),
+        surfaces: zod.array(
+          zod.object({
+            surface: zod
+              .string()
+              .describe(
+                "The `Surface` enum value, i.e. how the database records it.",
+              ),
+            surfaceId: zod
+              .string()
+              .nullable()
+              .describe(
+                "The collector catalogue id, so a caller can join presentation without re-deriving the mapping. Null for a surface with no catalogue entry.",
+              ),
+            state: zod
+              .enum(["examined", "examined-nothing-found", "never-examined"])
+              .describe(
+                "`examined-nothing-found` is its own state on purpose: a clean result and an absent one are different facts, and collapsing them loses the only one a reader cares about when the answer is zero.",
+              ),
+            completedRuns: zod.number(),
+            failedRuns: zod
+              .number()
+              .describe(
+                "A failed run is an attempt, not an examination. It is counted here and kept out of `completedRuns` so it can never make a surface look examined.",
+              ),
+            lastExaminedAt: zod.coerce.date().nullable(),
+            assets: zod.number(),
+            activeAssets: zod.number(),
+          }),
+        ),
+        confidence: zod.object({
+          basis: zod
+            .enum(["latest observation per active asset"])
+            .describe(
+              "Stated in the payload so a report built from it can quote the basis rather than guess it. One point per asset, not per observation — weighting by scan frequency would describe our scheduling, not our evidence quality.",
+            ),
+          scored: zod.number(),
+          unscored: zod
+            .number()
+            .describe(
+              "Active assets with no observation at all. Non-zero means a data problem, and hiding it would be the wrong default.",
+            ),
+          excludedByAssetStatus: zod
+            .record(zod.string(), zod.number())
+            .describe(
+              "Assets deliberately left out of the distribution, keyed by asset status.",
+            ),
+          distinctValues: zod.number(),
+          min: zod.number().nullable(),
+          max: zod.number().nullable(),
+          mean: zod.number().nullable(),
+          buckets: zod.array(
+            zod
+              .object({
+                label: zod.string(),
+                lower: zod.number(),
+                upper: zod.number(),
+                count: zod.number(),
+              })
+              .describe(
+                "Half-open bucket, [lower, upper), except the last which includes 1.0.",
+              ),
+          ),
+        }),
+      })
+      .describe(
+        "The same shape and the same honesty rules as `ProjectCoverage` (D3's per-project meter), computed over the whole organisation instead of one project — reusing `summariseProjectCoverage` verbatim, since its output never depended on a project scope in the first place. No `projectId`: the whole point is that it is not one.",
+      ),
+  })
+  .describe(
+    "D1 Row 1 plus the estate coverage meter (Row 3) it is partly defined against, in one payload so the two cannot disagree. Deliberately carries no combined\/overall readiness score — averaging a measured section with an untracked one would invent a denominator, and that is the one number a buyer would screenshot and nobody could defend.",
+  );
+
+/**
+ * Present assets only (`status !== "gone"`), each carrying its resolved compliance track (post-quantum vs. classical hygiene — G-10) and which Q-Day scenarios it breaches. `statusCounts` covers every asset in the organisation regardless of status, `gone` included, so drift can be reported without listing removed assets as present.
+ * @summary Estate inventory table, PQC track and Mosca breach per asset (D1 Row 4)
+ */
+export const GetInventoryAssetsQueryParams = zod.object({
+  surface: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter to one collector surface, e.g. `certificate` for the cert-expiry panel.",
+    ),
+});
+
+export const GetInventoryAssetsResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  assets: zod.array(
+    zod.object({
+      id: zod.number(),
+      fingerprint: zod.string(),
+      projectId: zod
+        .number()
+        .nullable()
+        .describe(
+          "Null for a surface with no project association (TLS, certificate, KMS).",
+        ),
+      surface: zod.string(),
+      algorithm: zod.string(),
+      keySize: zod.number().nullable(),
+      location: zod.string(),
+      status: zod.string(),
+      firstSeen: zod.coerce.date(),
+      lastSeen: zod.coerce.date(),
+      ownerId: zod.number().nullable(),
+      dataClassification: zod.string().nullable(),
+      secrecyLifetimeYears: zod.number().nullable(),
+      classificationSource: zod
+        .enum(["asset", "project", "default"])
+        .describe(
+          "Where the classification behind `mosca.x` actually came from.",
+        ),
+      latestConfidence: zod
+        .number()
+        .nullable()
+        .describe(
+          "Most recent observation's confidence. Null when the asset has never been observed.",
+        ),
+      compliance: zod
+        .object({
+          algorithm: zod.string(),
+          algorithmId: zod.string(),
+          quantumVulnerable: zod.boolean(),
+          riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+          complianceStatus: zod.enum([
+            "immediate-failure",
+            "future-obligation",
+            "no-obligation",
+          ]),
+          bucket: zod.enum([
+            "immediate-compliance-failure",
+            "pqc-migration",
+            "classical-hygiene",
+            "best-practice",
+            "no-obligation",
+          ]),
+          bucketLabel: zod.string(),
+          bucketDescription: zod.string(),
+          countsTowardPostQuantumScore: zod
+            .boolean()
+            .describe(
+              "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+            ),
+          headline: zod.string(),
+          useDependent: zod
+            .boolean()
+            .describe(
+              "True when the standard's answer depends on how the algorithm is used.",
+            ),
+          useConditions: zod.array(
+            zod.object({
+              use: zod.string(),
+              status: zod.string(),
+              permitted: zod.boolean(),
+              framework: zod.string(),
+            }),
+          ),
+          obligations: zod.array(
+            zod.object({
+              framework: zod.string(),
+              frameworkName: zod.string().optional(),
+              requirement: zod.string(),
+              severity: zod.enum([
+                "critical",
+                "high",
+                "medium",
+                "informational",
+              ]),
+              replacement: zod
+                .object({
+                  algorithm: zod.string(),
+                  standard: zod.string(),
+                  purpose: zod.string().optional(),
+                  note: zod.string().optional(),
+                })
+                .optional(),
+              deadline: zod
+                .object({
+                  type: zod
+                    .string()
+                    .describe(
+                      "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                    ),
+                  label: zod.string(),
+                  effect: zod.enum(["prohibition", "caution", "permitted"]),
+                  inEffect: zod
+                    .boolean()
+                    .describe("Whether the rule binds at the resolution date."),
+                  after: zod.string().optional(),
+                  in: zod.string().optional(),
+                  since: zod.string().optional(),
+                  appliesTo: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                    ),
+                  securityStrength: zod.string().optional(),
+                  source: zod.string().optional(),
+                  note: zod.string().optional(),
+                })
+                .optional(),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  section: zod.string().optional(),
+                  url: zod.string(),
+                  retrievedAt: zod.string().optional(),
+                  published: zod.string().optional(),
+                })
+                .describe(
+                  "Provenance for a single regulatory claim. Required on every obligation.",
+                ),
+              confidence: zod
+                .string()
+                .describe(
+                  "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+                ),
+              draftStatus: zod
+                .string()
+                .optional()
+                .describe(
+                  "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                ),
+              caveats: zod.array(zod.string()),
+              source: zod.enum([
+                "algorithm-deadline",
+                "algorithm-replacement",
+                "algorithm-best-practice",
+                "framework",
+              ]),
+            }),
+          ),
+          detection: zod.object({
+            multiplier: zod.number(),
+            adjustedConfidence: zod.number().optional(),
+            reviewRequired: zod.boolean(),
+            reason: zod.string().nullable(),
+          }),
+          reportingNote: zod.string().nullable(),
+          caveats: zod.array(zod.string()),
+          citation: zod
+            .object({
+              document: zod.string(),
+              section: zod.string().optional(),
+              url: zod.string(),
+              retrievedAt: zod.string().optional(),
+              published: zod.string().optional(),
+            })
+            .describe(
+              "Provenance for a single regulatory claim. Required on every obligation.",
+            ),
+          dataVersion: zod
+            .string()
+            .describe(
+              "Pin this with the report. A report is only reproducible against the data version that produced it.",
+            ),
+          asOf: zod
+            .string()
+            .describe("ISO date the deadlines were evaluated against."),
+        })
+        .describe(
+          "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+        )
+        .nullable()
+        .describe(
+          "Null when the mapping data has no entry for this algorithm.",
+        ),
+      mosca: zod
+        .object({
+          x: zod
+            .number()
+            .describe(
+              "Secrecy lifetime in years, as resolved through A3 (asset → project → product default).",
+            ),
+          y: zod
+            .number()
+            .describe(
+              "Migration time in years, from effort hours. Zero across the board until effort estimation ships.",
+            ),
+          xAssumed: zod
+            .boolean()
+            .describe(
+              "True when X was defaulted rather than supplied at the asset or project level.",
+            ),
+          applicable: zod
+            .boolean()
+            .describe(
+              "False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break.",
+            ),
+          breachedScenarios: zod
+            .array(zod.string())
+            .describe(
+              "Q-Day scenario names this asset breaches under. Empty when not applicable.",
+            ),
+        })
+        .describe(
+          'Reuses the same exported Mosca primitives `PostureTimeline` scores its estate-wide series with, so the two panels cannot disagree about what \"breached\" means.',
+        ),
+    }),
+  ),
+  statusCounts: zod
+    .record(zod.string(), zod.number())
+    .describe(
+      "Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present.",
+    ),
+  scenarios: zod.array(
+    zod.object({
+      name: zod.string(),
+      qDayYear: zod.number(),
+      rationale: zod.string(),
+      confidence: zod.string(),
+    }),
+  ),
+  framing: zod
+    .string()
+    .describe("Mandatory wherever a scenario year is shown."),
+});
+
+/**
  * @summary Start a new scan
  */
 export const CreateScanBody = zod.object({
