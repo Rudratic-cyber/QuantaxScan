@@ -89,6 +89,11 @@ fi
 
 run_stage "test:libs"        pnpm run test:libs
 run_stage "test:api"         pnpm run test:api
+run_stage "test:scripts"     pnpm run test:scripts
+
+# G-14. Standards data decays and nothing else would tell us. Cheap, offline, and it fails
+# the build rather than waiting for a customer to notice a stale date in a report.
+run_stage "standards"        pnpm run check:standards
 
 if (( SKIP_UI == 0 )); then
   if npx playwright --version > /dev/null 2>&1; then

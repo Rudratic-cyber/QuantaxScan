@@ -131,11 +131,30 @@ doing this" is false, and we should never say it.
 | They might use | Their limitation | Our line |
 |---|---|---|
 | A discovery tool from the NCCoE consortium | Mature discovery; generally weaker on risk arithmetic and evidence-grade reporting | "Discovery is necessary and not sufficient. What ranks the results against *your* data retention?" |
+| An agentless CPM platform (Fortanix, SafeLogic, Keyfactor, consultancy tooling) | Broad credential-based reach; a crypto inventory rather than a *deadline* posture | "You can see the keys. Which of them outlive your data's secrecy lifetime, and against whose published date?" |
+| PQCA CBOMkit (open source) | Free and CBOM-native; no risk arithmetic, no compliance mapping, no hosted product | "We emit the same CycloneDX 1.7 they do — deliberately. The question is what you do with it afterwards." |
 | Consultancy audit | Point-in-time, six figures, stale on delivery | "An inventory is a living thing. A PDF from March is already wrong." |
 | SAST + PQC rules | Source code only | "Most of your crypto is in dependencies and TLS. Source is one surface of ten." |
 | Certificate manager | Certificates only, no data-lifetime context | "Certificates matter — they are one input. Exposure needs the whole picture." |
 | Spreadsheet | Manual, stale, unauditable | "How old is it, and who signed off on it?" |
 | Nothing yet | — | "The first question you will be asked is what you have. Start there." |
+
+### The market is agentless-first, and that is a finding about us
+
+> **Added 2026-08-14** from independent competitive research.
+
+The vendors above reach cryptography predominantly through **read-only credentials** — cloud
+KMS, HSMs over PKCS#11, key managers over KMIP, the CA database, Active Directory, database TDE
+metadata. Almost none lead with source code.
+
+That ordering has a consequence we should say out loud internally: **source-code scanning is the
+slowest surface to onboard and among the narrowest in coverage.** It requires repository access,
+which triggers the deepest security review of any integration — the one gate a pre-pilot product
+cannot clear quickly. Our single live collector is therefore also our hardest sell.
+
+Nothing in the marketing copy needs to change because of this; the /coverage page already says
+1 of 10 honestly. What changes is which collector we build next if the goal is "plug in and
+report their gaps in a week."
 
 ### The differentiators that survive this list
 

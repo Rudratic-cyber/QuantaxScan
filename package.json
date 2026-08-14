@@ -1,7 +1,7 @@
 {
   "name": "workspace",
   "version": "0.0.0",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "scripts": {
     "preinstall": "node -e \"const fs = require('fs'); fs.rmSync('package-lock.json', { force: true }); fs.rmSync('yarn.lock', { force: true }); if (process.env.npm_config_user_agent && !process.env.npm_config_user_agent.includes('pnpm')) { console.error('Use pnpm instead'); process.exit(1); }\"",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
@@ -13,7 +13,9 @@
     "test:ui": "playwright test",
     "test": "pnpm run test:libs && pnpm run test:api && pnpm run test:ui",
     "ci": "bash scripts/ci-local.sh",
-    "hooks:install": "git config core.hooksPath .githooks && echo 'pre-push hook active — pnpm run ci --skip-ui will gate every push'"
+    "hooks:install": "git config core.hooksPath .githooks && echo 'pre-push hook active \u2014 pnpm run ci --skip-ui will gate every push'",
+    "check:standards": "pnpm --filter @workspace/scripts run check-standards-freshness",
+    "test:scripts": "pnpm --filter @workspace/scripts run test"
   },
   "private": true,
   "devDependencies": {

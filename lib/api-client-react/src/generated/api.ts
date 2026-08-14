@@ -17,22 +17,33 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  CbomDocument,
+  ChatBody,
   CommunityPost,
   CreateCommunityPostBody,
   CreateProjectBody,
   CreateScanBody,
+  CreateSharedReportBody,
+  CreateSharedReportResponse,
   DemoRepo,
+  DemoScanResult,
   Finding,
-  GetCurrentAuthUserResponse,
   GetLeaderboardParams,
+  GithubFetchResult,
+  GithubRateLimit,
   GithubScanBody,
+  GithubScanFilesBody,
   GithubScanResult,
   GlobalStats,
   HealthStatus,
   LeaderboardEntry,
   ListCommunityPostsParams,
+  MultiScanBody,
+  MultiScanResult,
   Project,
+  ProjectCoverage,
   Scan,
+  SharedReport,
   VoteBody,
 } from "./api.schemas";
 
@@ -454,6 +465,258 @@ export const useDeleteProject = <
 };
 
 /**
+ * Returns an empty array — not a 404 — for a project that has no scans, or one that belongs to another organisation, because the row-level security policies filter the scans before this handler sees them.
+ * @summary Get every finding across every scan in a project
+ */
+export const getGetProjectFindingsUrl = (id: number) => {
+  return `/api/projects/${id}/findings`;
+};
+
+export const getProjectFindings = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Finding[]> => {
+  return customFetch<Finding[]>(getGetProjectFindingsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectFindingsQueryKey = (id: number) => {
+  return [`/api/projects/${id}/findings`] as const;
+};
+
+export const getGetProjectFindingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectFindings>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectFindings>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProjectFindingsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectFindings>>
+  > = ({ signal }) => getProjectFindings(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectFindings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectFindingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectFindings>>
+>;
+export type GetProjectFindingsQueryError = ErrorType<void>;
+
+/**
+ * @summary Get every finding across every scan in a project
+ */
+
+export function useGetProjectFindings<
+  TData = Awaited<ReturnType<typeof getProjectFindings>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectFindings>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectFindingsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * What has been examined, what has never been examined, and how sure the evidence is. A catalogue surface absent from `surfaces` has never been looked at — that absence is the machine-readable half of the answer, so callers must not treat the list as exhaustive of the estate. Not public: it describes an organisation's own estate.
+ * @summary Coverage and confidence meter for a project (D3)
+ */
+export const getGetProjectCoverageUrl = (id: number) => {
+  return `/api/projects/${id}/coverage`;
+};
+
+export const getProjectCoverage = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProjectCoverage> => {
+  return customFetch<ProjectCoverage>(getGetProjectCoverageUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectCoverageQueryKey = (id: number) => {
+  return [`/api/projects/${id}/coverage`] as const;
+};
+
+export const getGetProjectCoverageQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectCoverage>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectCoverage>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProjectCoverageQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectCoverage>>
+  > = ({ signal }) => getProjectCoverage(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectCoverage>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectCoverageQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectCoverage>>
+>;
+export type GetProjectCoverageQueryError = ErrorType<void>;
+
+/**
+ * @summary Coverage and confidence meter for a project (D3)
+ */
+
+export function useGetProjectCoverage<
+  TData = Awaited<ReturnType<typeof getProjectCoverage>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectCoverage>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectCoverageQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Served as `application/vnd.cyclonedx+json; version=1.7`, not `application/json`. Assets with status `gone` are excluded: a current-state inventory handed to an auditor must not list crypto that a later run proved absent. **Not public** — a CBOM is a complete map of an organisation's cryptographic weaknesses.
+ * @summary Export the cryptographic inventory as a CycloneDX 1.7 CBOM
+ */
+export const getGetInventoryCbomUrl = () => {
+  return `/api/inventory/cbom`;
+};
+
+export const getInventoryCbom = async (
+  options?: RequestInit,
+): Promise<CbomDocument> => {
+  return customFetch<CbomDocument>(getGetInventoryCbomUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetInventoryCbomQueryKey = () => {
+  return [`/api/inventory/cbom`] as const;
+};
+
+export const getGetInventoryCbomQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInventoryCbom>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryCbom>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetInventoryCbomQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getInventoryCbom>>
+  > = ({ signal }) => getInventoryCbom({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryCbom>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInventoryCbomQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInventoryCbom>>
+>;
+export type GetInventoryCbomQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export the cryptographic inventory as a CycloneDX 1.7 CBOM
+ */
+
+export function useGetInventoryCbom<
+  TData = Awaited<ReturnType<typeof getInventoryCbom>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryCbom>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInventoryCbomQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Start a new scan
  */
 export const getCreateScanUrl = () => {
@@ -702,6 +965,355 @@ export function useGetScanFindings<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Creates a project, one scan row per file, and returns a project-level roll-up. The risk profile is computed over every finding in the submission — `worstFileRiskScore` is reported separately because the maximum of per-file scores cannot express a Mosca verdict over a whole body of data.
+ * @summary Scan several files as one new project
+ */
+export const getCreateMultiScanUrl = () => {
+  return `/api/scans/multi`;
+};
+
+export const createMultiScan = async (
+  multiScanBody: MultiScanBody,
+  options?: RequestInit,
+): Promise<MultiScanResult> => {
+  return customFetch<MultiScanResult>(getCreateMultiScanUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(multiScanBody),
+  });
+};
+
+export const getCreateMultiScanMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createMultiScan>>,
+    TError,
+    { data: BodyType<MultiScanBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createMultiScan>>,
+  TError,
+  { data: BodyType<MultiScanBody> },
+  TContext
+> => {
+  const mutationKey = ["createMultiScan"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createMultiScan>>,
+    { data: BodyType<MultiScanBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createMultiScan(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateMultiScanMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createMultiScan>>
+>;
+export type CreateMultiScanMutationBody = BodyType<MultiScanBody>;
+export type CreateMultiScanMutationError = ErrorType<void>;
+
+/**
+ * @summary Scan several files as one new project
+ */
+export const useCreateMultiScan = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createMultiScan>>,
+    TError,
+    { data: BodyType<MultiScanBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createMultiScan>>,
+  TError,
+  { data: BodyType<MultiScanBody> },
+  TContext
+> => {
+  return useMutation(getCreateMultiScanMutationOptions(options));
+};
+
+/**
+ * `owner` is the GitHub repository owner, not a user. Responds 200, not 201. The created row is `visibility: public` and expires after `SHARE_LINK_TTL_DAYS` (default 365).
+ * @summary Create a share link for a report
+ */
+export const getCreateSharedReportUrl = () => {
+  return `/api/reports`;
+};
+
+export const createSharedReport = async (
+  createSharedReportBody: CreateSharedReportBody,
+  options?: RequestInit,
+): Promise<CreateSharedReportResponse> => {
+  return customFetch<CreateSharedReportResponse>(getCreateSharedReportUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createSharedReportBody),
+  });
+};
+
+export const getCreateSharedReportMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSharedReport>>,
+    TError,
+    { data: BodyType<CreateSharedReportBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSharedReport>>,
+  TError,
+  { data: BodyType<CreateSharedReportBody> },
+  TContext
+> => {
+  const mutationKey = ["createSharedReport"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSharedReport>>,
+    { data: BodyType<CreateSharedReportBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSharedReport(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSharedReportMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSharedReport>>
+>;
+export type CreateSharedReportMutationBody = BodyType<CreateSharedReportBody>;
+export type CreateSharedReportMutationError = ErrorType<void>;
+
+/**
+ * @summary Create a share link for a report
+ */
+export const useCreateSharedReport = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSharedReport>>,
+    TError,
+    { data: BodyType<CreateSharedReportBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createSharedReport>>,
+  TError,
+  { data: BodyType<CreateSharedReportBody> },
+  TContext
+> => {
+  return useMutation(getCreateSharedReportMutationOptions(options));
+};
+
+/**
+ * Public by link, which is why the id is a 128-bit random base64url string and **not** an integer. Revoked, expired and private rows are invisible to this route because the rule lives in the `shared_reports` policy rather than in a where clause — all three are indistinguishable from a link that never existed.
+ * @summary Read a shared report by its link id
+ */
+export const getGetSharedReportUrl = (id: string) => {
+  return `/api/reports/${id}`;
+};
+
+export const getSharedReport = async (
+  id: string,
+  options?: RequestInit,
+): Promise<SharedReport> => {
+  return customFetch<SharedReport>(getGetSharedReportUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSharedReportQueryKey = (id: string) => {
+  return [`/api/reports/${id}`] as const;
+};
+
+export const getGetSharedReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSharedReport>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSharedReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSharedReportQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSharedReport>>> = ({
+    signal,
+  }) => getSharedReport(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSharedReport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSharedReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSharedReport>>
+>;
+export type GetSharedReportQueryError = ErrorType<void>;
+
+/**
+ * @summary Read a shared report by its link id
+ */
+
+export function useGetSharedReport<
+  TData = Awaited<ReturnType<typeof getSharedReport>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSharedReport>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSharedReportQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Responds with `text/event-stream`, not JSON: a sequence of `data:` frames carrying `{"content":"..."}` and a final `{"done":true}`. An unconfigured or failing OpenAI integration still streams 200 with the error as a content frame, so a non-200 here means the request was rejected, not that the model failed.
+ * @summary Stream an AI answer about a scan
+ */
+export const getCreateChatCompletionUrl = () => {
+  return `/api/chat`;
+};
+
+export const createChatCompletion = async (
+  chatBody: ChatBody,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getCreateChatCompletionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(chatBody),
+  });
+};
+
+export const getCreateChatCompletionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createChatCompletion>>,
+    TError,
+    { data: BodyType<ChatBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createChatCompletion>>,
+  TError,
+  { data: BodyType<ChatBody> },
+  TContext
+> => {
+  const mutationKey = ["createChatCompletion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createChatCompletion>>,
+    { data: BodyType<ChatBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createChatCompletion(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateChatCompletionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createChatCompletion>>
+>;
+export type CreateChatCompletionMutationBody = BodyType<ChatBody>;
+export type CreateChatCompletionMutationError = ErrorType<void>;
+
+/**
+ * @summary Stream an AI answer about a scan
+ */
+export const useCreateChatCompletion = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createChatCompletion>>,
+    TError,
+    { data: BodyType<ChatBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createChatCompletion>>,
+  TError,
+  { data: BodyType<ChatBody> },
+  TContext
+> => {
+  return useMutation(getCreateChatCompletionMutationOptions(options));
+};
 
 /**
  * @summary List community posts
@@ -1218,6 +1830,7 @@ export function useListDemoRepos<
 }
 
 /**
+ * Hard-coded repositories, scanned in memory. Nothing is written to the database, so `id` and `projectId` are both `-1` and there is no scan row to fetch afterwards.
  * @summary Run a scan on a demo repository
  */
 export const getRunDemoScanUrl = (slug: string) => {
@@ -1227,15 +1840,15 @@ export const getRunDemoScanUrl = (slug: string) => {
 export const runDemoScan = async (
   slug: string,
   options?: RequestInit,
-): Promise<Scan> => {
-  return customFetch<Scan>(getRunDemoScanUrl(slug), {
+): Promise<DemoScanResult> => {
+  return customFetch<DemoScanResult>(getRunDemoScanUrl(slug), {
     ...options,
     method: "POST",
   });
 };
 
 export const getRunDemoScanMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1276,13 +1889,13 @@ export type RunDemoScanMutationResult = NonNullable<
   Awaited<ReturnType<typeof runDemoScan>>
 >;
 
-export type RunDemoScanMutationError = ErrorType<unknown>;
+export type RunDemoScanMutationError = ErrorType<void>;
 
 /**
  * @summary Run a scan on a demo repository
  */
 export const useRunDemoScan = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1300,81 +1913,6 @@ export const useRunDemoScan = <
 > => {
   return useMutation(getRunDemoScanMutationOptions(options));
 };
-
-/**
- * @summary Get current authenticated user
- */
-export const getGetCurrentAuthUserUrl = () => {
-  return `/api/auth/user`;
-};
-
-export const getCurrentAuthUser = async (
-  options?: RequestInit,
-): Promise<GetCurrentAuthUserResponse> => {
-  return customFetch<GetCurrentAuthUserResponse>(getGetCurrentAuthUserUrl(), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getGetCurrentAuthUserQueryKey = () => {
-  return [`/api/auth/user`] as const;
-};
-
-export const getGetCurrentAuthUserQueryOptions = <
-  TData = Awaited<ReturnType<typeof getCurrentAuthUser>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getCurrentAuthUser>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetCurrentAuthUserQueryKey();
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof getCurrentAuthUser>>
-  > = ({ signal }) => getCurrentAuthUser({ signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getCurrentAuthUser>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetCurrentAuthUserQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getCurrentAuthUser>>
->;
-export type GetCurrentAuthUserQueryError = ErrorType<unknown>;
-
-/**
- * @summary Get current authenticated user
- */
-
-export function useGetCurrentAuthUser<
-  TData = Awaited<ReturnType<typeof getCurrentAuthUser>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getCurrentAuthUser>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetCurrentAuthUserQueryOptions(options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
 
 /**
  * @summary Scan a public GitHub repository for quantum vulnerabilities
@@ -1460,4 +1998,253 @@ export const useScanGithubRepo = <
   TContext
 > => {
   return useMutation(getScanGithubRepoMutationOptions(options));
+};
+
+/**
+ * @summary Remaining GitHub API quota
+ */
+export const getGetGithubRateLimitUrl = () => {
+  return `/api/github/rate-limit`;
+};
+
+export const getGithubRateLimit = async (
+  options?: RequestInit,
+): Promise<GithubRateLimit> => {
+  return customFetch<GithubRateLimit>(getGetGithubRateLimitUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGithubRateLimitQueryKey = () => {
+  return [`/api/github/rate-limit`] as const;
+};
+
+export const getGetGithubRateLimitQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGithubRateLimit>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGithubRateLimit>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGithubRateLimitQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGithubRateLimit>>
+  > = ({ signal }) => getGithubRateLimit({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGithubRateLimit>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGithubRateLimitQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGithubRateLimit>>
+>;
+export type GetGithubRateLimitQueryError = ErrorType<void>;
+
+/**
+ * @summary Remaining GitHub API quota
+ */
+
+export function useGetGithubRateLimit<
+  TData = Awaited<ReturnType<typeof getGithubRateLimit>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGithubRateLimit>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGithubRateLimitQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Fetches without scanning, so a client can render the tree while the scan runs. `fetchedFiles` is capped at 25 files of at most 150 kB each and truncated to 300 lines, so it is a subset of `fullTree` by design.
+ * @summary Phase 1 — fetch a repository tree and the scannable file contents
+ */
+export const getFetchGithubRepoUrl = () => {
+  return `/api/github/fetch`;
+};
+
+export const fetchGithubRepo = async (
+  githubScanBody: GithubScanBody,
+  options?: RequestInit,
+): Promise<GithubFetchResult> => {
+  return customFetch<GithubFetchResult>(getFetchGithubRepoUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(githubScanBody),
+  });
+};
+
+export const getFetchGithubRepoMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof fetchGithubRepo>>,
+    TError,
+    { data: BodyType<GithubScanBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof fetchGithubRepo>>,
+  TError,
+  { data: BodyType<GithubScanBody> },
+  TContext
+> => {
+  const mutationKey = ["fetchGithubRepo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof fetchGithubRepo>>,
+    { data: BodyType<GithubScanBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return fetchGithubRepo(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FetchGithubRepoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof fetchGithubRepo>>
+>;
+export type FetchGithubRepoMutationBody = BodyType<GithubScanBody>;
+export type FetchGithubRepoMutationError = ErrorType<void>;
+
+/**
+ * @summary Phase 1 — fetch a repository tree and the scannable file contents
+ */
+export const useFetchGithubRepo = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof fetchGithubRepo>>,
+    TError,
+    { data: BodyType<GithubScanBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof fetchGithubRepo>>,
+  TError,
+  { data: BodyType<GithubScanBody> },
+  TContext
+> => {
+  return useMutation(getFetchGithubRepoMutationOptions(options));
+};
+
+/**
+ * `repoUrl`, `owner` and `repo` are echoed straight back into the response without validation; only `files` is checked. They are required here so that a conforming client always receives them in the result.
+ * @summary Phase 2 — scan already-fetched files, with no GitHub API calls
+ */
+export const getScanGithubFilesUrl = () => {
+  return `/api/github/scan-files`;
+};
+
+export const scanGithubFiles = async (
+  githubScanFilesBody: GithubScanFilesBody,
+  options?: RequestInit,
+): Promise<GithubScanResult> => {
+  return customFetch<GithubScanResult>(getScanGithubFilesUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(githubScanFilesBody),
+  });
+};
+
+export const getScanGithubFilesMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scanGithubFiles>>,
+    TError,
+    { data: BodyType<GithubScanFilesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof scanGithubFiles>>,
+  TError,
+  { data: BodyType<GithubScanFilesBody> },
+  TContext
+> => {
+  const mutationKey = ["scanGithubFiles"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof scanGithubFiles>>,
+    { data: BodyType<GithubScanFilesBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return scanGithubFiles(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ScanGithubFilesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof scanGithubFiles>>
+>;
+export type ScanGithubFilesMutationBody = BodyType<GithubScanFilesBody>;
+export type ScanGithubFilesMutationError = ErrorType<void>;
+
+/**
+ * @summary Phase 2 — scan already-fetched files, with no GitHub API calls
+ */
+export const useScanGithubFiles = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scanGithubFiles>>,
+    TError,
+    { data: BodyType<GithubScanFilesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof scanGithubFiles>>,
+  TError,
+  { data: BodyType<GithubScanFilesBody> },
+  TContext
+> => {
+  return useMutation(getScanGithubFilesMutationOptions(options));
 };

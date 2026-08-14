@@ -114,6 +114,15 @@ The rules that matter day to day:
 - Adding a route? `artifacts/api-server/src/cross-tenant.test.ts` carries a manifest of every
   route and fails if one exists that it does not name. That is deliberate — decide whether a new
   route is org-scoped before it ships.
+- Adding a route also means **editing `lib/api-spec/openapi.yaml` and running
+  `pnpm --filter @workspace/api-spec run codegen` in the same change** — including new *fields* on
+  an existing response, not just new paths. `lib/api-client-react` and `lib/api-zod` are generated
+  from that file and can see nothing that is not in it, so the frontend cannot consume a feature
+  the spec omits. Six consecutive features skipped this, each citing the previous one's precedent,
+  until ten routes and the A3, A4 and D3 payloads were invisible to every client.
+  `artifacts/api-server/src/openapi-drift.test.ts` now fails on the path half of that drift and on
+  any `security: []` that disagrees with `PUBLIC_ROUTES`; **response fields are still on you** —
+  no test can tell that a documented schema is missing a key.
 - Adding an organisation-scoped table? Add it to `ORG_SCOPED_TABLES`
   (`lib/db/src/tenant-isolation.ts`), give it a policy in `tenant-isolation.sql`, and grant it.
   A table with no grant is unreachable by the runtime, which is the fail-closed default.
@@ -165,6 +174,12 @@ pnpm run hooks:install   # gate every push on it automatically
 
 Typecheck is blocking in local CI. A green run is the standard for "ready to merge", not a green
 check on the PR.
+
+One stage is worth knowing about before it surprises you: **`standards`** runs
+`pnpm run check:standards`, which fails when any `retrievedAt` under `docs/Claude/mappings/` is
+older than 180 days (G-14). If it fires, the fix is to re-read the primary source and then update
+the date — not to update the date. Bumping `retrievedAt` without reopening the source is the one
+failure this check cannot see, and it turns the register into a lie.
 
 ## Merging across a directory rename
 

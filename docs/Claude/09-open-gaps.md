@@ -29,12 +29,12 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-11 | No confidence score on findings | Medium, mostly closed | Design | A2 + D3 — carried on `observations`, now read and shown; no *filtering* yet |
 | G-12 | Security findings S1–S8 | High | Interim auth + org scoping shipped; needs deploy | See [08](08-security.md), [13](13-auth-and-tenancy.md) |
 | ~~G-13~~ | ~~`.env` tracked in git~~ | **Closed** | Done 2026-08-03 | — |
-| G-14 | No re-verification trigger for standards data | Medium | Process | Calendar + CI |
+| ~~G-14~~ | ~~No re-verification trigger for standards data~~ | **Closed (CI half); calendar half open** | Done 2026-08-14 | — |
 | G-15 | Observation model not aligned to SP 1800-38B data elements | Medium, partially closed | Design | A2 — profile + modality landed; no network collector populates it |
 | G-16 | Binary scanning deferred; NIST treats it as core | Medium | Roadmap call | Re-scope B10 |
-| G-17 | Competitive framing understates the field | High | Wrong assumption | Marketing rewrite |
-| G-18 | `package.json` says MIT, no LICENSE file exists | High | Two-line fix | Before any publication |
-| G-19 | `attached_assets/` unaudited, 4 MB of Replit scraps | Medium | Nobody has looked | Delete or audit |
+| ~~G-17~~ | ~~Competitive framing understates the field~~ | **Closed** | Done 2026-08-14 | — |
+| ~~G-18~~ | ~~`package.json` says MIT, no LICENSE file exists~~ | **Closed** | Done 2026-08-14 | — |
+| ~~G-19~~ | ~~`attached_assets/` unaudited, 4 MB of Replit scraps~~ | **Closed in the tree; history caveat stands** | Done 2026-08-14 | Gate 2 |
 
 ---
 
@@ -86,11 +86,26 @@ nothing resolves it yet.
 - ✅ Extract key size where the source makes it available same-line (`RSA.generate(2048)`,
   `secp256r1`, `P-384`) — done for the source collector. ⬜ Cert `notAfter`/SPKI parsing needs B4,
   not built.
-- ⬜ Where it is genuinely undeterminable, emit `keySize: null` and have the mapping engine
-  return **both** candidate obligations, flagged as "key size undetermined — assumed 112-bit" —
-  the model carries `null` through persistence and read-back (tested), and C1 returns both
-  candidate obligations — but neither is labelled as an assumption, and A4 does not consume them
-  yet.
+- ✅ **Done 2026-08-14.** Where it is genuinely undeterminable, the engine returns **both**
+  candidate obligations, each flagged *"Key size undetermined — assumed 112 bits … Confirm the
+  key size before acting on either date."* And where the key size **is** known it now narrows to
+  the band that actually applies: RSA-2048 gets the 2030 deprecation, RSA-4096 does not. That
+  narrowing is the "correct deadline reporting" this gap was always about — returning both rows
+  for a key we *can* size is as wrong as returning one for a key we cannot.
+
+> **How the band table is kept out of the code.** IR 8547 keys its rules on security *strength*;
+> a collector reports a parameter *size*. That bridge is `securityStrengthBands` in
+> `algorithms.json`, with `keySizeKind` on each algorithm entry saying whether its size is a
+> modulus or a curve — both data, following C1's rule. A test moves the band boundary in a cloned
+> copy and asserts the answer follows with no TypeScript edit.
+>
+> Three deliberate choices: the assumed band is the **conservative** one (the earlier deadline),
+> so an undetermined key is never reported as having more runway than it might; a size falling in
+> **no** band is treated as undetermined rather than forced into the nearest one; and an algorithm
+> with no `keySizeKind` — a hash, a cipher mode — is untouched by any of it.
+>
+> **What is still open is detection reach, not reporting:** the source collector still cannot
+> fold constants or read cross-line context, and certificate SPKI parsing needs B4.
 - ✅ Never silently pick one — the ingestion boundary converts `undefined` → `null` explicitly;
   there is no code path that defaults a missing `keySize` to a number.
 - ✅ **The export boundary now has the same rule, and states the gap rather than hiding it.**
@@ -435,7 +450,7 @@ passwords are meant to live locally.
 
 ---
 
-## G-14 — No re-verification trigger `Medium`
+## G-14 — No re-verification trigger — **CI HALF CLOSED 2026-08-14**
 
 Standards data decays and nothing currently prompts a re-check. IR 8547 is a **draft** that will
 presumably be finalised, at which point every date in the system needs revisiting and the
@@ -443,11 +458,30 @@ presumably be finalised, at which point every date in the system needs revisitin
 
 **What closes it:**
 
-- Quarterly re-verification task in the content calendar *(already added for marketing —
+- ~~CI check failing when any `retrievedAt` is older than 180 days~~ ✅ **Done 2026-08-14** —
+  `pnpm run check:standards` (`scripts/src/check-standards-freshness.ts`), wired into both
+  `scripts/ci-local.sh` and the workflow. It walks every JSON under `docs/Claude/mappings/`,
+  reports the dotted path of each stale entry so it can be found without grepping, and sorts
+  oldest first. Currently: 31 dated entries across 3 files, all fresh.
+- ⬜ Quarterly re-verification task in the content calendar *(already added for marketing —
   extend to `mappings/`)*
-- CI check failing when any `retrievedAt` is older than 180 days
-- Immediate trigger on: IR 8547 going final, a new FIPS publication, a CycloneDX release, a
+- ⬜ Immediate trigger on: IR 8547 going final, a new FIPS publication, a CycloneDX release, a
   CNSA 2.0 revision
+
+> **Two deliberate limits, so the check is not mistaken for more than it is.**
+>
+> It is a **date comparison, not a network fetch.** Re-fetching each source and diffing it
+> would be a different and much less reliable tool: several primary sources return HTTP 403 to
+> automated requests — that is G-01's entire problem — so a network check would fail for
+> reasons unrelated to staleness and be muted within a week. A date comparison cannot be wrong
+> about what it measures.
+>
+> It **cannot detect the failure that matters most**: bumping `retrievedAt` without reopening
+> the source. Nothing automated can. The check buys a prompt, not assurance, and the honest
+> place to record that is here rather than in a green tick.
+>
+> An **unparseable date is treated as infinitely stale** rather than skipped — otherwise a typo
+> creates an entry that never expires, which is strictly worse than one that is merely old.
 
 ---
 
@@ -501,7 +535,7 @@ silence is not.
 
 ---
 
-## G-17 — Competitive framing understates the field `High`
+## G-17 — Competitive framing understates the field — **CLOSED 2026-08-14**
 
 [marketing/01-positioning.md](marketing/01-positioning.md) says *"The incumbent is a
 spreadsheet"* and frames competitors as consultancies, SAST vendors and certificate managers.
@@ -524,9 +558,24 @@ this."
 **Also worth noting:** Appendix C's eight-use-case functional demonstration plan is a plausible
 buyer evaluation rubric. Treat it as an acceptance-test suite for our collectors.
 
+> **Closed 2026-08-14.** `marketing/01-positioning.md` had already been corrected on 2026-08-01;
+> what remained open — and was the more consequential half — was
+> [01-strategy.md](01-strategy.md#against-the-alternatives), which still instructed the reader to
+> *"price and position against [the spreadsheet], not against tools."* That is the sentence that
+> would have sent someone into a room unprepared, and it is now corrected in place with the
+> SP 1800-38B §5.1 vendor list alongside it.
+>
+> Independent competitive research (2026-08-13) added Fortanix, the PQCA's open-source CBOMkit
+> and several consultancy platforms to the list, and surfaced a finding that is really about us
+> rather than about them: **the market is overwhelmingly agentless-first**, reaching cryptography
+> through read-only credentials to KMS, HSMs, KMIP, the CA database and Active Directory. Source
+> code — our only live collector — is the slowest surface to onboard and among the narrowest.
+> That is recorded in both documents, because it should influence which collector is built next
+> (B5/PKI over more source languages) rather than sitting in a research note nobody re-reads.
+
 ---
 
-## G-18 — Licensing conflict `High`
+## G-18 — Licensing conflict — **CLOSED 2026-08-14**
 
 `package.json` declares `"license": "MIT"`. There is **no LICENSE file** in the repository.
 
@@ -537,11 +586,25 @@ anything intended to ship as Enterprise. MIT permits unrestricted commercial red
 **What closes it:** set the root manifest to the intended licence, add LICENSE files per tier,
 add `mappings/LICENSE` for CC BY 4.0. See [10-editions.md](10-editions.md#licensing--three-separate-decisions).
 
-**Do it now** — it is two lines while the repo is private and a genuine mess afterwards.
+> **Closed 2026-08-14**, to the three decisions [10-editions.md](10-editions.md#licensing--three-separate-decisions)
+> had already made rather than to a new one:
+>
+> - `LICENSE` at the root — **Apache 2.0**, the canonical text fetched from apache.org rather than
+>   retyped, with the appendix placeholder filled in.
+> - `docs/Claude/mappings/LICENSE` — **CC BY 4.0**, because that directory is data, not code. It
+>   also states the two conditions that matter for a dataset with provenance: attribute by
+>   `dataVersion`, and do not strip the `verified`/`needs-check` status when redistributing, since
+>   the status is part of the data.
+> - `package.json` — `"license": "Apache-2.0"`. This was the load-bearing line: it, not the absent
+>   file, is what would have governed on publication.
+>
+> **Still outstanding:** the Enterprise tier has no separate `ee/` directory or licence header.
+> 10-editions.md says to decide that *before the first Enterprise line of code*, and none exists
+> yet, so nothing is mis-licensed today — but the decision is still open.
 
 ---
 
-## G-19 — `attached_assets/` unaudited `Medium`
+## G-19 — `attached_assets/` unaudited — **CLOSED 2026-08-14 (with a caveat)**
 
 Roughly 4 MB of Replit screenshots and pasted-text scraps in the repo root. **Nobody has
 reviewed them** for credentials, internal URLs, customer data, or third-party copyrighted
@@ -549,17 +612,29 @@ content.
 
 Invisible while the repo is private; permanent and indexable once it is not.
 
-**What closes it:** delete the directory. It is development detritus with no ongoing value, and
-deleting is cheaper than auditing 20+ images. Note this does **not** remove it from git history
-— see Gate 2 in [10-editions.md](10-editions.md#publication-gates--hard-blockers).
+**What closed it:** the directory is deleted (2.6 MB, 21 files), along with the now-dangling
+`@assets` alias in `artifacts/quantaxscan/vite.config.ts` — the alias was defined and never
+imported anywhere, so nothing referenced the directory.
+
+The six text files **were** read before deletion: they are pasted component-library snippets
+(shadcn/motion install instructions, a bash tokeniser) plus a `Q-VULN` draft. No credentials, no
+tokens, no customer data, and the only external URL is `w3.org`. The fifteen images were **not**
+individually reviewed — deleting was cheaper, which is what this entry recommended.
+
+> **The caveat is why this entry is not simply "Closed".** Deletion removes the files from the
+> working tree, **not from git history**, and they were committed. Anyone with the repository can
+> still recover them. That makes this sufficient for tidiness and *insufficient* on its own as a
+> publication control: Gate 2 in [10-editions.md](10-editions.md#publication-gates--hard-blockers)
+> still applies, and if the repo is ever made public the images need either a history rewrite or a
+> decision that they are harmless — which nobody has yet made, because nobody has looked at them.
 
 ---
 
 ## Suggested order
 
-1. ~~**G-13**~~ (closed 2026-08-03), **G-18** — minutes each, and free only while the repo is
-   private
-2. **G-17** — the positioning is wrong *now*, and it is a document edit
+1. ~~**G-13**~~ (closed 2026-08-03), ~~**G-18**~~ (closed 2026-08-14) — minutes each, and free
+   only while the repo is private
+2. ~~**G-17**~~ — closed 2026-08-14 (positioning 2026-08-01, strategy 2026-08-14)
 3. ~~**G-06**~~ (closed 2026-08-13, alongside B2) — one pattern, closed a real detection hole
 4. **G-01** — 30 minutes, unblocks a whole customer segment
 5. **G-16** — a roadmap decision to make before committing to A2's surface priorities
@@ -575,7 +650,8 @@ deleting is cheaper than auditing 20+ images. Note this does **not** remove it f
 8. **G-12, G-19** — before any pilot, and hard gates on open-sourcing. G-12's interim auth and
    organisation scoping are shipped; per-user identity (F1) and the remaining S-findings are the
    pilot blockers
-9. **G-14** — process, set up once
+9. ~~**G-14**~~ — the CI half is set up (2026-08-14); the calendar half and the event triggers
+   are still owed
 10. **G-02, G-03** — when the relevant customer segment is actually in play
 11. **G-04** — with C9
 
