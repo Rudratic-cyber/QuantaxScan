@@ -19,6 +19,7 @@ const CENTER_NAV = [
   { name: "Scanner",   link: "/scan" },
   { name: "Coverage",  link: "/coverage" },
   { name: "Dashboard", link: "/dashboard" },
+  { name: "Readiness", link: "/readiness" },
   { name: "Security",  link: "/security" },
   { name: "Community", link: "/community" },
 ];
@@ -28,6 +29,7 @@ const ALL_NAV = [
   { name: "Scanner",   link: "/scan" },
   { name: "Coverage",  link: "/coverage" },
   { name: "Dashboard", link: "/dashboard" },
+  { name: "Readiness", link: "/readiness" },
   { name: "Security",  link: "/security" },
   { name: "Community", link: "/community" },
   { name: "Demo",      link: "/demo/paramiko-ssh" },

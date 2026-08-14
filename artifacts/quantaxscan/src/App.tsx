@@ -8,6 +8,7 @@ import { Home } from "@/pages/Home";
 import { Scan } from "@/pages/Scan";
 import { Demo } from "@/pages/Demo";
 import { Dashboard } from "@/pages/Dashboard";
+import { Readiness } from "@/pages/Readiness";
 import { Community } from "@/pages/Community";
 import { CreatePost } from "@/pages/CreatePost";
 import { Report } from "@/pages/Report";
@@ -70,6 +71,7 @@ function AppRouter() {
       <Route path="/security" component={Security} />
       <Route path="/demo/:slug" component={Demo} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/readiness" component={Readiness} />
       <Route path="/community/create" component={CreatePost} />
       <Route path="/community" component={Community} />
       <Route component={NotFound} />

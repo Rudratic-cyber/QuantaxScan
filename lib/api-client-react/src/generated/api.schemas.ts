@@ -1222,8 +1222,144 @@ export interface CbomDocument {
   dependencies: CycloneDxDependency[];
 }
 
+export type ReadinessSectionId =
+  (typeof ReadinessSectionId)[keyof typeof ReadinessSectionId];
+
+export const ReadinessSectionId = {
+  roadmap: "roadmap",
+  "cryptographic-inventory": "cryptographic-inventory",
+  prioritisation: "prioritisation",
+  "vendor-engagement": "vendor-engagement",
+  "supply-chain": "supply-chain",
+} as const;
+
+export type ReadinessSectionState =
+  (typeof ReadinessSectionState)[keyof typeof ReadinessSectionState];
+
+export const ReadinessSectionState = {
+  tracked: "tracked",
+  "not-tracked": "not-tracked",
+} as const;
+
+/**
+ * One named part of the CISA/NSA/NIST factsheet. `state: "not-tracked"` means this product has no data source for the section at all (e.g. no roadmap-document attachment, no vendor register) — `percentComplete` is null in that case, never 0, because 0 would assert a measurement nobody took.
+ */
+export interface ReadinessSection {
+  id: ReadinessSectionId;
+  label: string;
+  /** What "complete" means for this section, stated plainly rather than left implicit. */
+  definition: string;
+  state: ReadinessSectionState;
+  percentComplete: number | null;
+  numerator: number | null;
+  denominator: number | null;
+  reason: string;
+}
+
+/**
+ * The same shape and the same honesty rules as `ProjectCoverage` (D3's per-project meter), computed over the whole organisation instead of one project — reusing `summariseProjectCoverage` verbatim, since its output never depended on a project scope in the first place. No `projectId`: the whole point is that it is not one.
+ */
+export interface EstateCoverage {
+  examinedSurfaces: number;
+  totalSurfaces: number;
+  surfaces: SurfaceCoverage[];
+  confidence: ConfidenceSummary;
+}
+
+/**
+ * D1 Row 1 plus the estate coverage meter (Row 3) it is partly defined against, in one payload so the two cannot disagree. Deliberately carries no combined/overall readiness score — averaging a measured section with an untracked one would invent a denominator, and that is the one number a buyer would screenshot and nobody could defend.
+ */
+export interface ReadinessSummary {
+  generatedAt: string;
+  /** States the factsheet's name and date. The factsheet is organised into named sections, not a numbered stage sequence — this must never read as a CISA-authored numbering. */
+  framing: string;
+  sections: ReadinessSection[];
+  coverage: EstateCoverage;
+}
+
+/**
+ * Reuses the same exported Mosca primitives `PostureTimeline` scores its estate-wide series with, so the two panels cannot disagree about what "breached" means.
+ */
+export interface InventoryMoscaSummary {
+  /** Secrecy lifetime in years, as resolved through A3 (asset → project → product default). */
+  x: number;
+  /** Migration time in years, from effort hours. Zero across the board until effort estimation ships. */
+  y: number;
+  /** True when X was defaulted rather than supplied at the asset or project level. */
+  xAssumed: boolean;
+  /** False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break. */
+  applicable: boolean;
+  /** Q-Day scenario names this asset breaches under. Empty when not applicable. */
+  breachedScenarios: string[];
+}
+
+/**
+ * Where the classification behind `mosca.x` actually came from.
+ */
+export type EnrichedInventoryAssetClassificationSource =
+  (typeof EnrichedInventoryAssetClassificationSource)[keyof typeof EnrichedInventoryAssetClassificationSource];
+
+export const EnrichedInventoryAssetClassificationSource = {
+  asset: "asset",
+  project: "project",
+  default: "default",
+} as const;
+
+export interface EnrichedInventoryAsset {
+  id: number;
+  fingerprint: string;
+  /** Null for a surface with no project association (TLS, certificate, KMS). */
+  projectId: number | null;
+  surface: string;
+  algorithm: string;
+  keySize: number | null;
+  location: string;
+  status: string;
+  firstSeen: string;
+  lastSeen: string;
+  ownerId: number | null;
+  dataClassification: string | null;
+  secrecyLifetimeYears: number | null;
+  /** Where the classification behind `mosca.x` actually came from. */
+  classificationSource: EnrichedInventoryAssetClassificationSource;
+  /** Most recent observation's confidence. Null when the asset has never been observed. */
+  latestConfidence: number | null;
+  /** Null when the mapping data has no entry for this algorithm. */
+  compliance: FindingCompliance | null;
+  mosca: InventoryMoscaSummary;
+}
+
+/**
+ * Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present.
+ */
+export type InventoryAssetsSummaryStatusCounts = { [key: string]: number };
+
+export type InventoryAssetsSummaryScenariosItem = {
+  name: string;
+  qDayYear: number;
+  rationale: string;
+  confidence: string;
+};
+
+export interface InventoryAssetsSummary {
+  generatedAt: string;
+  assets: EnrichedInventoryAsset[];
+  /** Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present. */
+  statusCounts: InventoryAssetsSummaryStatusCounts;
+  scenarios: InventoryAssetsSummaryScenariosItem[];
+  /** Mandatory wherever a scenario year is shown. */
+  framing: string;
+}
+
 export type RateLimitedResponse = {
   error: string;
+};
+
+export type GetInventoryAssetsParams = {
+  /**
+   * Filter to one collector surface, e.g. `certificate` for the cert-expiry panel.
+   */
+  surface?: string;
 };
 
 export type ListCommunityPostsParams = {
