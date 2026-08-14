@@ -250,12 +250,39 @@ export const DataAtRestLocationDetailSchema = z.object({
 });
 export type DataAtRestLocationDetail = z.infer<typeof DataAtRestLocationDetailSchema>;
 
+/**
+ * B8 — a manually registered OT/embedded device fleet. The register is a form,
+ * not a scanner, so there is no path, host, artefact or control plane to
+ * describe: the locator is the register row itself, and what matters alongside
+ * it is the fleet's identity as the customer wrote it down.
+ *
+ * `deviceCount` is carried because one row can stand for thousands of devices,
+ * and a reader of the inventory needs to know that this asset is not one box.
+ * It is display context, never identity — recounting a fleet must not mint a
+ * new asset.
+ */
+export const OtLocationDetailSchema = z.object({
+  /** The `ot_fleets` row id, as a string. Stable for the life of the register entry, and the fingerprint's identity. */
+  fleetId: z.string(),
+  /** What the customer calls this fleet. Renaming it must not orphan the asset, so this is not in the fingerprint. */
+  name: z.string(),
+  vendor: z.string().optional(),
+  model: z.string().optional(),
+  site: z.string().optional(),
+  /** Null in the register means nobody has counted; absent here means the same. Never defaulted to 1. */
+  deviceCount: z.number().int().nonnegative().optional(),
+  /** The customer's free-text description, kept verbatim beside the structured algorithm it was recorded with. */
+  cryptoInUse: z.string().optional(),
+});
+export type OtLocationDetail = z.infer<typeof OtLocationDetailSchema>;
+
 export const LocationDetailSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("source"), source: SourceLocationDetailSchema }),
   z.object({ kind: z.literal("network"), network: NetworkLocationDetailSchema }),
   z.object({ kind: z.literal("dependency"), dependency: DependencyLocationDetailSchema }),
   z.object({ kind: z.literal("binary"), binary: BinaryLocationDetailSchema }),
   z.object({ kind: z.literal("certificate"), certificate: CertificateLocationDetailSchema }),
+  z.object({ kind: z.literal("ot"), ot: OtLocationDetailSchema }),
   z.object({ kind: z.literal("config"), config: ConfigLocationDetailSchema }),
   z.object({ kind: z.literal("kms"), kms: KmsLocationDetailSchema }),
   z.object({ kind: z.literal("data-at-rest"), dataAtRest: DataAtRestLocationDetailSchema }),

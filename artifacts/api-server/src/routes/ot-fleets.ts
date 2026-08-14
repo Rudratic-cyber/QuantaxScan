@@ -3,9 +3,41 @@ import { eq, desc } from "drizzle-orm";
 import { withOrg, otFleetsTable, type OtFleet } from "@workspace/db";
 import { CreateOtFleetBody, UpdateOtFleetBody } from "@workspace/api-zod";
 import { assessOtExposure } from "../lib/ot-exposure";
+import { ingestOtObservations } from "../lib/asset-ingest";
+import type { ScopedTx } from "@workspace/db/org-scope";
 import { orgContextFor } from "../lib/principal";
 
 const router: IRouter = Router();
+
+/**
+ * Re-derives the `ot` surface from the whole register, inside the caller's
+ * scope. Called after every write, because the register is edited one row at a
+ * time but *is* the complete enumeration of the OT estate — so a deletion, or
+ * an edit that clears a stated algorithm, has to be able to retire the asset it
+ * previously produced. Passing only the changed row could never do that.
+ *
+ * Runs on the same `ScopedTx` as the write it follows: one transaction, so the
+ * register and the surface derived from it cannot disagree if the request fails
+ * part-way.
+ */
+async function reingestRegister(tx: ScopedTx, organizationId: number): Promise<void> {
+  const fleets = await tx.select().from(otFleetsTable);
+  await ingestOtObservations(tx, {
+    fleets: fleets.map((fleet) => ({
+      id: fleet.id,
+      name: fleet.name,
+      vendor: fleet.vendor,
+      model: fleet.model,
+      site: fleet.site,
+      deviceCount: fleet.deviceCount,
+      cryptoInUse: fleet.cryptoInUse,
+      cryptoAlgorithm: fleet.cryptoAlgorithm,
+      cryptoKeySize: fleet.cryptoKeySize,
+    })),
+    organizationId,
+  });
+}
+
 
 /**
  * B8 — the manual OT/embedded register. docs/Claude/03-features.md §B8,
@@ -49,11 +81,12 @@ router.post("/ot-fleets", async (req, res): Promise<void> => {
     return;
   }
 
-  const { name, vendor, model, deviceCount, site, owner, cryptoInUse, refreshCycleYears, nextProcurementDate } = parsed.data;
+  const { name, vendor, model, deviceCount, site, owner, cryptoInUse, refreshCycleYears, nextProcurementDate, cryptoAlgorithm, cryptoKeySize } =
+    parsed.data;
   const ctx = orgContextFor(req);
 
-  const [fleet] = await withOrg(ctx, (tx) =>
-    tx
+  const [fleet] = await withOrg(ctx, async (tx) => {
+    const inserted = await tx
       .insert(otFleetsTable)
       .values({
         organizationId: ctx.organizationId,
@@ -70,9 +103,13 @@ router.post("/ot-fleets", async (req, res): Promise<void> => {
         // would not even typecheck (the Date constructor's single-argument
         // overloads take `number | string`, not `Date`).
         nextProcurementDate,
+        cryptoAlgorithm,
+        cryptoKeySize,
       })
-      .returning(),
-  );
+      .returning();
+    await reingestRegister(tx, ctx.organizationId);
+    return inserted;
+  });
 
   res.status(201).json(fleetPayload(fleet));
 });
@@ -129,14 +166,27 @@ router.patch("/ot-fleets/:id", async (req, res): Promise<void> => {
   // input in the first place (see the same note in POST /ot-fleets).
   const data = parsed.data as Record<string, unknown>;
   const updates: Record<string, unknown> = {};
-  for (const key of ["name", "vendor", "model", "deviceCount", "site", "owner", "cryptoInUse", "refreshCycleYears", "nextProcurementDate"]) {
+  for (const key of [
+    "name",
+    "vendor",
+    "model",
+    "deviceCount",
+    "site",
+    "owner",
+    "cryptoInUse",
+    "refreshCycleYears",
+    "nextProcurementDate",
+    "cryptoAlgorithm",
+    "cryptoKeySize",
+  ]) {
     if (!(key in data)) continue;
     updates[key] = data[key];
   }
 
   if (Object.keys(updates).length > 0) updates.updatedAt = new Date();
 
-  const fleet = await withOrg(orgContextFor(req), async (tx) => {
+  const ctx = orgContextFor(req);
+  const fleet = await withOrg(ctx, async (tx) => {
     if (Object.keys(updates).length === 0) {
       const [existing] = await tx.select().from(otFleetsTable).where(eq(otFleetsTable.id, id));
       return existing;
@@ -146,6 +196,10 @@ router.patch("/ot-fleets/:id", async (req, res): Promise<void> => {
       .set(updates)
       .where(eq(otFleetsTable.id, id))
       .returning();
+    // Only when something actually changed. An edit that clears
+    // `cryptoAlgorithm` retires the asset it produced, which is the case this
+    // re-derivation exists for.
+    if (updated) await reingestRegister(tx, ctx.organizationId);
     return updated;
   });
 
@@ -164,7 +218,14 @@ router.delete("/ot-fleets/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  await withOrg(orgContextFor(req), (tx) => tx.delete(otFleetsTable).where(eq(otFleetsTable.id, id)));
+  const deleteCtx = orgContextFor(req);
+  await withOrg(deleteCtx, async (tx) => {
+    await tx.delete(otFleetsTable).where(eq(otFleetsTable.id, id));
+    // The deleted fleet's location is no longer in the register, so the
+    // prefix-scoped reobservation marks its asset `gone` rather than deleting
+    // it — the row stays in history, as A1 requires.
+    await reingestRegister(tx, deleteCtx.organizationId);
+  });
   res.sendStatus(204);
 });
 

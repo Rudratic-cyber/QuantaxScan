@@ -50,6 +50,13 @@
       "when": 1786742447789,
       "tag": "0006_mute_hobgoblin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786746613393,
+      "tag": "0007_fancy_marvex",
+      "breakpoints": true
     }
   ]
 }

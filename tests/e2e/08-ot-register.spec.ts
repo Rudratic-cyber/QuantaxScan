@@ -184,4 +184,66 @@ test.describe("the OT/embedded register (B8)", () => {
     const fleets = await fleetsFromApi(api);
     expect(fleets.find((f) => f.name === "Fleet slated for removal")).toBeUndefined();
   });
+  test("a fleet with a named algorithm reaches the inventory; one described only in prose does not", async ({ api }) => {
+    // The whole point of the `ot` surface: a register entry is the only
+    // evidence that will ever exist for a device with no interface to probe,
+    // so it has to reach the inventory — but only the part of it this system
+    // can actually reason about.
+    const prose = await api.post("/api/ot-fleets", {
+      data: { name: "Prose-only substation fleet", cryptoInUse: "RSA-2048 firmware signing, no TLS" },
+    });
+    expect(prose.status()).toBe(201);
+
+    const stated = await api.post("/api/ot-fleets", {
+      data: { name: "Stated-algorithm RTU fleet", cryptoInUse: "best known", cryptoAlgorithm: "RSA", cryptoKeySize: 2048 },
+    });
+    expect(stated.status()).toBe(201);
+    const statedFleet = await stated.json();
+
+    const assets = await (await api.get("/api/inventory/assets")).json();
+    const otAssets = assets.assets.filter((a: { surface: string }) => a.surface === "ot");
+
+    // Exactly one, from the fleet that named an algorithm. The prose fleet is
+    // absent by design — parsing "RSA-2048 firmware signing" into an algorithm
+    // would be a guess, and putting the sentence in `algorithm` would hand
+    // prose to the mapping engine.
+    expect(otAssets).toHaveLength(1);
+    expect(otAssets[0].algorithm).toBe("RSA");
+    expect(otAssets[0].keySize).toBe(2048);
+    expect(otAssets[0].location).toBe(`ot-fleet:${statedFleet.id}`);
+
+    // An attestation must never carry the authority of an observation. 0.3 is
+    // below every automated collector, and far below a completed handshake.
+    expect(otAssets[0].latestConfidence).toBeLessThan(0.7);
+  });
+
+  test("clearing the stated algorithm retires the asset it produced, without deleting the fleet", async ({ api }) => {
+    const created = await api.post("/api/ot-fleets", {
+      data: { name: "Fleet that gets corrected", cryptoAlgorithm: "RSA", cryptoKeySize: 1024 },
+    });
+    const fleet = await created.json();
+
+    const withAsset = await (await api.get("/api/inventory/assets")).json();
+    expect(withAsset.assets.some((a: { location: string }) => a.location === `ot-fleet:${fleet.id}`)).toBe(true);
+    const goneBefore = withAsset.statusCounts.gone ?? 0;
+
+    // The customer decides they were wrong and clears the claim. The register
+    // entry survives — it is still a fleet with a procurement date — but the
+    // inventory must stop asserting cryptography nobody stands behind.
+    const patched = await api.patch(`/api/ot-fleets/${fleet.id}`, { data: { cryptoAlgorithm: null } });
+    expect(patched.status()).toBe(200);
+
+    const after = await (await api.get("/api/inventory/assets")).json();
+    // `/inventory/assets` lists *present* assets, so the retired one leaves
+    // that list — a current inventory must not keep asserting cryptography
+    // nobody stands behind.
+    expect(after.assets.some((a: { location: string }) => a.location === `ot-fleet:${fleet.id}`)).toBe(false);
+    // But it is retired, not deleted: `statusCounts` counts every status
+    // including `gone`, which is how the drift panel reports a removal without
+    // listing it as present. The row survives, so the history does (A1).
+    expect(after.statusCounts.gone ?? 0).toBe(goneBefore + 1);
+
+    const stillThere = await api.get(`/api/ot-fleets/${fleet.id}`);
+    expect(stillThere.status()).toBe(200);
+  });
 });

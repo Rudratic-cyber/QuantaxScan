@@ -153,6 +153,7 @@ export type FingerprintInput =
   | { surface: "config"; repo: string; path: string; directive: string; algorithm: string; token: string }
   | { surface: "kms"; repo: string; provider: string; keyId: string }
   | { surface: "data-at-rest"; repo: string; engine: string; storeId: string; role: string; algorithm: string }
+  | { surface: "ot"; fleetId: string; algorithm: string }
   | {
       surface: "binary";
       targetOrRepository: string;
@@ -185,6 +186,8 @@ function orderedFields(input: FingerprintInput): string[] {
       return [input.surface, input.repo, input.provider, input.keyId];
     case "data-at-rest":
       return [input.surface, input.repo, input.engine, input.storeId, input.role, input.algorithm];
+    case "ot":
+      return [input.surface, input.fleetId, input.algorithm];
     case "binary":
       return [
         input.surface,
@@ -323,6 +326,19 @@ export function fingerprintForObservation(
         engine: detail.dataAtRest.engine,
         storeId: detail.dataAtRest.storeId,
         role: detail.dataAtRest.role,
+        algorithm: observation.algorithm,
+      };
+    case "ot":
+      // The register row is the identity. A fleet is not observed at a path,
+      // a host or an ARN — it is an entry a human maintains, so the row id is
+      // the only locator that survives the customer renaming the fleet,
+      // recounting its devices or correcting its site. `algorithm` is in the
+      // identity for the same reason it is on every other surface: one fleet
+      // can carry more than one, and changing which algorithm a fleet runs is
+      // a real remediation rather than an edit to the same asset.
+      return {
+        surface: "ot",
+        fleetId: detail.ot.fleetId,
         algorithm: observation.algorithm,
       };
     case "network": {

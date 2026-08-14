@@ -34,6 +34,8 @@ type FormState = {
   site: string;
   owner: string;
   cryptoInUse: string;
+  cryptoAlgorithm: string;
+  cryptoKeySize: string;
   refreshCycleYears: string;
   nextProcurementDate: string;
 };
@@ -46,6 +48,8 @@ const EMPTY_FORM: FormState = {
   site: "",
   owner: "",
   cryptoInUse: "",
+  cryptoAlgorithm: "",
+  cryptoKeySize: "",
   refreshCycleYears: "",
   nextProcurementDate: "",
 };
@@ -113,6 +117,8 @@ export function OtRegister() {
           ...(form.site.trim() && { site: form.site.trim() }),
           ...(form.owner.trim() && { owner: form.owner.trim() }),
           ...(form.cryptoInUse.trim() && { cryptoInUse: form.cryptoInUse.trim() }),
+          ...(form.cryptoAlgorithm.trim() && { cryptoAlgorithm: form.cryptoAlgorithm.trim() }),
+          ...(form.cryptoKeySize.trim() && { cryptoKeySize: Number(form.cryptoKeySize) }),
           ...(form.refreshCycleYears.trim() && { refreshCycleYears: Number(form.refreshCycleYears) }),
           ...(form.nextProcurementDate && { nextProcurementDate: form.nextProcurementDate }),
         },
@@ -219,7 +225,41 @@ export function OtRegister() {
                 onChange={(e) => set("cryptoInUse", e.target.value)}
                 className={inputClass}
               />
+              <p className="mt-1 text-[10px] leading-relaxed text-[#9aa3b2]">
+                Free text, kept exactly as you write it. It is never read as an algorithm — name one below if you want this
+                fleet to appear in the cryptographic inventory.
+              </p>
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Algorithm (optional)</label>
+                <input
+                  data-testid="ot-fleet-crypto-algorithm-input"
+                  placeholder="e.g. RSA"
+                  value={form.cryptoAlgorithm}
+                  onChange={(e) => set("cryptoAlgorithm", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Key size (optional)</label>
+                <input
+                  data-testid="ot-fleet-crypto-key-size-input"
+                  type="number"
+                  min={0}
+                  placeholder="Unknown"
+                  value={form.cryptoKeySize}
+                  onChange={(e) => set("cryptoKeySize", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+            <p className="text-[10px] leading-relaxed text-[#9aa3b2]">
+              Naming an algorithm records this fleet in the inventory as an attested asset — the lowest-confidence evidence
+              this product holds, and marked as such. Leave it blank and the fleet is still tracked for procurement
+              exposure, but contributes nothing to the cryptographic inventory.
+            </p>
 
             <div className="grid grid-cols-2 gap-4">
               <div>

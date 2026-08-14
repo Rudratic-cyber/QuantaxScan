@@ -473,6 +473,18 @@ export const ListOtFleetsResponseItem = zod
       .describe(
         "Free-form, customer-asserted description of the cryptography in use.",
       ),
+    cryptoAlgorithm: zod
+      .string()
+      .nullish()
+      .describe(
+        "The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all.",
+      ),
+    cryptoKeySize: zod
+      .number()
+      .nullish()
+      .describe(
+        "Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.",
+      ),
     refreshCycleYears: zod.number().nullable(),
     nextProcurementDate: zod.coerce.date().nullable(),
     createdAt: zod.coerce.date(),
@@ -534,6 +546,18 @@ export const CreateOtFleetBody = zod.object({
   site: zod.string().optional(),
   owner: zod.string().optional(),
   cryptoInUse: zod.string().optional(),
+  cryptoAlgorithm: zod
+    .string()
+    .nullish()
+    .describe(
+      "The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all.",
+    ),
+  cryptoKeySize: zod
+    .number()
+    .nullish()
+    .describe(
+      "Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.",
+    ),
   refreshCycleYears: zod
     .number()
     .min(createOtFleetBodyRefreshCycleYearsMin)
@@ -573,6 +597,18 @@ export const GetOtFleetResponse = zod
       .nullable()
       .describe(
         "Free-form, customer-asserted description of the cryptography in use.",
+      ),
+    cryptoAlgorithm: zod
+      .string()
+      .nullish()
+      .describe(
+        "The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all.",
+      ),
+    cryptoKeySize: zod
+      .number()
+      .nullish()
+      .describe(
+        "Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.",
       ),
     refreshCycleYears: zod.number().nullable(),
     nextProcurementDate: zod.coerce.date().nullable(),
@@ -639,6 +675,18 @@ export const UpdateOtFleetBody = zod
     site: zod.string().nullish(),
     owner: zod.string().nullish(),
     cryptoInUse: zod.string().nullish(),
+    cryptoAlgorithm: zod
+      .string()
+      .nullish()
+      .describe(
+        "The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all.",
+      ),
+    cryptoKeySize: zod
+      .number()
+      .nullish()
+      .describe(
+        "Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.",
+      ),
     refreshCycleYears: zod
       .number()
       .min(updateOtFleetBodyRefreshCycleYearsMin)
@@ -674,6 +722,18 @@ export const UpdateOtFleetResponse = zod
       .nullable()
       .describe(
         "Free-form, customer-asserted description of the cryptography in use.",
+      ),
+    cryptoAlgorithm: zod
+      .string()
+      .nullish()
+      .describe(
+        "The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all.",
+      ),
+    cryptoKeySize: zod
+      .number()
+      .nullish()
+      .describe(
+        "Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.",
       ),
     refreshCycleYears: zod.number().nullable(),
     nextProcurementDate: zod.coerce.date().nullable(),

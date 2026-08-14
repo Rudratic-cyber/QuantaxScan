@@ -82,7 +82,14 @@ export const COLLECTOR_SURFACES = [
   // Same bar as the four above: the collector is a submission mapper, and what
   // earned the status is a route that persists what it maps.
   { id: "data-at-rest", name: "Data-at-rest", status: "live", surface: "data-at-rest" },
-  { id: "ot", name: "Manual OT / embedded register", status: "planned", surface: "ot" },
+  // `live` since the register's writes began deriving assets on this surface
+  // — every edit re-derives it (`ingestOtObservations`). It is the one live
+  // surface whose evidence is `manual_attestation` rather than something
+  // observed, and the confidence on its observations says so: 0.3, below every
+  // automated collector. A register whose fleets carry only free-text
+  // descriptions still produces nothing, so `live` here means "the register
+  // can record cryptography", not "the register has any".
+  { id: "ot", name: "Manual OT / embedded register", status: "live", surface: "ot" },
   { id: "vendor", name: "Vendor / third-party", status: "planned", surface: "vendor" },
   { id: "binary", name: "Binaries / firmware", status: "planned", surface: "binary" },
 ] as const satisfies readonly CollectorSurfaceEntry[];

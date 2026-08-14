@@ -54,6 +54,29 @@ export const otFleetsTable = pgTable(
      * entry is an approximation the customer is asserting, not a detection.
      */
     cryptoInUse: text("crypto_in_use"),
+    /**
+     * The structured half of `cryptoInUse`, and the only part that becomes an
+     * `assets` row on the `ot` surface.
+     *
+     * `cryptoInUse` above is deliberately free text — an approximation the
+     * customer is asserting — and it stays that way. Parsing "RSA-2048
+     * firmware signing, no TLS" into an algorithm would be exactly the
+     * guessing this product refuses everywhere else, and writing the prose
+     * into `assets.algorithm` would feed a sentence to the mapping engine and
+     * surface it across the inventory and the CBOM as an unmappable
+     * algorithm. So the customer may *additionally* state an algorithm in the
+     * vocabulary the rest of the system uses, and only then is there anything
+     * to inventory.
+     *
+     * Nullable with no default, like everything else here: a fleet described
+     * only in prose produces no observation and no collection run, which is
+     * the same "examined nothing, recorded nothing" rule every collector
+     * follows. "Nobody gave us a structured algorithm" and "the algorithm is
+     * X" must stay distinguishable.
+     */
+    cryptoAlgorithm: text("crypto_algorithm"),
+    /** Key size for `cryptoAlgorithm`, when the customer states one. Null is undetermined — never an assumed 2048 (G-05). */
+    cryptoKeySize: integer("crypto_key_size"),
     /** Years between hardware/firmware refreshes for this fleet. */
     refreshCycleYears: integer("refresh_cycle_years"),
     /**

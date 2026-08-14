@@ -54,7 +54,7 @@ describe("collector surface catalogue", () => {
     expect(unrecordable).toEqual([]);
   });
 
-  it("has exactly seven live collectors: source, dependency, tls, certificate, kms, config and data-at-rest", () => {
+  it("has exactly eight live collectors, the eighth being the manual OT register", () => {
     // `dependency` became live when B2's ingest path landed, `tls` when B3's
     // did (`POST /projects/:id/tls`), `certificate` when B4's did
     // (`POST /projects/:id/certificates`), `kms` when B5's did
@@ -72,6 +72,7 @@ describe("collector surface catalogue", () => {
       "kms",
       "config",
       "data-at-rest",
+      "ot",
     ]);
   });
 

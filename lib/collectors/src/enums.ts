@@ -137,6 +137,7 @@ export const LOCATION_DETAIL_KIND_VALUES = [
   "config",
   "kms",
   "data-at-rest",
+  "ot",
 ] as const;
 
 export type LocationDetailKind = (typeof LOCATION_DETAIL_KIND_VALUES)[number];

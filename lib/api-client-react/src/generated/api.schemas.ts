@@ -504,6 +504,10 @@ export interface OtFleet {
   owner: string | null;
   /** Free-form, customer-asserted description of the cryptography in use. */
   cryptoInUse: string | null;
+  /** The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all. */
+  cryptoAlgorithm?: string | null;
+  /** Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size. */
+  cryptoKeySize?: number | null;
   refreshCycleYears: number | null;
   nextProcurementDate: string | null;
   createdAt: string;
@@ -520,6 +524,10 @@ export interface CreateOtFleetBody {
   site?: string;
   owner?: string;
   cryptoInUse?: string;
+  /** The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all. */
+  cryptoAlgorithm?: string | null;
+  /** Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size. */
+  cryptoKeySize?: number | null;
   /** @minimum 0 */
   refreshCycleYears?: number;
   nextProcurementDate?: string;
@@ -537,6 +545,10 @@ export interface UpdateOtFleetBody {
   site?: string | null;
   owner?: string | null;
   cryptoInUse?: string | null;
+  /** The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all. */
+  cryptoAlgorithm?: string | null;
+  /** Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size. */
+  cryptoKeySize?: number | null;
   /** @minimum 0 */
   refreshCycleYears?: number | null;
   nextProcurementDate?: string | null;

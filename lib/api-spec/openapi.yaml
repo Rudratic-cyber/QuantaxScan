@@ -1783,6 +1783,18 @@ components:
           type: string
           nullable: true
           description: Free-form, customer-asserted description of the cryptography in use.
+        cryptoAlgorithm:
+          type: string
+          nullable: true
+          description: >-
+            The structured half of `cryptoInUse`, and the only part that becomes an inventory
+            asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the
+            customer asserts — and is never parsed into an algorithm. Null means nobody stated
+            one, and a fleet with none produces no asset at all.
+        cryptoKeySize:
+          type: integer
+          nullable: true
+          description: Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.
         refreshCycleYears:
           type: integer
           nullable: true
@@ -1832,6 +1844,18 @@ components:
           type: string
         cryptoInUse:
           type: string
+        cryptoAlgorithm:
+          type: string
+          nullable: true
+          description: >-
+            The structured half of `cryptoInUse`, and the only part that becomes an inventory
+            asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the
+            customer asserts — and is never parsed into an algorithm. Null means nobody stated
+            one, and a fleet with none produces no asset at all.
+        cryptoKeySize:
+          type: integer
+          nullable: true
+          description: Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.
         refreshCycleYears:
           type: integer
           minimum: 0
@@ -1866,6 +1890,18 @@ components:
         cryptoInUse:
           type: string
           nullable: true
+        cryptoAlgorithm:
+          type: string
+          nullable: true
+          description: >-
+            The structured half of `cryptoInUse`, and the only part that becomes an inventory
+            asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the
+            customer asserts — and is never parsed into an algorithm. Null means nobody stated
+            one, and a fleet with none produces no asset at all.
+        cryptoKeySize:
+          type: integer
+          nullable: true
+          description: Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.
         refreshCycleYears:
           type: integer
           minimum: 0

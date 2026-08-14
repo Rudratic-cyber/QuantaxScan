@@ -21,6 +21,9 @@ import {
   protocolConfigLocation,
   protocolConfigsIn,
   classifyKmsKeys,
+  observationsFromOtFleet,
+  OT_FLEET_LOCATION_PREFIX,
+  type OtFleetInput,
   type RecognisedProtocolConfig,
   type KmsKeyDescription,
   type KmsKeyOutcome,
@@ -840,4 +843,46 @@ export async function ingestKmsObservations(
   });
 
   return { ...result, outcomes };
+}
+
+/**
+ * B8 — persist the OT register as assets on the `ot` surface.
+ *
+ * Unlike its six siblings this is not called by a submission route: the
+ * register is edited a row at a time, and every edit re-derives the whole
+ * register. That is why the caller passes *all* of the organisation's fleets
+ * rather than the one that changed.
+ *
+ * **The reobservation scope is a prefix, and that is legitimate here in a way
+ * it is not for KMS.** `ingestKmsObservations` refuses a prefix scope because a
+ * submitted key export cannot claim to be a complete enumeration of a key
+ * store. The register can: it *is* the enumeration — there is no OT estate
+ * outside it, only what the customer has written down. So a fleet deleted from
+ * the register, or edited to remove its stated algorithm, correctly leaves its
+ * asset behind as `gone`, which is the one lifecycle event this surface has.
+ *
+ * Records a run whenever the register has been examined, including when it
+ * yields no observation at all — an empty register, or one where nobody has
+ * stated a structured algorithm, is a real reading with a real result. It is
+ * the *caller's* job not to invoke this when nothing was examined, and there is
+ * no such case: every entry point here follows an edit the customer made.
+ */
+export async function ingestOtObservations(
+  tx: ScopedTx,
+  params: { fleets: OtFleetInput[]; organizationId: number },
+): Promise<IngestResult> {
+  const observations = params.fleets.flatMap((fleet) => observationsFromOtFleet(fleet));
+
+  return ingestObservations(tx, {
+    organizationId: params.organizationId,
+    // The register is organisation-wide, not project-scoped — a device fleet
+    // belongs to the estate, not to a repository. `repo` is the run's target,
+    // and `ot` is the only surface whose fingerprint does not include it.
+    repo: "ot-register",
+    collector: "ot-register",
+    collectorVersion: "1.0.0",
+    surface: "ot",
+    observations,
+    reobserved: { kind: "prefixes", prefixes: [OT_FLEET_LOCATION_PREFIX] },
+  });
 }
