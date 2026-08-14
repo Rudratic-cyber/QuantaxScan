@@ -1,12 +1,22 @@
 import { Router, type IRouter } from "express";
 import { eq, inArray, like } from "drizzle-orm";
-import { withOrg, projectsTable, scansTable, findingsTable, assetsTable, projectRepoId } from "@workspace/db";
+import {
+  withOrg,
+  projectsTable,
+  scansTable,
+  findingsTable,
+  assetsTable,
+  observationsTable,
+  collectionRunsTable,
+  projectRepoId,
+} from "@workspace/db";
 import {
   CreateProjectBody,
   GetProjectParams,
   DeleteProjectParams,
 } from "@workspace/api-zod";
 import { scanCode, computeScanResult } from "../lib/scanner";
+import { summariseProjectCoverage } from "../lib/coverage";
 import { withComplianceAll } from "../lib/compliance";
 import { orgContextFor } from "../lib/principal";
 
@@ -133,6 +143,88 @@ router.get("/projects/:id/findings", async (req, res): Promise<void> => {
 
   // Obligations are derived on read, not read off the row — see lib/compliance.ts.
   res.json(withComplianceAll(findings));
+});
+
+/**
+ * GET /api/projects/:id/coverage — D3, the coverage and confidence meter.
+ * docs/Claude/03-features.md §D3; closes the reporting half of
+ * docs/Claude/09-open-gaps.md G-11.
+ *
+ * The first consumer of `observations.confidence`, which until now was written
+ * on every scan and read by nothing.
+ *
+ * Three details that are the whole point of the endpoint:
+ *
+ *  - It reports the surfaces that *have* evidence and says nothing about the
+ *    rest, because "absent from this list" is the machine-readable form of
+ *    "never examined". The catalogue in `@workspace/collectors` supplies the
+ *    denominator so the API and the UI cannot disagree about what ten means.
+ *  - Runs are matched by `collection_runs.target = project:<id>`, which is what
+ *    `POST /scans`, `POST /scans/multi` and the backfill all write (they all go
+ *    through `projectRepoId`). Assets are matched by the `project:<id>:`
+ *    location prefix, the same convention `DELETE /projects/:id` reconciles on.
+ *  - An unknown *or* another organisation's project is a 404, matching
+ *    `GET /projects/:id`. Returning an empty coverage payload instead would
+ *    tell the caller the project exists and has no coverage, which is a
+ *    different — and false — statement.
+ */
+router.get("/projects/:id/coverage", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+
+  const coverage = await withOrg(orgContextFor(req), async (tx) => {
+    const [project] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!project) return null;
+
+    const [runs, assets] = await Promise.all([
+      tx
+        .select({
+          surface: collectionRunsTable.surface,
+          status: collectionRunsTable.status,
+          startedAt: collectionRunsTable.startedAt,
+          completedAt: collectionRunsTable.completedAt,
+        })
+        .from(collectionRunsTable)
+        .where(eq(collectionRunsTable.target, repo)),
+      tx
+        .select({ id: assetsTable.id, surface: assetsTable.surface, status: assetsTable.status })
+        .from(assetsTable)
+        .where(like(assetsTable.location, `${repo}:%`)),
+    ]);
+
+    // Observations are fetched per asset rather than aggregated in SQL because
+    // the "one point per asset, latest observation wins" rule lives in the pure
+    // summariser, where it is unit-tested. If a project ever holds enough
+    // assets for this to matter, push the DISTINCT ON down into the query —
+    // the summariser's contract stays the same either way.
+    const assetIds = assets.map((a) => a.id);
+    const observations = assetIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: observationsTable.id,
+            assetId: observationsTable.assetId,
+            confidence: observationsTable.confidence,
+            observedAt: observationsTable.observedAt,
+          })
+          .from(observationsTable)
+          .where(inArray(observationsTable.assetId, assetIds));
+
+    return summariseProjectCoverage({ runs, assets, observations });
+  });
+
+  if (!coverage) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  res.json({ projectId: id, generatedAt: new Date().toISOString(), ...coverage });
 });
 
 export default router;

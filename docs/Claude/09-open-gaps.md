@@ -26,7 +26,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | ~~G-08~~ | ~~SHA-1 rule is use-dependent; we alert blindly~~ | **Closed** | Done 2026-08-14 (C1) | — |
 | ~~G-09~~ | ~~AES-ECB framed as a compliance violation~~ | **Closed** | Done 2026-08-14 (C1) | — |
 | ~~G-10~~ | ~~Hygiene findings inflate the PQC risk score~~ | **Closed** | Done 2026-08-14 (A4) | — |
-| G-11 | No confidence score on findings | High, partially closed | Design | A2 — carried on `observations`; no UI/report consumer yet |
+| G-11 | No confidence score on findings | Medium, mostly closed | Design | A2 + D3 — carried on `observations`, now read and shown; no *filtering* yet |
 | G-12 | Security findings S1–S8 | High | Interim auth + org scoping shipped; needs deploy | See [08](08-security.md), [13](13-auth-and-tenancy.md) |
 | ~~G-13~~ | ~~`.env` tracked in git~~ | **Closed** | Done 2026-08-03 | — |
 | G-14 | No re-verification trigger for standards data | Medium | Process | Calendar + CI |
@@ -269,7 +269,7 @@ and the contract it should consume is in [05](05-compliance-mapping.md) §"What 
 
 ---
 
-## G-11 — No confidence score on findings `High, partially closed`
+## G-11 — No confidence score on findings `Medium, mostly closed`
 
 Every finding is presented as equally certain. `/\bRSA/i` matches prose, comments, variable
 names and unrelated acronyms; `/\bDH\b/i` matches initials and `DHCP` often enough to matter.
@@ -286,6 +286,18 @@ design. Regex ≈ 0.7, TLS handshake ≈ 1.0.
 > shows it is not yet "an inventory whose findings can be filtered by evidence quality." That is
 > D3/reporting scope, not A1/A2.
 
+> **Update, 2026-08-14 (D3).** ✅ `observations.confidence` now has its first consumer:
+> `GET /api/projects/:id/coverage` returns a distribution over it and the dashboard's coverage
+> meter renders it, with the empty 0.8–1.0 band shown deliberately so "nothing here is verified
+> evidence" is visible rather than inferred. The distribution is **one point per active asset**
+> (its most recent observation), not one per observation — weighting it by observation count
+> would describe our scan schedule rather than our evidence quality — and the payload states that
+> basis and how many assets it excluded. ⬜ Still open: **filtering**. The findings list the
+> product actually shows comes from `findings`, which has no confidence column; joining it to
+> `observations` is the read cut-over that
+> [04-architecture.md](04-architecture.md) defers. Severity drops to `Medium` because the
+> evidence quality is now *visible* to anyone reading a report — but the gap's own wording is
+> about filtering, so it is not closed.
 > **Update, 2026-08-13 (B2).** The dependency collector is the first evidence that the scale is
 > doing real work rather than being a constant: it emits `0.8` for a single-purpose crypto
 > library (`node-rsa`, `@noble/ed25519` — parse-exact presence of a package that exists to do

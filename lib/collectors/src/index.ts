@@ -1,4 +1,5 @@
 export * from "./enums";
+export * from "./surface-catalogue";
 export * from "./cpe";
 export * from "./location-detail";
 export * from "./fingerprint";

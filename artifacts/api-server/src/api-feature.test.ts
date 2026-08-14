@@ -77,6 +77,7 @@ describe("API Feature Test Suite", () => {
         { method: "get", path: "/api/projects/999" },
         { method: "delete", path: "/api/projects/999" },
         { method: "get", path: "/api/projects/999/findings" },
+        { method: "get", path: "/api/projects/999/coverage" },
         { method: "post", path: "/api/scans", body: {} },
         { method: "get", path: "/api/scans/999" },
         { method: "get", path: "/api/scans/999/findings" },
@@ -244,6 +245,96 @@ describe("API Feature Test Suite", () => {
         .get(`/api/projects/${createdProjectId}`)
         .set("X-API-Key", API_KEY);
       expect(getRes.status).toBe(404);
+    });
+  });
+
+  /**
+   * D3 — docs/Claude/03-features.md §D3, and the reporting half of G-11.
+   *
+   * The assertions worth defending here are the negative ones: an unscanned
+   * project must report zero examined surfaces out of ten, and a scanned one
+   * must still report only one. A meter that drifts toward "mostly covered"
+   * because the arithmetic quietly counts something else is the failure mode
+   * this feature exists to prevent, and it would not show up in a test that
+   * only checked the endpoint returns 200.
+   */
+  describe("Coverage & Confidence Meter (D3)", () => {
+    let projectId: number;
+
+    it("sets up a project with no collection run against it", async () => {
+      const res = await request
+        .post("/api/projects")
+        .set("X-API-Key", API_KEY)
+        .send({ name: "Coverage Subject", language: "python", code: "# nothing here yet" });
+      expect(res.status).toBe(201);
+      projectId = res.body.id;
+    });
+
+    it("reports zero of ten surfaces examined before anything has been collected", async () => {
+      const res = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
+      expect(res.status).toBe(200);
+      expect(res.body.projectId).toBe(projectId);
+      // Creating a project runs the scanner for its risk score but writes no
+      // collection run — so nothing has been examined, and the meter says so.
+      expect(res.body.examinedSurfaces).toBe(0);
+      expect(res.body.totalSurfaces).toBe(10);
+      expect(res.body.surfaces).toEqual([]);
+      expect(res.body.confidence.scored).toBe(0);
+      expect(res.body.confidence.mean).toBeNull();
+    });
+
+    it("still reports only one of ten surfaces examined after a source scan", async () => {
+      const scan = await request
+        .post("/api/scans")
+        .set("X-API-Key", API_KEY)
+        .send({
+          projectId,
+          mode: "scan-only",
+          code: "from Crypto.PublicKey import RSA\nkey = RSA.generate(2048)",
+          language: "python",
+        });
+      expect(scan.status).toBe(201);
+
+      const res = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
+      expect(res.status).toBe(200);
+      expect(res.body.examinedSurfaces).toBe(1);
+      expect(res.body.totalSurfaces).toBe(10);
+
+      const source = res.body.surfaces.find((s: { surface: string }) => s.surface === "source");
+      expect(source).toMatchObject({ surfaceId: "source", state: "examined", completedRuns: 1, failedRuns: 0 });
+      expect(source.activeAssets).toBeGreaterThan(0);
+      expect(source.lastExaminedAt).toEqual(expect.any(String));
+
+      // The other nine surfaces are absent, which is how "never examined" is
+      // expressed on the wire. Anything else here would be a claim we cannot support.
+      expect(res.body.surfaces).toHaveLength(1);
+    });
+
+    it("surfaces the confidence the source collector actually emits, and no verified evidence", async () => {
+      const res = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
+      expect(res.status).toBe(200);
+
+      const { confidence } = res.body;
+      expect(confidence.basis).toBe("latest observation per active asset");
+      expect(confidence.scored).toBeGreaterThan(0);
+      // G-11: the regex collector emits 0.7 and nothing else exists yet. This
+      // is the first code path anywhere that reads observations.confidence.
+      expect(confidence.min).toBeCloseTo(0.7, 5);
+      expect(confidence.max).toBeCloseTo(0.7, 5);
+      expect(confidence.distinctValues).toBe(1);
+      expect(confidence.buckets).toHaveLength(5);
+      expect(confidence.buckets[3].count).toBe(confidence.scored);
+      expect(confidence.buckets[4]).toMatchObject({ label: "0.8–1.0", count: 0 });
+    });
+
+    it("returns 404 for a project that does not exist, not an empty coverage payload", async () => {
+      const res = await request.get("/api/projects/999999/coverage").set("X-API-Key", API_KEY);
+      expect(res.status).toBe(404);
+    });
+
+    it("rejects a non-numeric project id", async () => {
+      const res = await request.get("/api/projects/not-a-number/coverage").set("X-API-Key", API_KEY);
+      expect(res.status).toBe(400);
     });
   });
 

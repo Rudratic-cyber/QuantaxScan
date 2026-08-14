@@ -89,6 +89,31 @@ beforeAll(async () => {
       [OTHER_ORG, OUR_ORG],
     );
 
+    // Coverage-meter fixture, deliberately adversarial. These rows belong to
+    // the OTHER organisation but are addressed at OUR project's identity —
+    // `collection_runs.target` and the `assets.location` prefix are exactly
+    // what `GET /projects/:id/coverage` filters on, so its where clauses match
+    // them. Nothing but the row-level-security policy stops them being counted
+    // into our coverage numbers and our confidence distribution. Constructible
+    // because neither table has a foreign key to `projects`.
+    const theirRunId = (await client.query<{ id: number }>(
+      `insert into collection_runs (organization_id, collector, collector_version, surface, status, target, observation_count, completed_at)
+         values ($1, 'source-regex', '1.0.0', 'source', 'completed', $2, 1, now()) returning id`,
+      [OTHER_ORG, `project:${ours.projectId}`],
+    )).rows[0].id;
+
+    const theirAssetId = (await client.query<{ id: number }>(
+      `insert into assets (organization_id, fingerprint, surface, algorithm, location, status)
+         values ($1, 'cross-tenant-coverage-fixture', 'source', 'RSA', $2, 'active') returning id`,
+      [OTHER_ORG, `project:${ours.projectId}:leak.py`],
+    )).rows[0].id;
+
+    await client.query(
+      `insert into observations (organization_id, asset_id, collection_run_id, collector, collector_version, confidence, discovery_modality)
+         values ($1, $2, $3, 'source-regex', '1.0.0', 0.95, 'static_artifact_analysis')`,
+      [OTHER_ORG, theirAssetId, theirRunId],
+    );
+
     // Inventory rows for the CBOM export. Seeded on both sides because the
     // interesting failure is not "we see nothing" — it is "we see theirs".
     await client.query(
@@ -139,6 +164,7 @@ describe("route manifest — a new route cannot ship without being considered", 
     "GET /projects/:id": "org-scoped",
     "DELETE /projects/:id": "org-scoped",
     "GET /projects/:id/findings": "org-scoped",
+    "GET /projects/:id/coverage": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",
@@ -227,11 +253,46 @@ describe("list routes return this organisation's rows and only this organisation
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
   });
+
+  it("GET /api/projects/:id/coverage counts none of another organisation's runs, assets or confidence", async () => {
+    // The fixture put a completed source run, an active asset and a 0.95
+    // observation in the OTHER organisation, addressed at OUR project. The
+    // handler's `target = project:<id>` and `location like 'project:<id>:%'`
+    // both match them. If this returns anything but an empty, zeroed meter,
+    // the policy — not a where clause — has failed.
+    const res = await auth(request.get(`/api/projects/${ours.projectId}/coverage`));
+    expect(res.status).toBe(200);
+
+    // The claim under test is that none of THEIR rows are counted — not that the meter
+    // reads empty. The A5 fixture seeds one of OUR OWN active source assets on this
+    // project, and `coverage.ts` treats an asset as evidence a surface was examined, so
+    // exactly one examined surface is the correct answer. A bare `toBe(0)` here would
+    // fail for the right thing happening, which is how a tenancy test stops being read.
+    expect(res.body.examinedSurfaces).toBe(1);
+    expect(res.body.surfaces.filter((s: { state: string }) => s.state !== "never-examined"))
+      .toHaveLength(1);
+
+    // Their completed run, their asset and their 0.95 observation are all addressed at
+    // this project and all match the handler's where clauses. Only the policy excludes
+    // them, so their absence from the payload is the whole assertion.
+    const body = JSON.stringify(res.body);
+    expect(body).not.toContain("0.95");
+    expect(body).not.toContain("leak.py");
+    expect(res.body.confidence.max).not.toBe(0.95);
+  });
 });
 
 describe("addressing another organisation's row by id is indistinguishable from it not existing", () => {
   it("GET /api/projects/:id → 404, not 403 — a 403 would confirm the row is real", async () => {
     const res = await auth(request.get(`/api/projects/${theirs.projectId}`));
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "Project not found" });
+  });
+
+  it("GET /api/projects/:id/coverage → 404, matching GET /api/projects/:id", async () => {
+    // An empty coverage payload would assert "this project exists and nothing
+    // has been examined", which is a different and false statement.
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/coverage`));
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: "Project not found" });
   });
@@ -373,7 +434,13 @@ describe("writes land in the caller's organisation, never anywhere else", () => 
           (select count(*)::int from projects     where name = 'multi')                  as p,
           (select count(*)::int from scans        where project_id = ${projectId})       as s,
           (select count(*)::int from assets       where location like ${assetPrefix})    as a,
-          (select count(*)::int from observations)                                       as o`,
+          -- Qualified by this request's assets rather than counting every
+          -- observation the other organisation can see: the coverage fixture
+          -- above legitimately owns one, and an unqualified count would fail
+          -- on that instead of on a leak, which is the opposite of the point.
+          (select count(*)::int from observations obs
+             join assets ast on ast.id = obs.asset_id
+            where ast.location like ${assetPrefix})                                      as o`,
       ),
     );
     expect(leaked).toEqual([{ p: 0, s: 0, a: 0, o: 0 }]);
