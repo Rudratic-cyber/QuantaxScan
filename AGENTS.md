@@ -177,6 +177,13 @@ pnpm run hooks:install   # gate every push on it automatically
 Typecheck is blocking in local CI. A green run is the standard for "ready to merge", not a green
 check on the PR.
 
+**`--quick` is not the whole gate, and twice on 2026-08-14 that mattered.** It skips `test:ui` and
+never runs `tests/e2e/` at all. A frontend regression survived five green `--quick` runs and a full
+e2e pass, and surfaced only from running `pnpm run test:ui` directly; separately, the e2e suite
+grew past S6/S7's rate-limit budget and began 429ing itself, which no per-spec run could reveal
+because each spec alone stays under it. Before calling a change merge-ready, run `test:ui` and the
+e2e suite with no filter — see [docs/Claude/12-test-suite.md](docs/Claude/12-test-suite.md).
+
 One stage is worth knowing about before it surprises you: **`standards`** runs
 `pnpm run check:standards`, which fails when any `retrievedAt` under `docs/Claude/mappings/` is
 older than 180 days (G-14). If it fires, the fix is to re-read the primary source and then update
@@ -203,6 +210,46 @@ file against `main`'s real HEAD after resolving and see if anything looks struct
 not just diff-clean. When one side of a conflicted file is a nearly-total rewrite, don't hunk-merge
 it — diff `main` against the merge-base for that file (isolates what `main` actually changed since
 divergence), take the other side's full content, and reapply just that delta on top.
+
+## Merging two parallel collector lanes
+
+Eight lanes merged on 2026-08-14 and the same failure recurred in every
+collector pair. Read this before resolving a conflict between two lanes that
+both added a surface.
+
+**Never resolve these files by concatenating both sides.** `asset-ingest.ts`,
+`routes/projects.ts`, `cross-tenant.test.ts`, `fingerprint.ts` and
+`location-detail.ts` all hold a sequence of same-shaped blocks — one per
+collector — and git presents two lanes' additions as alternatives. Keeping both
+halves eats whatever line the two sides *share* at the boundary: a closing
+brace, a `});`, a `/**` opener. The result is one function assembled from two
+different collectors' halves. It happened to be syntactically invalid every
+time, so typecheck caught it — do not rely on that. Instead: take one side's
+file whole and splice the other lane's block in as a unit, or rebuild the file
+from both parents.
+
+**Pick the base by which side changed shared code, not by lane order.** B7
+extracted `conflictSet` inside the shared `ingestObservations()` so the A3
+classification columns could be `COALESCE`d in conditionally. Merging the other
+way round would have dropped that silently and *nothing would have failed* —
+the other collectors supply no classification, so their SQL is unchanged and
+their tests stay green while the A3 columns quietly stop being written.
+
+**Two lanes both marking their own surface `live`** leaves each side calling the
+other `planned`. Taking either side whole silently demotes the other lane's
+surface while its own test still passes. Both are live; the live-collector count
+test in `surface-catalogue.test.ts` is the thing that catches a miscount.
+
+**`openapi.yaml` is merged by key, never by hunk** — the lines after a path
+block (`requestBody:`, `responses:`) read as shared context while belonging to
+each block separately. Slice the new path and schema keys out of the other side
+and append them whole, then re-run `codegen`; never hand-merge the generated
+clients.
+
+**A new migration is the one thing lanes cannot do in parallel.**
+`drizzle/meta/_journal.json` is an ordered ledger, so two lanes each generating
+`0006_*` produce a conflict no merge can resolve. Land the schema change ahead
+of the lanes, in one migration nobody owns.
 
 ## Local dev ports collide with other concurrent worktrees
 

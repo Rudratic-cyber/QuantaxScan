@@ -123,11 +123,12 @@ Identity must be stable across re-scans but sensitive to real change.
 |---|---|
 | Source | `repo + path + algorithm + normalised-symbol` — **not** line number (line numbers shift on unrelated edits) |
 | Dependency | `repo + ecosystem + package + algorithm` — amended 2026-08-14 when B2's ingest landed; see below |
-| TLS | `host + port + algorithm` |
-| Certificate | `issuer + serial` |
+| TLS | `repo + host + port + algorithm` — amended 2026-08-14 when B3's ingest landed, for the same reason as Dependency; see `fingerprint.ts` |
+| Certificate | `repo + issuer + serial` — amended 2026-08-14 when B4's ingest landed, for the same reason as Dependency; see `fingerprint.ts` |
 | Protocol config | `repo + path + directive + algorithm + token` — added 2026-08-14 when B6's collector landed; see below |
-| KMS | `provider + key ARN/ID` |
 | KMS | `repo + provider + key ARN/ID` — amended 2026-08-14 when B5's ingest landed, for the same reason as Dependency; see `fingerprint.ts` |
+| Data-at-rest | `repo + engine + storeId + role + algorithm` — added 2026-08-14 with B7. `role` (`data-encryption` / `key-protection`) is in the identity because a store's two crypto facts can legitimately be the same algorithm |
+| OT register | `fleet id + algorithm` — added 2026-08-14 with B8's surface ingest. The **only** variant without `repo`: a device fleet belongs to the estate, not a repository, and the register row is the identity |
 | Binary (added — see below) | `target-or-repository + packageIdentity-or-componentName + artifactPath + binaryFormat + architecture + algorithm + evidenceDiscriminator` — **not** a content digest/sha256 |
 
 **Anti-requirement:** do not include line number or file hash in the source fingerprint.

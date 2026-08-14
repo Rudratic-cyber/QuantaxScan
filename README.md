@@ -279,16 +279,30 @@ reads `findings`. See [docs/Claude/03-features.md](docs/Claude/03-features.md) (
 
 ## Project status
 
-**This is an early-stage project.** The scanner works and is deployed, but it covers **two of the
-ten surfaces** a cryptographic inventory needs, and both of them reach your cryptography through
-the repository. Connections (TLS, certificates, protocol config) and storage (data-at-rest, KMS)
-have no collector at all — see [the coverage page](https://quantaxscan.swotpam.com/coverage),
-which reports that honestly rather than implying completeness.
+**This is an early-stage project.** It now covers **eight of the ten surfaces** a cryptographic
+inventory needs — source, dependencies, TLS, certificates, KMS, protocol config, data-at-rest and
+the manual OT register. Two remain with no collector: vendor/third-party and binaries/firmware.
+See [the coverage page](https://quantaxscan.swotpam.com/coverage), which reads those numbers from
+the same catalogue the API does rather than from a second hardcoded list.
+
+**Read "eight of ten" carefully, because the page does.** The denominator is *collector surfaces*,
+not your estate: how much cryptography sits inside a surface nobody has examined is not estimable
+from anything this system holds, and nothing here will guess it. And only two of the eight observe
+anything by themselves — the source scanner reads your repository, and the TLS prober opens a real
+handshake. The other six read what you submit to them (a lockfile, a certificate, a key inventory,
+a config file, a description of an encrypted store, a form). That is a deliberate trade: a
+credentialed collector needs a secret-handling design this product does not have yet (F4), and a
+surface that can record what you send it is worth more than one that stays permanently
+never-examined.
 
 **Works today:** regex detection across 7 algorithm families over source; dependency detection
-from lockfiles (pnpm/npm/yarn, `requirements.txt`) against a cited package table; single-file /
-ZIP / GitHub scanning, NIST replacement mapping, risk and effort scoring, coverage and confidence
-reporting, dashboard, community hub, shareable reports.
+from lockfiles (pnpm/npm/yarn, `requirements.txt`) against a cited package table; a TLS prober that
+records the key exchange actually negotiated; X.509 parsing with an expiry-vs-Q-Day verdict per
+scenario; a KMS/secret-store inventory across AWS, GCP, Azure and Vault key specs; SSH/IPsec/JWT/
+SAML protocol-config reading; data-at-rest recording that carries data classification into the
+Mosca calculation; manual OT and vendor registers; single-file / ZIP / GitHub scanning, NIST
+replacement mapping, risk and effort scoring, coverage and confidence reporting, the CISA
+quantum-readiness dashboard, community hub, shareable reports.
 
 **Known limitations, honestly:**
 
@@ -308,9 +322,17 @@ reporting, dashboard, community hub, shareable reports.
   version bump (G-21 — paramiko removed DSA in 4.0.0). Ecosystems: npm and PyPI
   (`requirements.txt` only — `poetry.lock` and `Pipfile.lock` are not read). No version-range or
   advisory reasoning.
-- **Most cryptography still is not visible to any of this.** OpenSSL, BouncyCastle, your TLS
-  termination, your KMS and your database's encryption-at-rest are where the real estate lives,
-  and each needs a collector that does not exist yet (B3–B7).
+- **Six of the eight surfaces are submission-based, not agents.** TLS is the exception that
+  probes for itself; source reads a repository you hand over. Your KMS, your protocol config, your
+  encryption-at-rest and your OT fleet are recorded from what you submit or type in — nothing here
+  polls your cloud account or your database, because storing a production credential needs
+  controls that are not built (F4). The inventory is therefore as complete as what you send it,
+  and the coverage meter counts a surface examined only for the material it actually received.
+- **A manual register is evidence, but the weakest kind.** The OT register's entries become assets
+  at confidence 0.3 — below every automated collector — and only when someone names an algorithm
+  in the structured field. A fleet described only in prose is tracked for procurement exposure but
+  contributes nothing to the cryptographic inventory, because parsing prose into an algorithm
+  would be a guess.
 - **One finding per line.** EdDSA (Ed25519/Ed448) is detected now and resolves its curve size,
   but a line naming two algorithms — an SSH key list with both `ssh-rsa` and `ssh-ed25519` — is
   reported as the first pattern that matches it, and the second algorithm is silently lost.

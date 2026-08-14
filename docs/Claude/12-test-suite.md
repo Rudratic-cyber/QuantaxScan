@@ -22,6 +22,7 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Coverage Summariser Suite** | Vitest | `artifacts/api-server/src/lib/coverage.test.ts` | Pure — no database, no HTTP |
 | **Posture Timeline Suite** | Vitest | `artifacts/api-server/src/lib/posture-timeline.test.ts` | Pure — no database, `now` injected (D7's whole subject is time) |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts`, `tests/ui/timeline-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
+| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (twelve files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
 | **Continuous Integration** | GitHub Actions | `.github/workflows/ci.yml` | Ubuntu runner (`ubuntu-latest`) |
 
 The UI suite always starts its own Vite dev server (`reuseExistingServer: false`) so it can never
@@ -186,3 +187,56 @@ The following product areas are deliberately excluded from automated test covera
      the session half — two signed-in users, membership revocation taking effect on the next
      request — arrives with sign-in. See [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §9.3 and
      §10.
+
+---
+
+## The real-stack e2e suite
+
+`tests/ui/` mocks the API and asserts the frontend. `tests/e2e/` does not mock
+anything: `global-setup.ts` starts a real PostgreSQL container, applies the real
+migrations and RLS, builds and starts the API server as `quantaxscan_app`, and
+serves the frontend from a different origin. **`page.route` must not appear
+anywhere in `tests/e2e/`** — a fixture that fabricates a response makes the
+whole exercise pointless, and `support/fixtures.ts` says so at the top.
+
+It is **not** part of `pnpm run ci --quick`. Run it directly:
+
+```
+E2E_PG_PORT=… E2E_API_PORT=… E2E_UI_PORT=… E2E_PG_CONTAINER=… E2E_DB_NAME=… \
+  pnpm exec playwright test --config playwright.e2e.config.ts
+```
+
+Every value is yours alone — the harness does `docker rm -f <container>` on
+start, so reusing another worktree's container name destroys its database
+mid-run.
+
+| Spec | What it holds down |
+|---|---|
+| `01-stack` | The stack is genuinely up: health check, cross-origin frontend, a real 401, a real authenticated read |
+| `02-dashboard-unauthenticated` | An honest refusal rather than "no data", and a 401 answered once rather than retried |
+| `03-dashboard-authenticated-empty` | An empty estate reads as empty *because the server authorised the claim*, and the timeline refuses to draw a flat line through nothing |
+| `04-certificates` (B4) | A certificate outliving every Q-Day scenario is flagged at ingest and in the persisted inventory; a chain is read past its leaf; an unreadable submission records no run |
+| `05-tls` (B3) † | A real handshake against a real `tls.createServer`; per-target outcomes never collapsed; an unreachable host is **not** marked remediated; TLS 1.3 records an undetermined key-exchange size rather than a plausible one |
+| `06-readiness` (D1) | The coverage headline on screen is the number the payload contains; an untracked factsheet section says so instead of showing a percentage; with no credential every panel refuses rather than rendering a zero |
+| `07-multi-org` (F1) ‡ | Two keys, two organisations, exact counts, and 404-not-403 in both directions |
+| `08-ot-register` (B8) | An undated fleet reads unknown, never safe; a fleet naming an algorithm reaches the inventory at attestation confidence while a prose-only one does not; clearing the claim retires the asset without deleting the fleet |
+| `09-kms` (B5) | A key store's own "size unknown" shape (Azure) records null rather than a guess, asserted at the persisted-read level |
+| `10-protocol-config` (B6) | What a config *declares*, never conflated with what B3 observed being negotiated |
+| `11-data-at-rest` (B7) | A Regulated archive reaches the risk engine with X = 25 and `xAssumed: false`; "encrypted, cipher unknown" produces no asset; a blank resubmission does not retire a recorded cipher |
+| `12-vendor` (B9) | A vendor's claim never reads as an observation; "no clause" and "nobody read the contract" stay distinguishable in both directions |
+
+† needs `QUANTAXSCAN_TLS_PROBE_ALLOW_PRIVATE_TARGETS=1` — it must handshake with
+a server on loopback, which production correctly refuses.
+‡ needs `E2E_SECOND_ORG=1` — global setup creates the second organisation and
+its key only on that flag.
+
+Both specs `test.skip` on their own flag **with the reason printed**, so a bare
+`playwright test` run stays green and says what it skipped. A spec that fails
+the default suite over configuration, and one that skips silently, are both
+wrong.
+
+**The suite raises the S6/S7 rate-limit budgets for its own stack**
+(`global-setup.ts`). At twelve spec files it makes several hundred requests from
+one address inside the limiter's five-minute window, so it began rate-limiting
+itself; no e2e spec asserts 429, and the limiter's real behaviour is proven in
+`rate-limit.test.ts` and `rate-limit-edge.test.ts`.
