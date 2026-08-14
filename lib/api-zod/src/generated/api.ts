@@ -378,6 +378,72 @@ export const GetProjectCoverageResponse = zod
   );
 
 /**
+ * Runs the dependency collector over the submitted files and persists what it finds as assets on the `dependency` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+Files are selected by basename, not by extension: `pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock` and `requirements*.txt`. Anything else in `files` is ignored rather than rejected, so a caller may submit a whole tree.
+
+**If no submitted file is a recognised lockfile, no collection run is recorded** and `lockfilesRecognised` is 0. That is deliberate: writing a run would make the meter report the dependency surface as examined-and-empty, when the truth is that nothing readable was submitted. It is a 200, not an error — a repository legitimately may have no lockfile.
+
+A package that leaves a resubmitted lockfile marks its asset `gone`, scoped to the ecosystems this submission actually carried a lockfile for. Submitting only `requirements.txt` therefore never touches the project's npm assets.
+ * @summary Submit a project's lockfiles for dependency/SBOM collection (B2)
+ */
+export const SubmitProjectDependenciesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SubmitProjectDependenciesBody = zod.object({
+  files: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        content: zod.string(),
+      }),
+    )
+    .describe(
+      "Repository files. Only recognised lockfiles are read; everything else is ignored. `content` is the file verbatim — truncating a lockfile silently drops packages, so callers must not send an excerpt.",
+    ),
+});
+
+export const SubmitProjectDependenciesResponse = zod.object({
+  projectId: zod.number(),
+  lockfilesRecognised: zod
+    .number()
+    .describe(
+      "How many submitted files the collector could read. Zero means no collection run was recorded and the dependency surface is still un-examined for this project.",
+    ),
+  lockfiles: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        kind: zod.enum([
+          "pnpm-lock",
+          "npm-lock",
+          "yarn-lock",
+          "pip-requirements",
+        ]),
+      }),
+    )
+    .describe("The recognised lockfiles and which format each was read as."),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe("Null when no run was recorded (`lockfilesRecognised` is 0)."),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Assets whose package is no longer in a resubmitted lockfile. Scoped to the ecosystems this submission carried a lockfile for.",
+    ),
+  evidenceCaveat: zod
+    .string()
+    .describe(
+      "Stated in every response rather than left to the client: a lockfile records the fully resolved dependency graph, so a match may be a transitive dependency of the toolchain rather than a library the project's own code calls.",
+    ),
+});
+
+/**
  * Observed history from real collection instants, plus a projected horizon and the obligation deadlines that fall in it. Observed points come only from instants at which a collection actually happened — the series is never resampled onto a regular grid, because that would draw a smooth trend on an estate that never changed. When fewer than two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
 
  * @summary Estate cryptographic posture over time (D7)

@@ -401,6 +401,48 @@ export interface Scan {
   completedAt?: string | null;
 }
 
+export type SubmitProjectDependenciesBodyFilesItem = {
+  path: string;
+  content: string;
+};
+
+export interface SubmitProjectDependenciesBody {
+  /** Repository files. Only recognised lockfiles are read; everything else is ignored. `content` is the file verbatim — truncating a lockfile silently drops packages, so callers must not send an excerpt. */
+  files: SubmitProjectDependenciesBodyFilesItem[];
+}
+
+export type DependencyIngestSummaryLockfilesItemKind =
+  (typeof DependencyIngestSummaryLockfilesItemKind)[keyof typeof DependencyIngestSummaryLockfilesItemKind];
+
+export const DependencyIngestSummaryLockfilesItemKind = {
+  "pnpm-lock": "pnpm-lock",
+  "npm-lock": "npm-lock",
+  "yarn-lock": "yarn-lock",
+  "pip-requirements": "pip-requirements",
+} as const;
+
+export type DependencyIngestSummaryLockfilesItem = {
+  path: string;
+  kind: DependencyIngestSummaryLockfilesItemKind;
+};
+
+export interface DependencyIngestSummary {
+  projectId: number;
+  /** How many submitted files the collector could read. Zero means no collection run was recorded and the dependency surface is still un-examined for this project. */
+  lockfilesRecognised: number;
+  /** The recognised lockfiles and which format each was read as. */
+  lockfiles: DependencyIngestSummaryLockfilesItem[];
+  /** Null when no run was recorded (`lockfilesRecognised` is 0). */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Assets whose package is no longer in a resubmitted lockfile. Scoped to the ecosystems this submission carried a lockfile for. */
+  assetsMarkedGone: number;
+  /** Stated in every response rather than left to the client: a lockfile records the fully resolved dependency graph, so a match may be a transitive dependency of the toolchain rather than a library the project's own code calls. */
+  evidenceCaveat: string;
+}
+
 export type CreateScanBodyMode =
   (typeof CreateScanBodyMode)[keyof typeof CreateScanBodyMode];
 

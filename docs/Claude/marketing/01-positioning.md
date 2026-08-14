@@ -150,11 +150,13 @@ metadata. Almost none lead with source code.
 That ordering has a consequence we should say out loud internally: **source-code scanning is the
 slowest surface to onboard and among the narrowest in coverage.** It requires repository access,
 which triggers the deepest security review of any integration — the one gate a pre-pilot product
-cannot clear quickly. Our single live collector is therefore also our hardest sell.
+cannot clear quickly. Our first live collector is therefore also our hardest sell.
 
-Nothing in the marketing copy needs to change because of this; the /coverage page already says
-1 of 10 honestly. What changes is which collector we build next if the goal is "plug in and
-report their gaps in a week."
+Nothing in the marketing copy needs to change because of this; the /coverage page reports the
+live count honestly, whatever it is — 2 of 10 since the dependency collector was wired
+(2026-08-14), and note that it shares source code's onboarding problem: a lockfile comes from the
+same repository. The surfaces that avoid that gate entirely are B3/B4/B5, which is the argument
+for building them next if the goal is "plug in and report their gaps in a week."
 
 ### The differentiators that survive this list
 

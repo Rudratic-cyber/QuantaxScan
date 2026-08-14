@@ -122,7 +122,7 @@ Identity must be stable across re-scans but sensitive to real change.
 | Surface | Fingerprint inputs |
 |---|---|
 | Source | `repo + path + algorithm + normalised-symbol` — **not** line number (line numbers shift on unrelated edits) |
-| Dependency | `ecosystem + package + algorithm` |
+| Dependency | `repo + ecosystem + package + algorithm` — amended 2026-08-14 when B2's ingest landed; see below |
 | TLS | `host + port + algorithm` |
 | Certificate | `issuer + serial` |
 | KMS | `provider + key ARN/ID` |
@@ -136,6 +136,19 @@ in a binary asset's fingerprint — a routine rebuilt binary would otherwise orp
 the asset the same way a reformatted source file would. Store the digest in observation
 evidence instead, where a changed digest simply records a new observation of the same asset.
 [Source: qx-sp1800-38b investigation report, §"Binary fingerprint rule".]
+
+**Why `repo` joined the dependency rule.** The original table left it out, which would have made
+one asset row stand for a package across every project in the organisation. Three mechanisms
+attribute an asset to a project by testing `assets.location` for a `project:<id>:` prefix —
+`DELETE /projects/:id`'s reconciliation, `GET /projects/:id/coverage`, and the CBOM export's
+`containedIn` join — and `location` is a single `NOT NULL` column that cannot name two projects.
+Without `repo`, deleting one project would delete a package another still depends on (or leave it
+orphaned forever), and the D3 meter would find no dependency assets for a project that has them
+and report the surface as examined-and-empty. The cost is the estate-wide dedupe: `elliptic` in
+two projects is two rows, and "who uses `elliptic`" is a `GROUP BY` rather than one asset. That is
+the right direction to trade — a query can aggregate rows, but no query can split one row back
+into the two projects it stood for. Stability is unaffected, since `repo` is `project:<id>` and
+does not change.
 
 **As built:** `computeFingerprint()` in `lib/collectors/src/fingerprint.ts` hashes (SHA-256) a
 JSON-encoded, explicitly ordered array of the fields above per surface — not a delimiter-joined

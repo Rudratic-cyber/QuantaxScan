@@ -5,7 +5,7 @@ Every known gap in one place, with what closes it and what it blocks. Updated 20
 Three families:
 
 - **G-01…G-04** — standards still unverified
-- **G-05…G-11** — detection quality, surfaced by the verification work
+- **G-05…G-11**, **G-20…G-21** — detection quality, surfaced by the verification work
 - **G-12…G-14** — platform and process
 
 Severity is **for the enterprise product**, not for today's demo.
@@ -35,6 +35,41 @@ Severity is **for the enterprise product**, not for today's demo.
 | ~~G-17~~ | ~~Competitive framing understates the field~~ | **Closed** | Done 2026-08-14 | — |
 | ~~G-18~~ | ~~`package.json` says MIT, no LICENSE file exists~~ | **Closed** | Done 2026-08-14 | — |
 | ~~G-19~~ | ~~`attached_assets/` unaudited, 4 MB of Replit scraps~~ | **Closed in the tree; history caveat stands** | Done 2026-08-14 | Gate 2 |
+| G-20 | Dependency findings do not distinguish direct from transitive | Medium | Lockfile format | B2 follow-up — caveat shipped, detection not |
+| G-21 | The package table applies one claim to every version of a package | Medium | Design | B2 follow-up |
+
+---
+
+## B2 provenance audit `2026-08-14`
+
+`CRYPTO_PACKAGES` was the last customer-facing claim set in this repository with no citation and
+no `verified`/`needs-check` status. It escaped the discipline in
+[`mappings/`](mappings/README.md) only because it was TypeScript rather than data — the same
+class of unverified claim that produced G-05, G-07, G-08 and G-09, feeding the same reports.
+
+It is now [`docs/Claude/mappings/crypto-packages.json`](mappings/crypto-packages.json): every
+package carries a status, and every `verified` one a verbatim quote from the package's own
+documentation with a retrieval date. `pnpm run check:standards` walks it like every other file in
+that directory, so a claim expires after 180 days and demands a re-read — which matters here more
+than for a standards document, because a library's algorithm set changes under a version bump and
+nothing else in this repository would have noticed.
+
+Auditing 29 packages against their own documentation corrected three claims:
+
+| Package | Was | Is | Source |
+|---|---|---|---|
+| `pypi/pyopenssl` | ECDSA (multi-primitive) | **claim removed** | pyOpenSSL's `PKey` documents `TYPE_RSA` and `TYPE_DSA` and no EC key type. Its only EC surface is `get_elliptic_curves()`, documented for choosing the curve in TLS **ECDHE key exchange** — not a key object and not ECDSA |
+| `pypi/ecdsa` | ECDSA only, `dedicated` (0.8) | ECDSA + EdDSA + ECDH/DH, all `multi-primitive` (0.5) | The package's own description: *"an easy-to-use implementation of ECC … with support for ECDSA …, EdDSA … and ECDH"*. It is a general ECC library, so `dedicated` overstated the inference and two real primitives were invisible |
+| `npm/secp256k1`, `npm/@noble/secp256k1` | ECDSA only | ECDSA + ECDH/DH | Both document ECDH key agreement (`ecdh` / `getSharedSecret`); `@noble/secp256k1`'s own headline is *"secp256k1 signatures & ECDH"* |
+
+Two claims are now marked `needs-check` rather than deleted, because the gap being visible is the
+point: `pypi/pycryptodomex` (its claims are transposed from `pycryptodome`, whose codebase it
+shares under a different namespace — an inference, not a citation) and `pypi/pycrypto`
+(unmaintained since 2014, no authoritative documentation read). One *claim inside* a verified
+package is marked too: `paramiko`'s DSA, which its changelog removed in 4.0.0 — see G-21.
+
+Also corrected without changing an algorithm claim: `jsrsasign`'s RSA rationale, which said
+"signature and encryption"; v11.0.0 removed RSA encryption entirely over CVE-2024-21484.
 
 ---
 
@@ -630,6 +665,66 @@ individually reviewed — deleting was cheaper, which is what this entry recomme
 
 ---
 
+## G-20 — Dependency findings do not distinguish direct from transitive `Medium`
+
+A lockfile pins the **fully resolved** dependency graph. `elliptic` and `sha.js` reach almost
+every JavaScript project through the build toolchain — `crypto-browserify` → `browserify-sign` →
+`elliptic`, and `crypto-browserify` → `create-hash` → `sha.js` — so B2 fires on nearly every
+project scanned, whether or not anyone wrote a line of code that touches them.
+
+**What is true and what is not.** The finding itself is correct: the package really is in the
+graph, and it really does implement the primitive. Nothing this collector says asserts that the
+customer's own code *calls* it — `crypto-packages.json`'s rationales are all of the form "the
+package implements X", and the CBOM and timeline carry presence, not use. So there is no wrong
+statement to retract. What there is, is a reading a CISO can very reasonably make and be wrong
+about.
+
+**Shipped for it:**
+
+- `toolchainUbiquity: true` on `npm/elliptic` and `npm/sha.js` in the data, carried into every
+  observation's `evidence`.
+- An `evidenceCaveat` on every `POST /projects/:id/dependencies` response and in the OpenAPI
+  description, stating that a match may be transitive.
+
+**Not shipped:** actually determining directness. `pnpm-lock.yaml`'s `importers:` block and
+`package-lock.json`'s root `packages[""]` entry both name the direct dependencies, so it is
+determinable for the two dominant npm formats; `yarn.lock` and `requirements.txt` carry no such
+distinction and would have to stay `undetermined` — which is the honest value, and precisely why
+this is its own change rather than a flag bolted onto the current parse.
+
+**Explicitly *not* the fix:** lowering the `multi-primitive` confidence below 0.5. That number
+describes the strength of the inference "the library is present, therefore this algorithm is
+used", which ubiquity does not change. Bending it to hint at something it does not mean would
+understate a fact (the library *is* shipped) in order to gesture at a different question.
+
+---
+
+## G-21 — One claim per package, applied to every version `Medium`
+
+`crypto-packages.json` deliberately does no version-range reasoning: it records the version a
+lockfile pins, but has no notion of "implemented from x.y.z". That rule was written about
+*advisory* data ("vulnerable before x.y.z"), which is a separate dataset with its own provenance
+requirements. The B2 audit found the rule also bites on plain **capability**:
+
+- `paramiko` 4.0.0 (2025-08-03) *"Removed support for the DSA (aka DSS) key algorithm"*. The
+  table's DSA claim is true of 3.x and false of 4.x.
+- `jsrsasign` 11.0.0 removed RSA *encryption* (CVE-2024-21484) while keeping RSA signature. Here
+  the algorithm claim survives and only the rationale needed correcting — but the next such
+  change may not be so kind.
+
+**Interim handling:** the affected claim is marked `needs-check` at the *algorithm* level, so one
+version-dependent claim does not discredit the rest of an entry, and the reason names the version
+and quotes the changelog. The pinned version is already in the observation's `evidence`, so a
+reviewer has what they need to settle it.
+
+**What closes it:** a `sinceVersion`/`untilVersion` field on an algorithm claim and a comparison
+against the pinned version at collection time. Cheap to add; the reason it is not in this change
+is that it needs a version-comparison implementation in a package that is deliberately
+dependency-free, and `requirements.txt` ranges resolve to no version at all — so the design has
+to answer "unknown version, version-gated claim" before the field is worth having.
+
+---
+
 ## Suggested order
 
 1. ~~**G-13**~~ (closed 2026-08-03), ~~**G-18**~~ (closed 2026-08-14) — minutes each, and free
@@ -654,6 +749,9 @@ individually reviewed — deleting was cheaper, which is what this entry recomme
    are still owed
 10. **G-02, G-03** — when the relevant customer segment is actually in play
 11. **G-04** — with C9
+12. **G-20, G-21** — B2 follow-ups, opened 2026-08-14 by wiring it. Both are visible in the data
+    and in every response today; both need a parse or a schema change to close. G-20 first: it is
+    the one a customer can misread
 
 ### Read SP 1800-38 properly before starting the A2 refactor
 
@@ -667,9 +765,14 @@ against it.
 
 ## What this register demonstrates
 
-Six of these fourteen gaps (**G-05, G-07, G-08, G-09**, plus the FIPS 206 and CycloneDX version
+Six of these gaps (**G-05, G-07, G-08, G-09**, plus the FIPS 206 and CycloneDX version
 errors already corrected) were invisible until the standards data was checked against primary
 sources. Four of them would have produced **incorrect statements in a customer-facing report**.
+
+The B2 provenance audit (2026-08-14) is the same story a second time, on the one claim set that
+had been exempt because it lived in TypeScript rather than in `mappings/`: three more claims
+corrected, one of which — reporting ECDSA from a `pyOpenSSL` dependency — would have been a
+finding about an algorithm the library has no key type for.
 
 That is the argument for the `verified` / `needs-check` discipline, and it is also the argument
 for the product itself: this is precisely the class of error a cryptographic inventory is

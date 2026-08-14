@@ -175,6 +175,56 @@ paths:
         "404":
           description: Not found
 
+  /projects/{id}/dependencies:
+    post:
+      operationId: submitProjectDependencies
+      tags: [projects]
+      summary: Submit a project's lockfiles for dependency/SBOM collection (B2)
+      description: >-
+        Runs the dependency collector over the submitted files and persists what it finds as
+        assets on the `dependency` surface, which is what makes that surface count as examined
+        in `GET /projects/{id}/coverage`.
+
+
+        Files are selected by basename, not by extension: `pnpm-lock.yaml`, `package-lock.json`,
+        `npm-shrinkwrap.json`, `yarn.lock` and `requirements*.txt`. Anything else in `files` is
+        ignored rather than rejected, so a caller may submit a whole tree.
+
+
+        **If no submitted file is a recognised lockfile, no collection run is recorded** and
+        `lockfilesRecognised` is 0. That is deliberate: writing a run would make the meter
+        report the dependency surface as examined-and-empty, when the truth is that nothing
+        readable was submitted. It is a 200, not an error — a repository legitimately may have
+        no lockfile.
+
+
+        A package that leaves a resubmitted lockfile marks its asset `gone`, scoped to the
+        ecosystems this submission actually carried a lockfile for. Submitting only
+        `requirements.txt` therefore never touches the project's npm assets.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectDependenciesBody"
+      responses:
+        "200":
+          description: Collection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DependencyIngestSummary"
+        "400":
+          description: Invalid project ID or body
+        "404":
+          description: Not found
+
   /inventory/timeline:
     get:
       operationId: getInventoryTimeline
@@ -811,6 +861,84 @@ components:
         - hygiene
         - mosca
         - createdAt
+
+    SubmitProjectDependenciesBody:
+      type: object
+      properties:
+        files:
+          type: array
+          description: >-
+            Repository files. Only recognised lockfiles are read; everything else is ignored.
+            `content` is the file verbatim — truncating a lockfile silently drops packages, so
+            callers must not send an excerpt.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              content:
+                type: string
+            required:
+              - path
+              - content
+      required:
+        - files
+
+    DependencyIngestSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        lockfilesRecognised:
+          type: integer
+          description: >-
+            How many submitted files the collector could read. Zero means no collection run was
+            recorded and the dependency surface is still un-examined for this project.
+        lockfiles:
+          type: array
+          description: The recognised lockfiles and which format each was read as.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              kind:
+                type: string
+                enum: [pnpm-lock, npm-lock, yarn-lock, pip-requirements]
+            required:
+              - path
+              - kind
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: Null when no run was recorded (`lockfilesRecognised` is 0).
+        assetsCreated:
+          type: integer
+        assetsUpdated:
+          type: integer
+        observationsCreated:
+          type: integer
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Assets whose package is no longer in a resubmitted lockfile. Scoped to the
+            ecosystems this submission carried a lockfile for.
+        evidenceCaveat:
+          type: string
+          description: >-
+            Stated in every response rather than left to the client: a lockfile records the
+            fully resolved dependency graph, so a match may be a transitive dependency of the
+            toolchain rather than a library the project's own code calls.
+      required:
+        - projectId
+        - lockfilesRecognised
+        - lockfiles
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - evidenceCaveat
 
     CreateScanBody:
       type: object

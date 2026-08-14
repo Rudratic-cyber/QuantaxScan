@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DependencyCollector, collectDependencyObservations, lockfilesIn } from "./dependency-collector";
 import { detectLockfileKind, parseLockfile, purlFor } from "./lockfiles";
 import { LocationDetailSchema } from "./location-detail";
-import { computeFingerprint } from "./fingerprint";
+import { computeFingerprint, fingerprintForObservation } from "./fingerprint";
 import type { CollectionTarget, RawObservation } from "./types";
 
 /**
@@ -191,11 +191,11 @@ describe("DependencyCollector — B2", () => {
     }
 
     expect(names(observations)).toEqual([
-      "ECDH/DH@pkg:npm/elliptic",
-      "ECDSA@pkg:npm/elliptic",
-      "EdDSA@pkg:npm/%40noble/ed25519",
-      "EdDSA@pkg:npm/elliptic",
-      "RSA@pkg:npm/node-rsa",
+      "ECDH/DH@acme/widget:pkg:npm/elliptic",
+      "ECDSA@acme/widget:pkg:npm/elliptic",
+      "EdDSA@acme/widget:pkg:npm/%40noble/ed25519",
+      "EdDSA@acme/widget:pkg:npm/elliptic",
+      "RSA@acme/widget:pkg:npm/node-rsa",
     ]);
     // @babel/core is in the lockfile and is not a crypto library.
     expect(observations.every((o) => !o.location.includes("babel"))).toBe(true);
@@ -208,8 +208,8 @@ describe("DependencyCollector — B2", () => {
 
   it("scores a single-purpose library above the regex collector's 0.7 and a general-purpose one below it", () => {
     const observations = collectDependencyObservations(target([{ path: "pnpm-lock.yaml", content: PNPM_LOCK_V9 }]));
-    const dedicated = observations.find((o) => o.location === "pkg:npm/%40noble/ed25519");
-    const multiPrimitive = observations.find((o) => o.location === "pkg:npm/elliptic" && o.algorithm === "EdDSA");
+    const dedicated = observations.find((o) => o.location === "acme/widget:pkg:npm/%40noble/ed25519");
+    const multiPrimitive = observations.find((o) => o.location === "acme/widget:pkg:npm/elliptic" && o.algorithm === "EdDSA");
 
     // Parse-exact presence of a library that exists only to do Ed25519.
     expect(dedicated?.confidence).toBe(0.8);
@@ -221,11 +221,11 @@ describe("DependencyCollector — B2", () => {
 
   it("determines a key size only when the package pins one curve, and leaves an RSA library's modulus null", () => {
     const observations = collectDependencyObservations(target([{ path: "pnpm-lock.yaml", content: PNPM_LOCK_V9 }]));
-    expect(observations.find((o) => o.location === "pkg:npm/%40noble/ed25519")?.keySize).toBe(256);
+    expect(observations.find((o) => o.location === "acme/widget:pkg:npm/%40noble/ed25519")?.keySize).toBe(256);
     // node-rsa says nothing about the modulus size the calling code will pick.
-    expect(observations.find((o) => o.location === "pkg:npm/node-rsa")?.keySize).toBeUndefined();
+    expect(observations.find((o) => o.location === "acme/widget:pkg:npm/node-rsa")?.keySize).toBeUndefined();
     // elliptic is curve-agnostic for ECDSA.
-    expect(observations.find((o) => o.location === "pkg:npm/elliptic" && o.algorithm === "ECDSA")?.keySize).toBeUndefined();
+    expect(observations.find((o) => o.location === "acme/widget:pkg:npm/elliptic" && o.algorithm === "ECDSA")?.keySize).toBeUndefined();
   });
 
   it("keeps the version out of `location` so a patch bump does not orphan and recreate the asset", () => {
@@ -242,7 +242,7 @@ describe("DependencyCollector — B2", () => {
   it("records an undetermined version as null rather than inventing one (G-05)", () => {
     const [observation] = collectDependencyObservations(target([{ path: "requirements.txt", content: "rsa>=4.0\n" }]));
     expect(observation.algorithm).toBe("RSA");
-    expect(observation.location).toBe("pkg:pypi/rsa");
+    expect(observation.location).toBe("acme/widget:pkg:pypi/rsa");
     expect(observation.evidence.version).toBeNull();
     expect((observation.locationDetail as { dependency: { version?: string } }).dependency.version).toBeUndefined();
     // No version means no version in the purl either — `pkg:pypi/rsa@unknown` would be a lie.
@@ -251,7 +251,7 @@ describe("DependencyCollector — B2", () => {
 
   it("normalises PyPI names per PEP 503 before looking them up", () => {
     const observations = collectDependencyObservations(target([{ path: "requirements.txt", content: "PyNaCl==1.5.0\nPyOpenSSL==24.0.0\n" }]));
-    expect(observations.map((o) => o.location)).toContain("pkg:pypi/PyNaCl");
+    expect(observations.map((o) => o.location)).toContain("acme/widget:pkg:pypi/PyNaCl");
     expect(observations.some((o) => o.algorithm === "EdDSA" && o.keySize === 256)).toBe(true);
     expect(observations.some((o) => o.algorithm === "ECDH/DH" && o.keySize === 256)).toBe(true);
     expect(observations.some((o) => o.algorithm === "RSA")).toBe(true);
@@ -300,11 +300,7 @@ describe("DependencyCollector — B2", () => {
 });
 
 function fingerprintOf(observation: RawObservation): string {
-  const detail = observation.locationDetail as { kind: "dependency"; dependency: { ecosystem: string; package: string } };
-  return computeFingerprint({
-    surface: "dependency",
-    ecosystem: detail.dependency.ecosystem,
-    package: detail.dependency.package,
-    algorithm: observation.algorithm,
-  });
+  const input = fingerprintForObservation(observation, { repo: "acme/widget" });
+  if (input === undefined) throw new Error("observation has no fingerprintable locationDetail");
+  return computeFingerprint(input);
 }

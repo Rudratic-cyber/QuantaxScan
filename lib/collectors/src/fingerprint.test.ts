@@ -40,10 +40,20 @@ describe("computeFingerprint — source surface", () => {
 });
 
 describe("computeFingerprint — other surfaces", () => {
-  it("dependency: ecosystem + package + algorithm, ignores version", () => {
-    const a = computeFingerprint({ surface: "dependency", ecosystem: "npm", package: "left-pad", algorithm: "RSA" });
-    const b = computeFingerprint({ surface: "dependency", ecosystem: "npm", package: "left-pad", algorithm: "RSA" });
+  it("dependency: repo + ecosystem + package + algorithm, ignores version", () => {
+    const a = computeFingerprint({ surface: "dependency", repo: "project:1", ecosystem: "npm", package: "left-pad", algorithm: "RSA" });
+    const b = computeFingerprint({ surface: "dependency", repo: "project:1", ecosystem: "npm", package: "left-pad", algorithm: "RSA" });
     expect(a).toBe(b);
+  });
+
+  it("dependency: the same package in two projects is two assets", () => {
+    // `repo` is in the identity because `assets.location` is a single column
+    // and three mechanisms attribute an asset to a project by its
+    // `project:<id>:` prefix — project deletion, the D3 coverage meter and the
+    // CBOM `containedIn` join. One row cannot carry two projects' prefixes.
+    const one = computeFingerprint({ surface: "dependency", repo: "project:1", ecosystem: "npm", package: "elliptic", algorithm: "ECDSA" });
+    const two = computeFingerprint({ surface: "dependency", repo: "project:2", ecosystem: "npm", package: "elliptic", algorithm: "ECDSA" });
+    expect(one).not.toBe(two);
   });
 
   it("tls: host + port + algorithm", () => {
