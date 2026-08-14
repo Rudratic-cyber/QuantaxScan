@@ -62,6 +62,17 @@ we want.
 Honest surface grid. Built surfaces marked clearly; planned surfaces marked **Planned**, not
 implied. See the rule below.
 
+*2026-08-15:* eight of the ten are live. The grid is rendered from the catalogue rather than
+written here — the homepage used to keep its own copy and drifted into calling four shipped
+surfaces "planned", understating the product on its own front page.
+
+**The claim to be careful with now is not the count, it is the word "agentless".** Only two of the
+eight observe anything by themselves: source reads a repository, and the TLS prober opens a real
+handshake against a host the customer names. The other six read exports the customer already
+produces. That is a genuine privacy argument — no credential to a key store, database or cloud
+account ever reaches us — and it is *not* the same claim as "we plug in and discover it for you".
+Do not let a surface count imply eight agents.
+
 ### Section 4 — Risk arithmetic
 
 > **Severity alone cannot tell you what to fix first.**
@@ -115,7 +126,7 @@ The agent proposes website changes — always as drafts — when:
 
 | Trigger | Update |
 |---|---|
-| A collector ships | Move the surface from Planned to Available; update `/coverage` |
+| A collector ships | **Nothing to edit.** `/coverage`, the homepage grid and D3's meter all read `COLLECTOR_SURFACES` in `@workspace/collectors`; flipping an entry to `live` there moves every one of them at once. Do bump the "status verified" date on `/coverage`, which is the one thing no code can derive |
 | A standard changes | Update `/standards` and re-verify every date on the site |
 | A blog post publishes | Add to `/blog`; update anything the post supersedes |
 | A security fix lands | Update `/security` |

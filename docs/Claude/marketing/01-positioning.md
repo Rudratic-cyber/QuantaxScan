@@ -150,13 +150,25 @@ metadata. Almost none lead with source code.
 That ordering has a consequence we should say out loud internally: **source-code scanning is the
 slowest surface to onboard and among the narrowest in coverage.** It requires repository access,
 which triggers the deepest security review of any integration — the one gate a pre-pilot product
-cannot clear quickly. Our first live collector is therefore also our hardest sell.
+cannot clear quickly. Our first live collector was therefore also our hardest sell.
 
-Nothing in the marketing copy needs to change because of this; the /coverage page reports the
-live count honestly, whatever it is — 2 of 10 since the dependency collector was wired
-(2026-08-14), and note that it shares source code's onboarding problem: a lockfile comes from the
-same repository. The surfaces that avoid that gate entirely are B3/B4/B5, which is the argument
-for building them next if the goal is "plug in and report their gaps in a week."
+*Update 2026-08-15 — this argument was acted on and is now largely spent.* The /coverage page
+reports 8 of 10 live: B3 (TLS), B4 (certificates), B5 (KMS), B6 (protocol config) and B7
+(data-at-rest) all landed, alongside the OT register. The two that remain are B9's vendor surface
+and B10 binaries.
+
+What replaces the old argument, and it is the thing to be careful about in copy: **only two of the
+eight observe anything by themselves.** The source scanner reads a repository; the TLS prober
+opens a real handshake against a host the customer names. The other six read what the customer
+*submits* — a lockfile, a certificate, a key inventory export, a config file, a description of an
+encrypted store, a form. That was a deliberate trade (a credentialed collector needs the
+secret-handling controls F4 has not built), and it means the repository-access gate has been
+sidestepped for TLS but replaced elsewhere by an export-and-upload step.
+
+So the honest version of "plug in and report their gaps in a week" is: **TLS is the one surface
+that genuinely needs nothing from them but a hostname.** Lead with it in any
+agentless-first conversation. Do not let "eight of ten surfaces" imply eight agents — the
+/coverage page does not, and neither should we.
 
 ### The differentiators that survive this list
 

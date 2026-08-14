@@ -36,7 +36,7 @@ export function Coverage() {
             The rest are planned and marked as such — coverage grows collector by collector.
           </p>
           <span className="inline-flex items-center gap-2 rounded-full border border-[#e5e7eb] bg-white px-3 py-1 text-[11px] font-medium text-[#6b7280]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#d97706]" /> Pre-launch — status verified 2026-08-01
+            <span className="h-1.5 w-1.5 rounded-full bg-[#d97706]" /> Pre-launch — status verified 2026-08-15
           </span>
         </div>
       </section>

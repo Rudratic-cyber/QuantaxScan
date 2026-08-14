@@ -2,10 +2,10 @@ import { useEffect, useState, useRef } from "react";
 import { useGetGlobalStats, useListDemoRepos } from "@workspace/api-client-react";
 import {
   Shield, ArrowRight, FileSearch, Scale, ClipboardCheck, Check, Clock,
-  GitBranch, AlertTriangle, Zap, ChevronRight, Boxes, Lock, Network, KeyRound, Server, FileCode,
-} from "lucide-react";
+  GitBranch, AlertTriangle, Zap, ChevronRight, Boxes, Lock, } from "lucide-react";
 import { motion, useMotionValue, useSpring } from "framer-motion";
 import { Link } from "wouter";
+import { COLLECTOR_SURFACE_LIST, LIVE_SURFACE_COUNT, TOTAL_SURFACE_COUNT } from "@/lib/collector-surfaces";
 import { KonamiEgg } from "@/components/EasterEggs";
 
 // ── Scroll-reveal wrapper ─────────────────────────────────────────────────────
@@ -113,16 +113,13 @@ function ScannerPreview() {
   );
 }
 
-// ── Coverage surfaces (honestly labelled) ─────────────────────────────────────
-const SURFACES: { name: string; icon: React.ReactNode; status: "now" | "planned"; note: string }[] = [
-  { name: "Source code",        icon: <FileCode className="h-5 w-5" />,  status: "now",     note: "RSA, ECDSA, ECDH/DH, DSA, MD5, SHA-1, AES-ECB across many languages" },
-  { name: "Dependencies",       icon: <Boxes className="h-5 w-5" />,     status: "planned", note: "Crypto pulled in transitively through your package graph" },
-  { name: "TLS & endpoints",    icon: <Network className="h-5 w-5" />,   status: "planned", note: "What is actually negotiated at your termination points" },
-  { name: "Certificates",       icon: <Lock className="h-5 w-5" />,      status: "planned", note: "Signature and key-exchange algorithms in your PKI" },
-  { name: "Key stores / KMS",   icon: <KeyRound className="h-5 w-5" />,  status: "planned", note: "Keys held in vaults, HSMs and cloud KMS" },
-  { name: "Runtime & services", icon: <Server className="h-5 w-5" />,    status: "planned", note: "Crypto in running infrastructure, not just committed code" },
-];
-
+// ── Coverage surfaces ─────────────────────────────────────────────────────────
+// Not a list. This page used to keep its own hardcoded six, which drifted into
+// claiming dependencies, TLS, certificates and KMS were "planned" months after
+// they shipped — understating the product on its own front page. It is the same
+// duplicate-list failure the /coverage page was fixed for, and the reason the
+// catalogue in `@workspace/collectors` exists at all. Both pages and the D3
+// meter now read the one list.
 // ── Mosca variables ───────────────────────────────────────────────────────────
 const MOSCA = [
   { k: "X", label: "Secrecy lifetime", desc: "How long this data must stay confidential — from your own retention obligations." },
@@ -257,26 +254,29 @@ export function Home() {
             <Reveal><Eyebrow><Boxes className="h-3.5 w-3.5" /> Coverage</Eyebrow></Reveal>
             <Reveal delay={0.06}>
               <h2 className="mt-5 text-3xl font-bold tracking-tight text-[#0a0e1a] md:text-4xl">
-                Source is one surface. We show you the rest.
+                Source is one surface. We now read eight.
               </h2>
             </Reveal>
             <Reveal delay={0.12}>
               <p className="mt-4 text-[#6b7280]">
-                Available surfaces are live today. Planned surfaces are labelled honestly — we never
-                imply a collector we have not shipped.
+                {LIVE_SURFACE_COUNT} of {TOTAL_SURFACE_COUNT} surfaces are available today; the rest are
+                labelled Planned, because we never imply a collector we have not shipped. Two of the eight
+                observe for themselves — source reads your repository, and the TLS prober opens a real
+                handshake against hosts you name. The other six read exports you already produce, so no
+                credential to your key store, database or cloud account ever reaches us.
               </p>
             </Reveal>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {SURFACES.map((s, i) => (
+            {COLLECTOR_SURFACE_LIST.map((s, i) => (
               <Reveal key={s.name} delay={i * 0.05}>
                 <div className="card-lift h-full rounded-2xl border border-[#e5e7eb] bg-white p-6">
                   <div className="flex items-center justify-between">
                     <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#eef0fe] text-[#4f46e5]">
                       {s.icon}
                     </div>
-                    {s.status === "now" ? (
+                    {s.status === "live" ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-[#ecfdf5] px-2.5 py-1 text-[11px] font-semibold text-[#059669]">
                         <Check className="h-3 w-3" /> Available
                       </span>
@@ -287,7 +287,7 @@ export function Home() {
                     )}
                   </div>
                   <h3 className="mt-4 text-base font-semibold text-[#0a0e1a]">{s.name}</h3>
-                  <p className="mt-1.5 text-sm leading-relaxed text-[#6b7280]">{s.note}</p>
+                  <p className="mt-1.5 text-sm leading-relaxed text-[#6b7280]">{s.blurb}</p>
                 </div>
               </Reveal>
             ))}
