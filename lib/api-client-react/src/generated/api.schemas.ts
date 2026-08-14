@@ -9,10 +9,29 @@ export interface HealthStatus {
   status: string;
 }
 
+/**
+ * A3's classification vocabulary, ordered least- to most-sensitive.
+ */
+export type DataClassification =
+  (typeof DataClassification)[keyof typeof DataClassification];
+
+export const DataClassification = {
+  public: "public",
+  internal: "internal",
+  confidential: "confidential",
+  regulated: "regulated",
+  indefinite: "indefinite",
+} as const;
+
+/**
+ * A `projects` row, exactly as the database holds it.
+ */
 export interface Project {
   id: number;
+  /** The owning tenant (P1). Isolation is enforced by the row-level security policies, never by a where clause, so this is a fact about the row rather than a filter a caller may supply. */
+  organizationId: number;
   name: string;
-  description?: string;
+  description?: string | null;
   language: string;
   riskScore?: number | null;
   lastScanAt?: string | null;
@@ -21,6 +40,10 @@ export interface Project {
   criticalCount: number;
   alertCount: number;
   cleanCount: number;
+  /** A3 — the project-level classification every asset inherits unless it overrides it. **Nullable with no default, and the null is load-bearing:** it means the project sets no default, which is not the same statement as a human choosing `internal`. Only the first may be reported as an assumption, so a client must distinguish null from a value rather than substituting one. */
+  dataClassification: DataClassification | null;
+  /** A3 — the project-level X (secrecy lifetime) in years, set independently of the label. Null for the same reason as `dataClassification`: nobody has said. */
+  secrecyLifetimeYears: number | null;
 }
 
 export interface CreateProjectBody {
@@ -210,6 +233,8 @@ export interface FindingCompliance {
 
 export interface Finding {
   id: number;
+  /** Present on findings read back from the database. Absent on the synthetic findings `POST /scans` and the demo route echo straight back from the scanner, which are numbered in memory and never persisted with that shape. */
+  organizationId?: number;
   scanId: number;
   fileName: string;
   lineNumber: number;
@@ -224,8 +249,136 @@ export interface Finding {
   compliance?: FindingCompliance | null;
 }
 
+export type AlgorithmBreakdownEntryCitation = {
+  document: string;
+  url: string;
+} | null;
+
+/**
+ * One algorithm's contribution to a risk track, aggregated across the findings.
+ */
+export interface AlgorithmBreakdownEntry {
+  algorithm: string;
+  count: number;
+  effortHours: number;
+  /** The mapping data's own qualification of this algorithm. Print it verbatim — it is why the finding is being reported the way it is. */
+  reportingNote: string | null;
+  nistReplacement: string | null;
+  nistStandard: string | null;
+  citation: AlgorithmBreakdownEntryCitation;
+}
+
+/**
+ * The two halves of `riskScore`. A score that cannot be decomposed is what A4 exists to replace.
+ */
+export type PqcExposureScoreComponents = {
+  /** 0-60. Quantum-vulnerable density against the lines actually examined. */
+  detection: number;
+  /** 0-40. The share of Q-Day scenarios under which the inequality is breached. */
+  moscaBreach: number;
+};
+
+/**
+ * A4 — the post-quantum half of the risk profile, with its score decomposed.
+ */
+export interface PqcExposure {
+  /** 0-100, and **zero whenever no quantum-vulnerable algorithm was detected**, whatever else the scan found. Classical hygiene contributes nothing (G-10). */
+  riskScore: number;
+  findingCount: number;
+  effortHours: number;
+  estimatedCost: number;
+  byAlgorithm: AlgorithmBreakdownEntry[];
+  /** The two halves of `riskScore`. A score that cannot be decomposed is what A4 exists to replace. */
+  scoreComponents: PqcExposureScoreComponents;
+}
+
+/**
+ * A4/G-10 — classical cryptographic defects with no post-quantum content, scored separately and never folded into the PQC score.
+ */
+export interface HygieneSummary {
+  findingCount: number;
+  effortHours: number;
+  estimatedCost: number;
+  byAlgorithm: AlgorithmBreakdownEntry[];
+  /** Always false. Structural rather than decorative: an assertion in the payload that these findings did not move the post-quantum number. */
+  countedTowardPqcRisk: boolean;
+  headline: string;
+}
+
+/**
+ * Whether X was supplied or assumed. A report must say which: `assumed-default` means nobody classified the data and the product's fallback was used.
+ */
+export type MoscaAssessmentSecrecyLifetimeSource =
+  (typeof MoscaAssessmentSecrecyLifetimeSource)[keyof typeof MoscaAssessmentSecrecyLifetimeSource];
+
+export const MoscaAssessmentSecrecyLifetimeSource = {
+  provided: "provided",
+  "assumed-default": "assumed-default",
+} as const;
+
+export type MoscaVerdictScenario =
+  (typeof MoscaVerdictScenario)[keyof typeof MoscaVerdictScenario];
+
+export const MoscaVerdictScenario = {
+  conservative: "conservative",
+  central: "central",
+  aggressive: "aggressive",
+} as const;
+
+export type MoscaVerdictScenarioConfidence =
+  (typeof MoscaVerdictScenarioConfidence)[keyof typeof MoscaVerdictScenarioConfidence];
+
+export const MoscaVerdictScenarioConfidence = {
+  verified: "verified",
+  "needs-check": "needs-check",
+} as const;
+
+/**
+ * `X + Y > Z` under one Q-Day scenario, with all three inputs exposed. A4's acceptance criterion is a verdict that shows its working, so none of x, y or z is optional.
+ */
+export interface MoscaVerdict {
+  scenario: MoscaVerdictScenario;
+  qDayYear: number;
+  /** Secrecy lifetime, years — how long the data must stay confidential. */
+  x: number;
+  /** Migration time, years. */
+  y: number;
+  /** Years remaining until this scenario's Q-Day. Negative once the year has passed. */
+  z: number;
+  breached: boolean;
+  /** `(x + y) - z`. Negative is margin remaining; positive means already too late, by this many years. */
+  breachMarginYears: number;
+  narrative: string;
+  scenarioRationale: string;
+  scenarioConfidence: MoscaVerdictScenarioConfidence;
+}
+
+/**
+ * One verdict per Q-Day scenario. The scenarios are regulatory deadlines drawn from draft guidance, not predictions about physics — `framing` carries the sentence that must accompany any customer-facing use of these years.
+ */
+export interface MoscaAssessment {
+  /** X as used, after defaulting. */
+  x: number;
+  y: number;
+  /** Whether X was supplied or assumed. A report must say which: `assumed-default` means nobody classified the data and the product's fallback was used. */
+  secrecyLifetimeSource: MoscaAssessmentSecrecyLifetimeSource;
+  /** False when no quantum-vulnerable cryptography was found; every verdict is then trivially not-breached. */
+  applicable: boolean;
+  evaluatedAt: string;
+  verdicts: MoscaVerdict[];
+  breachedScenarioCount: number;
+  scenarioCount: number;
+  /** The breached verdict with the largest margin. Null when nothing breaches. */
+  worstBreach: MoscaVerdict | null;
+  framing: string;
+}
+
+/**
+ * A `scans` row plus the three derived A4 blocks. `pqc`, `hygiene` and `mosca` are recomputed from the findings on every read and never stored, so a mappings-data or Q-Day-scenario change reaches historical scans without a backfill.
+ */
 export interface Scan {
   id: number;
+  organizationId: number;
   projectId: number;
   mode: ScanMode;
   status: ScanStatus;
@@ -237,7 +390,13 @@ export interface Scan {
   totalEffortHours: number;
   estimatedCost: number;
   executiveSummary?: string | null;
+  /** The submitted source, as persisted on the row. Null on rows written before it was captured. */
+  code?: string | null;
+  language?: string | null;
   findings?: Finding[];
+  pqc: PqcExposure;
+  hygiene: HygieneSummary;
+  mosca: MoscaAssessment;
   createdAt: string;
   completedAt?: string | null;
 }
@@ -365,21 +524,71 @@ export interface DemoRepo {
   description: string;
   language: string;
   stars: number;
+  repoUrl: string;
+  fileCount: number;
   riskScore: number;
   criticalCount: number;
   alertCount: number;
 }
 
-export interface AuthUser {
-  id: string;
-  email?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  profileImageUrl?: string | null;
+export interface DemoFileResult {
+  path: string;
+  language: string;
+  content: string;
+  lines: number;
+  findings: Finding[];
+  criticalCount: number;
+  alertCount: number;
 }
 
-export interface GetCurrentAuthUserResponse {
-  user: AuthUser | null;
+export type DemoScanResultMode =
+  (typeof DemoScanResultMode)[keyof typeof DemoScanResultMode];
+
+export const DemoScanResultMode = {
+  "scan-only": "scan-only",
+  interactive: "interactive",
+  proactive: "proactive",
+  community: "community",
+} as const;
+
+export type DemoScanResultStatus =
+  (typeof DemoScanResultStatus)[keyof typeof DemoScanResultStatus];
+
+export const DemoScanResultStatus = {
+  pending: "pending",
+  running: "running",
+  completed: "completed",
+  failed: "failed",
+} as const;
+
+/**
+ * Scan-shaped, but not a `scans` row: the demo route writes nothing, so `id` and `projectId` are `-1` and the repository's own identity travels in `name`/`repoUrl`.
+ */
+export interface DemoScanResult {
+  /** Always -1 — nothing was persisted. */
+  id: number;
+  /** Always -1 — nothing was persisted. */
+  projectId: number;
+  mode: DemoScanResultMode;
+  status: DemoScanResultStatus;
+  name: string;
+  repoUrl: string;
+  language: string;
+  riskScore: number;
+  totalLines: number;
+  criticalCount: number;
+  alertCount: number;
+  cleanCount: number;
+  totalEffortHours: number;
+  estimatedCost: number;
+  executiveSummary: string;
+  pqc: PqcExposure;
+  hygiene: HygieneSummary;
+  mosca: MoscaAssessment;
+  files: DemoFileResult[];
+  findings: Finding[];
+  createdAt: string;
+  completedAt: string;
 }
 
 export interface ExchangeMobileAuthorizationCodeBody {
@@ -406,7 +615,11 @@ export interface GithubScanBody {
 export interface GithubFileResult {
   path: string;
   language: string;
+  /** Lines in the whole file, which may exceed the lines present in `content`. */
   lines: number;
+  /** Truncated to the first 300 lines, with a trailing comment naming how many were dropped. */
+  content: string;
+  findings: Finding[];
   criticalCount: number;
   alertCount: number;
 }
@@ -424,7 +637,394 @@ export interface GithubScanResult {
   totalLines: number;
   totalEffortHours?: number | null;
   executiveSummary: string;
+  /** A4. Optional because the no-scannable-files early return answers 200 with the counters only and no risk profile at all. */
+  pqc?: PqcExposure;
+  /** Optional for the same reason as `pqc`. */
+  hygiene?: HygieneSummary;
+  /** Optional for the same reason as `pqc`. */
+  mosca?: MoscaAssessment;
   fileResults: GithubFileResult[];
+}
+
+export interface GithubFetchedFile {
+  path: string;
+  language: string;
+  content: string;
+  lines: number;
+}
+
+export interface GithubScanFilesBody {
+  repoUrl: string;
+  owner: string;
+  repo: string;
+  files: GithubFetchedFile[];
+}
+
+export type GithubTreeNodeType =
+  (typeof GithubTreeNodeType)[keyof typeof GithubTreeNodeType];
+
+export const GithubTreeNodeType = {
+  blob: "blob",
+  tree: "tree",
+} as const;
+
+export interface GithubTreeNode {
+  path: string;
+  type: GithubTreeNodeType;
+  /** Bytes. Absent for trees, and for blobs GitHub did not size. */
+  size?: number;
+}
+
+export interface GithubFetchResult {
+  owner: string;
+  repo: string;
+  repoUrl: string;
+  /** Detected default branch. Falls back to `main` when detection is inconclusive. */
+  branch: string;
+  /** Count of blobs in the whole tree, before the display cap applied to `fullTree`. */
+  totalNodes: number;
+  /** GitHub's own flag — true when the repository was too large for one tree response. */
+  truncated: boolean;
+  fullTree: GithubTreeNode[];
+  fetchedFiles: GithubFetchedFile[];
+}
+
+export interface GithubRateLimit {
+  /** Whether GITHUB_TOKEN is configured. Unauthenticated is 60 requests/hour. */
+  authenticated: boolean;
+  limit: number;
+  remaining: number;
+  resetAt: string;
+  resetsInMin: number;
+}
+
+export type ChatMessageRole =
+  (typeof ChatMessageRole)[keyof typeof ChatMessageRole];
+
+export const ChatMessageRole = {
+  user: "user",
+  assistant: "assistant",
+} as const;
+
+export interface ChatMessage {
+  role: ChatMessageRole;
+  content: string;
+}
+
+export interface ChatBody {
+  /** @minItems 1 */
+  messages: ChatMessage[];
+  /** Scan context pasted into the system prompt. */
+  systemContext?: string;
+  /** Caps the answer at two or three sentences of plain prose. */
+  briefMode?: boolean;
+}
+
+export interface CreateSharedReportBody {
+  /** The GitHub repository owner, not a user. */
+  owner: string;
+  repo: string;
+  repoUrl: string;
+  /** The report payload, stored verbatim as jsonb. Any JSON value. */
+  data: unknown;
+}
+
+export interface CreateSharedReportResponse {
+  /** 128 bits of randomness, base64url. The only access control on the link. */
+  id: string;
+  shareUrl: string;
+}
+
+export type SharedReportVisibility =
+  (typeof SharedReportVisibility)[keyof typeof SharedReportVisibility];
+
+export const SharedReportVisibility = {
+  private: "private",
+  public: "public",
+} as const;
+
+/**
+ * A `shared_reports` row, returned in full on a public route. `organizationId` and the expiry/revocation columns are visible to anyone holding the link — see the note in the PR that introduced this documentation.
+ */
+export interface SharedReport {
+  id: string;
+  organizationId: number;
+  /** The GitHub repository owner, not a user. */
+  owner: string;
+  repo: string;
+  repoUrl: string;
+  /** Whatever the creator stored. Any JSON value. */
+  data: unknown;
+  /** Null for rows created through the shared API key, which has no person behind it. */
+  createdByUserId: string | null;
+  visibility: SharedReportVisibility;
+  expiresAt: string;
+  revokedAt: string | null;
+  lastAccessedAt: string | null;
+  accessCount: number;
+  createdAt: string;
+}
+
+export interface MultiScanFile {
+  filename: string;
+  content: string;
+}
+
+export interface MultiScanBody {
+  projectName: string;
+  language: string;
+  /** @minItems 1 */
+  files: MultiScanFile[];
+}
+
+export type MultiScanFindingSeverity =
+  (typeof MultiScanFindingSeverity)[keyof typeof MultiScanFindingSeverity];
+
+export const MultiScanFindingSeverity = {
+  critical: "critical",
+  alert: "alert",
+  safe: "safe",
+} as const;
+
+/**
+ * A per-file finding as returned inline for IDE display. Deliberately narrower than `Finding`: it carries no `id`/`scanId`, because the row ids are not read back.
+ */
+export interface MultiScanFinding {
+  lineNumber: number;
+  severity: MultiScanFindingSeverity;
+  algorithm: string;
+  codeSnippet: string;
+  nistReplacement: string | null;
+  nistStandard: string | null;
+  effortHours: number;
+  explanation: string;
+  compliance?: FindingCompliance | null;
+}
+
+export interface MultiScanFileResult {
+  filename: string;
+  /** This file's own post-quantum score, computed over this file alone. */
+  riskScore: number;
+  findings: MultiScanFinding[];
+}
+
+export interface MultiScanResult {
+  projectId: number;
+  projectName: string;
+  /** The project-level post-quantum score, computed over every finding in the submission — not the maximum of the per-file scores. */
+  riskScore: number;
+  /** The highest per-file score, which is also what each individual scan row stores. */
+  worstFileRiskScore: number;
+  criticalCount: number;
+  alertCount: number;
+  cleanCount: number;
+  totalLines: number;
+  findingsCount: number;
+  filesScanned: number;
+  pqc: PqcExposure;
+  hygiene: HygieneSummary;
+  mosca: MoscaAssessment;
+  fileResults: MultiScanFileResult[];
+}
+
+/**
+ * `examined-nothing-found` is its own state on purpose: a clean result and an absent one are different facts, and collapsing them loses the only one a reader cares about when the answer is zero.
+ */
+export type SurfaceCoverageState =
+  (typeof SurfaceCoverageState)[keyof typeof SurfaceCoverageState];
+
+export const SurfaceCoverageState = {
+  examined: "examined",
+  "examined-nothing-found": "examined-nothing-found",
+  "never-examined": "never-examined",
+} as const;
+
+export interface SurfaceCoverage {
+  /** The `Surface` enum value, i.e. how the database records it. */
+  surface: string;
+  /** The collector catalogue id, so a caller can join presentation without re-deriving the mapping. Null for a surface with no catalogue entry. */
+  surfaceId: string | null;
+  /** `examined-nothing-found` is its own state on purpose: a clean result and an absent one are different facts, and collapsing them loses the only one a reader cares about when the answer is zero. */
+  state: SurfaceCoverageState;
+  completedRuns: number;
+  /** A failed run is an attempt, not an examination. It is counted here and kept out of `completedRuns` so it can never make a surface look examined. */
+  failedRuns: number;
+  lastExaminedAt: string | null;
+  assets: number;
+  activeAssets: number;
+}
+
+/**
+ * Half-open bucket, [lower, upper), except the last which includes 1.0.
+ */
+export interface ConfidenceBucketCount {
+  label: string;
+  lower: number;
+  upper: number;
+  count: number;
+}
+
+/**
+ * Stated in the payload so a report built from it can quote the basis rather than guess it. One point per asset, not per observation — weighting by scan frequency would describe our scheduling, not our evidence quality.
+ */
+export type ConfidenceSummaryBasis =
+  (typeof ConfidenceSummaryBasis)[keyof typeof ConfidenceSummaryBasis];
+
+export const ConfidenceSummaryBasis = {
+  latest_observation_per_active_asset: "latest observation per active asset",
+} as const;
+
+/**
+ * Assets deliberately left out of the distribution, keyed by asset status.
+ */
+export type ConfidenceSummaryExcludedByAssetStatus = { [key: string]: number };
+
+export interface ConfidenceSummary {
+  /** Stated in the payload so a report built from it can quote the basis rather than guess it. One point per asset, not per observation — weighting by scan frequency would describe our scheduling, not our evidence quality. */
+  basis: ConfidenceSummaryBasis;
+  scored: number;
+  /** Active assets with no observation at all. Non-zero means a data problem, and hiding it would be the wrong default. */
+  unscored: number;
+  /** Assets deliberately left out of the distribution, keyed by asset status. */
+  excludedByAssetStatus: ConfidenceSummaryExcludedByAssetStatus;
+  distinctValues: number;
+  min: number | null;
+  max: number | null;
+  mean: number | null;
+  buckets: ConfidenceBucketCount[];
+}
+
+/**
+ * D3 — what has been examined, and what has never been looked at. The denominator is surfaces, not assets: how much cryptography hides in a surface nobody examined is unknowable from this data, so `examinedSurfaces / totalSurfaces` must not be presented as a percentage of the estate.
+ */
+export interface ProjectCoverage {
+  projectId: number;
+  generatedAt: string;
+  examinedSurfaces: number;
+  totalSurfaces: number;
+  /** Every catalogue surface with any run or asset. A surface absent from this list has never been examined at all — that absence is the machine-readable half of the answer. */
+  surfaces: SurfaceCoverage[];
+  confidence: ConfidenceSummary;
+}
+
+export interface CycloneDxProperty {
+  name: string;
+  value?: string;
+}
+
+export interface CycloneDxOccurrence {
+  location: string;
+  line?: number;
+  symbol?: string;
+}
+
+export type CycloneDxCryptoPropertiesAssetType =
+  (typeof CycloneDxCryptoPropertiesAssetType)[keyof typeof CycloneDxCryptoPropertiesAssetType];
+
+export const CycloneDxCryptoPropertiesAssetType = {
+  algorithm: "algorithm",
+  certificate: "certificate",
+  protocol: "protocol",
+  "related-crypto-material": "related-crypto-material",
+} as const;
+
+export type CycloneDxCryptoPropertiesAlgorithmProperties = {
+  primitive?: string;
+  algorithmFamily?: string;
+  /** Key or parameter size as a string. Present only when the inventory actually determined it — never a guessed default (G-05). */
+  parameterSetIdentifier?: string;
+  ellipticCurve?: string;
+  mode?: string;
+  padding?: string;
+  cryptoFunctions?: string[];
+};
+
+export type CycloneDxCryptoPropertiesRelatedCryptoMaterialProperties = {
+  type?: string;
+  id?: string;
+  state?: string;
+  /** Size in bits. Present only when determined. */
+  size?: number;
+};
+
+export type CycloneDxCryptoPropertiesCertificateProperties = {
+  subjectName?: string;
+  issuerName?: string;
+  serialNumber?: string;
+  notValidBefore?: string;
+  notValidAfter?: string;
+};
+
+export type CycloneDxCryptoPropertiesProtocolProperties = {
+  type?: string;
+  version?: string;
+};
+
+export interface CycloneDxCryptoProperties {
+  assetType: CycloneDxCryptoPropertiesAssetType;
+  algorithmProperties?: CycloneDxCryptoPropertiesAlgorithmProperties;
+  relatedCryptoMaterialProperties?: CycloneDxCryptoPropertiesRelatedCryptoMaterialProperties;
+  certificateProperties?: CycloneDxCryptoPropertiesCertificateProperties;
+  protocolProperties?: CycloneDxCryptoPropertiesProtocolProperties;
+  oid?: string;
+}
+
+export type CycloneDxComponentEvidence = {
+  occurrences?: CycloneDxOccurrence[];
+};
+
+export interface CycloneDxComponent {
+  type: string;
+  "bom-ref": string;
+  name: string;
+  version?: string;
+  description?: string;
+  cryptoProperties?: CycloneDxCryptoProperties;
+  evidence?: CycloneDxComponentEvidence;
+  properties?: CycloneDxProperty[];
+}
+
+export interface CycloneDxDependency {
+  ref: string;
+  dependsOn?: string[];
+  provides?: string[];
+}
+
+export type CbomDocumentBomFormat =
+  (typeof CbomDocumentBomFormat)[keyof typeof CbomDocumentBomFormat];
+
+export const CbomDocumentBomFormat = {
+  CycloneDX: "CycloneDX",
+} as const;
+
+export type CbomDocumentSpecVersion =
+  (typeof CbomDocumentSpecVersion)[keyof typeof CbomDocumentSpecVersion];
+
+export const CbomDocumentSpecVersion = {
+  "17": "1.7",
+} as const;
+
+export type CbomDocumentMetadataTools = {
+  components: CycloneDxComponent[];
+};
+
+export type CbomDocumentMetadata = {
+  timestamp: string;
+  tools: CbomDocumentMetadataTools;
+  properties?: CycloneDxProperty[];
+};
+
+/**
+ * A CycloneDX 1.7 CBOM. Schema conformance is proven against the vendored official schema in `@workspace/cbom`'s own suite; this documents the subset the builder emits and is not a substitute for that validation.
+ */
+export interface CbomDocument {
+  bomFormat: CbomDocumentBomFormat;
+  specVersion: CbomDocumentSpecVersion;
+  serialNumber?: string;
+  version: number;
+  metadata: CbomDocumentMetadata;
+  components: CycloneDxComponent[];
+  dependencies: CycloneDxDependency[];
 }
 
 export type ListCommunityPostsParams = {
