@@ -4071,3 +4071,120 @@ export const SubmitProjectTlsResponse = zod.object({
       "Stated in every response: this collector records the negotiated key-exchange algorithm\/group and the peer certificate's public key type\/size only — no certificate identity, chain or validity. It does not verify trust (certificates are not validated against any CA), because the point is to observe what a host actually negotiates, not whether a browser would accept it.",
     ),
 });
+
+/**
+ * Parses submitted SSH (`sshd_config`, `ssh_config`, `authorized_keys`), IPsec/IKE (`ipsec.conf`, `swanctl.conf`), JOSE (a JWKS, an OpenID Connect discovery document) and SAML metadata files, and persists the algorithms they *declare* as assets on the `config` surface — which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+**A declaration is not a negotiation.** This route records what a file states, at `configuration_information` modality and a confidence well below `POST /projects/{id}/tls`'s observed handshake: a `Ciphers` list is an upper bound on what a daemon will accept, not evidence any peer selected an entry from it. Each declaration carries a `strength` — `permitted` (an algorithm the endpoint would accept) or `materialised` (a specific key or a chosen algorithm, such as an `authorized_keys` entry or a published JWK) — because those are different claims.
+
+The SSH and IPsec families are recognised by filename (including `sshd_config.d/` drop-ins); JOSE and SAML files have no conventional filename and are recognised by an unambiguous structural marker instead (a `keys` array of JWKs, an `*_alg_values_supported` field, an `EntityDescriptor` element).
+
+**If no submitted file is a configuration this collector understands, no collection run is recorded** and `configFilesRecognised` is 0 — the same "examined nothing, not found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an error. A recognised file that declares no crypto is the *other* case and **does** record a run: it was read, and it states nothing. Removing a directive and resubmitting the file marks its assets `gone`, scoped to exactly the files this submission read.
+
+Three deliberate silences, all restated in `evidenceCaveat`: `Include` directives are not followed (the caller submits contents, not a filesystem); the absence of a directive is not read as the compiled-in default; and an algorithm token with no canonical name — including hybrid post-quantum key exchange such as `sntrup761x25519-sha512` — produces no declaration rather than a guess.
+ * @summary Read the crypto a project's protocol configuration declares (B6)
+ */
+export const SubmitProjectProtocolConfigParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SubmitProjectProtocolConfigBody = zod.object({
+  files: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        content: zod.string(),
+      }),
+    )
+    .describe(
+      "Configuration files, submitted as path + content — the same shape `POST \/projects\/{id}\/dependencies` and `POST \/projects\/{id}\/certificates` use. The path matters: the SSH and IPsec families are recognised by basename, so `\/etc\/ssh\/sshd_config` is read and a copy renamed `sshd_config.bak.txt` is not. Anything unrecognised is ignored rather than rejected, so a caller may submit a whole tree.",
+    ),
+});
+
+export const SubmitProjectProtocolConfigResponse = zod.object({
+  projectId: zod.number(),
+  configFilesRecognised: zod
+    .number()
+    .describe(
+      "How many submitted files were a protocol configuration this collector understands. Zero means no collection run was recorded and the config surface is still un-examined for this project. A recognised file that declares nothing still counts here — it was examined.",
+    ),
+  configFiles: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        format: zod.string(),
+        declarationCount: zod.number(),
+      }),
+    )
+    .describe(
+      "The recognised files, each with how many declarations it carried. A `declarationCount` of 0 is read-and-states-nothing, not unreadable.",
+    ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe("Null when no run was recorded (`configFilesRecognised` is 0)."),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Declarations previously read from one of the files in this submission and no longer present in it — an administrator removed the directive. Scoped to exactly the files this submission read, so a file that was not submitted is untouched.",
+    ),
+  declarations: zod.array(
+    zod
+      .object({
+        path: zod.string(),
+        format: zod
+          .string()
+          .describe(
+            "Which configuration format the file was read as — `sshd-config`, `ssh-config`, `authorized-keys`, `ipsec-config`, `jwks`, `oidc-discovery`, `saml-metadata`.",
+          ),
+        directive: zod
+          .string()
+          .describe(
+            "The keyword or field the token was written under, e.g. `KexAlgorithms`, `alg`, `SignatureMethod`, `esp`.",
+          ),
+        declaredValue: zod
+          .string()
+          .describe(
+            "The token exactly as the file wrote it, so a reader can go back to the line and check.",
+          ),
+        algorithm: zod
+          .string()
+          .describe(
+            "Canonical name, resolving in the mappings data. A token with no canonical name produces no declaration at all.",
+          ),
+        keySize: zod
+          .number()
+          .nullable()
+          .describe(
+            "The stated parameter size where the token names one (a curve, a MODP group, an AES width, a JWK modulus). Null means undetermined — an `ssh-rsa` authorized_keys entry does not state its modulus and this collector does not decode the blob to guess one.",
+          ),
+        strength: zod
+          .enum(["permitted", "materialised"])
+          .describe(
+            "`permitted` — an algorithm the endpoint would accept if a peer asked, which it may never select. `materialised` — a specific key or a chosen algorithm that exists now. Priced into `confidence`, but reported separately because they are different claims.",
+          ),
+        condition: zod
+          .string()
+          .nullable()
+          .describe(
+            "The enclosing `Match`\/`Host` block. Null when the directive applies unconditionally.",
+          ),
+        confidence: zod
+          .number()
+          .describe(
+            "0.6 for a permitted declaration, 0.8 for a materialised one — both well below an observed TLS handshake's 1.0.",
+          ),
+      })
+      .describe(
+        "One algorithm a configuration file declares, read verbatim from a named directive.",
+      ),
+  ),
+  evidenceCaveat: zod
+    .string()
+    .describe(
+      "Stated on every response: this collector reads what a configuration file declares, not what an endpoint negotiates; `Include` directives are not followed; the absence of a directive is not read as the compiled-in default; and an unrecognised token, including hybrid post-quantum key exchange, contributes nothing rather than a guess.",
+    ),
+});

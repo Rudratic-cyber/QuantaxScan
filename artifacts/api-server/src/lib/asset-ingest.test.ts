@@ -7,7 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { assetsTable, observationsTable, collectionRunsTable } from "@workspace/db/schema";
 import type { ScopedTx } from "@workspace/db/org-scope";
 import { createTestDb, type TestDb } from "@workspace/db/test-support";
-import { ingestSourceObservations, ingestCertificateObservations } from "./asset-ingest";
+import { ingestSourceObservations, ingestCertificateObservations, ingestProtocolConfigObservations } from "./asset-ingest";
 
 const ORG_ID = 1;
 const ORG = { organizationId: ORG_ID, userId: "" };
@@ -397,5 +397,161 @@ describe("ingestCertificateObservations — B4", () => {
     expect(result.certificates[0]).toMatchObject({ algorithm: "RSA", keySize: 2048 });
     expect(result.certificates[0].issuer).toContain("cert-a.example.invalid");
     expect(new Date(result.certificates[0].notAfter).getTime()).toBeGreaterThan(Date.now());
+  });
+});
+
+describe("ingestProtocolConfigObservations — B6", () => {
+  let harness: TestDb | undefined;
+  afterEach(async () => {
+    await harness?.close();
+    harness = undefined;
+  });
+
+  async function start(): Promise<void> {
+    harness = await createTestDb({ asRole: "quantaxscan_app" });
+  }
+
+  function ingest(params: { repo: string; files: Array<{ path: string; content: string }> }) {
+    return harness!.scope.withOrg(ORG, (tx) => ingestProtocolConfigObservations(tx, { ...params, organizationId: ORG_ID }));
+  }
+
+  function read<T>(fn: (tx: ScopedTx) => Promise<T>): Promise<T> {
+    return harness!.scope.withOrg(ORG, fn);
+  }
+
+  const SSHD_PATH = "etc/ssh/sshd_config";
+
+  it("creates one asset per declaration, on the config surface, attributed by the location prefix", async () => {
+    await start();
+
+    const result = await ingest({
+      repo: "project:1",
+      files: [{ path: SSHD_PATH, content: "HostKeyAlgorithms ssh-rsa,ssh-ed25519\nKexAlgorithms curve25519-sha256\n" }],
+    });
+    expect(result.assetsCreated).toBe(3);
+    expect(result.observationsCreated).toBe(3);
+    expect(result.configFiles).toEqual([{ path: SSHD_PATH, format: "sshd-config", declarationCount: 3 }]);
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets).toHaveLength(3);
+    expect(assets.every((a) => a.surface === "config")).toBe(true);
+    expect(assets.every((a) => a.location === `project:1:config:${SSHD_PATH}`)).toBe(true);
+    expect(assets.find((a) => a.algorithm === "EdDSA")?.keySize).toBe(256);
+    // `ssh-rsa` states no modulus and this collector does not decode the blob
+    // to guess one — undetermined, not defaulted (G-05).
+    expect(assets.find((a) => a.algorithm === "RSA")?.keySize).toBeNull();
+  });
+
+  /**
+   * The reason `reobserved` is built from the recognised FILES rather than from
+   * the observations. Delete the last algorithm directive and resubmit: the
+   * file produces zero observations, so a scope derived from observations would
+   * never cover its location and the old asset would stay `active` forever —
+   * exactly the edit this feature exists to detect.
+   */
+  it("marks a declaration gone when the directive is removed from a resubmitted file", async () => {
+    await start();
+
+    await ingest({ repo: "project:1", files: [{ path: SSHD_PATH, content: "HostKeyAlgorithms ssh-rsa,ssh-ed25519\n" }] });
+
+    const second = await ingest({ repo: "project:1", files: [{ path: SSHD_PATH, content: "HostKeyAlgorithms ssh-ed25519\n" }] });
+    expect(second.assetsMarkedGone).toBe(1);
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets.find((a) => a.algorithm === "RSA")?.status).toBe("gone");
+    expect(assets.find((a) => a.algorithm === "EdDSA")?.status).toBe("active");
+
+    // ...and emptying the file entirely still marks the rest gone, which a
+    // scope derived from observations could not have done.
+    const third = await ingest({ repo: "project:1", files: [{ path: SSHD_PATH, content: "Port 22\n" }] });
+    expect(third.assetsMarkedGone).toBe(1);
+    expect(third.observationsCreated).toBe(0);
+  });
+
+  it("records a run for a recognised file that declares nothing — examined and empty is not un-examined", async () => {
+    await start();
+
+    const result = await ingest({ repo: "project:1", files: [{ path: SSHD_PATH, content: "Port 2222\nPermitRootLogin no\n" }] });
+    expect(result.observationsCreated).toBe(0);
+    expect(result.configFiles).toEqual([{ path: SSHD_PATH, format: "sshd-config", declarationCount: 0 }]);
+
+    const runs = await read((tx) => tx.select().from(collectionRunsTable).where(eq(collectionRunsTable.organizationId, ORG_ID)));
+    expect(runs).toHaveLength(1);
+    expect(runs[0].surface).toBe("config");
+    expect(runs[0].collector).toBe("protocol-config");
+  });
+
+  it("throws rather than recording a run when no submitted file is a configuration it understands", async () => {
+    await start();
+
+    await expect(
+      ingest({ repo: "project:1", files: [{ path: "README.md", content: "prose about sshd_config" }] }),
+    ).rejects.toThrow(/no recognised configuration file/);
+
+    const runs = await read((tx) => tx.select().from(collectionRunsTable).where(eq(collectionRunsTable.organizationId, ORG_ID)));
+    expect(runs).toHaveLength(0);
+  });
+
+  it("leaves another file's declarations alone — the scope is the files this submission read", async () => {
+    await start();
+
+    await ingest({
+      repo: "project:1",
+      files: [
+        { path: SSHD_PATH, content: "HostKeyAlgorithms ssh-rsa\n" },
+        { path: "etc/ipsec.conf", content: "conn site\n  ike=aes256-modp2048\n" },
+      ],
+    });
+
+    // Only the ssh file is resubmitted, now empty. The IPsec declarations were
+    // not observed by this run and must not be inferred as removed.
+    const second = await ingest({ repo: "project:1", files: [{ path: SSHD_PATH, content: "Port 22\n" }] });
+    expect(second.assetsMarkedGone).toBe(1);
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets.filter((a) => a.status === "active")).toHaveLength(2);
+    expect(assets.filter((a) => a.status === "gone")).toHaveLength(1);
+  });
+
+  it("records configuration_information at a confidence below the TLS handshake's, split by declaration strength", async () => {
+    await start();
+
+    const result = await ingest({
+      repo: "project:1",
+      files: [
+        { path: SSHD_PATH, content: "HostKeyAlgorithms ssh-ed25519\n" },
+        { path: "home/deploy/.ssh/authorized_keys", content: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 deploy@host\n" },
+      ],
+    });
+    expect(result.observationsCreated).toBe(2);
+
+    const obs = await read((tx) => tx.select().from(observationsTable).where(eq(observationsTable.organizationId, ORG_ID)));
+    expect(obs.every((o) => o.discoveryModality === "configuration_information")).toBe(true);
+    expect(obs.every((o) => o.confidence < 1)).toBe(true);
+    const permitted = result.declarations.find((d) => d.strength === "permitted");
+    const materialised = result.declarations.find((d) => d.strength === "materialised");
+    expect(permitted?.confidence).toBeLessThan(materialised!.confidence);
+  });
+
+  it("returns a per-declaration summary the route can build a response from without re-parsing", async () => {
+    await start();
+
+    const result = await ingest({
+      repo: "project:1",
+      files: [{ path: SSHD_PATH, content: "Match Address 10.0.0.0/8\n  Ciphers aes128-ctr\n" }],
+    });
+    expect(result.declarations).toEqual([
+      {
+        path: SSHD_PATH,
+        format: "sshd-config",
+        directive: "Ciphers",
+        declaredValue: "aes128-ctr",
+        algorithm: "AES",
+        keySize: 128,
+        strength: "permitted",
+        condition: "Match Address 10.0.0.0/8",
+        confidence: 0.6,
+      },
+    ]);
   });
 });

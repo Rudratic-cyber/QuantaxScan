@@ -248,6 +248,9 @@ describe("route manifest — a new route cannot ship without being considered", 
     // project only by the `project:<id>:` location prefix, never a foreign
     // key, so the parent is confirmed visible inside the scope.
     "POST /projects/:id/tls": "org-scoped",
+    // B6 — same reasoning again: `config` assets are attributed to a project
+    // only by the `project:<id>:config:` location prefix, never a foreign key.
+    "POST /projects/:id/protocol-config": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",
@@ -591,6 +594,33 @@ describe("addressing another organisation's row by id is indistinguishable from 
   it("GET /api/projects/:id/certificates → 404 for another organisation's project, not their certificate inventory", async () => {
     const res = await auth(request.get(`/api/projects/${theirs.projectId}/certificates`));
     expect(res.status).toBe(404);
+  });
+
+  it("POST /api/projects/:id/protocol-config naming another organisation's project writes nothing", async () => {
+    // Same shape as the three proofs above, one surface over. The submitted
+    // file IS a valid sshd_config declaring a real algorithm, so a missing
+    // parent check would produce a genuine `config` asset attributed to a
+    // project the caller cannot see — the failure has to be reachable for the
+    // test to prove anything.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirConfigAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'config'`,
+        ),
+      );
+    const before = await countTheirConfigAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/protocol-config`).send({
+        files: [{ path: "etc/ssh/sshd_config", content: "HostKeyAlgorithms ssh-rsa\n" }],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirConfigAssets();
+    expect(after).toEqual(before);
   });
 });
 

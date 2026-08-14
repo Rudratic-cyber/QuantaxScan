@@ -64,12 +64,44 @@ import type { RawObservation } from "./types";
  * front — but the reasoning, and the trade (one certificate now belongs to
  * exactly the project it was submitted under, not to the organisation at
  * large), is the same.
+ *
+ * **`config` (B6) is `repo + path + directive + algorithm + token`**, and the
+ * architecture table above — which said `config` had no rule yet, because no
+ * collector existed — is amended to match. It is deliberately the `source`
+ * shape (`repo + path + …`) rather than the `certificate` shape: a
+ * configuration file is a stable *slot* that gets edited in place, not a
+ * minted artefact, so the file's path belongs in the identity and the asset
+ * must survive an edit that leaves the declaration alone. `repo` is present
+ * for the same reason it is on the three variants above, and needs no separate
+ * argument.
+ *
+ * Two fields there deserve their own justification:
+ *
+ *  - **`directive`**, because the same token under two keywords is two
+ *    different facts. `ssh-rsa` under `HostKeyAlgorithms` says the server
+ *    authenticates itself with an RSA host key; under
+ *    `PubkeyAcceptedAlgorithms` it says the server accepts RSA client keys.
+ *    Remediating one does not remediate the other, so they cannot be one
+ *    asset.
+ *  - **`token`, alongside `algorithm`**, mirroring `source`'s `symbol`
+ *    alongside `algorithm`. Without it, `Ciphers aes128-ctr,aes256-ctr`
+ *    collapses to a single `AES` asset whose `keySize` is whichever token the
+ *    ingest deduplication saw last — a 128-bit and a 256-bit cipher reported
+ *    as the same thing, with the answer depending on list order. It also keeps
+ *    `ssh-rsa` (SHA-1 signing) distinct from `rsa-sha2-512`, which is the
+ *    difference an administrator actually acts on. The cost is more rows for a
+ *    long algorithm list; the alternative is a row that is silently wrong.
+ *
+ * The token is *not* a content digest of the file (the anti-requirement
+ * above): reformatting the file, moving the line, or changing an unrelated
+ * directive leaves every fingerprint intact.
  */
 export type FingerprintInput =
   | { surface: "source"; repo: string; path: string; algorithm: string; symbol: string }
   | { surface: "dependency"; repo: string; ecosystem: string; package: string; algorithm: string }
   | { surface: "tls"; repo: string; host: string; port: number; algorithm: string }
   | { surface: "certificate"; repo: string; issuer: string; serial: string }
+  | { surface: "config"; repo: string; path: string; directive: string; algorithm: string; token: string }
   | { surface: "kms"; provider: string; keyId: string }
   | {
       surface: "binary";
@@ -97,6 +129,8 @@ function orderedFields(input: FingerprintInput): string[] {
       return [input.surface, input.repo, input.host, String(input.port), input.algorithm];
     case "certificate":
       return [input.surface, input.repo, input.issuer, input.serial];
+    case "config":
+      return [input.surface, input.repo, input.path, input.directive, input.algorithm, input.token];
     case "kms":
       return [input.surface, input.provider, input.keyId];
     case "binary":
@@ -198,6 +232,20 @@ export function fingerprintForObservation(
         repo: context.repo,
         issuer: detail.certificate.issuer,
         serial: detail.certificate.serialNumber,
+      };
+    case "config":
+      return {
+        surface: "config",
+        repo: context.repo,
+        path: detail.config.path,
+        directive: detail.config.directive,
+        algorithm: observation.algorithm,
+        // The token verbatim. `strength` and `condition` are deliberately NOT
+        // in the identity: an administrator wrapping an existing directive in
+        // a `Match` block has narrowed where the same declaration applies, not
+        // removed it and added a different one, and `locationDetail` already
+        // carries the new condition on the next observation.
+        token: detail.config.declaredValue,
       };
     case "network": {
       const { hostname, destinationPort } = detail.network;
