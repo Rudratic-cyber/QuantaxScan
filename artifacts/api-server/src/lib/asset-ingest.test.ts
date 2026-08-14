@@ -7,7 +7,9 @@ import { eq, and } from "drizzle-orm";
 import { assetsTable, observationsTable, collectionRunsTable } from "@workspace/db/schema";
 import type { ScopedTx } from "@workspace/db/org-scope";
 import { createTestDb, type TestDb } from "@workspace/db/test-support";
-import { ingestSourceObservations, ingestCertificateObservations } from "./asset-ingest";
+import type { DataAtRestStoreInput } from "@workspace/collectors";
+import type { DataClassification } from "@workspace/db/classification";
+import { ingestSourceObservations, ingestCertificateObservations, ingestDataAtRestObservations } from "./asset-ingest";
 
 const ORG_ID = 1;
 const ORG = { organizationId: ORG_ID, userId: "" };
@@ -397,5 +399,221 @@ describe("ingestCertificateObservations — B4", () => {
     expect(result.certificates[0]).toMatchObject({ algorithm: "RSA", keySize: 2048 });
     expect(result.certificates[0].issuer).toContain("cert-a.example.invalid");
     expect(new Date(result.certificates[0].notAfter).getTime()).toBeGreaterThan(Date.now());
+  });
+});
+
+/**
+ * B7 — the data-at-rest ingest. These run against real migrations, real
+ * `CHECK` constraints and real RLS through pglite, which is the only way the
+ * `COALESCE` upsert below is actually exercised: it is SQL, not TypeScript, so
+ * a mocked schema would prove nothing about it.
+ */
+describe("ingestDataAtRestObservations — B7", () => {
+  let harness: TestDb | undefined;
+  afterEach(async () => {
+    await harness?.close();
+    harness = undefined;
+  });
+
+  async function start(): Promise<void> {
+    harness = await createTestDb({ asRole: "quantaxscan_app" });
+  }
+
+  function ingest(params: {
+    repo?: string;
+    stores: DataAtRestStoreInput[];
+    classificationByStoreId?: Map<string, { dataClassification?: DataClassification | null; secrecyLifetimeYears?: number | null }>;
+  }) {
+    return harness!.scope.withOrg(ORG, (tx) =>
+      ingestDataAtRestObservations(tx, {
+        repo: params.repo ?? "project:1",
+        stores: params.stores,
+        organizationId: ORG_ID,
+        classificationByStoreId: params.classificationByStoreId,
+      }),
+    );
+  }
+
+  function read<T>(fn: (tx: ScopedTx) => Promise<T>): Promise<T> {
+    return harness!.scope.withOrg(ORG, fn);
+  }
+
+  const encryptedStore: DataAtRestStoreInput = {
+    storeId: "billing",
+    engine: "postgresql",
+    storeKind: "database",
+    encryptionState: "encrypted",
+    evidenceSource: "configuration-report",
+    dataEncryption: { algorithm: "AES-256-CBC" },
+    keyProtection: { algorithm: "RSA-2048", source: "aws-kms" },
+  };
+
+  it("writes both halves of the key hierarchy as separate assets on the data-at-rest surface", async () => {
+    await start();
+
+    const result = await ingest({ stores: [encryptedStore] });
+    expect(result.assetsCreated).toBe(2);
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets.map((a) => a.surface)).toEqual(["data-at-rest", "data-at-rest"]);
+    expect(assets.map((a) => a.algorithm).sort()).toEqual(["AES", "RSA"]);
+
+    const [run] = await read((tx) => tx.select().from(collectionRunsTable).where(eq(collectionRunsTable.id, result.collectionRunId)));
+    expect(run.surface).toBe("data-at-rest");
+    expect(run.collector).toBe("data-at-rest-config");
+
+    const obs = await read((tx) => tx.select().from(observationsTable).where(eq(observationsTable.collectionRunId, run.id)));
+    expect(obs).toHaveLength(2);
+    expect(obs.every((o) => o.discoveryModality === "configuration_information")).toBe(true);
+  });
+
+  it("persists a supplied classification on BOTH of a store's assets, which is what puts this surface in front of the risk engine", async () => {
+    await start();
+
+    await ingest({
+      stores: [encryptedStore],
+      classificationByStoreId: new Map([["billing", { dataClassification: "regulated", secrecyLifetimeYears: null }]]),
+    });
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets).toHaveLength(2);
+    expect(assets.every((a) => a.dataClassification === "regulated")).toBe(true);
+
+    // X itself stays null: the caller named a classification, not a year count,
+    // and `resolveSecrecyLifetime()` derives 25 from the label at read time
+    // rather than this ingest freezing a number onto the row.
+    expect(assets.every((a) => a.secrecyLifetimeYears === null)).toBe(true);
+  });
+
+  it("leaves classification null when nobody supplied one, so an assumed X stays distinguishable from a stated one", async () => {
+    await start();
+
+    await ingest({ stores: [encryptedStore] });
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets.every((a) => a.dataClassification === null)).toBe(true);
+    expect(assets.every((a) => a.secrecyLifetimeYears === null)).toBe(true);
+  });
+
+  it("does NOT erase a previously supplied classification when a later submission omits it", async () => {
+    await start();
+
+    await ingest({
+      stores: [encryptedStore],
+      classificationByStoreId: new Map([["billing", { dataClassification: "regulated", secrecyLifetimeYears: 30 }]]),
+    });
+    // A nightly config export that carries the crypto but not the
+    // classification. "Not supplied" is not "no longer classified".
+    await ingest({ stores: [encryptedStore] });
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets.every((a) => a.dataClassification === "regulated")).toBe(true);
+    expect(assets.every((a) => a.secrecyLifetimeYears === 30)).toBe(true);
+  });
+
+  it("marks the superseded algorithm gone when a store migrates off it", async () => {
+    await start();
+
+    await ingest({ stores: [encryptedStore] });
+    const result = await ingest({
+      stores: [{ ...encryptedStore, keyProtection: { algorithm: "ECDH", source: "aws-kms" } }],
+    });
+
+    expect(result.assetsMarkedGone).toBe(1);
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets.find((a) => a.algorithm === "RSA")!.status).toBe("gone");
+    expect(assets.find((a) => a.algorithm === "ECDH/DH")!.status).toBe("active");
+    // The bulk cipher was resubmitted unchanged and is untouched.
+    expect(assets.find((a) => a.algorithm === "AES")!.status).toBe("active");
+  });
+
+  it("does NOT mark a recorded cipher gone when a resubmission leaves the cipher field blank", async () => {
+    await start();
+
+    await ingest({ stores: [encryptedStore, { ...encryptedStore, storeId: "archive", storeKind: "archive" }] });
+
+    // A real run — the archive is still fully described — in which `billing`
+    // is still reported as encrypted but this export did not carry its
+    // algorithm. Nothing was remediated; a field was left empty. Marking
+    // billing's assets gone here would be a silent false remediation, which is
+    // the failure `ReobservationScope` exists for, and it would happen inside
+    // an otherwise perfectly ordinary run.
+    const result = await ingest({
+      stores: [
+        { storeId: "billing", engine: "postgresql", encryptionState: "encrypted" },
+        { ...encryptedStore, storeId: "archive", storeKind: "archive" },
+      ],
+    });
+
+    expect(result.assetsMarkedGone).toBe(0);
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets).toHaveLength(4);
+    expect(assets.every((a) => a.status === "active")).toBe(true);
+  });
+
+  it("DOES mark a recorded cipher gone when a store is resubmitted as not encrypted", async () => {
+    await start();
+
+    await ingest({ stores: [encryptedStore] });
+    const result = await ingest({
+      stores: [{ storeId: "billing", engine: "postgresql", encryptionState: "not-encrypted" }],
+    });
+
+    // A positive statement of absence, unlike the blank field above.
+    expect(result.assetsMarkedGone).toBe(2);
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets.every((a) => a.status === "gone")).toBe(true);
+  });
+
+  it("leaves another store's assets alone — the reobservation scope is per store slot, never per surface", async () => {
+    await start();
+
+    await ingest({
+      stores: [encryptedStore, { ...encryptedStore, storeId: "archive", storeKind: "archive" }],
+    });
+    const result = await ingest({
+      stores: [{ storeId: "billing", engine: "postgresql", encryptionState: "not-encrypted" }],
+    });
+
+    expect(result.assetsMarkedGone).toBe(2);
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    const archive = assets.filter((a) => a.location.includes(":archive:"));
+    expect(archive).toHaveLength(2);
+    expect(archive.every((a) => a.status === "active")).toBe(true);
+  });
+
+  it("records a run for an all-not-encrypted submission — that is a real examination with a real result", async () => {
+    await start();
+
+    const result = await ingest({
+      stores: [{ storeId: "billing", engine: "postgresql", encryptionState: "not-encrypted" }],
+    });
+
+    expect(result.observationsCreated).toBe(0);
+    const [run] = await read((tx) => tx.select().from(collectionRunsTable).where(eq(collectionRunsTable.id, result.collectionRunId)));
+    expect(run.surface).toBe("data-at-rest");
+  });
+
+  it("throws rather than recording a run when the submission states nothing reconcilable at all", async () => {
+    await start();
+
+    await expect(ingest({ stores: [{ storeId: "billing", engine: "postgresql" }] })).rejects.toThrow(
+      /no store it could say anything about/,
+    );
+
+    const runs = await read((tx) => tx.select().from(collectionRunsTable).where(eq(collectionRunsTable.organizationId, ORG_ID)));
+    expect(runs).toHaveLength(0);
+  });
+
+  it("records a null key size for a cipher named without one, rather than an assumed 256", async () => {
+    await start();
+
+    await ingest({
+      stores: [{ storeId: "billing", engine: "postgresql", encryptionState: "encrypted", dataEncryption: { algorithm: "AES" } }],
+    });
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets).toHaveLength(1);
+    expect(assets[0].keySize).toBeNull();
   });
 });

@@ -17,15 +17,29 @@ import {
   SubmitProjectDependenciesBody,
   SubmitProjectCertificatesBody,
   SubmitProjectTlsBody,
+  SubmitProjectDataAtRestBody,
 } from "@workspace/api-zod";
-import { lockfilesIn, certificatesIn } from "@workspace/collectors";
+import {
+  lockfilesIn,
+  certificatesIn,
+  collectDataAtRestObservations,
+  type DataAtRestStoreInput,
+  type DataAtRestStoreResult,
+  type LocationDetail,
+} from "@workspace/collectors";
+import { resolveSecrecyLifetime, type DataClassification } from "@workspace/db/classification";
+import { assessMoscaRisk, migrationYearsFromEffortHours, DEFAULT_QDAY_SCENARIOS, QDAY_FRAMING } from "@workspace/risk";
+// `zod`, not `zod/v4`: the generated schemas in `@workspace/api-zod` import
+// `zod`, and inferring off a different module identity yields `unknown`.
+import type * as zod from "zod";
 import { scanCode, computeScanResult } from "../lib/scanner";
 import { summariseProjectCoverage } from "../lib/coverage";
-import { withComplianceAll } from "../lib/compliance";
+import { withComplianceAll, resolveCompliance } from "../lib/compliance";
 import {
   ingestDependencyObservations,
   ingestCertificateObservations,
   ingestTlsObservations,
+  ingestDataAtRestObservations,
   type CertificateSummary,
 } from "../lib/asset-ingest";
 import { evaluateCertificateExpiryAgainstQDay } from "../lib/certificate-risk";
@@ -712,6 +726,379 @@ router.post("/projects/:id/tls", async (req, res): Promise<void> => {
     observationsCreated: result.observationsCreated,
     assetsMarkedGone: result.assetsMarkedGone,
     evidenceCaveat: TLS_EVIDENCE_CAVEAT,
+  });
+});
+
+/**
+ * B7 — `POST /api/projects/:id/data-at-rest` and `GET
+ * /api/projects/:id/data-at-rest`. docs/Claude/03-features.md §B7: "DB TDE,
+ * backup/archive encryption — the true HNDL targets".
+ *
+ * Same shape as the four ingest routes above — org-scoped, parent confirmed
+ * inside the scope, a run recorded only when something was actually examined —
+ * with two differences that are the point of the lane.
+ *
+ * **It takes a description, not a credential.** The caller POSTs what their
+ * engine's own configuration reports. Live collection would need somewhere to
+ * put a production database credential, and this product has no secret-handling
+ * design yet (F4 is unbuilt) — the same reasoning B5 applies to KMS. Building
+ * one inside a collector lane is how a product ends up storing production
+ * passwords by accident, so it is deliberately not attempted here.
+ *
+ * **It is the only ingest that accepts a data classification.** Data at rest is
+ * the case where an adversary genuinely can copy the ciphertext today and
+ * decrypt it after Q-Day, so X — how long the data must stay secret — is the
+ * whole question, and the caller knows it at submission time because they know
+ * what is in the store. Persisting it on the asset is what puts this surface in
+ * front of the risk engine: `GET /api/inventory/assets` resolves X with
+ * `resolveSecrecyLifetime()` and runs Mosca over every asset, so a Regulated
+ * backup archive arrives there with X = 25 rather than the product's assumed 3.
+ *
+ * The GET exists for the reason B4's does, stated verbatim in that route's
+ * comment: the POST response is ingest telemetry — what one submission found at
+ * the moment it was submitted — and without a second route the Mosca verdict
+ * would only ever be visible once, to whoever happened to be watching the
+ * upload response.
+ */
+
+/** Mirrors `MAX_CERTIFICATES_PER_SUBMISSION` — a bound on work, not on request size. */
+const MAX_DATA_AT_REST_STORES_PER_SUBMISSION = 500;
+
+const DATA_AT_REST_EVIDENCE_CAVEAT =
+  "This collector records what a store's configuration was reported to say, not what its ciphertext " +
+  "actually is: nothing here connects to a database, reads a backup, or verifies that data already " +
+  "written was written under the cipher now configured. A store reported as encrypted with no algorithm " +
+  "named records nothing at all rather than an assumed one. The bulk cipher (usually AES) is not " +
+  "quantum-vulnerable in NIST's assessment — the key-protection entry, which is how that data key is " +
+  "wrapped, is where Q-Day applies, and a store that reports no key protection has not been cleared of it.";
+
+type DataAtRestSubmissionStore = zod.infer<typeof SubmitProjectDataAtRestBody>["stores"][number];
+
+/**
+ * The generated body type carries the A3 classification fields alongside the
+ * collector's inputs, because they arrive in the same object. They are split
+ * apart here rather than in the collector: `@workspace/collectors` is
+ * deliberately unaware that data classification exists — see
+ * `lib/db/src/classification.ts` for why that boundary is where it is.
+ */
+function toStoreInput(store: DataAtRestSubmissionStore): DataAtRestStoreInput {
+  return {
+    storeId: store.storeId,
+    engine: store.engine,
+    storeKind: store.storeKind,
+    encryptionState: store.encryptionState,
+    evidenceSource: store.evidenceSource,
+    description: store.description,
+    dataEncryption: store.dataEncryption ?? undefined,
+    keyProtection: store.keyProtection ?? undefined,
+  };
+}
+
+function classificationsBySubmittedStoreId(
+  stores: DataAtRestSubmissionStore[],
+): Map<string, { dataClassification?: DataClassification | null; secrecyLifetimeYears?: number | null }> {
+  const out = new Map<string, { dataClassification?: DataClassification | null; secrecyLifetimeYears?: number | null }>();
+  for (const store of stores) {
+    // Absent entirely, rather than an entry of nulls, when the caller supplied
+    // neither — so the ingest writes null and `resolveSecrecyLifetime()` can
+    // still tell "nobody said" from "somebody said Public".
+    if (store.dataClassification == null && store.secrecyLifetimeYears == null) continue;
+    out.set(store.storeId, {
+      dataClassification: store.dataClassification ?? null,
+      secrecyLifetimeYears: store.secrecyLifetimeYears ?? null,
+    });
+  }
+  return out;
+}
+
+function toStoreResponse(result: DataAtRestStoreResult) {
+  return {
+    storeId: result.storeId,
+    engine: result.engine,
+    recorded: result.observations.map((observation) => ({
+      role: observation.locationDetail?.kind === "data-at-rest" ? observation.locationDetail.dataAtRest.role : "data-encryption",
+      algorithm: observation.algorithm,
+      keySize: observation.keySize ?? null,
+      reportedAlgorithm:
+        observation.locationDetail?.kind === "data-at-rest" ? observation.locationDetail.dataAtRest.reportedAlgorithm : observation.algorithm,
+      location: observation.location,
+    })),
+    gaps: result.gaps.map((gap) => ({ role: gap.role, reason: gap.reason, reported: gap.reported ?? null })),
+  };
+}
+
+router.post("/projects/:id/data-at-rest", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const body = SubmitProjectDataAtRestBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+  const submitted = body.data.stores;
+
+  if (submitted.length > MAX_DATA_AT_REST_STORES_PER_SUBMISSION) {
+    res.status(400).json({
+      error: `Too many stores in one submission (${submitted.length} > ${MAX_DATA_AT_REST_STORES_PER_SUBMISSION}). Split the request rather than truncating it.`,
+    });
+    return;
+  }
+
+  const storeInputs = submitted.map(toStoreInput);
+  // Run the pure collector before the scope is opened, same reason
+  // `lockfilesIn`/`certificatesIn` are called there: it decides whether there is
+  // anything to write at all, and it supplies the per-store gaps the response
+  // reports even in the branch where nothing is written.
+  const collected = collectDataAtRestObservations(repo, storeInputs);
+  const saysSomething = collected.some((store) => store.observations.length > 0 || store.reobservedLocations.length > 0);
+
+  const ctx = orgContextFor(req);
+  const outcome = await withOrg(ctx, async (tx) => {
+    // A foreign key is not subject to RLS, and `assets` has none to `projects`
+    // at all — the association is the `project:<id>:` prefix this route is about
+    // to write. The parent must be confirmed visible *inside* the scope.
+    const [parent] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!parent) return null;
+
+    // Nothing reconcilable means nothing was examined: every store was
+    // `unknown`, or every crypto field was blank. Writing a collection run here
+    // would make GET /projects/:id/coverage report data-at-rest as "examined —
+    // nothing found", which is a different and false statement about the
+    // surface whose whole value is knowing what you have not looked at. Not an
+    // error: listing stores you cannot yet describe is a legitimate first step.
+    if (!saysSomething) return { kind: "nothing-stated" as const };
+
+    return {
+      kind: "ingested" as const,
+      result: await ingestDataAtRestObservations(tx, {
+        repo,
+        stores: storeInputs,
+        organizationId: ctx.organizationId,
+        classificationByStoreId: classificationsBySubmittedStoreId(submitted),
+      }),
+    };
+  });
+
+  if (outcome === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  const stores = (outcome.kind === "ingested" ? outcome.result.stores : collected).map(toStoreResponse);
+  const storesWithRecordedCrypto = stores.filter((store) => store.recorded.length > 0).length;
+
+  if (outcome.kind === "nothing-stated") {
+    res.json({
+      projectId: id,
+      storesSubmitted: submitted.length,
+      storesWithRecordedCrypto: 0,
+      collectionRunId: null,
+      assetsCreated: 0,
+      assetsUpdated: 0,
+      observationsCreated: 0,
+      assetsMarkedGone: 0,
+      stores,
+      evidenceCaveat: DATA_AT_REST_EVIDENCE_CAVEAT,
+    });
+    return;
+  }
+
+  const { result } = outcome;
+  logger.info(
+    {
+      projectId: id,
+      storesSubmitted: submitted.length,
+      storesWithRecordedCrypto,
+      observations: result.observationsCreated,
+      route: "POST /projects/:id/data-at-rest",
+    },
+    "data-at-rest collection complete",
+  );
+
+  res.json({
+    projectId: id,
+    storesSubmitted: submitted.length,
+    storesWithRecordedCrypto,
+    collectionRunId: result.collectionRunId,
+    assetsCreated: result.assetsCreated,
+    assetsUpdated: result.assetsUpdated,
+    observationsCreated: result.observationsCreated,
+    assetsMarkedGone: result.assetsMarkedGone,
+    stores,
+    evidenceCaveat: DATA_AT_REST_EVIDENCE_CAVEAT,
+  });
+});
+
+router.get("/projects/:id/data-at-rest", async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(rawId, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+  const now = new Date();
+
+  const found = await withOrg(orgContextFor(req), async (tx) => {
+    const [project] = await tx
+      .select({
+        id: projectsTable.id,
+        dataClassification: projectsTable.dataClassification,
+        secrecyLifetimeYears: projectsTable.secrecyLifetimeYears,
+      })
+      .from(projectsTable)
+      .where(eq(projectsTable.id, id));
+    if (!project) return null;
+
+    const assets = await tx
+      .select({
+        id: assetsTable.id,
+        algorithm: assetsTable.algorithm,
+        keySize: assetsTable.keySize,
+        location: assetsTable.location,
+        locationDetail: assetsTable.locationDetail,
+        status: assetsTable.status,
+        firstSeen: assetsTable.firstSeen,
+        lastSeen: assetsTable.lastSeen,
+        effortHours: assetsTable.effortHours,
+        dataClassification: assetsTable.dataClassification,
+        secrecyLifetimeYears: assetsTable.secrecyLifetimeYears,
+      })
+      .from(assetsTable)
+      .where(and(eq(assetsTable.surface, "data-at-rest"), like(assetsTable.location, `${repo}:%`)))
+      .orderBy(assetsTable.location);
+
+    return { project, assets };
+  });
+
+  if (found === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  // Grouped back into stores, because a store is the unit a customer reasons
+  // about: "is the backup archive safe" is one question, even though its bulk
+  // cipher and its key wrapping are two assets with two different answers.
+  type DataAtRestDetail = Extract<LocationDetail, { kind: "data-at-rest" }>;
+  type DataAtRestAssetRow = (typeof found.assets)[number] & { locationDetail: DataAtRestDetail };
+  interface StoreGroup {
+    storeId: string;
+    engine: string;
+    storeKind: string;
+    encryptionState: string;
+    description: string | null;
+    /** Both of a store's assets carry the same value by construction; first non-null wins, so a row written before the classification cannot blank out its sibling's. */
+    assetClassification: DataClassification | null;
+    assetSecrecyLifetimeYears: number | null;
+    assets: DataAtRestAssetRow[];
+  }
+
+  const byStore = new Map<string, StoreGroup>();
+  const groups: StoreGroup[] = [];
+
+  for (const asset of found.assets) {
+    const detail = asset.locationDetail;
+    // Defensive, not expected: every row on this surface was written by
+    // ingestDataAtRestObservations, which always sets this. Skipping rather
+    // than throwing keeps one malformed historical row from taking the whole
+    // inventory read down — the same call `GET /projects/:id/certificates` makes.
+    if (detail?.kind !== "data-at-rest") {
+      logger.warn({ assetId: asset.id }, "data-at-rest asset has no data-at-rest locationDetail — skipped");
+      continue;
+    }
+    const store = detail.dataAtRest;
+    // Grouped on the identity pair, not on `location` — which also carries the
+    // role, and would put a store's two halves in two different groups.
+    const key = JSON.stringify([store.engine, store.storeId]);
+    let group = byStore.get(key);
+    if (group === undefined) {
+      group = {
+        storeId: store.storeId,
+        engine: store.engine,
+        storeKind: store.storeKind,
+        encryptionState: store.encryptionState,
+        description: store.description ?? null,
+        assetClassification: null,
+        assetSecrecyLifetimeYears: null,
+        assets: [],
+      };
+      byStore.set(key, group);
+      groups.push(group);
+    }
+    group.assetClassification ??= asset.dataClassification;
+    group.assetSecrecyLifetimeYears ??= asset.secrecyLifetimeYears;
+    group.assets.push({ ...asset, locationDetail: detail });
+  }
+
+  res.json({
+    projectId: id,
+    generatedAt: now.toISOString(),
+    stores: groups.map((group) => {
+      // X is resolved once per store and shared by both of its components: the
+      // two halves of a key hierarchy protect the same data, so giving them
+      // different secrecy lifetimes would be incoherent.
+      const lifetime = resolveSecrecyLifetime({
+        assetClassification: group.assetClassification,
+        assetSecrecyLifetimeYears: group.assetSecrecyLifetimeYears,
+        projectClassification: found.project.dataClassification,
+        projectSecrecyLifetimeYears: found.project.secrecyLifetimeYears,
+      });
+
+      return {
+        storeId: group.storeId,
+        engine: group.engine,
+        storeKind: group.storeKind,
+        encryptionState: group.encryptionState,
+        description: group.description,
+        dataClassification: group.assetClassification,
+        secrecyLifetimeYears: group.assetSecrecyLifetimeYears,
+        classificationSource: lifetime.source,
+        xAssumed: lifetime.assumed,
+        secrecyLifetimeBasis: lifetime.basis,
+        components: group.assets.map((asset) => {
+          // Derived on read, never stored — the same discipline
+          // `lib/compliance.ts` applies to findings, and the reason a 2026 row
+          // cannot disagree with a 2028 read about either the standards data or
+          // the Q-Day scenario years.
+          const compliance = resolveCompliance(asset.algorithm, { asOf: now });
+          const y = migrationYearsFromEffortHours(asset.effortHours ?? 0);
+          const assessment = assessMoscaRisk({
+            secrecyLifetimeYears: lifetime.years,
+            migrationYears: y,
+            hasQuantumVulnerableCrypto: compliance?.quantumVulnerable ?? false,
+            now,
+          });
+          return {
+            assetId: asset.id,
+            role: asset.locationDetail.dataAtRest.role,
+            algorithm: asset.algorithm,
+            keySize: asset.keySize,
+            reportedAlgorithm: asset.locationDetail.dataAtRest.reportedAlgorithm,
+            keySource: asset.locationDetail.dataAtRest.keySource ?? null,
+            status: asset.status,
+            firstSeen: asset.firstSeen.toISOString(),
+            lastSeen: asset.lastSeen.toISOString(),
+            quantumVulnerable: compliance?.quantumVulnerable ?? null,
+            mosca: {
+              x: assessment.x,
+              y: assessment.y,
+              applicable: assessment.applicable,
+              breachedScenarios: assessment.verdicts.filter((v) => v.breached).map((v) => v.scenario),
+            },
+          };
+        }),
+      };
+    }),
+    scenarios: DEFAULT_QDAY_SCENARIOS,
+    framing: QDAY_FRAMING,
   });
 });
 

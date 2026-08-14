@@ -64,6 +64,36 @@ import type { RawObservation } from "./types";
  * front — but the reasoning, and the trade (one certificate now belongs to
  * exactly the project it was submitted under, not to the organisation at
  * large), is the same.
+ *
+ * **The `data-at-rest` variant (B7)** is `repo + engine + storeId + role +
+ * algorithm`. The architecture table prescribes no shape for this surface, so
+ * two of those components need their reasoning recorded:
+ *
+ *  - **`role`** (`data-encryption` | `key-protection`) is in the identity
+ *    because a store's two crypto facts can legitimately be the *same
+ *    algorithm*: an AES data key wrapped by an AES key-encryption key is an
+ *    ordinary key hierarchy, and without the role those two observations would
+ *    fingerprint identically and collapse into one asset — losing precisely the
+ *    distinction this surface exists to make, since only the wrapping half is
+ *    what Shor breaks.
+ *  - **`algorithm` is in the identity while `location` deliberately is not.**
+ *    `location` is `<repo>:atrest:<engine>:<storeId>:<role>` — a stable *slot*.
+ *    That pairing is load-bearing: it is what makes a store whose key
+ *    protection moves off RSA read as the RSA asset going `gone` at that slot
+ *    plus a new one appearing, which is what a migration actually is. Folding
+ *    the algorithm into `location` would put every such change outside its own
+ *    reobservation scope and leave the superseded algorithm active forever. Do
+ *    not "tidy" the algorithm into the location string.
+ *
+ *    A key-*size* change (AES-128 to AES-256) is deliberately NOT that: `keySize`
+ *    is absent from every variant here, so it is one asset re-measured, not a
+ *    replacement — the same anti-requirement as line numbers above, for the same
+ *    reason (a routine rekey must not render as a remediation followed by a
+ *    regression).
+ *
+ * `repo` is present for the same reason it is on `dependency`, `tls` and
+ * `certificate`: two projects describing a store they both call `prod` must not
+ * collide into one asset row whose `location` can only name one of them.
  */
 export type FingerprintInput =
   | { surface: "source"; repo: string; path: string; algorithm: string; symbol: string }
@@ -71,6 +101,7 @@ export type FingerprintInput =
   | { surface: "tls"; repo: string; host: string; port: number; algorithm: string }
   | { surface: "certificate"; repo: string; issuer: string; serial: string }
   | { surface: "kms"; provider: string; keyId: string }
+  | { surface: "data-at-rest"; repo: string; engine: string; storeId: string; role: string; algorithm: string }
   | {
       surface: "binary";
       targetOrRepository: string;
@@ -99,6 +130,8 @@ function orderedFields(input: FingerprintInput): string[] {
       return [input.surface, input.repo, input.issuer, input.serial];
     case "kms":
       return [input.surface, input.provider, input.keyId];
+    case "data-at-rest":
+      return [input.surface, input.repo, input.engine, input.storeId, input.role, input.algorithm];
     case "binary":
       return [
         input.surface,
@@ -198,6 +231,15 @@ export function fingerprintForObservation(
         repo: context.repo,
         issuer: detail.certificate.issuer,
         serial: detail.certificate.serialNumber,
+      };
+    case "data-at-rest":
+      return {
+        surface: "data-at-rest",
+        repo: context.repo,
+        engine: detail.dataAtRest.engine,
+        storeId: detail.dataAtRest.storeId,
+        role: detail.dataAtRest.role,
+        algorithm: observation.algorithm,
       };
     case "network": {
       const { hostname, destinationPort } = detail.network;

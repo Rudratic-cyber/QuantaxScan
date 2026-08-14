@@ -12,3 +12,4 @@ export * from "./crypto-packages";
 export * from "./dependency-collector";
 export * from "./certificate-collector";
 export * from "./tls-collector";
+export * from "./data-at-rest-collector";

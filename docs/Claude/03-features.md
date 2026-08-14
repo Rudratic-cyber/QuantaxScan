@@ -215,7 +215,7 @@ another silo.
 | B4 | Certificate / X.509 | `planned` | **P1** | Key type, size, expiry. Expiry-vs-Q-Day is the killer chart |
 | B5 | KMS / secret stores | `planned` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS. Read-only creds |
 | B6 | Protocol config | `planned` | **P2** | SSH, IPsec, JWT `alg`, SAML/OIDC signing |
-| B7 | Data-at-rest | `planned` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets |
+| B7 | Data-at-rest | `built` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets. Submission-based (`POST/GET /api/projects/:id/data-at-rest`), no database credentials. **Two assets per store**: the bulk cipher and the key-wrapping algorithm, because only the second is what Shor breaks. **The only ingest that accepts a data classification**, so a Regulated archive reaches the risk engine with X = 25 rather than an assumed 3. A store reported as encrypted with no cipher named records nothing and is returned as a gap. **`data-at-rest` is the fifth `live` surface** |
 | B8 | Manual OT/embedded register | `built` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first |
 | B9 | Vendor / third-party | `planned` | **P3** | Questionnaire + contractual PQC clause tracking |
 | B10 | Binaries / firmware | `deferred` | **P3** | Hard. Defer until coverage elsewhere is complete |
@@ -271,6 +271,34 @@ Q-Day is `"exposed"` under that scenario by definition — no replacement is sch
 deadline. A fleet with no recorded date reads `"unknown"` under every scenario, never `"clear"`;
 collapsing the two would be the guessed-default failure CLAUDE.md's "null means not supplied"
 rule exists to prevent, applied to a date instead of a key size.
+
+**B7, as shipped 2026-08-14.** `POST /api/projects/:id/data-at-rest` takes a *description* of an
+encrypted store — engine, store id, encryption state, cipher, key protection, key source — and
+persists it as `data-at-rest` assets; `GET` returns the same stores with X resolved and Mosca
+evaluated at read time. `DataAtRestCollector` is pure and does no I/O
+(`lib/collectors/src/data-at-rest-collector.ts`), the same split B3 uses.
+
+Four decisions worth stating:
+
+- **Submission, not credentials.** Connecting to a live database needs somewhere to put a
+  production credential, and F4 is unbuilt. Inventing a secret-handling design inside a collector
+  lane is how a product ends up storing database passwords by accident — the same reasoning B5
+  applies to KMS.
+- **Two assets per store, not one.** The bulk cipher (usually AES, which NIST does not treat as
+  quantum-vulnerable) and the algorithm wrapping the data key are separate facts, and only the
+  second is a Shor target. A collector that recorded the cipher alone would report an AES-256
+  store whose key is wrapped with RSA-2048 as carrying nothing quantum-vulnerable. The role is
+  part of the fingerprint so an AES-wrapped-with-AES hierarchy cannot collapse into one asset.
+- **The only ingest that accepts a data classification.** Data at rest is the case where the
+  ciphertext really can be copied today and decrypted after Q-Day, so X is the whole question and
+  the caller knows it at submission time. It is persisted on the asset, which is what makes
+  `GET /api/inventory/assets` resolve X = 25 for a Regulated archive rather than the product's
+  assumed 3. The upsert `COALESCE`s it: omitting it on a later submission leaves a human's earlier
+  assertion in place rather than blanking it.
+- **"Encrypted: yes, cipher unknown" records nothing.** It is returned as a `cipher-not-reported`
+  gap and — the sharp edge — is excluded from the reobservation scope, so leaving the field blank
+  on a resubmission cannot mark a previously recorded cipher `gone`. `not-encrypted` *is* in
+  scope, because that is a positive statement of absence rather than a missing field.
 
 ---
 

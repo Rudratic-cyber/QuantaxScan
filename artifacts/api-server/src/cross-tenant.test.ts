@@ -248,6 +248,14 @@ describe("route manifest — a new route cannot ship without being considered", 
     // project only by the `project:<id>:` location prefix, never a foreign
     // key, so the parent is confirmed visible inside the scope.
     "POST /projects/:id/tls": "org-scoped",
+    // B7 — same reasoning again: data-at-rest assets are attributed to a
+    // project only by the `project:<id>:` location prefix, so the parent is
+    // confirmed visible inside the scope before any row is written. This one
+    // additionally persists a caller-supplied data classification onto the
+    // asset, which makes a cross-tenant write a statement about someone else's
+    // data as well as their crypto.
+    "POST /projects/:id/data-at-rest": "org-scoped",
+    "GET /projects/:id/data-at-rest": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",
@@ -590,6 +598,46 @@ describe("addressing another organisation's row by id is indistinguishable from 
 
   it("GET /api/projects/:id/certificates → 404 for another organisation's project, not their certificate inventory", async () => {
     const res = await auth(request.get(`/api/projects/${theirs.projectId}/certificates`));
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/projects/:id/data-at-rest naming another organisation's project writes nothing", async () => {
+    // Same shape again, with one addition worth stating: this route also
+    // persists a caller-supplied `dataClassification` onto the asset, so a
+    // successful cross-tenant write would let one organisation assert how long
+    // another's data has to stay secret — an input the risk engine then uses.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirDataAtRestAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'data-at-rest'`,
+        ),
+      );
+    const before = await countTheirDataAtRestAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/data-at-rest`).send({
+        stores: [
+          {
+            storeId: "billing",
+            engine: "postgresql",
+            encryptionState: "encrypted",
+            dataEncryption: { algorithm: "AES-256-CBC" },
+            keyProtection: { algorithm: "RSA-2048" },
+            dataClassification: "regulated",
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirDataAtRestAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("GET /api/projects/:id/data-at-rest → 404 for another organisation's project, not their store inventory", async () => {
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/data-at-rest`));
     expect(res.status).toBe(404);
   });
 });

@@ -1616,6 +1616,253 @@ export interface TlsProbeSummary {
   evidenceCaveat: string;
 }
 
+/**
+ * One reported cryptographic setting. Every field is optional because every field is genuinely often unreported, and an unreported field must stay unreported — see the `cipher-not-reported` gap reason.
+ */
+export interface DataAtRestCryptoSubmission {
+  /** As the caller's tooling reports it — `AES-256-CBC`, `aes256`, `RSA-2048`, `ECDH`. Canonicalised on the way in; the original string is kept on the asset's `locationDetail.reportedAlgorithm` so the canonicalisation stays auditable. A string that resolves to no entry in the standards data records nothing and is returned as an `algorithm-not-recognised` gap. */
+  algorithm?: string | null;
+  /** The stated parameter size, when the caller supplies one separately. Wins over any size parsed out of `algorithm`. Bare `AES` yields no key size at all rather than an assumed 256 (G-05). */
+  keySize?: number | null;
+  /** Free text, e.g. `aws-kms`, `pkcs11-hsm`, `software-keystore`, `passphrase`. Recorded as evidence, never parsed into a verdict. */
+  source?: string | null;
+}
+
+/**
+ * Grouping and presentation only — deliberately not part of the asset identity.
+ */
+export type DataAtRestStoreSubmissionStoreKind =
+  (typeof DataAtRestStoreSubmissionStoreKind)[keyof typeof DataAtRestStoreSubmissionStoreKind];
+
+export const DataAtRestStoreSubmissionStoreKind = {
+  database: "database",
+  backup: "backup",
+  archive: "archive",
+  volume: "volume",
+  "object-store": "object-store",
+  other: "other",
+} as const;
+
+/**
+ * `unknown` (the default when omitted) is not a synonym for `not-encrypted`: one means nobody has checked, the other means someone checked and there is none. Only the second is a statement this route reconciles against, so only the second can mark a previously recorded cipher `gone`.
+ */
+export type DataAtRestStoreSubmissionEncryptionState =
+  (typeof DataAtRestStoreSubmissionEncryptionState)[keyof typeof DataAtRestStoreSubmissionEncryptionState];
+
+export const DataAtRestStoreSubmissionEncryptionState = {
+  encrypted: "encrypted",
+  "not-encrypted": "not-encrypted",
+  unknown: "unknown",
+} as const;
+
+/**
+ * Drives the discovery modality and the confidence recorded on the observation: `configuration-report` reads a real setting (0.6, `configuration_information`), `attestation` is a human's statement with no artefact behind it (0.4, `manual_attestation`). Defaults to `attestation`, the weaker of the two, so an unstated evidence source understates rather than overstates what is known.
+ */
+export type DataAtRestStoreSubmissionEvidenceSource =
+  (typeof DataAtRestStoreSubmissionEvidenceSource)[keyof typeof DataAtRestStoreSubmissionEvidenceSource];
+
+export const DataAtRestStoreSubmissionEvidenceSource = {
+  "configuration-report": "configuration-report",
+  attestation: "attestation",
+} as const;
+
+/**
+ * A3's classification for the data *in* this store, persisted on both of its assets. Omit it and X is inherited from the project, then from the product default, and the read below reports it as assumed. Omitting it on a resubmission leaves a previously supplied value in place rather than clearing it.
+ */
+export type DataAtRestStoreSubmissionDataClassification =
+  (typeof DataAtRestStoreSubmissionDataClassification)[keyof typeof DataAtRestStoreSubmissionDataClassification];
+
+export const DataAtRestStoreSubmissionDataClassification = {
+  public: "public",
+  internal: "internal",
+  confidential: "confidential",
+  regulated: "regulated",
+  indefinite: "indefinite",
+} as const;
+
+export interface DataAtRestStoreSubmission {
+  /** The caller's stable identifier for this store — an instance/database name, a bucket ARN, a backup job name. Part of the asset identity, so changing it orphans the previous asset and creates a new one. */
+  storeId: string;
+  /** Engine or product, e.g. `postgresql`, `mssql`, `oracle`, `s3`, `veeam`. Part of the asset identity. */
+  engine: string;
+  /** Grouping and presentation only — deliberately not part of the asset identity. */
+  storeKind?: DataAtRestStoreSubmissionStoreKind;
+  /** `unknown` (the default when omitted) is not a synonym for `not-encrypted`: one means nobody has checked, the other means someone checked and there is none. Only the second is a statement this route reconciles against, so only the second can mark a previously recorded cipher `gone`. */
+  encryptionState?: DataAtRestStoreSubmissionEncryptionState;
+  /** Drives the discovery modality and the confidence recorded on the observation: `configuration-report` reads a real setting (0.6, `configuration_information`), `attestation` is a human's statement with no artefact behind it (0.4, `manual_attestation`). Defaults to `attestation`, the weaker of the two, so an unstated evidence source understates rather than overstates what is known. */
+  evidenceSource?: DataAtRestStoreSubmissionEvidenceSource;
+  /** Free text for the report, e.g. "nightly full backups, 7-year retention". */
+  description?: string;
+  dataEncryption?: DataAtRestCryptoSubmission;
+  keyProtection?: DataAtRestCryptoSubmission;
+  /** A3's classification for the data *in* this store, persisted on both of its assets. Omit it and X is inherited from the project, then from the product default, and the read below reports it as assumed. Omitting it on a resubmission leaves a previously supplied value in place rather than clearing it. */
+  dataClassification?: DataAtRestStoreSubmissionDataClassification;
+  /**
+   * X in years, overriding the preset implied by `dataClassification`.
+   * @minimum 0
+   */
+  secrecyLifetimeYears?: number;
+}
+
+export interface SubmitProjectDataAtRestBody {
+  stores: DataAtRestStoreSubmission[];
+}
+
+export type DataAtRestGapRole =
+  (typeof DataAtRestGapRole)[keyof typeof DataAtRestGapRole];
+
+export const DataAtRestGapRole = {
+  "data-encryption": "data-encryption",
+  "key-protection": "key-protection",
+} as const;
+
+export type DataAtRestGapReason =
+  (typeof DataAtRestGapReason)[keyof typeof DataAtRestGapReason];
+
+export const DataAtRestGapReason = {
+  "encryption-state-unknown": "encryption-state-unknown",
+  "cipher-not-reported": "cipher-not-reported",
+  "key-protection-not-reported": "key-protection-not-reported",
+  "algorithm-not-recognised": "algorithm-not-recognised",
+} as const;
+
+/**
+ * Something this submission did not say, reported rather than filled in. The whole reason this surface earns its keep is being able to tell a CISO which of their long-lived ciphertext they actually know something about.
+ */
+export interface DataAtRestGap {
+  role: DataAtRestGapRole;
+  reason: DataAtRestGapReason;
+  /** The string the caller supplied, present only for `algorithm-not-recognised`. */
+  reported: string | null;
+}
+
+export type DataAtRestRecordedCryptoRole =
+  (typeof DataAtRestRecordedCryptoRole)[keyof typeof DataAtRestRecordedCryptoRole];
+
+export const DataAtRestRecordedCryptoRole = {
+  "data-encryption": "data-encryption",
+  "key-protection": "key-protection",
+} as const;
+
+/**
+ * One crypto fact this submission actually recorded for a store.
+ */
+export interface DataAtRestRecordedCrypto {
+  role: DataAtRestRecordedCryptoRole;
+  /** The canonical name, which is what the standards data is resolved against. */
+  algorithm: string;
+  keySize: number | null;
+  /** The caller's original string, kept so the canonicalisation can be audited. */
+  reportedAlgorithm: string;
+  location: string;
+}
+
+export interface DataAtRestStoreResult {
+  storeId: string;
+  engine: string;
+  recorded: DataAtRestRecordedCrypto[];
+  gaps: DataAtRestGap[];
+}
+
+export interface DataAtRestIngestSummary {
+  projectId: number;
+  storesSubmitted: number;
+  /** How many submitted stores produced at least one asset. The difference between this and `storesSubmitted` is the honest measure of how much of the estate was described rather than merely listed — every shortfall is itemised in `stores[].gaps`. */
+  storesWithRecordedCrypto: number;
+  /** Null when the submission said nothing reconcilable about any store (every store `unknown`, or every crypto field blank), in which case no run is recorded and the surface stays un-examined for this project. A submission of stores that are all `not-encrypted` DOES record a run: that is a real examination with a real result. */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Assets at a store slot this submission made a statement about and no longer found there — a rekey, or encryption turned off. Never a store whose cipher field was simply left blank. */
+  assetsMarkedGone: number;
+  stores: DataAtRestStoreResult[];
+  evidenceCaveat: string;
+}
+
+export interface DataAtRestMosca {
+  /** Secrecy lifetime in years, as resolved for this asset. */
+  x: number;
+  /** Migration time in years. */
+  y: number;
+  /** False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break. */
+  applicable: boolean;
+  breachedScenarios: string[];
+}
+
+export type DataAtRestComponentRole =
+  (typeof DataAtRestComponentRole)[keyof typeof DataAtRestComponentRole];
+
+export const DataAtRestComponentRole = {
+  "data-encryption": "data-encryption",
+  "key-protection": "key-protection",
+} as const;
+
+/**
+ * One persisted data-at-rest asset, with its Mosca verdict derived at read time.
+ */
+export interface DataAtRestComponent {
+  assetId: number;
+  role: DataAtRestComponentRole;
+  algorithm: string;
+  keySize: number | null;
+  reportedAlgorithm: string;
+  keySource: string | null;
+  /** Lifecycle status. `gone`/`remediated`/`waived` assets are included — a record of what was found must keep them. */
+  status: string;
+  firstSeen: string;
+  lastSeen: string;
+  /** From the standards data, null when it has no entry for this algorithm. False for the bulk cipher of a typical TDE'd store — which is exactly why `key-protection` is recorded separately rather than folded into one verdict per store. */
+  quantumVulnerable: boolean | null;
+  mosca: DataAtRestMosca;
+}
+
+/**
+ * Where the X below actually came from. Never re-derived by the client.
+ */
+export type ProjectDataAtRestStoreClassificationSource =
+  (typeof ProjectDataAtRestStoreClassificationSource)[keyof typeof ProjectDataAtRestStoreClassificationSource];
+
+export const ProjectDataAtRestStoreClassificationSource = {
+  asset: "asset",
+  project: "project",
+  default: "default",
+} as const;
+
+export interface ProjectDataAtRestStore {
+  storeId: string;
+  engine: string;
+  storeKind: string;
+  encryptionState: string;
+  description: string | null;
+  /** What was supplied for this store. Null means nobody classified it — see `classificationSource`. */
+  dataClassification: string | null;
+  secrecyLifetimeYears: number | null;
+  /** Where the X below actually came from. Never re-derived by the client. */
+  classificationSource: ProjectDataAtRestStoreClassificationSource;
+  /** True whenever X was not supplied for this store. Reports must say so. */
+  xAssumed: boolean;
+  /** One report-ready sentence stating the provenance of X in plain English. */
+  secrecyLifetimeBasis: string;
+  components: DataAtRestComponent[];
+}
+
+export type ProjectDataAtRestScenariosItem = {
+  name: string;
+  qDayYear: number;
+  rationale: string;
+  confidence: string;
+};
+
+export interface ProjectDataAtRest {
+  projectId: number;
+  generatedAt: string;
+  stores: ProjectDataAtRestStore[];
+  scenarios: ProjectDataAtRestScenariosItem[];
+  /** Mandatory wherever a scenario year is shown. */
+  framing: string;
+}
+
 export type RateLimitedResponse = {
   error: string;
 };

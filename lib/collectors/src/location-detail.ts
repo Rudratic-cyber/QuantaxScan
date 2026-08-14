@@ -111,11 +111,83 @@ export const CertificateLocationDetailSchema = z.object({
 });
 export type CertificateLocationDetail = z.infer<typeof CertificateLocationDetailSchema>;
 
+/**
+ * B7 — the vocabulary and profile for a *described* encrypted store. Defined
+ * here rather than in `data-at-rest-collector.ts` so the const tuples and the
+ * zod schema that validates them are one definition with one direction of
+ * dependency (the collector imports these; nothing here imports the collector).
+ */
+
+/**
+ * Which half of a store's key hierarchy an observation describes. Part of the
+ * asset identity — see `fingerprint.ts`'s `data-at-rest` variant for why a
+ * store's bulk cipher and its key-wrapping algorithm must not be able to
+ * collide into one asset when they happen to be the same algorithm.
+ */
+export const DATA_AT_REST_ROLE_VALUES = ["data-encryption", "key-protection"] as const;
+export type DataAtRestRole = (typeof DATA_AT_REST_ROLE_VALUES)[number];
+
+/**
+ * What kind of thing the store is. Presentation and grouping only, and
+ * deliberately *not* part of the asset identity: a caller reclassifying a
+ * "volume" as an "archive" has corrected a label, not created a second store.
+ */
+export const DATA_AT_REST_STORE_KIND_VALUES = [
+  "database",
+  "backup",
+  "archive",
+  "volume",
+  "object-store",
+  "other",
+] as const;
+export type DataAtRestStoreKind = (typeof DATA_AT_REST_STORE_KIND_VALUES)[number];
+
+/**
+ * Whether the store is encrypted at all, as *stated by the caller*.
+ *
+ * `unknown` is a first-class value, not a synonym for `not-encrypted`: one
+ * means "nobody has checked", the other means "we checked and there is none".
+ * Only the second is a statement the collector may reconcile against — see the
+ * reobservation rule in `observationsFromDataAtRestStore`.
+ */
+export const DATA_AT_REST_ENCRYPTION_STATE_VALUES = ["encrypted", "not-encrypted", "unknown"] as const;
+export type DataAtRestEncryptionState = (typeof DATA_AT_REST_ENCRYPTION_STATE_VALUES)[number];
+
+/**
+ * How the caller came by what they submitted. Drives both the discovery
+ * modality and the confidence, and NIST SP 1800-38B's two relevant modalities
+ * (`configuration_information`, `manual_attestation`) exist for exactly this
+ * distinction — see `DISCOVERY_MODALITY_VALUES` in `enums.ts`.
+ */
+export const DATA_AT_REST_EVIDENCE_SOURCE_VALUES = ["configuration-report", "attestation"] as const;
+export type DataAtRestEvidenceSource = (typeof DATA_AT_REST_EVIDENCE_SOURCE_VALUES)[number];
+
+export const DataAtRestLocationDetailSchema = z.object({
+  engine: z.string(),
+  storeId: z.string(),
+  storeKind: z.enum(DATA_AT_REST_STORE_KIND_VALUES),
+  role: z.enum(DATA_AT_REST_ROLE_VALUES),
+  encryptionState: z.enum(DATA_AT_REST_ENCRYPTION_STATE_VALUES),
+  /**
+   * The caller's own string, kept verbatim alongside the canonical
+   * `assets.algorithm` derived from it. Without this a report can say "AES" but
+   * never "you told us AES-256-XTS", and there is no way to audit the
+   * canonicalisation after the fact.
+   */
+  reportedAlgorithm: z.string(),
+  /** Free text: `"aws-kms"`, `"pkcs11-hsm"`, `"software-keystore"`. Display and evidence only — never parsed into a verdict. */
+  keySource: z.string().optional(),
+  description: z.string().optional(),
+  evidenceSource: z.enum(DATA_AT_REST_EVIDENCE_SOURCE_VALUES),
+});
+export type DataAtRestLocationDetail = z.infer<typeof DataAtRestLocationDetailSchema>;
+
 export const LocationDetailSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("source"), source: SourceLocationDetailSchema }),
   z.object({ kind: z.literal("network"), network: NetworkLocationDetailSchema }),
   z.object({ kind: z.literal("dependency"), dependency: DependencyLocationDetailSchema }),
   z.object({ kind: z.literal("binary"), binary: BinaryLocationDetailSchema }),
   z.object({ kind: z.literal("certificate"), certificate: CertificateLocationDetailSchema }),
+  z.object({ kind: z.literal("data-at-rest"), dataAtRest: DataAtRestLocationDetailSchema }),
 ]);
 export type LocationDetail = z.infer<typeof LocationDetailSchema>;
