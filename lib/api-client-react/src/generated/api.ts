@@ -40,6 +40,7 @@ import type {
   ListCommunityPostsParams,
   MultiScanBody,
   MultiScanResult,
+  PostureTimeline,
   Project,
   ProjectCoverage,
   Scan,
@@ -632,6 +633,83 @@ export function useGetProjectCoverage<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetProjectCoverageQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Observed history from real collection instants, plus a projected horizon and the obligation deadlines that fall in it. Observed points come only from instants at which a collection actually happened — the series is never resampled onto a regular grid, because that would draw a smooth trend on an estate that never changed. When fewer than two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
+
+ * @summary Estate cryptographic posture over time (D7)
+ */
+export const getGetInventoryTimelineUrl = () => {
+  return `/api/inventory/timeline`;
+};
+
+export const getInventoryTimeline = async (
+  options?: RequestInit,
+): Promise<PostureTimeline> => {
+  return customFetch<PostureTimeline>(getGetInventoryTimelineUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetInventoryTimelineQueryKey = () => {
+  return [`/api/inventory/timeline`] as const;
+};
+
+export const getGetInventoryTimelineQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInventoryTimeline>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryTimeline>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetInventoryTimelineQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getInventoryTimeline>>
+  > = ({ signal }) => getInventoryTimeline({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryTimeline>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInventoryTimelineQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInventoryTimeline>>
+>;
+export type GetInventoryTimelineQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Estate cryptographic posture over time (D7)
+ */
+
+export function useGetInventoryTimeline<
+  TData = Awaited<ReturnType<typeof getInventoryTimeline>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryTimeline>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInventoryTimelineQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

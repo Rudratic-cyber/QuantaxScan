@@ -26,6 +26,8 @@ tags:
     description: Demo repositories
   - name: github
     description: GitHub repository scanning
+  - name: inventory
+    description: Estate-wide inventory exports and posture
   - name: chat
     description: AI assistant
 
@@ -172,6 +174,25 @@ paths:
           description: Invalid project ID
         "404":
           description: Not found
+
+  /inventory/timeline:
+    get:
+      operationId: getInventoryTimeline
+      tags: [inventory]
+      summary: Estate cryptographic posture over time (D7)
+      description: >
+        Observed history from real collection instants, plus a projected horizon and the
+        obligation deadlines that fall in it. Observed points come only from instants at which a
+        collection actually happened — the series is never resampled onto a regular grid,
+        because that would draw a smooth trend on an estate that never changed. When fewer than
+        two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
+      responses:
+        "200":
+          description: Posture timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostureTimeline"
 
   /inventory/cbom:
     get:
@@ -2362,6 +2383,231 @@ components:
       required:
         - ref
 
+    TimelineScenarioCounts:
+      type: object
+      description: Assets breaching Mosca at this instant, one count per Q-Day scenario.
+      additionalProperties:
+        type: integer
+    TimelinePointBase:
+      type: object
+      properties:
+        at:
+          type: string
+          format: date-time
+          description: For an observed point this is a real collection_runs timestamp, not a grid tick.
+        assetsKnown: { type: integer }
+        assetsPresent:
+          type: integer
+          description: Assets present and not yet gone at this instant. The number the verdicts are over.
+        pqcAssets: { type: integer }
+        hygieneAssets: { type: integer }
+        unmappedAssets: { type: integer }
+        breachedByScenario:
+          $ref: "#/components/schemas/TimelineScenarioCounts"
+      required:
+        - at
+        - assetsKnown
+        - assetsPresent
+        - pqcAssets
+        - hygieneAssets
+        - unmappedAssets
+        - breachedByScenario
+    ObservedPoint:
+      allOf:
+        - $ref: "#/components/schemas/TimelinePointBase"
+        - type: object
+          properties:
+            kind: { type: string, enum: [observed] }
+            collectionRunIds:
+              type: array
+              items: { type: integer }
+            surfaces:
+              type: array
+              items: { type: string }
+            assetsAdded: { type: integer }
+          required: [kind, collectionRunIds, surfaces, assetsAdded]
+    ProjectedPoint:
+      allOf:
+        - $ref: "#/components/schemas/TimelinePointBase"
+        - type: object
+          properties:
+            kind: { type: string, enum: [projected] }
+            year: { type: integer }
+          required: [kind, year]
+    ObservedHistory:
+      type: object
+      properties:
+        sufficientForTrend:
+          type: boolean
+          description: False when fewer than two distinct collection instants exist. The client must draw no line.
+        reason: { type: string }
+        distinctCollectionInstants: { type: integer }
+        observedSpanDays: { type: integer, nullable: true }
+        firstObservedAt: { type: string, format: date-time, nullable: true }
+        lastObservedAt: { type: string, format: date-time, nullable: true }
+        completedRuns: { type: integer }
+        failedRuns:
+          type: integer
+          description: A failed run places no point on the axis; it is reported here instead.
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/ObservedPoint" }
+      required:
+        - sufficientForTrend
+        - reason
+        - distinctCollectionInstants
+        - observedSpanDays
+        - firstObservedAt
+        - lastObservedAt
+        - completedRuns
+        - failedRuns
+        - points
+    ProjectedHorizon:
+      type: object
+      properties:
+        assumption:
+          type: string
+          description: What is held constant. Projections move because Z shrinks, not because the estate changed.
+        basisAt: { type: string, format: date-time }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectedPoint" }
+      required: [assumption, basisAt, points]
+    DeadlineMarker:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Keyed on framework + type + effective date + appliesTo + securityStrength.
+        type: { type: string }
+        label: { type: string }
+        effect: { type: string }
+        effectiveFrom: { type: string }
+        year: { type: integer }
+        inEffect: { type: boolean }
+        appliesTo: { type: string, nullable: true }
+        securityStrength: { type: string, nullable: true }
+        framework: { type: string }
+        frameworkName: { type: string, nullable: true }
+        requirement: { type: string }
+        citation: { $ref: "#/components/schemas/Citation" }
+        confidence: { type: string }
+        draftStatus: { type: string, nullable: true }
+        algorithms:
+          type: array
+          items: { type: string }
+        assets: { type: integer }
+        caveats:
+          type: array
+          items: { type: string }
+      required:
+        - id
+        - type
+        - label
+        - effect
+        - effectiveFrom
+        - year
+        - inEffect
+        - appliesTo
+        - securityStrength
+        - framework
+        - frameworkName
+        - requirement
+        - citation
+        - confidence
+        - draftStatus
+        - algorithms
+        - assets
+        - caveats
+    EstateRollup:
+      type: object
+      properties:
+        projects:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              assets: { type: integer }
+              presentAssets: { type: integer }
+            required: [id, name, assets, presentAssets]
+        unassociatedAssets:
+          type: integer
+          description: Assets whose location carries no project prefix. Surfaces such as tls/certificate have no project.
+        totalAssets: { type: integer }
+        presentAssets: { type: integer }
+      required: [projects, unassociatedAssets, totalAssets, presentAssets]
+    PostureTimelineInputs:
+      type: object
+      properties:
+        secrecyLifetime:
+          type: object
+          properties:
+            bySource:
+              type: object
+              additionalProperties: { type: integer }
+            assumedForAssets: { type: integer }
+            bases:
+              type: array
+              items: { type: string }
+          required: [bySource, assumedForAssets, bases]
+        migrationYears:
+          type: object
+          properties:
+            defaultValue: { type: number }
+            assetsWithRecordedEffort: { type: integer }
+            basis:
+              type: string
+              description: States plainly that Y is not measured yet, so a reader knows X vs Z decided the verdict.
+          required: [defaultValue, assetsWithRecordedEffort, basis]
+      required: [secrecyLifetime, migrationYears]
+    PostureTimeline:
+      type: object
+      properties:
+        generatedAt: { type: string, format: date-time }
+        now: { type: string, format: date-time }
+        framing:
+          type: string
+          description: Mandatory wherever a scenario year is shown — a Q-Day year is a scenario, not a forecast.
+        scenarios:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              qDayYear: { type: integer }
+              rationale: { type: string }
+              confidence: { type: string }
+            required: [name, qDayYear, rationale, confidence]
+        estate: { $ref: "#/components/schemas/EstateRollup" }
+        observed: { $ref: "#/components/schemas/ObservedHistory" }
+        projected: { $ref: "#/components/schemas/ProjectedHorizon" }
+        deadlines:
+          type: array
+          items: { $ref: "#/components/schemas/DeadlineMarker" }
+        inputs: { $ref: "#/components/schemas/PostureTimelineInputs" }
+        notCollected:
+          type: array
+          description: Facts a reader expects on a time-pressure panel that this product cannot produce, stated rather than omitted.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              label: { type: string }
+              reason: { type: string }
+            required: [id, label, reason]
+      required:
+        - generatedAt
+        - now
+        - framing
+        - scenarios
+        - estate
+        - observed
+        - projected
+        - deadlines
+        - inputs
+        - notCollected
     CbomDocument:
       type: object
       description: >-
