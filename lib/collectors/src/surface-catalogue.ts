@@ -65,7 +65,14 @@ export const COLLECTOR_SURFACES = [
   // it finds does.
   { id: "tls", name: "TLS & cipher suites", status: "live", surface: "tls" },
   { id: "certificate", name: "Certificates (X.509)", status: "live", surface: "certificate" },
-  { id: "kms", name: "KMS & secret stores", status: "planned", surface: "kms" },
+  // `live` since B5's `POST /projects/:id/kms` persisted its first key. Same
+  // bar as every entry above: the collector alone never earns it, a route
+  // that writes what it finds does. Worth noting what `live` does *not*
+  // claim here — the collector reads a submitted key inventory rather than
+  // polling the key store with a credential, so this surface counts as
+  // examined for the keys a caller sent, exactly as `dependency` counts as
+  // examined for the lockfiles a caller sent.
+  { id: "kms", name: "KMS & secret stores", status: "live", surface: "kms" },
   { id: "config", name: "Protocol config", status: "planned", surface: "config" },
   { id: "data-at-rest", name: "Data-at-rest", status: "planned", surface: "data-at-rest" },
   { id: "ot", name: "Manual OT / embedded register", status: "planned", surface: "ot" },

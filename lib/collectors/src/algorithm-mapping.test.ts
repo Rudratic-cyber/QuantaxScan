@@ -4,6 +4,7 @@ import { deriveAlgorithmMapping, MAPPINGS_DATA_VERSION } from "./algorithm-mappi
 import { SOURCE_PATTERN_ALGORITHMS } from "./source-regex-collector";
 import { CRYPTO_PACKAGE_ALGORITHMS } from "./crypto-packages";
 import { CERTIFICATE_KEY_ALGORITHMS } from "./certificate-collector";
+import { KMS_KEY_ALGORITHMS } from "./kms-key-specs";
 
 describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappings/algorithms.json", () => {
   it("reproduces the pre-refactor scanner.ts severities exactly (quantumVulnerable -> critical, else alert)", () => {
@@ -38,7 +39,14 @@ describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappi
     // severity/effort when a detected algorithm has no mapping. That invariant
     // used to be asserted by a hand-listed set of seven names, which silently
     // stopped covering the collectors the moment one grew a new pattern.
-    for (const algorithm of [...SOURCE_PATTERN_ALGORITHMS, ...CRYPTO_PACKAGE_ALGORITHMS, ...CERTIFICATE_KEY_ALGORITHMS]) {
+    for (const algorithm of [
+      ...SOURCE_PATTERN_ALGORITHMS,
+      ...CRYPTO_PACKAGE_ALGORITHMS,
+      ...CERTIFICATE_KEY_ALGORITHMS,
+      // B5's table is curated JSON, so this is the guard that stops a new
+      // `kms-key-specs.json` row naming an algorithm nothing can resolve.
+      ...KMS_KEY_ALGORITHMS,
+    ]) {
       expect(deriveAlgorithmMapping(algorithm), algorithm).toBeDefined();
     }
   });

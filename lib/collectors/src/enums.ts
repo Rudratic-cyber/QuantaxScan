@@ -94,7 +94,21 @@ export type AssetStatus = (typeof ASSET_STATUS_VALUES)[number];
  * live-TLS-fetch collector for certificates (out of scope here — see B4's
  * task notes) would emit `network`, the same as the TLS surface; this kind is
  * for the case where no network observation happened at all.
+ *
+ * `kms` is B5's, added for the same reason: a managed key store reports
+ * facts *about* a key (provider, key id, spec, rotation state) through a
+ * control plane, so none of `network`'s seven wire-observation elements
+ * apply and none of `certificate`'s issuer/serial/validity fields do either.
+ * Unlike `network`, it is not shared between surfaces — `kind === "kms"`
+ * identifies the `kms` surface unambiguously, which is what lets
+ * `fingerprintForObservation()` resolve it without the discriminator problem
+ * documented on the `network` case there.
+ *
+ * **This tuple is TypeScript-only.** Unlike `SURFACE_VALUES`, no `CHECK`
+ * constraint is derived from it — `assets.location_detail` is `jsonb`,
+ * validated at the application boundary by `LocationDetailSchema`. Adding a
+ * kind therefore needs no migration.
  */
-export const LOCATION_DETAIL_KIND_VALUES = ["source", "network", "dependency", "binary", "certificate"] as const;
+export const LOCATION_DETAIL_KIND_VALUES = ["source", "network", "dependency", "binary", "certificate", "kms"] as const;
 
 export type LocationDetailKind = (typeof LOCATION_DETAIL_KIND_VALUES)[number];

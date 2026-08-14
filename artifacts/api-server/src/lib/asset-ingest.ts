@@ -5,12 +5,15 @@ import {
   collectDependencyObservations,
   collectCertificateObservations,
   certificatesIn,
+  classifyKmsKeys,
   computeFingerprint,
   dependencyLocationPrefix,
   ecosystemsIn,
   fingerprintForObservation,
   lockfilesIn,
   observationsFromTlsHandshake,
+  type KmsKeyDescription,
+  type KmsKeyOutcome,
   type RawObservation,
   type Surface,
   type TlsHandshakeResult,
@@ -502,4 +505,84 @@ export async function ingestTlsObservations(
       locations: [...new Set(params.probed.map((p) => `${params.repo}:${p.host}:${p.port}`))],
     },
   });
+}
+
+export interface KmsIngestResult extends IngestResult {
+  /** Every submitted key and what the collector concluded about it — including the ones that produced no observation, which are most of the interesting ones. */
+  outcomes: KmsKeyOutcome[];
+}
+
+/**
+ * B5 — persist a KMS / secret-store collection (docs/Claude/03-features.md
+ * §B5). `POST /projects/:id/kms` is the caller.
+ *
+ * **The gate for recording a run differs from B2/B3/B4's, deliberately, and
+ * getting it backwards would misreport coverage in one direction or the
+ * other.** Those three refuse to write a run when nothing *readable* was
+ * submitted — no recognised lockfile, no completed handshake, no parseable
+ * certificate. The equivalent here is "no key entries at all", NOT "no
+ * observations": a key store that holds only HMAC and AES-wrapping keys was
+ * genuinely examined, and every one of its keys was genuinely classified —
+ * there is simply nothing on this product's list of reportable algorithms in
+ * it. That is `examined, nothing found`, the state `collection_runs` exists
+ * to make sayable, and it is the same shape as a lockfile that parses
+ * cleanly and contains no crypto package (which B2 records as a run, not as
+ * an absence). Refusing the run would tell a CISO their key store had never
+ * been looked at, which is false and is the more damaging of the two errors.
+ *
+ * So the caller must not invoke this with an empty `keys` array — that is
+ * the genuine "we were sent nothing" case — and the assertion below keeps
+ * the rule from depending on the route remembering it.
+ */
+export async function ingestKmsObservations(
+  tx: ScopedTx,
+  params: {
+    repo: string;
+    keys: KmsKeyDescription[];
+    organizationId: number;
+  },
+): Promise<KmsIngestResult> {
+  if (params.keys.length === 0) {
+    throw new Error("KMS ingest was given no key entries — a run must not be recorded");
+  }
+
+  const outcomes = classifyKmsKeys(params.repo, params.keys);
+  const observations = outcomes.flatMap((outcome) => (outcome.kind === "observed" ? [outcome.observation] : []));
+
+  const result = await ingestObservations(tx, {
+    organizationId: params.organizationId,
+    repo: params.repo,
+    collector: "kms-inventory",
+    collectorVersion: "1.0.0",
+    surface: "kms",
+    observations,
+    /**
+     * Scoped to the exact keys this submission classified — never a
+     * `<repo>:kms:<provider>:` prefix family, which is the shape that looks
+     * natural here and is wrong.
+     *
+     * A prefix scope would only be correct if this route knew the submission
+     * was a *complete* enumeration of that provider's keys. It cannot know
+     * that, and every realistic export is partial: one page of a paginated
+     * `list-keys`, one region, one Vault mount, one subscription. Marking
+     * every other key in the provider `gone` because it was absent from one
+     * page is the silent mass false remediation `ReobservationScope` at the
+     * top of this file exists to prevent — B3's rule, applied to pagination
+     * instead of a firewall. A key we were not shown was not observed.
+     *
+     * The consequence, stated plainly because it is a real limitation and
+     * not a subtlety: a key genuinely deleted from a key store is never
+     * inferred as `gone` by a later submission that omits it. Same practical
+     * position as B4's certificates, reached by a different route, and the
+     * fix is the same shape — a caller that can *declare* its export
+     * complete for a provider could earn a prefix scope. Nothing declares
+     * that today.
+     *
+     * What the scope does do correctly is reactivate a `gone` key when it is
+     * resubmitted, and keep a resubmitted key's assets untouched.
+     */
+    reobserved: { kind: "locations", locations: [...new Set(observations.map((o) => o.location))] },
+  });
+
+  return { ...result, outcomes };
 }

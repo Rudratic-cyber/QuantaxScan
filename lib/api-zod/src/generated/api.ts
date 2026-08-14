@@ -4071,3 +4071,205 @@ export const SubmitProjectTlsResponse = zod.object({
       "Stated in every response: this collector records the negotiated key-exchange algorithm\/group and the peer certificate's public key type\/size only — no certificate identity, chain or validity. It does not verify trust (certificates are not validated against any CA), because the point is to observe what a host actually negotiates, not whether a browser would accept it.",
     ),
 });
+
+/**
+ * Classifies the keys a managed key store holds — HashiCorp Vault, AWS KMS, Azure Key Vault, GCP KMS — and persists what it finds as assets on the `kms` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+**This is a submission route, not a credentialed poller.** You send the key inventory your own tooling already produced; no credential for the key store ever reaches this product, and nothing here connects to a cloud provider. The corollary is stated in every response's `evidenceCaveat`: the export is taken at its word, and nothing proves it is complete, current, or from the key store you say it is.
+
+Each key's provider-native spec string is resolved against the cited table in `docs/Claude/mappings/kms-key-specs.json`. A spec whose primitive this product does not report on (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`) yields no asset and is returned with `outcome: no-algorithm` and the table's own reason — never the nearest similar algorithm.
+
+**A submission whose keys are all unclassified still records a collection run.** That is the one place this route's honesty rule differs from `POST /projects/{id}/dependencies`: a key store holding only symmetric keys was genuinely examined, and reporting it as un-examined would be the false statement. Only an empty `keys` array records no run.
+ * @summary Submit a managed key-store inventory for collection (B5)
+ */
+export const SubmitProjectKmsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const submitProjectKmsBodyKeysMax = 500;
+
+export const SubmitProjectKmsBody = zod.object({
+  keys: zod
+    .array(
+      zod.object({
+        provider: zod
+          .enum(["aws-kms", "azure-key-vault", "gcp-kms", "hashicorp-vault"])
+          .describe("Which key store this key lives in."),
+        keyId: zod
+          .string()
+          .describe(
+            "ARN, resource name, `kid` URL, or mount-qualified key name — whatever the provider calls the key's identity. Together with `provider` this is the asset's identity; an alias is deliberately not used, since an alias can be repointed at a different key.",
+          ),
+        keySpec: zod
+          .string()
+          .optional()
+          .describe(
+            "The provider-native spec string: AWS `KeySpec`, GCP `CryptoKeyVersion.algorithm`, Azure `kty`, Vault `type`. Matched case-insensitively against `docs\/Claude\/mappings\/kms-key-specs.json`. Omit it and the key is recorded as present and unclassified rather than guessed at.",
+          ),
+        curve: zod
+          .string()
+          .optional()
+          .describe(
+            "Curve name where the provider states it separately from the spec — Azure's `crv`. Resolved through the shared named-curve table.",
+          ),
+        keySize: zod
+          .number()
+          .optional()
+          .describe(
+            "A key size your export has and the spec does not state (Azure's Create Key `key_size`). Used only when neither the key spec nor a curve supplies one, so it cannot override a size the provider's documentation states.",
+          ),
+        alias: zod.string().optional(),
+        keyState: zod
+          .string()
+          .optional()
+          .describe(
+            "The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`), recorded verbatim and never mapped onto the asset's lifecycle status.",
+          ),
+        rotationEnabled: zod.boolean().optional(),
+        rotationPeriodDays: zod.number().min(1).optional(),
+        lastRotatedAt: zod.coerce.date().optional(),
+        origin: zod.string().optional(),
+        region: zod.string().optional(),
+        keyStore: zod
+          .string()
+          .optional()
+          .describe("The containing vault, key ring or mount path."),
+      }),
+    )
+    .max(submitProjectKmsBodyKeysMax)
+    .describe(
+      'The key inventory your own key store already produced — the output of `aws kms describe-key`, `az keyvault key show`, `gcloud kms keys list` or `vault read transit\/keys\/<name>`, transcribed into these fields. No credential for the key store ever reaches this product.\n\nEvery field beyond `provider` and `keyId` is optional because every field beyond those is optional in those exports: `aws kms list-keys` returns identifiers only, and Azure Key Vault\'s list operation returns `kid` and `attributes` with no key type at all. An omitted field means \"the export did not state this\" and is never substituted for — `rotationEnabled` in particular is left absent rather than sent as `false`, because \"not stated\" and \"not rotated\" are different claims.',
+    ),
+});
+
+export const SubmitProjectKmsResponse = zod.object({
+  projectId: zod.number(),
+  keysSubmitted: zod.number(),
+  keysObserved: zod
+    .number()
+    .describe(
+      "How many submitted keys resolved to an algorithm this product reports on and became assets.",
+    ),
+  keysUnclassified: zod
+    .number()
+    .describe(
+      "Submitted keys that produced no observation, for any of the three non-`observed` reasons. This being non-zero while `collectionRunId` is set is the normal and correct state for a key store holding symmetric or post-quantum keys — the surface was examined, and nothing reportable was in it.",
+    ),
+  keys: zod.array(
+    zod
+      .object({
+        provider: zod.string(),
+        keyId: zod.string(),
+        keySpec: zod.string().nullable(),
+        alias: zod.string().nullable(),
+        keyState: zod.string().nullable(),
+        outcome: zod
+          .enum(["observed", "no-algorithm", "unrecognised-spec", "no-spec"])
+          .describe(
+            "`observed` — the spec resolved to an algorithm this product reports on, and an asset was written. `no-algorithm` — the spec is known and its primitive is not one `algorithms.json` catalogues (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`); the key is real, counted and examined, and there is nothing to report about it. `unrecognised-spec` — the provider stated a spec the curated table does not have, which means our data is behind the provider and is the one outcome a data update fixes. `no-spec` — the entry named a key and stated nothing about it, the expected shape of a list-without-describe export.",
+          ),
+        reason: zod
+          .string()
+          .nullable()
+          .describe(
+            "Why no observation was produced, verbatim from the curated table where the table has an opinion. Null for `observed`.",
+          ),
+        algorithm: zod
+          .string()
+          .nullable()
+          .describe("Null for every outcome except `observed`."),
+        keySize: zod
+          .number()
+          .nullable()
+          .describe(
+            "The size the provider states for this key. \*\*Null means the provider stated none\*\* — an Azure JsonWebKey carries no `key_size` member at all — never a default. G-05.",
+          ),
+        keySizeSource: zod
+          .enum(["key-spec", "curve", "submitted", "not-supplied"])
+          .nullable()
+          .describe(
+            "Which of four sources supplied `keySize`, so a reader never has to guess: the key spec's documented size, a named curve, a value you submitted, or none of them.",
+          ),
+        rotationEnabled: zod
+          .boolean()
+          .nullable()
+          .describe(
+            "Null when the submitted export did not state it. Not the same as `false`.",
+          ),
+        location: zod
+          .string()
+          .nullable()
+          .describe(
+            "The asset locator this key was written under. Null when no asset was written.",
+          ),
+      })
+      .describe(
+        'What the collector concluded about one submitted key. The four `outcome` values are deliberately not collapsed into \"classified \/ skipped\": only one of the three non-observed values is actionable, and hiding which is which would hide it.',
+      ),
+  ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe(
+      "Null only when the submission carried no key entries at all. A submission whose keys all came back unclassified DOES record a run — that is an examination that found nothing, not an absent examination, and the D3 meter must be able to tell them apart.",
+    ),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Always 0 in practice today. A submitted export is never assumed to be a complete enumeration of a key store — one page of a paginated `list-keys`, one region or one Vault mount is the normal case — so a key absent from a later submission is not inferred to have been deleted. See the reobservation-scope note in `asset-ingest.ts`.",
+    ),
+  evidenceCaveat: zod.string(),
+});
+
+/**
+ * Every KMS key asset attributed to this project. This is the read that answers "what does the inventory say", as opposed to the POST response, which only reports what one submission found at the moment it was submitted.
+
+It exists as its own route rather than leaning on `GET /inventory/assets` because that endpoint does not return `locationDetail`, and everything specific to a key store — provider, key id, spec, rotation state, origin, key store — lives there. Includes assets of every lifecycle status, not only `active`.
+
+`rotationEnabled` is null when the submitted export did not state it. That is not the same fact as rotation being off, and the two are never collapsed.
+ * @summary The project's managed key inventory, including rotation posture (B5)
+ */
+export const GetProjectKmsKeysParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectKmsKeysResponse = zod.object({
+  projectId: zod.number(),
+  generatedAt: zod.coerce.date(),
+  keys: zod.array(
+    zod
+      .object({
+        assetId: zod.number(),
+        provider: zod.string(),
+        keyId: zod.string(),
+        keySpec: zod.string().nullable(),
+        alias: zod.string().nullable(),
+        keyState: zod.string().nullable(),
+        algorithm: zod.string(),
+        keySize: zod
+          .number()
+          .nullable()
+          .describe(
+            "Null when the provider stated no size. Never a default — G-05.",
+          ),
+        status: zod.enum(["active", "remediated", "waived", "gone"]),
+        rotationEnabled: zod
+          .boolean()
+          .nullable()
+          .describe(
+            "Null when the submitted export did not state it, which is a different fact from rotation being off.",
+          ),
+        rotationPeriodDays: zod.number().nullable(),
+        lastRotatedAt: zod.coerce.date().nullable(),
+        origin: zod.string().nullable(),
+        region: zod.string().nullable(),
+        keyStore: zod.string().nullable(),
+        firstSeen: zod.coerce.date(),
+        lastSeen: zod.coerce.date(),
+      })
+      .describe("A persisted KMS key asset, as the inventory read returns it."),
+  ),
+});

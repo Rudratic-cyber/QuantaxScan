@@ -111,11 +111,55 @@ export const CertificateLocationDetailSchema = z.object({
 });
 export type CertificateLocationDetail = z.infer<typeof CertificateLocationDetailSchema>;
 
+/**
+ * B5 — what a managed key store reports *about* a key, as opposed to the key
+ * itself. Its own kind rather than `network` or `certificate` for the same
+ * reason `certificate` is not `network`: none of SP 1800-38B's seven network
+ * elements apply (a KMS key has no IP, port or hostname — it is reached
+ * through the provider's control plane), and none of the certificate fields
+ * do either.
+ *
+ * Every field beyond `provider`/`keyId` is optional because every field
+ * beyond those is optional *in the exports this collector reads*. AWS
+ * `list-keys` returns a bare `KeyId`/`KeyArn`; Azure's list operation returns
+ * `kid` and `attributes` and no key type at all. An absent field means the
+ * export did not state it, which is why `rotationEnabled` is `boolean |
+ * undefined` and never defaults to `false` — "the provider does not rotate
+ * this key" and "the export did not say" are different claims, and only one
+ * of them is ours to make.
+ */
+export const KmsLocationDetailSchema = z.object({
+  /** One of `KMS_PROVIDER_VALUES` — kept as a plain string here so this schema does not import the collector's vocabulary. */
+  provider: z.string(),
+  /** ARN, resource name, `kid` URL or mount-qualified key name — whatever the provider calls a key's identity. Part of the fingerprint. */
+  keyId: z.string(),
+  /** The provider-native spec string as submitted (`RSA_4096`, `aes256-gcm96`, `RSA-HSM`, …). Absent when the export carried none. */
+  keySpec: z.string().optional(),
+  /** Curve name where the provider states it separately from the spec (Azure `crv`). Resolved through `named-curves.ts`, never a second bit-size table. */
+  curve: z.string().optional(),
+  /** Human-facing alias/name, when the export has one. Display only — never identity, since an alias can be repointed at a different key. */
+  alias: z.string().optional(),
+  /** The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`, …), verbatim. Deliberately not mapped onto `assets.status`: a KMS key scheduled for deletion has not been remediated. */
+  keyState: z.string().optional(),
+  /** Whether the provider reports automatic rotation as on. Absent = the export did not say. Never defaulted. */
+  rotationEnabled: z.boolean().optional(),
+  rotationPeriodDays: z.number().int().positive().optional(),
+  /** ISO 8601, for the same round-trips-through-jsonb reason `CertificateLocationDetailSchema` uses strings. */
+  lastRotatedAt: z.string().optional(),
+  /** Where the key material lives, in the provider's terms (`AWS_KMS`, `EXTERNAL`, `AWS_CLOUDHSM`, …). */
+  origin: z.string().optional(),
+  region: z.string().optional(),
+  /** The containing vault / key ring / mount path. Not part of identity — `keyId` already carries it for every provider that qualifies its ids. */
+  keyStore: z.string().optional(),
+});
+export type KmsLocationDetail = z.infer<typeof KmsLocationDetailSchema>;
+
 export const LocationDetailSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("source"), source: SourceLocationDetailSchema }),
   z.object({ kind: z.literal("network"), network: NetworkLocationDetailSchema }),
   z.object({ kind: z.literal("dependency"), dependency: DependencyLocationDetailSchema }),
   z.object({ kind: z.literal("binary"), binary: BinaryLocationDetailSchema }),
   z.object({ kind: z.literal("certificate"), certificate: CertificateLocationDetailSchema }),
+  z.object({ kind: z.literal("kms"), kms: KmsLocationDetailSchema }),
 ]);
 export type LocationDetail = z.infer<typeof LocationDetailSchema>;

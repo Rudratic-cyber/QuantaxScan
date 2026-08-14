@@ -1033,6 +1033,95 @@ paths:
           description: Invalid project ID or body
         "404":
           description: Not found
+
+  /projects/{id}/kms:
+    post:
+      operationId: submitProjectKms
+      tags: [projects]
+      summary: Submit a managed key-store inventory for collection (B5)
+      description: >-
+        Classifies the keys a managed key store holds — HashiCorp Vault, AWS KMS, Azure Key
+        Vault, GCP KMS — and persists what it finds as assets on the `kms` surface, which is
+        what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+
+        **This is a submission route, not a credentialed poller.** You send the key inventory
+        your own tooling already produced; no credential for the key store ever reaches this
+        product, and nothing here connects to a cloud provider. The corollary is stated in
+        every response's `evidenceCaveat`: the export is taken at its word, and nothing proves
+        it is complete, current, or from the key store you say it is.
+
+
+        Each key's provider-native spec string is resolved against the cited table in
+        `docs/Claude/mappings/kms-key-specs.json`. A spec whose primitive this product does
+        not report on (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's
+        `kty: oct`) yields no asset and is returned with `outcome: no-algorithm` and the
+        table's own reason — never the nearest similar algorithm.
+
+
+        **A submission whose keys are all unclassified still records a collection run.** That
+        is the one place this route's honesty rule differs from
+        `POST /projects/{id}/dependencies`: a key store holding only symmetric keys was
+        genuinely examined, and reporting it as un-examined would be the false statement. Only
+        an empty `keys` array records no run.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectKmsBody"
+      responses:
+        "200":
+          description: Collection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KmsIngestSummary"
+        "400":
+          description: Invalid project ID, body, or too many keys in one submission
+        "404":
+          description: Not found
+    get:
+      operationId: getProjectKmsKeys
+      tags: [projects]
+      summary: The project's managed key inventory, including rotation posture (B5)
+      description: >-
+        Every KMS key asset attributed to this project. This is the read that answers "what
+        does the inventory say", as opposed to the POST response, which only reports what one
+        submission found at the moment it was submitted.
+
+
+        It exists as its own route rather than leaning on `GET /inventory/assets` because that
+        endpoint does not return `locationDetail`, and everything specific to a key store —
+        provider, key id, spec, rotation state, origin, key store — lives there. Includes
+        assets of every lifecycle status, not only `active`.
+
+
+        `rotationEnabled` is null when the submitted export did not state it. That is not the
+        same fact as rotation being off, and the two are never collapsed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: KMS key inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectKmsKeys"
+        "400":
+          description: Invalid project ID
+        "404":
+          description: Not found
 components:
   responses:
     RateLimited:
@@ -3906,3 +3995,301 @@ components:
         - observationsCreated
         - assetsMarkedGone
         - evidenceCaveat
+
+    SubmitProjectKmsBody:
+      type: object
+      properties:
+        keys:
+          type: array
+          description: >-
+            The key inventory your own key store already produced — the output of
+            `aws kms describe-key`, `az keyvault key show`, `gcloud kms keys list` or
+            `vault read transit/keys/<name>`, transcribed into these fields. No credential
+            for the key store ever reaches this product.
+
+
+            Every field beyond `provider` and `keyId` is optional because every field beyond
+            those is optional in those exports: `aws kms list-keys` returns identifiers only,
+            and Azure Key Vault's list operation returns `kid` and `attributes` with no key
+            type at all. An omitted field means "the export did not state this" and is never
+            substituted for — `rotationEnabled` in particular is left absent rather than sent
+            as `false`, because "not stated" and "not rotated" are different claims.
+          maxItems: 500
+          items:
+            type: object
+            properties:
+              provider:
+                type: string
+                description: Which key store this key lives in.
+                enum: [aws-kms, azure-key-vault, gcp-kms, hashicorp-vault]
+              keyId:
+                type: string
+                description: >-
+                  ARN, resource name, `kid` URL, or mount-qualified key name — whatever the
+                  provider calls the key's identity. Together with `provider` this is the
+                  asset's identity; an alias is deliberately not used, since an alias can be
+                  repointed at a different key.
+              keySpec:
+                type: string
+                description: >-
+                  The provider-native spec string: AWS `KeySpec`, GCP `CryptoKeyVersion.algorithm`,
+                  Azure `kty`, Vault `type`. Matched case-insensitively against
+                  `docs/Claude/mappings/kms-key-specs.json`. Omit it and the key is recorded as
+                  present and unclassified rather than guessed at.
+              curve:
+                type: string
+                description: Curve name where the provider states it separately from the spec — Azure's `crv`. Resolved through the shared named-curve table.
+              keySize:
+                type: integer
+                description: >-
+                  A key size your export has and the spec does not state (Azure's Create Key
+                  `key_size`). Used only when neither the key spec nor a curve supplies one, so
+                  it cannot override a size the provider's documentation states.
+              alias:
+                type: string
+              keyState:
+                type: string
+                description: The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`), recorded verbatim and never mapped onto the asset's lifecycle status.
+              rotationEnabled:
+                type: boolean
+              rotationPeriodDays:
+                type: integer
+                minimum: 1
+              lastRotatedAt:
+                type: string
+                format: date-time
+              origin:
+                type: string
+              region:
+                type: string
+              keyStore:
+                type: string
+                description: The containing vault, key ring or mount path.
+            required:
+              - provider
+              - keyId
+      required:
+        - keys
+
+    KmsKeyOutcome:
+      type: object
+      description: >-
+        What the collector concluded about one submitted key. The four `outcome` values are
+        deliberately not collapsed into "classified / skipped": only one of the three
+        non-observed values is actionable, and hiding which is which would hide it.
+      properties:
+        provider:
+          type: string
+        keyId:
+          type: string
+        keySpec:
+          type: string
+          nullable: true
+        alias:
+          type: string
+          nullable: true
+        keyState:
+          type: string
+          nullable: true
+        outcome:
+          type: string
+          description: >-
+            `observed` — the spec resolved to an algorithm this product reports on, and an
+            asset was written. `no-algorithm` — the spec is known and its primitive is not one
+            `algorithms.json` catalogues (HMAC, ChaCha20-Poly1305, SM2, any post-quantum
+            parameter set, Azure's `kty: oct`); the key is real, counted and examined, and
+            there is nothing to report about it. `unrecognised-spec` — the provider stated a
+            spec the curated table does not have, which means our data is behind the provider
+            and is the one outcome a data update fixes. `no-spec` — the entry named a key and
+            stated nothing about it, the expected shape of a list-without-describe export.
+          enum: [observed, no-algorithm, unrecognised-spec, no-spec]
+        reason:
+          type: string
+          nullable: true
+          description: Why no observation was produced, verbatim from the curated table where the table has an opinion. Null for `observed`.
+        algorithm:
+          type: string
+          nullable: true
+          description: Null for every outcome except `observed`.
+        keySize:
+          type: integer
+          nullable: true
+          description: >-
+            The size the provider states for this key. **Null means the provider stated none**
+            — an Azure JsonWebKey carries no `key_size` member at all — never a default. G-05.
+        keySizeSource:
+          type: string
+          nullable: true
+          description: >-
+            Which of four sources supplied `keySize`, so a reader never has to guess: the key
+            spec's documented size, a named curve, a value you submitted, or none of them.
+          enum: [key-spec, curve, submitted, not-supplied]
+        rotationEnabled:
+          type: boolean
+          nullable: true
+          description: Null when the submitted export did not state it. Not the same as `false`.
+        location:
+          type: string
+          nullable: true
+          description: The asset locator this key was written under. Null when no asset was written.
+      required:
+        - provider
+        - keyId
+        - keySpec
+        - alias
+        - keyState
+        - outcome
+        - reason
+        - algorithm
+        - keySize
+        - keySizeSource
+        - rotationEnabled
+        - location
+
+    KmsIngestSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        keysSubmitted:
+          type: integer
+        keysObserved:
+          type: integer
+          description: How many submitted keys resolved to an algorithm this product reports on and became assets.
+        keysUnclassified:
+          type: integer
+          description: >-
+            Submitted keys that produced no observation, for any of the three non-`observed`
+            reasons. This being non-zero while `collectionRunId` is set is the normal and
+            correct state for a key store holding symmetric or post-quantum keys — the surface
+            was examined, and nothing reportable was in it.
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/KmsKeyOutcome"
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: >-
+            Null only when the submission carried no key entries at all. A submission whose
+            keys all came back unclassified DOES record a run — that is an examination that
+            found nothing, not an absent examination, and the D3 meter must be able to tell
+            them apart.
+        assetsCreated:
+          type: integer
+        assetsUpdated:
+          type: integer
+        observationsCreated:
+          type: integer
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Always 0 in practice today. A submitted export is never assumed to be a complete
+            enumeration of a key store — one page of a paginated `list-keys`, one region or
+            one Vault mount is the normal case — so a key absent from a later submission is
+            not inferred to have been deleted. See the reobservation-scope note in
+            `asset-ingest.ts`.
+        evidenceCaveat:
+          type: string
+      required:
+        - projectId
+        - keysSubmitted
+        - keysObserved
+        - keysUnclassified
+        - keys
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - evidenceCaveat
+
+    ProjectKmsKey:
+      type: object
+      description: A persisted KMS key asset, as the inventory read returns it.
+      properties:
+        assetId:
+          type: integer
+        provider:
+          type: string
+        keyId:
+          type: string
+        keySpec:
+          type: string
+          nullable: true
+        alias:
+          type: string
+          nullable: true
+        keyState:
+          type: string
+          nullable: true
+        algorithm:
+          type: string
+        keySize:
+          type: integer
+          nullable: true
+          description: Null when the provider stated no size. Never a default — G-05.
+        status:
+          type: string
+          enum: [active, remediated, waived, gone]
+        rotationEnabled:
+          type: boolean
+          nullable: true
+          description: Null when the submitted export did not state it, which is a different fact from rotation being off.
+        rotationPeriodDays:
+          type: integer
+          nullable: true
+        lastRotatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        origin:
+          type: string
+          nullable: true
+        region:
+          type: string
+          nullable: true
+        keyStore:
+          type: string
+          nullable: true
+        firstSeen:
+          type: string
+          format: date-time
+        lastSeen:
+          type: string
+          format: date-time
+      required:
+        - assetId
+        - provider
+        - keyId
+        - keySpec
+        - alias
+        - keyState
+        - algorithm
+        - keySize
+        - status
+        - rotationEnabled
+        - rotationPeriodDays
+        - lastRotatedAt
+        - origin
+        - region
+        - keyStore
+        - firstSeen
+        - lastSeen
+
+    ProjectKmsKeys:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        generatedAt:
+          type: string
+          format: date-time
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectKmsKey"
+      required:
+        - projectId
+        - generatedAt
+        - keys

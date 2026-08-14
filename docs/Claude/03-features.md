@@ -213,7 +213,7 @@ another silo.
 | B2 | Dependency / SBOM | `built` | **P0** | Biggest coverage jump, and now wired end to end. `DependencyCollector` (`lib/collectors/src/dependency-collector.ts`) parses pnpm/npm/yarn lockfiles and `requirements.txt` → the cited package table in [`mappings/crypto-packages.json`](mappings/crypto-packages.json) → observations at `0.8` (single-purpose library) or `0.5` (general-purpose library) confidence, persisted as `surface: "dependency"` assets by `POST /api/projects/:id/dependencies`. **`dependency` is the second `live` surface**, so the D3 meter reads 2 of 10 for a project with a scanned lockfile |
 | B3 | TLS / cipher suite prober | `planned` | **P1** | Active handshake against hosts. Records *negotiated* KEX, not configured |
 | B4 | Certificate / X.509 | `planned` | **P1** | Key type, size, expiry. Expiry-vs-Q-Day is the killer chart |
-| B5 | KMS / secret stores | `planned` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS. Read-only creds |
+| B5 | KMS / secret stores | `built` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS — **submission-based, not credentialed**. `POST /api/projects/:id/kms` takes the key inventory your own `describe-key`/`keys list` produced; `GET` returns the persisted inventory with rotation posture. Spec → algorithm resolution is cited data in [`mappings/kms-key-specs.json`](mappings/kms-key-specs.json) (84 specs, four primary sources). **`kms` is the fifth `live` surface** |
 | B6 | Protocol config | `planned` | **P2** | SSH, IPsec, JWT `alg`, SAML/OIDC signing |
 | B7 | Data-at-rest | `planned` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets |
 | B8 | Manual OT/embedded register | `built` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first |
@@ -253,6 +253,47 @@ after 180 days. The audit that moved it corrected three customer-facing claims �
 The current scanner cannot see crypto inside dependencies, and that is where most enterprise
 crypto lives. B2 is not an incremental improvement; it is the difference between a demo and a
 product. Prioritise accordingly.
+
+**B5, as shipped 2026-08-14.** Four providers, 84 curated key specs, and one design decision
+worth defending: **the first ingest path is submission-based rather than live-credentialed.** The
+caller posts the key inventory their own `aws kms describe-key` / `az keyvault key show` /
+`gcloud kms keys list` / `vault read transit/keys/<name>` already produced, exactly as B4 accepts
+a submitted PEM. Live polling would have meant four cloud SDKs inside `lib/collectors` — which is
+deliberately dependency-free so it can ship as a standalone on-prem agent — four auth flows, and
+long-lived read-only credentials into a customer's key store held by a product whose
+source-code/secret-handling controls (F4) are not built. None of that is needed to make the
+surface real, and a credentialed poller is strictly additive: it produces the same
+`KmsKeyDescription` values this collector already maps. What the submission model costs is stated
+in every response: the export is taken at its word, so nothing proves it complete, current, or
+from the key store named. That is why the observation confidence is 0.85 — above B2's 0.8
+(a key store states what a key *is*, not what a library *could do*) and below B4's 0.9 (a parsed
+certificate is the artifact itself; this is metadata about a key, relayed).
+
+Three honesty properties it was built around, each with a test that fails if it regresses:
+
+- **A key with no stated size records null.** An Azure Key Vault `JsonWebKey` has no `key_size`
+  member at all — the RSA modulus length is only implicit in the base64url `n`, and the list
+  operation returns no key type either. So "RSA, size unknown" is the *normal* Azure case, not a
+  contrived one, and it survives the round trip to `assets.key_size` as NULL (G-05). Size
+  precedence is documented-spec → named curve → caller-supplied → null; a caller cannot override
+  a size AWS's own guide states.
+- **An uncatalogued primitive gets no algorithm, not the nearest one.** HMAC, ChaCha20-Poly1305,
+  SM2, every ML-KEM/ML-DSA/SLH-DSA parameter set and Azure's `kty: oct` resolve to
+  `outcome: no-algorithm` with the curated table's own reason. Inferring AES from `kty: oct`
+  because AES is the common case is the manufactured finding `crypto-packages.json` already
+  refuses for JWT libraries. The three non-observed outcomes stay distinct
+  (`no-algorithm` / `unrecognised-spec` / `no-spec`) because only the middle one is fixed by a
+  data update.
+- **A key store holding only symmetric keys was still examined.** This is the one place B5's run
+  gate differs from B2/B3/B4's: those refuse a run when nothing *readable* was submitted, whereas
+  here every key was read and classified and simply none of them is reportable. That is
+  `examined-nothing-found`, and only an empty `keys` array records no run.
+
+Two limits to know about. `assetsMarkedGone` is always 0: a submitted export is never assumed to
+be a complete enumeration of a key store — one page of a paginated `list-keys`, one region, one
+Vault mount is the normal case — so a key absent from a later submission is not inferred deleted.
+And AWS's `SYMMETRIC_DEFAULT` is 128-bit SM4 rather than AES-256 in China Regions; the table
+cannot tell them apart from a spec string, so the region is recorded on the observation.
 
 **B8, as shipped 2026-08-14.** Org-scoped `ot_fleets` table, CRUD routes at `/api/ot-fleets`, and
 a form + list page at `/ot-register`. **Deliberately not an `assets` row.** `assets` exists to
