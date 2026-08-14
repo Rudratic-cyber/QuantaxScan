@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   useCreateProject, useCreateScan, useGetScan,
+  getGetScanQueryKey, getGetScanFindingsQueryKey,
   useGetScanFindings, CreateScanBodyMode, Finding,
 } from "@workspace/api-client-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -1177,8 +1178,16 @@ function BottomPanel({ open, onToggle, activeTab, onTabChange, findings, outputL
                         )}>{f.severity.toUpperCase()}</span>
                         <span className="text-[11px] flex-1 min-w-0">
                           <span className="font-mono text-[#0a0e1a]">{f.algorithm}</span>
-                          <span className="text-[#475569]"> is quantum-vulnerable</span>
+                          {/* Never assert "is quantum-vulnerable" over every finding — MD5, SHA-1 and
+                              AES-ECB are classical hygiene and the claim is false for them (G-08/G-09).
+                              The bucket comes from the mapping engine. */}
+                          <span className="text-[#475569]">{f.compliance ? ` — ${f.compliance.bucketLabel.toLowerCase()}` : " is quantum-vulnerable"}</span>
                         </span>
+                        {f.compliance?.detection.reviewRequired && (
+                          <span className="text-[9px] font-bold tracking-wider px-1.5 py-px rounded shrink-0 bg-[#f1f3f7] text-[#6b7280] border border-[#e5e7eb]">
+                            NEEDS REVIEW
+                          </span>
+                        )}
                         {f.nistReplacement && (
                           <span className="text-emerald-600 text-[10px] font-mono shrink-0">→ {f.nistReplacement}</span>
                         )}
@@ -1262,7 +1271,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
   const [isStreaming, setIsStreaming]     = useState(false);
   const [showSessions, setShowSessions]  = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const sendFnRef = useRef<(overrideText?: string, overrideCtx?: string) => Promise<void>>();
+  const sendFnRef = useRef<((overrideText?: string, overrideCtx?: string) => Promise<void>) | undefined>(undefined);
   const formatAssistantText = useCallback((content: string) => content, []);
 
   // Load sessions from localStorage on mount
@@ -1310,7 +1319,7 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
     const sessionMessages = [...(activeSession?.messages ?? []), userMsg];
     const systemContext = overrideCtx ?? (findings.length > 0
       ? `Give a short, clean response with only the most important points.\nUse 3-5 bullets max.\nBold the key risk, the fix, and the next step.\nAvoid long explanations.\n\nScan findings:\n${findings.map(f =>
-          `• Line ${f.lineNumber}: ${f.algorithm} [${f.severity.toUpperCase()}]${f.nistReplacement ? ` → replace with ${f.nistReplacement}` : ""}${f.codeSnippet ? `\n  Code: ${f.codeSnippet}` : ""}`
+          `• Line ${f.lineNumber}: ${f.algorithm} [${f.compliance?.bucketLabel ?? f.severity.toUpperCase()}]${f.compliance ? `\n  ${f.compliance.headline}` : ""}${f.nistReplacement ? ` → replace with ${f.nistReplacement}` : ""}${f.codeSnippet ? `\n  Code: ${f.codeSnippet}` : ""}`
         ).join("\n")}`
       : "Give a short, clean response with only the most important points. Use 3-5 bullets max. Bold key risk, fix, and next step.");
 
@@ -1503,7 +1512,9 @@ function ChatPanel({ open, onToggle, findings, scanState, width, onResizeMD, tri
             style={{ maxHeight: 80 }}
             disabled={isStreaming}
           />
-          <button onClick={sendMessage} disabled={!input.trim() || isStreaming}
+          {/* Wrapped, not passed directly: sendMessage's first parameter is `overrideText`, so
+              binding it to onClick handed the React MouseEvent in as the message body. */}
+          <button onClick={() => { void sendMessage(); }} disabled={!input.trim() || isStreaming}
             className="p-1 text-[#4f46e5]/70 hover:text-[#4f46e5] disabled:opacity-30 transition-colors shrink-0">
             <Send className="h-3.5 w-3.5" />
           </button>
@@ -1910,11 +1921,14 @@ function ActivityBar({ explorerOpen, chatOpen, onExplorer, onChat }: {
 }
 
 // ── Summary bar ───────────────────────────────────────────────────────────────
+// `children` is deliberately absent: this component renders a button and nothing else — the
+// dropdown is portalled by SummaryBar. It used to be declared and required, so every one of the
+// five call sites was a type error for failing to pass a prop that was never rendered.
 function SummaryPill({
-  id, label, dotColor, textColor, labelColor, isOpen, onToggle, children, noDot = false, dropdownStyle,
+  id, label, dotColor, textColor, labelColor, isOpen, onToggle, noDot = false, dropdownStyle,
 }: {
   id: string; label: string; dotColor?: string; textColor: string; labelColor?: string;
-  isOpen: boolean; onToggle: () => void; children: ReactNode; noDot?: boolean;
+  isOpen: boolean; onToggle: () => void; noDot?: boolean;
   dropdownStyle?: React.CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -2265,8 +2279,15 @@ export function Scan() {
   // API
   const createProject = useCreateProject();
   const createScan    = useCreateScan();
-  const { data: scan }     = useGetScan(activeScanId ?? 0, { query: { enabled: !!activeScanId } });
-  const { data: findings } = useGetScanFindings(activeScanId ?? 0, { query: { enabled: !!activeScanId } });
+  // queryKey is passed explicitly because the generated options type requires it. The value is
+  // the same one the hook derives internally (`queryOptions?.queryKey ?? getGetScanQueryKey(id)`),
+  // so this is the type made honest, not a behaviour change.
+  const { data: scan }     = useGetScan(activeScanId ?? 0, {
+    query: { queryKey: getGetScanQueryKey(activeScanId ?? 0), enabled: !!activeScanId },
+  });
+  const { data: findings } = useGetScanFindings(activeScanId ?? 0, {
+    query: { queryKey: getGetScanFindingsQueryKey(activeScanId ?? 0), enabled: !!activeScanId },
+  });
 
   const onExplorerResizeMD = makeResizeMD(setExplorerWidth, explorerWidth, "x",  1, 150, 500);
   const onChatResizeMD     = makeResizeMD(setChatWidth,     chatWidth,     "x", -1, 200, 540);
@@ -2274,9 +2295,19 @@ export function Scan() {
 
   const handleAskAI = useCallback((f: Finding) => {
     const codeBlock = f.codeSnippet ? `\n\`\`\`\n${f.codeSnippet}\n\`\`\`` : "";
-    const text = `Analyze the **${f.algorithm}** vulnerability at line ${f.lineNumber}${codeBlock}.\n\nWhat is the quantum attack vector and show me the exact code change to fix it using ${f.nistReplacement ?? "a NIST PQC algorithm"}?`;
+    // Don't ask for "the quantum attack vector" on a finding that has nothing to do with
+    // quantum computing — the model will invent one. Key the question off the risk track.
+    const quantum = f.compliance ? f.compliance.riskTrack === "post-quantum" : true;
+    const question = quantum
+      ? `What is the quantum attack vector and show me the exact code change to fix it using ${f.nistReplacement ?? "a NIST PQC algorithm"}?`
+      : `This is a classical-cryptography finding, not a quantum one. Explain the actual weakness and show me the exact code change to fix it${f.nistReplacement ? ` using ${f.nistReplacement}` : ""}.`;
+    const text = `Analyze the **${f.algorithm}** finding at line ${f.lineNumber}${codeBlock}.\n\n${question}`;
     const context = [
-      `Vulnerability: ${f.algorithm} at line ${f.lineNumber} (${f.severity.toUpperCase()})`,
+      `Finding: ${f.algorithm} at line ${f.lineNumber} (${f.compliance?.bucketLabel ?? f.severity.toUpperCase()})`,
+      f.compliance ? `Position: ${f.compliance.headline}` : "",
+      f.compliance?.detection.reviewRequired && f.compliance.detection.reason
+        ? `Confidence caveat: ${f.compliance.detection.reason}`
+        : "",
       f.codeSnippet   ? `Code:\n${f.codeSnippet}` : "",
       f.nistReplacement ? `NIST replacement: ${f.nistReplacement}` : "",
       f.nistStandard  ? `Standard: ${f.nistStandard}` : "",

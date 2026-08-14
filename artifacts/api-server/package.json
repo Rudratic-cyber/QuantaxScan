@@ -12,9 +12,12 @@
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",
+    "@workspace/cbom": "workspace:*",
     "@workspace/collectors": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/mappings": "workspace:*",
     "@workspace/integrations-openai-ai-server": "workspace:*",
+    "@workspace/risk": "workspace:*",
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",

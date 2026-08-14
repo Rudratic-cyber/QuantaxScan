@@ -1,6 +1,6 @@
 # 09 — Open gap register
 
-Every known gap in one place, with what closes it and what it blocks. Updated 2026-08-02.
+Every known gap in one place, with what closes it and what it blocks. Updated 2026-08-14.
 
 Three families:
 
@@ -20,12 +20,12 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-02 | PCI DSS §12.3.3 wording unverified | Medium | PCI SSC registration | Human, 30 min |
 | G-03 | OMB M-23-02 submission format unknown | Medium | Not researched | Human, 2 h |
 | G-04 | `controls.json` crosswalks all seeded | Low | Deliberate — C9 is P3 | Defer to C9 |
-| G-05 | **Key size is never detected** | **Critical, partially closed** | Design | B1 rework — model + source extraction landed; A4 deadline resolution still pending |
-| G-06 | EdDSA not detected at all | High | Missing pattern | 1 line |
-| G-07 | DSA mis-framed as a future problem | High | Mapping data (now fixed) | Reporting change |
-| G-08 | SHA-1 rule is use-dependent; we alert blindly | Medium | Regex can't see context | Confidence + copy |
-| G-09 | AES-ECB framed as a compliance violation | Medium | Wrong citation (now fixed) | Copy change |
-| G-10 | Hygiene findings inflate the PQC risk score | High | `computeScanResult` | A4 |
+| G-05 | **Key size is never detected** | **Critical, partially closed** | Design | B1 rework — model + source extraction landed. Neither A4 nor C1 closed the deadline half: A4 keys on `quantumVulnerable`, which needs no key size, and C1 returns both IR 8547 rows **without** marking either an assumption. The "key size undetermined — assumed 112-bit" label is still unwritten |
+| ~~G-06~~ | ~~EdDSA not detected at all~~ | **Closed** | Pattern added 2026-08-13 (B2) | — |
+| ~~G-07~~ | ~~DSA mis-framed as a future problem~~ | **Closed** | Done 2026-08-14 (C1) | — |
+| ~~G-08~~ | ~~SHA-1 rule is use-dependent; we alert blindly~~ | **Closed** | Done 2026-08-14 (C1) | — |
+| ~~G-09~~ | ~~AES-ECB framed as a compliance violation~~ | **Closed** | Done 2026-08-14 (C1) | — |
+| ~~G-10~~ | ~~Hygiene findings inflate the PQC risk score~~ | **Closed** | Done 2026-08-14 (A4) | — |
 | G-11 | No confidence score on findings | Medium, mostly closed | Design | A2 + D3 — carried on `observations`, now read and shown; no *filtering* yet |
 | G-12 | Security findings S1–S8 | High | Interim auth + org scoping shipped; needs deploy | See [08](08-security.md), [13](13-auth-and-tenancy.md) |
 | ~~G-13~~ | ~~`.env` tracked in git~~ | **Closed** | Done 2026-08-03 | — |
@@ -57,8 +57,10 @@ Severity is **for the enterprise product**, not for today's demo.
 > **What this does not close:**
 > this is a regex/line-based detector, not a parser — it cannot fold constants or read
 > cross-line context, so most real code (like the pattern above) still resolves to
-> undetermined. It also does not close the "mapping engine returns both candidate obligations"
-> half of this gap at all — that requires A4/C1, neither of which is built. The register's
+> undetermined. C1 (built 2026-08-13) now returns **both** IR 8547 rows as separate obligations
+> and does not choose between them, so the two candidates are at least visible; what is still
+> missing is the explicit "key size undetermined — assumed 112-bit" flag and A4 consuming it. The
+> register's
 > severity stays `Critical` because the customer-facing consequence (correct deadline reporting)
 > is still unresolved; what changed is that the model can now carry the fact when a collector
 > does determine it, instead of the field not existing.
@@ -86,10 +88,23 @@ nothing resolves it yet.
   not built.
 - ⬜ Where it is genuinely undeterminable, emit `keySize: null` and have the mapping engine
   return **both** candidate obligations, flagged as "key size undetermined — assumed 112-bit" —
-  the model now faithfully carries `null` through persistence and read-back (tested); the mapping
-  engine that would consume it and return both obligations is A4/C1, not built.
+  the model carries `null` through persistence and read-back (tested), and C1 returns both
+  candidate obligations — but neither is labelled as an assumption, and A4 does not consume them
+  yet.
 - ✅ Never silently pick one — the ingestion boundary converts `undefined` → `null` explicitly;
   there is no code path that defaults a missing `keySize` to a number.
+- ✅ **The export boundary now has the same rule, and states the gap rather than hiding it.**
+  A5's CycloneDX exporter (`lib/cbom`) emits **no** numeric field for `keySize: null` — no
+  `parameterSetIdentifier`, no `relatedCryptoMaterialProperties.size` — and names the component
+  `RSA`, not `RSA-2048`. Because a missing optional field is indistinguishable from an exporter
+  that never considered key size, every crypto component additionally carries
+  `quantaxscan:asset:keySize`, valued either with the digits or with the literal `undetermined`.
+  That is the decision this gap forces on any consumer-facing serialisation: **absence must be
+  explicit**. `classicalSecurityLevel` and `nistQuantumSecurityLevel` are never populated —
+  deriving a security strength from a key size is A4's call, and doing it in a serialiser is this
+  gap's forbidden default wearing a different name. Asserted in
+  `lib/cbom/src/build-cbom.test.ts` and again over the HTTP response in
+  `artifacts/api-server/src/api-feature.test.ts`.
 
 **Blocks:** correct deadline reporting, therefore the certificate-expiry-vs-deadline chart
 (Row 5 of [06](06-cisa-dashboard.md)), therefore the strongest visual in the product.
@@ -100,22 +115,36 @@ specifically, and another argument for prioritising B3/B4.
 
 ---
 
-## G-06 — EdDSA not detected `High`
+## G-06 — EdDSA not detected `Closed 2026-08-13`
 
 Ed25519/Ed448 are quantum-vulnerable, appear explicitly in IR 8547 Table 2, and were added to
 FIPS 186-5 as an approved algorithm — so they are in active new deployment. `SOURCE_PATTERNS`
 (`lib/collectors/src/source-regex-collector.ts`, formerly `scanner.ts`'s `VULNERABILITY_PATTERNS`)
-has no pattern for them.
+had no pattern for them.
 
-**What closes it:** one entry in the pattern table (aliases already recorded in
-`mappings/algorithms.json` under `eddsa`, tagged `detectionGap: true`).
+**Closed by** an eighth `SOURCE_PATTERNS` entry, `/\b(EdDSA|Ed25519|Ed448)/i`, placed after
+ECDSA and before ECDH/DH. Two things this exposed that "one line" understated:
 
-**Cross-ref:** B1 in [03-features.md](03-features.md), not a mappings issue — the data is there,
-the detection is not.
+- The rest of the plumbing existed but was **unreachable**: `KEY_SIZE_SOURCE` already had
+  `EdDSA: "curve"` and the curve table already had `ed25519`/`ed448`, yet with no pattern
+  emitting the algorithm neither entry could ever fire. Ed25519 → 256 and Ed448 → 448 are now
+  asserted (`source-regex-collector.test.ts`).
+- The pattern must **not** match `X25519`/`Curve25519`: those are Diffie-Hellman key agreement
+  and belong to the `ECDH/DH` entry. A bare `25519` alternative would have silently
+  reclassified them as signatures.
+- `algorithms.json`'s `eddsa` entry has had its `detectionGap: true` flag cleared, and its
+  `explanation` no longer tells the customer we cannot detect it (mappings `dataVersion 0.3.1`).
+
+**Still true:** one finding per line means a line naming both `ssh-rsa` and `ssh-ed25519`
+reports RSA only. That is a parser problem, not a pattern problem — tested and documented
+rather than papered over.
+
+**Cross-ref:** B1 in [03-features.md](03-features.md), not a mappings issue — the data was
+there, the detection was not.
 
 ---
 
-## G-07 — DSA mis-framed as a future problem `High`
+## G-07 — DSA mis-framed as a future problem `Closed 2026-08-13`
 
 `verified 2026-08-01` — FIPS 186-5 Appendix E:
 
@@ -131,16 +160,21 @@ understates it: a DSA signing site is **non-compliant now**, with no runway.
 This also explains why DSA appears in no IR 8547 transition table — there was nothing left to
 transition. My earlier seed data assumed the RSA dates transferred to DSA. They do not.
 
-**What closes it:** reporting change — DSA findings surface as immediate compliance failures
-with no deadline, in a different bucket from PQC migration items. Mapping data already fixed in
-`algorithms.json` 0.3.0.
+**What closed it:** the C1 mapping engine. An in-effect prohibition now outranks the PQC horizon
+when bucketing (`lib/mappings/src/engine.ts`), so DSA resolves to
+`bucket: "immediate-compliance-failure"` while RSA and ECDSA stay in `pqc-migration`. No 2035
+deadline is emitted for DSA and none appears in its headline. The report page groups by bucket,
+and the executive summary leads with the findings that have no runway.
 
-**Nuance:** verification of pre-2023 signatures is permitted legacy use, and the regex cannot
-distinguish generation from verification. DSA findings need reduced confidence pending review.
+**Nuance, handled:** verification of pre-2023 signatures appears in the finding's use-condition
+table as permitted legacy use. Because a pattern match cannot distinguish generation from
+verification, `algorithms.json`'s `dsa` entry carries `detectionConfidence` — a `0.6` multiplier,
+`reviewRequired: true` and a customer-facing reason — which the engine surfaces and the UI renders
+as a "needs review" badge. The multiplier is data, not a constant in TypeScript.
 
 ---
 
-## G-08 — SHA-1 rule is use-dependent `Medium`
+## G-08 — SHA-1 rule is use-dependent `Closed 2026-08-13`
 
 `verified 2026-08-01` — SP 800-131A Rev 2 §9 gives **three different answers** depending on use:
 
@@ -154,13 +188,19 @@ So `HMAC-SHA1` — which does not depend on collision resistance — is **accept
 currently flag every SHA-1 occurrence identically as an alert. That is incorrect for a
 meaningful share of real matches, and a knowledgeable reviewer will challenge it.
 
-**What closes it:** confidence scoring plus copy that states which uses are disallowed rather
-than asserting the algorithm is banned. Full resolution needs call-site context the regex does
-not have — a candidate for the crypto-agility clustering work (D5).
+**What closed it:** the engine returns `useConditions` — one row per use, each marked permitted or
+not, with the framework that says so — whenever the data records both permitted and prohibited
+uses. SHA-1 therefore reports a three-row table instead of a verdict on the algorithm, and the
+non-signature/HMAC row renders as *acceptable*. Confidence is reduced through the same
+`detectionConfidence` block as DSA (`0.5`, review required).
+
+**Still true:** full resolution needs call-site context the regex does not have. What changed is
+that the report now says so explicitly instead of asserting a ban. Automatic classification
+remains a candidate for the crypto-agility clustering work (D5).
 
 ---
 
-## G-09 — AES-ECB framed as a compliance violation `Medium`
+## G-09 — AES-ECB framed as a compliance violation `Closed 2026-08-13`
 
 `verified 2026-08-01`. Two errors in the original seed, both now fixed in `algorithms.json`:
 
@@ -172,12 +212,17 @@ So "AES-ECB violates NIST SP 800-38D" — which is roughly what we would have pr
 **false compliance claim**. ECB's problem is that it lacks semantic security, which is a
 best-practice concern, not a standards violation.
 
-**What closes it:** report ECB as a best-practice finding, not a compliance finding. An auditor
-will check the citation.
+**What closed it:** AES-ECB has no `deadlines`, so the engine resolves it to
+`complianceStatus: "no-obligation"` and `bucket: "best-practice"`. Its one obligation comes from a
+new `bestPractice` block in `algorithms.json` that carries the requirement (move to an
+authenticated mode), the basis ("NOT a NIST compliance requirement") and the SP 800-38A citation —
+the document that *approves* ECB, so an auditor checking it finds agreement rather than a
+contradiction. `lib/mappings/src/engine.test.ts` asserts no obligation on AES-ECB can contain
+"violat", "non-compliant" or "prohibited".
 
 ---
 
-## G-10 — Hygiene findings inflate the PQC risk score `High`
+## G-10 — Hygiene findings inflate the PQC risk score ~~`High`~~ — **CLOSED 2026-08-14**
 
 Three of the seven detection patterns — MD5, SHA-1, AES-ECB — are **not quantum
 vulnerabilities**. `computeScanResult()` counts them into the same severity totals and risk
@@ -189,8 +234,38 @@ Observed in the live smoke test: a 10-line file scored **risk 100, 3 critical / 
 A CISO presenting a post-quantum risk score inflated by MD5 findings will be corrected in the
 room.
 
-**What closes it:** A4 risk engine split. `algorithms.json` already carries `reportingNote` on
-each hygiene entry; the engine must honour it and report a separate "classical hygiene" panel.
+**What closes it:** A4 risk engine split. `algorithms.json` carries `reportingNote` on each
+hygiene entry, and C1 now exposes the machine-readable half of that decision:
+`riskTrack: "classical-hygiene"` and `countsTowardPostQuantumScore: false` on every finding's
+`compliance` block. The executive summary already honours it. `computeScanResult()`'s
+`riskScore`/`criticalCount`/`alertCount` are deliberately untouched — re-keying them is A4's job,
+and the contract it should consume is in [05](05-compliance-mapping.md) §"What A4 consumes".
+
+> **Closed 2026-08-14 by A4** (`lib/risk/`, `@workspace/risk`). `computeRiskProfile()` splits
+> findings into a post-quantum track and a classical-hygiene track and computes `pqc.riskScore`
+> over the former alone: **a scan containing only MD5/SHA-1/AES-ECB now scores zero
+> post-quantum risk**, regression-tested at both the engine level
+> (`lib/risk/src/risk-profile.test.ts`) and at `computeScanResult()`, where the bug actually
+> lived (`artifacts/api-server/src/lib/scanner.test.ts`). The register's observed case — a
+> ten-line file at risk 100 with 3 of 5 findings unrelated to quantum computing — is pinned as
+> a test and now scores 60, from the three asymmetric findings only.
+>
+> **The split is derived from the mappings data, not from a list of algorithm names in code.**
+> `deriveAlgorithmMapping()` now surfaces `algorithms.json`'s `quantumVulnerable` flag verbatim
+> and `lib/risk/src/tracks.ts` keys on it, so the next algorithm added to the data lands on the
+> right track without a code change. Each hygiene algorithm's own `reportingNote` is attached to
+> its panel entry rather than paraphrased, which is what makes G-09's "best practice, not a
+> compliance violation" framing reach the report.
+>
+> Two smaller overclaims went with it: the executive summary no longer describes hygiene
+> findings as "non-PQC-safe" (there is no PQC successor to MD5) and no longer recommends
+> migration to FIPS 203/204/205 on a scan that found no quantum-vulnerable cryptography.
+>
+> **Not claimed:** no UI renders the hygiene panel yet, and `openapi.yaml`/the Orval client are
+> not regenerated, so the typed frontend client cannot see `pqc`/`hygiene`/`mosca`. The data
+> contract exists; the panel is D2/reporting work. **G-07, G-08 and G-09 stay open** — A4
+> carries their `reportingNote`s through so they have something to act on, which is the "cheap
+> once A4 exists" the ordering below refers to, but it does not act on them.
 
 ---
 
@@ -223,6 +298,13 @@ design. Regex ≈ 0.7, TLS handshake ≈ 1.0.
 > [04-architecture.md](04-architecture.md) defers. Severity drops to `Medium` because the
 > evidence quality is now *visible* to anyone reading a report — but the gap's own wording is
 > about filtering, so it is not closed.
+> **Update, 2026-08-13 (B2).** The dependency collector is the first evidence that the scale is
+> doing real work rather than being a constant: it emits `0.8` for a single-purpose crypto
+> library (`node-rsa`, `@noble/ed25519` — parse-exact presence of a package that exists to do
+> one thing, stronger evidence than a regex over prose at `0.7`) and `0.5` for a
+> general-purpose one (`cryptography`, `elliptic` — the primitive is *available*; which of
+> several the caller invokes is not in a lockfile). Two observations in the same inventory now
+> differ by evidence quality, which makes the missing consumer (D3) the visible next gap.
 
 ---
 
@@ -478,13 +560,18 @@ deleting is cheaper than auditing 20+ images. Note this does **not** remove it f
 1. ~~**G-13**~~ (closed 2026-08-03), **G-18** — minutes each, and free only while the repo is
    private
 2. **G-17** — the positioning is wrong *now*, and it is a document edit
-3. **G-06** — one pattern, closes a real detection hole
+3. ~~**G-06**~~ (closed 2026-08-13, alongside B2) — one pattern, closed a real detection hole
 4. **G-01** — 30 minutes, unblocks a whole customer segment
 5. **G-16** — a roadmap decision to make before committing to A2's surface priorities
-6. **G-05, G-10, G-11, G-15** — land together with A2/A4; they are the same refactor. **Update,
-   2026-08-02:** the A1/A2 half landed (G-05/G-11/G-15 partially closed — see each entry above);
-   G-10 is untouched, since it needs A4 (the Mosca risk engine), which is out of scope for A1/A2.
-7. **G-07, G-08, G-09** — reporting/copy changes, cheap once A4 exists
+6. ~~**G-10**~~ (closed 2026-08-14 by A4), **G-05, G-11, G-15** — land together with A2/A4; they
+   are the same refactor. **Update, 2026-08-02:** the A1/A2 half landed (G-05/G-11/G-15 partially
+   closed — see each entry above). **Update, 2026-08-14:** A4 landed and closed G-10. Neither A4
+   nor C1 touched G-05's deadline-resolution half — A4 splits on `quantumVulnerable`, which needs
+   no key size, and C1 returns both IR 8547 rows without labelling either an assumption. That
+   label is the remaining work.
+7. ~~**G-07, G-08, G-09** — reporting/copy changes, cheap once A4 exists~~ **Closed 2026-08-14**
+   by C1, which turned out to be the dependency rather than A4: they needed bucketing, use
+   conditions and citations, not the risk engine.
 8. **G-12, G-19** — before any pilot, and hard gates on open-sourcing. G-12's interim auth and
    organisation scoping are shipped; per-user identity (F1) and the remaining S-findings are the
    pilot blockers

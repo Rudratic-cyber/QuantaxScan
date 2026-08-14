@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.0.0",
-  "dataVersion": "0.3.0",
+  "schemaVersion": "1.1.0",
+  "dataVersion": "0.4.0",
   "compiledAt": "2026-08-01",
   "verifiedAt": "2026-08-01",
   "verificationNote": "NIST, CISA joint factsheet and CycloneDX entries verified against primary sources on 2026-08-01. CNSA 2.0 and OMB M-23-02 remain needs-check — nsa.gov, media.defense.gov and cisa.gov all return HTTP 403 to automated fetches and must be verified by hand.",
@@ -43,6 +43,56 @@
       "retrievedAt": "2026-08-01",
       "confidence": "verified",
       "customerFacingRule": "Because this is a DRAFT, every customer-facing use must be labelled 'NIST draft guidance (IR 8547 ipd, November 2024)'. Presenting these as final binding dates is a factual error."
+    },
+    {
+      "id": "FIPS 186-5",
+      "name": "Digital Signature Standard (DSS)",
+      "publisher": "NIST",
+      "documents": ["FIPS 186-5"],
+      "status": "FINAL",
+      "published": "2023-02-03",
+      "applicability": { "jurisdictions": ["*"], "sectors": ["*"], "systemTypes": ["*"] },
+      "role": "Defines the approved digital signature algorithms. Withdrew DSA for signature generation — a PRESENT-TENSE obligation with no migration runway, independent of any quantum timeline. Referenced by `algorithms.json`'s `dsa` deadlines; the id matches that `framework` string exactly.",
+      "url": "https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-5.pdf",
+      "retrievedAt": "2026-08-01",
+      "confidence": "verified"
+    },
+    {
+      "id": "SP 800-131A Rev 2",
+      "name": "Transitioning the Use of Cryptographic Algorithms and Key Lengths",
+      "publisher": "NIST",
+      "documents": ["NIST SP 800-131A Revision 2"],
+      "status": "FINAL",
+      "published": "2019-03",
+      "applicability": { "jurisdictions": ["*"], "sectors": ["*"], "systemTypes": ["*"] },
+      "role": "In-force (non-draft) transition rules for classical algorithms. §9's SHA-1 rules are USE-DEPENDENT — the same algorithm is disallowed, legacy-allowed or acceptable depending on what it is used for. Referenced by `algorithms.json`'s `sha1` deadlines; the id matches that `framework` string exactly.",
+      "url": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+      "retrievedAt": "2026-08-01",
+      "confidence": "verified"
+    },
+    {
+      "id": "FIPS 180-4",
+      "name": "Secure Hash Standard (SHS)",
+      "publisher": "NIST",
+      "documents": ["FIPS 180-4"],
+      "status": "FINAL",
+      "applicability": { "jurisdictions": ["*"], "sectors": ["*"], "systemTypes": ["*"] },
+      "role": "Enumerates the approved hash functions. An absent hash (MD5) was never approved, so no transition schedule exists and none may be cited. Referenced by `algorithms.json`'s `md5` deadlines; the id matches that `framework` string exactly.",
+      "url": "https://csrc.nist.gov/pubs/fips/180-4/upd1/final",
+      "retrievedAt": "2026-08-01",
+      "confidence": "verified"
+    },
+    {
+      "id": "SP 800-38A",
+      "name": "Recommendation for Block Cipher Modes of Operation",
+      "publisher": "NIST",
+      "documents": ["NIST SP 800-38A"],
+      "status": "FINAL",
+      "applicability": { "jurisdictions": ["*"], "sectors": ["*"], "systemTypes": ["*"] },
+      "role": "Defines ECB as one of five APPROVED confidentiality modes. This entry exists so nothing in the product can present AES-ECB as a NIST violation: the correct framing is a best-practice finding (no semantic security), and the auditor-checkable citation is this document, NOT SP 800-38D. See open gap G-09.",
+      "url": "https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf",
+      "retrievedAt": "2026-08-01",
+      "confidence": "verified"
     },
     {
       "id": "NIST-SP-1800-38",
@@ -151,7 +201,26 @@
       "mirrorUrl": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf",
       "retrievedAt": "2026-08-01",
       "retrievalNote": "cisa.gov returns HTTP 403 to automated fetches; verified against the NIST NCCoE-hosted copy of the same factsheet.",
-      "confidence": "verified"
+      "confidence": "verified",
+      "findingObligations": [
+        {
+          "id": "cisa-qr-inventory",
+          "match": {},
+          "requirement": "Record this cryptographic asset in the organisation's cryptographic inventory, including where it is used and the secrecy lifetime of the data it protects.",
+          "severity": "informational",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-01" },
+          "confidence": "verified"
+        },
+        {
+          "id": "cisa-qr-prioritise-long-secrecy",
+          "match": { "quantumVulnerable": true },
+          "requirement": "Prioritise this asset for migration where it protects data with a long secrecy lifetime — harvest-now-decrypt-later exposure starts when the data is recorded, not on the migration deadline.",
+          "severity": "high",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-01" },
+          "confidence": "verified"
+        }
+      ],
+      "findingObligationsNote": "Read by the mapping engine (lib/mappings). `match` is ANDed over the algorithm entry: `quantumVulnerable` (boolean), `algorithmIds`, `families`, `purposes` (arrays, any-of). An empty `match` applies to every finding. Adding a framework obligation is therefore a data change, not a code change."
     },
     {
       "id": "CNSA-2.0",
@@ -178,7 +247,19 @@
         "https://www.nsa.gov/Cybersecurity/Post-Quantum-Cybersecurity-Resources/"
       ],
       "applicabilityWarning": "Hiding this framework for non-US-NSS customers is REQUIRED. Showing a UK bank a CNSA 2.0 compliance percentage is noise that damages credibility.",
-      "confidence": "needs-check"
+      "confidence": "needs-check",
+      "findingObligations": [
+        {
+          "id": "cnsa-2.0-replace-quantum-vulnerable",
+          "match": { "quantumVulnerable": true },
+          "requirement": "On a US National Security System, replace this quantum-vulnerable public-key algorithm with the CNSA 2.0 suite: ML-KEM-1024 (FIPS 203), ML-DSA-87 (FIPS 204), AES-256, SHA-384/SHA-512, and LMS/XMSS (SP 800-208) for software and firmware signing.",
+          "severity": "high",
+          "deadlineNote": "CNSA 2.0 dates are PER SYSTEM CATEGORY — see this framework's `indicativeDates`. There is no single CNSA 2.0 deadline and presenting one would be wrong.",
+          "citation": { "document": "CNSA 2.0 FAQ (Ver 2.1, December 2024)", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF", "retrievedAt": "2026-08-01" },
+          "confidence": "needs-check",
+          "caveat": "NOT VERIFIED AGAINST THE PRIMARY SOURCE — nsa.gov and media.defense.gov return HTTP 403 to automated fetches (open gap G-01). Render as indicative and unverified, never as a compliance percentage."
+        }
+      ]
     },
     {
       "id": "OMB-M-23-02",

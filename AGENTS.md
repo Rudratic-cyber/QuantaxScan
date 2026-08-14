@@ -6,8 +6,8 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 ## Testing
 
-Root `pnpm run test` runs three suites in sequence — `test:libs` (vitest in `lib/collectors` and
-`lib/db`), `test:api` (vitest + supertest in `artifacts/api-server`), `test:ui` (Playwright specs
+Root `pnpm run test` runs three suites in sequence — `test:libs` (vitest in `lib/collectors`,
+`lib/db` and `lib/mappings`), `test:api` (vitest + supertest in `artifacts/api-server`), `test:ui` (Playwright specs
 in `tests/ui/`). Run one package's vitest suite directly with `pnpm --filter <pkg> run test`.
 **`test:ui` is not free to run:** it needs the Playwright browsers installed and it boots its own
 Vite dev server on `UI_TEST_PORT` (default `5833`) with `strictPort`, so it fails loudly if that
@@ -75,13 +75,22 @@ not a Postgres `ENUM` type — narrowing an `ENUM` requires recreating the type;
 from the same tuple is a one-line diff. Don't introduce a second definition of one of these enums
 anywhere else.
 
-**One recorded exception:** auth and tenancy enums (`ORG_ROLE_VALUES`, `IDENTITY_PROVIDER_VALUES`,
-`REPORT_VISIBILITY_VALUES`) live in `lib/db/src/schema/auth-enums.ts`, not in
-`@workspace/collectors`. The rule above exists because those enums are part of the *collector*
-contract and `lib/collectors` is deliberately dependency-free so it can ship as a standalone
-on-prem agent — an on-prem collector has no concept of an organisation role or an identity
-provider. The rule's mechanism (one const tuple, `text` + `CHECK` via `oneOf()`, never a Postgres
-`ENUM`) is preserved exactly.
+**Two recorded exceptions**, both in `lib/db` rather than `@workspace/collectors`: auth and
+tenancy enums (`ORG_ROLE_VALUES`, `IDENTITY_PROVIDER_VALUES`, `REPORT_VISIBILITY_VALUES`) in
+`lib/db/src/schema/auth-enums.ts`, and A3's `DATA_CLASSIFICATION_VALUES` in
+`lib/db/src/classification.ts`. The rule above exists because those enums are part of the
+*collector* contract and `lib/collectors` is deliberately dependency-free so it can ship as a
+standalone on-prem agent — an on-prem collector has no concept of an organisation role, an
+identity provider, or whether the data behind a key is Regulated. The rule's mechanism (one const
+tuple, `text` + `CHECK` via `oneOf()`, never a Postgres `ENUM`) is preserved exactly.
+
+**Null means "not supplied", and several columns depend on it.** `assets.key_size` (G-05) and
+A3's `data_classification` / `secrecy_lifetime_years` on both `assets` and `projects` are nullable
+with **no database default**, deliberately. Adding `NOT NULL DEFAULT ...` to any of them destroys
+the difference between a value a human supplied and one nobody ever set — which is what lets a
+report state that an X was assumed. Provenance is derived by `resolveSecrecyLifetime()`
+(`@workspace/db/classification`), never stored, so it cannot go stale when a project default
+changes.
 
 ## Tenant isolation
 
@@ -111,26 +120,51 @@ The rules that matter day to day:
 
 ## Package boundaries
 
+**Standards data never gets written to a row.** `@workspace/mappings` (`lib/mappings/`) resolves a
+finding's obligations, deadlines and citations from `docs/Claude/mappings/*.json`, and
+`artifacts/api-server/src/lib/compliance.ts` applies it on the way *out* of every route that
+returns findings. Persisting a resolved obligation would reintroduce the failure C1 exists to fix
+(a 2026 row disagreeing with a 2028 read) — the legacy
+`findings.nist_replacement`/`nist_standard`/`explanation` columns are exactly that mistake, kept
+only until the `observations` read cutover. Nothing in `lib/mappings`'s TypeScript may name an
+algorithm, a date or a citation: even the deadline vocabulary lives in the JSON's `deadlineTypes`
+block. `lib/mappings/src/engine.test.ts` enforces this by mutating cloned data and asserting the
+output follows — if that test needs a code edit to pass, the M2 exit criterion has been broken.
+
 `@workspace/collectors` (`lib/collectors/`) has **no dependency on `@workspace/db`**, deliberately
 — it's meant to be able to run as a standalone on-prem agent later. `lib/db` depends on
 `@workspace/collectors` (for the enum tuples above), not the other way around. Keep that direction
 when adding new collectors or schema.
 
-## `pnpm run typecheck` pre-existing failures
+## `pnpm run typecheck` — there is no baseline any more
 
-Root `pnpm run typecheck` fails today independent of any particular change — 14 errors in
-`artifacts/api-server`: `github.ts` (Express `Response` typing mismatches), `reports.ts` (a
-drizzle query-builder overload), and `chat.ts`/etc. (`lib/integrations-openai-ai-server` isn't in
-the root `tsconfig.json` project references, so its `dist/` is never built by `tsc --build`).
-Confirmed present on `main` via `git stash` before this note was written. Don't attribute these to your own changes without checking — diff the error
-list against `git stash && pnpm run typecheck && git stash pop` first.
+**This section previously told you to expect 14 errors in `artifacts/api-server` and 13 more in
+`artifacts/quantaxscan`, and to diff against them rather than fix them. That is obsolete: the
+tree is type-clean. A single new error is yours.**
 
-`artifacts/quantaxscan` (frontend) independently has its own 13-error pre-existing baseline
-(`Typewriter.tsx`, `quantaxscan-terminal.tsx`, `Dashboard.tsx`, `Scan.tsx` — mostly implicit-`any`
-and a couple of real-but-minor type mismatches). `pnpm run build` gates on `pnpm run typecheck`
-and so reports "failed" even though the app itself builds and runs fine — api-server builds with
-esbuild (no typechecking) and vite doesn't block on `tsc` errors either. To get real build output,
-run `pnpm -r --if-present run build` directly, bypassing the typecheck gate.
+Two traps that produced that baseline, both now closed — do not reopen them:
+
+- The root script used a plain `pnpm -r`, which **bails at the first failing package**. api-server
+  failed, so the frontend's thirteen errors were never printed by the root command and nobody
+  knew they existed. The script now passes `--no-bail`; every package reports.
+- `lib/integrations-openai-ai-server` was missing from the root `tsconfig.json` project
+  references, so `tsc --build` never built its `dist/` — which both broke `chat.ts` with TS6305
+  *and* hid four real errors inside that library. It is referenced now.
+
+## Local CI is the gate
+
+The hosted workflow marks typecheck **non-blocking**, and cannot be relied on here. Run the
+pipeline locally before you push:
+
+```
+pnpm run ci              # install, typecheck, build, lib + api + UI tests
+pnpm run ci --quick      # typecheck + unit tests, no install/build/UI
+pnpm run ci --skip-ui    # everything except Playwright
+pnpm run hooks:install   # gate every push on it automatically
+```
+
+Typecheck is blocking in local CI. A green run is the standard for "ready to merge", not a green
+check on the PR.
 
 ## Merging across a directory rename
 

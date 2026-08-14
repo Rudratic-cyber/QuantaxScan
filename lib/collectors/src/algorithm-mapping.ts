@@ -55,8 +55,25 @@ const data = algorithmsData as unknown as AlgorithmsFile;
 
 const byCanonicalName = new Map<string, AlgorithmEntry>(data.algorithms.map((a) => [a.canonicalName, a]));
 
+/**
+ * The mappings snapshot this build resolves against. Exported so a consumer
+ * can stamp provenance on a derived artefact (a risk profile, a report)
+ * without having to look up an arbitrary algorithm to read it off.
+ */
+export const MAPPINGS_DATA_VERSION: string = data.dataVersion;
+
 export interface DerivedAlgorithmMapping {
   severity: "critical" | "alert";
+  /**
+   * `algorithms.json`'s own `quantumVulnerable` flag, surfaced verbatim
+   * rather than left implicit behind `severity`. It is the field the A4 risk
+   * engine splits the post-quantum track from the classical-hygiene track on
+   * (docs/Claude/09-open-gaps.md G-10) — reading it from the mappings data is
+   * what keeps that split out of a hardcoded list of algorithm names. Note
+   * that `severity` is a *display* derivation that happens to agree with it
+   * today; the two are not the same claim and should not be conflated.
+   */
+  quantumVulnerable: boolean;
   nistReplacement: string | null;
   nistStandard: string | null;
   explanation: string;
@@ -83,6 +100,7 @@ export function deriveAlgorithmMapping(canonicalName: string): DerivedAlgorithmM
 
   return {
     severity: entry.quantumVulnerable ? "critical" : "alert",
+    quantumVulnerable: entry.quantumVulnerable,
     nistReplacement: replacementNames.length ? replacementNames.join(" or ") : null,
     nistStandard: standardNames.length ? standardNames.join(" / ") : null,
     explanation: entry.explanation,

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# Gate every push on the local pipeline.
+#
+# The remote cannot check this for us, so this is the last point at which a broken tree can be
+# stopped. UI tests are skipped by default because Playwright needs browsers and a free port;
+# run `pnpm run ci` yourself before anything you intend to merge.
+#
+# Enable:  pnpm run hooks:install
+# Bypass:  git push --no-verify   (deliberate escape hatch — say why in the PR)
+
+printf '\npre-push: running local CI (use --no-verify to bypass)\n'
+
+if ! bash "$(git rev-parse --show-toplevel)/scripts/ci-local.sh" --skip-ui; then
+  printf 'pre-push: local CI failed — push aborted.\n\n'
+  exit 1
+fi
+
+exit 0

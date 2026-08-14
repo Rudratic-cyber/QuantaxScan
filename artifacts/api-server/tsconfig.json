@@ -11,6 +11,9 @@
       "path": "../../lib/db"
     },
     {
+      "path": "../../lib/cbom"
+    },
+    {
       "path": "../../lib/api-zod"
     },
     {

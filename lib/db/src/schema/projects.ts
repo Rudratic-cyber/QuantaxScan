@@ -1,6 +1,8 @@
-import { pgTable, text, serial, timestamp, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, index, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { oneOf, nullableAtLeast } from "./sql-helpers";
+import { DATA_CLASSIFICATION_VALUES, type DataClassification } from "../classification";
 import { organizationsTable } from "./organizations";
 
 export const projectsTable = pgTable(
@@ -21,8 +23,31 @@ export const projectsTable = pgTable(
     criticalCount: integer("critical_count").notNull().default(0),
     alertCount: integer("alert_count").notNull().default(0),
     cleanCount: integer("clean_count").notNull().default(0),
+
+    /**
+     * A3 — the project-level default every asset in this project inherits
+     * unless it overrides it. docs/Claude/03-features.md §A3.
+     *
+     * **Nullable, with no database default, on purpose.** Null means the
+     * project sets no default, which is not the same as a human choosing
+     * `internal`: only the first of those may be reported as an assumption.
+     * A `NOT NULL DEFAULT 'internal'` here would make A3's acceptance criterion
+     * — "the default clearly marked as an assumption in reports" — impossible
+     * to satisfy, because the information would be destroyed on write.
+     *
+     * Assets are associated with a project by the `project:<id>:` prefix on
+     * `assets.location` (`projectRepoId()`), not by a foreign key. Resolution
+     * is `resolveSecrecyLifetime()` in `src/classification.ts`.
+     */
+    dataClassification: text("data_classification").$type<DataClassification>(),
+    /** A3 — the project-level X override, in years, independent of the label. Null = not set. */
+    secrecyLifetimeYears: integer("secrecy_lifetime_years"),
   },
-  (table) => [index("projects_org_idx").on(table.organizationId)],
+  (table) => [
+    index("projects_org_idx").on(table.organizationId),
+    check("projects_data_classification_check", oneOf(table.dataClassification, DATA_CLASSIFICATION_VALUES)),
+    check("projects_secrecy_lifetime_years_check", nullableAtLeast(table.secrecyLifetimeYears, 0)),
+  ],
 );
 
 export const insertProjectSchema = createInsertSchema(projectsTable).omit({ id: true, createdAt: true });
