@@ -40,22 +40,52 @@ describe("computeFingerprint — source surface", () => {
 });
 
 describe("computeFingerprint — other surfaces", () => {
-  it("dependency: ecosystem + package + algorithm, ignores version", () => {
-    const a = computeFingerprint({ surface: "dependency", ecosystem: "npm", package: "left-pad", algorithm: "RSA" });
-    const b = computeFingerprint({ surface: "dependency", ecosystem: "npm", package: "left-pad", algorithm: "RSA" });
+  it("dependency: repo + ecosystem + package + algorithm, ignores version", () => {
+    const a = computeFingerprint({ surface: "dependency", repo: "project:1", ecosystem: "npm", package: "left-pad", algorithm: "RSA" });
+    const b = computeFingerprint({ surface: "dependency", repo: "project:1", ecosystem: "npm", package: "left-pad", algorithm: "RSA" });
     expect(a).toBe(b);
   });
 
-  it("tls: host + port + algorithm", () => {
-    const a = computeFingerprint({ surface: "tls", host: "example.com", port: 443, algorithm: "ECDSA" });
-    const b = computeFingerprint({ surface: "tls", host: "example.com", port: 8443, algorithm: "ECDSA" });
+  it("dependency: the same package in two projects is two assets", () => {
+    // `repo` is in the identity because `assets.location` is a single column
+    // and three mechanisms attribute an asset to a project by its
+    // `project:<id>:` prefix — project deletion, the D3 coverage meter and the
+    // CBOM `containedIn` join. One row cannot carry two projects' prefixes.
+    const one = computeFingerprint({ surface: "dependency", repo: "project:1", ecosystem: "npm", package: "elliptic", algorithm: "ECDSA" });
+    const two = computeFingerprint({ surface: "dependency", repo: "project:2", ecosystem: "npm", package: "elliptic", algorithm: "ECDSA" });
+    expect(one).not.toBe(two);
+  });
+
+  it("tls: repo + host + port + algorithm", () => {
+    const a = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDSA" });
+    const b = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 8443, algorithm: "ECDSA" });
     expect(a).not.toBe(b);
   });
 
-  it("certificate: issuer + serial", () => {
-    const a = computeFingerprint({ surface: "certificate", issuer: "DigiCert", serial: "01AB" });
-    const b = computeFingerprint({ surface: "certificate", issuer: "DigiCert", serial: "01AB" });
+  it("tls: the same host:port in two projects is two assets — same reasoning as dependency above", () => {
+    const one = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDH/DH" });
+    const two = computeFingerprint({ surface: "tls", repo: "project:2", host: "example.com", port: 443, algorithm: "ECDH/DH" });
+    expect(one).not.toBe(two);
+  });
+
+  // B4 added `repo` to the certificate variant, so this keeps that shape —
+  // lane B's side of this conflict was simply the pre-B4 version of the same
+  // test, not a competing intent.
+  it("certificate: repo + issuer + serial", () => {
+    const a = computeFingerprint({ surface: "certificate", repo: "project:1", issuer: "DigiCert", serial: "01AB" });
+    const b = computeFingerprint({ surface: "certificate", repo: "project:1", issuer: "DigiCert", serial: "01AB" });
     expect(a).toBe(b);
+  });
+
+  it("certificate: the same issuer+serial submitted to two projects is two assets", () => {
+    // Same reasoning as the dependency case above: `assets.location` carries
+    // only one project's prefix, so a shared certificate (a wildcard cert
+    // reused across projects, or the same CA bundle uploaded twice) must not
+    // collide into one row — the second upsert would silently overwrite the
+    // first project's `location` and un-attribute its certificate.
+    const one = computeFingerprint({ surface: "certificate", repo: "project:1", issuer: "DigiCert", serial: "01AB" });
+    const two = computeFingerprint({ surface: "certificate", repo: "project:2", issuer: "DigiCert", serial: "01AB" });
+    expect(one).not.toBe(two);
   });
 
   it("binary: excludes content digest/sha256 by construction — the type has no such field", () => {

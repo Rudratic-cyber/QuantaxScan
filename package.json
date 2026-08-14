@@ -11,6 +11,7 @@
     "test:libs": "pnpm -r --filter \"./lib/**\" --if-present run test",
     "test:api": "pnpm --filter @workspace/api-server test",
     "test:ui": "playwright test",
+    "test:e2e": "playwright test --config playwright.e2e.config.ts",
     "test": "pnpm run test:libs && pnpm run test:api && pnpm run test:ui",
     "ci": "bash scripts/ci-local.sh",
     "hooks:install": "git config core.hooksPath .githooks && echo 'pre-push hook active \u2014 pnpm run ci --skip-ui will gate every push'",
@@ -21,6 +22,8 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/node": "^25.3.5",
+    "@types/pg": "^8.18.0",
+    "pg": "^8.20.0",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"
   }

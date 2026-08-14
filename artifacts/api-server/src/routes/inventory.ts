@@ -1,10 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { ne } from "drizzle-orm";
-import { withOrg, assetsTable, projectsTable, collectionRunsTable, projectRepoId } from "@workspace/db";
+import { ne, inArray } from "drizzle-orm";
+import {
+  withOrg,
+  assetsTable,
+  projectsTable,
+  collectionRunsTable,
+  observationsTable,
+  projectRepoId,
+} from "@workspace/db";
+import { resolveSecrecyLifetime } from "@workspace/db/classification";
 import { buildCbom, type CryptoAssetInput, type SoftwareComponentInput } from "@workspace/cbom";
 import { orgContextFor } from "../lib/principal";
 import { summarisePostureTimeline } from "../lib/posture-timeline";
+import { summariseProjectCoverage } from "../lib/coverage";
+import { summariseReadiness, type ReadinessAssetRow } from "../lib/readiness";
+import { summariseInventoryAssets } from "../lib/inventory-assets";
 
 const router: IRouter = Router();
 
@@ -161,6 +172,169 @@ router.get("/inventory/timeline", async (req, res): Promise<void> => {
   });
 
   res.json(timeline);
+});
+
+/**
+ * D1 — `GET /api/inventory/readiness`, the CISA quantum-readiness posture
+ * tracker. docs/Claude/03-features.md §D1, docs/Claude/06-cisa-dashboard.md
+ * §"Row 1" and §"Row 3".
+ *
+ * Bundles the readiness sections with the estate-wide coverage meter in one
+ * payload rather than two, because Row 1's "cryptographic inventory" section
+ * is *defined* as a function of the coverage numbers — a client that fetched
+ * them separately could show a header that disagrees with the panel under it.
+ *
+ * The coverage block is genuinely estate-wide, not `/api/projects/:id/coverage`
+ * called once per project and merged: that would double-count nothing (each
+ * project's assets are disjoint) but would silently drop every asset with no
+ * project at all — `assets` has no foreign key to `projects` (see
+ * `posture-timeline.ts`), and TLS/certificate/KMS surfaces are exactly the
+ * surfaces with no project prefix to attribute to. `summariseProjectCoverage`
+ * is already project-agnostic (its output carries no `projectId`), so this
+ * reuses the tested arithmetic verbatim over every run/asset/observation in
+ * the organisation, with no `like location` filter at all.
+ */
+router.get("/inventory/readiness", async (req, res): Promise<void> => {
+  const now = new Date();
+
+  const payload = await withOrg(orgContextFor(req), async (tx) => {
+    const [runs, assets, projects] = await Promise.all([
+      tx
+        .select({
+          surface: collectionRunsTable.surface,
+          status: collectionRunsTable.status,
+          startedAt: collectionRunsTable.startedAt,
+          completedAt: collectionRunsTable.completedAt,
+        })
+        .from(collectionRunsTable),
+      tx
+        .select({
+          id: assetsTable.id,
+          surface: assetsTable.surface,
+          status: assetsTable.status,
+          location: assetsTable.location,
+          dataClassification: assetsTable.dataClassification,
+          secrecyLifetimeYears: assetsTable.secrecyLifetimeYears,
+        })
+        .from(assetsTable),
+      tx
+        .select({
+          id: projectsTable.id,
+          dataClassification: projectsTable.dataClassification,
+          secrecyLifetimeYears: projectsTable.secrecyLifetimeYears,
+        })
+        .from(projectsTable),
+    ]);
+
+    const assetIds = assets.map((a) => a.id);
+    const observations = assetIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: observationsTable.id,
+            assetId: observationsTable.assetId,
+            confidence: observationsTable.confidence,
+            observedAt: observationsTable.observedAt,
+          })
+          .from(observationsTable)
+          .where(inArray(observationsTable.assetId, assetIds));
+
+    const coverage = summariseProjectCoverage({ runs, assets, observations });
+
+    const projectById = new Map(projects.map((p) => [p.id, p] as const));
+    const projectIdPattern = /^project:(\d+):/;
+    const presentAssets: ReadinessAssetRow[] = assets
+      .filter((a) => a.status !== "gone")
+      .map((a) => {
+        const match = projectIdPattern.exec(a.location);
+        const project = match ? projectById.get(Number(match[1])) : undefined;
+        const lifetime = resolveSecrecyLifetime({
+          assetClassification: a.dataClassification,
+          assetSecrecyLifetimeYears: a.secrecyLifetimeYears,
+          projectClassification: project?.dataClassification ?? null,
+          projectSecrecyLifetimeYears: project?.secrecyLifetimeYears ?? null,
+        });
+        return { status: a.status, classificationSource: lifetime.classificationSource };
+      });
+
+    const dependencyAssetCount = assets.filter((a) => a.surface === "dependency" && a.status !== "gone").length;
+
+    const readiness = summariseReadiness({ coverage, presentAssets, dependencyAssetCount }, now);
+    return { ...readiness, coverage };
+  });
+
+  res.json(payload);
+});
+
+/**
+ * D1 — `GET /api/inventory/assets`, the estate inventory table (Row 4) and
+ * Row 2/5 drill-down. docs/Claude/06-cisa-dashboard.md §"Row 4".
+ *
+ * Present assets only (`status !== "gone"`), same reasoning as the CBOM route:
+ * a current-state inventory must not list crypto a later run proved absent.
+ * `?surface=` filters server-side (the spec's cert-expiry panel reads this
+ * with `surface=certificate`); every other client-facing filter — algorithm,
+ * status, owner, confidence — is small enough at this stage to filter
+ * client-side over the one response, matching how the rest of this UI already
+ * treats a project's findings.
+ *
+ * `statusCounts` covers **every** asset regardless of status, gone included,
+ * so Row 6 (drift) can report how many were remediated/waived/removed since
+ * the last collection without those rows ever appearing in `assets` as if
+ * still present.
+ */
+router.get("/inventory/assets", async (req, res): Promise<void> => {
+  const now = new Date();
+  const surfaceFilter = typeof req.query.surface === "string" ? req.query.surface : undefined;
+
+  const payload = await withOrg(orgContextFor(req), async (tx) => {
+    const [allAssets, projects] = await Promise.all([
+      tx
+        .select({
+          id: assetsTable.id,
+          fingerprint: assetsTable.fingerprint,
+          surface: assetsTable.surface,
+          algorithm: assetsTable.algorithm,
+          keySize: assetsTable.keySize,
+          location: assetsTable.location,
+          status: assetsTable.status,
+          firstSeen: assetsTable.firstSeen,
+          lastSeen: assetsTable.lastSeen,
+          ownerId: assetsTable.ownerId,
+          dataClassification: assetsTable.dataClassification,
+          secrecyLifetimeYears: assetsTable.secrecyLifetimeYears,
+          effortHours: assetsTable.effortHours,
+        })
+        .from(assetsTable),
+      tx
+        .select({
+          id: projectsTable.id,
+          dataClassification: projectsTable.dataClassification,
+          secrecyLifetimeYears: projectsTable.secrecyLifetimeYears,
+        })
+        .from(projectsTable),
+    ]);
+
+    const allAssetsStatus = allAssets.map((a) => a.status);
+    const present = allAssets.filter((a) => a.status !== "gone" && (surfaceFilter === undefined || a.surface === surfaceFilter));
+    const presentIds = present.map((a) => a.id);
+
+    const observations = presentIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: observationsTable.id,
+            assetId: observationsTable.assetId,
+            confidence: observationsTable.confidence,
+            observedAt: observationsTable.observedAt,
+          })
+          .from(observationsTable)
+          .where(inArray(observationsTable.assetId, presentIds));
+
+    return summariseInventoryAssets({ assets: present, allAssetsStatus, projects, observations, now });
+  });
+
+  res.json(payload);
 });
 
 export default router;

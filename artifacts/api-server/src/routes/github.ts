@@ -4,6 +4,12 @@
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
 import { scanCode, computeScanResult, generateExecutiveSummary } from "../lib/scanner";
 import { logger } from "../lib/logger";
+import {
+  parseGithubUrl,
+  encodeRepoFilePath,
+  githubFetch,
+  DisallowedRedirectError,
+} from "../lib/github-url";
 
 const router: IRouter = Router();
 
@@ -61,14 +67,14 @@ function setCachedFile(key: string, content: string): void {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function parseGithubUrl(url: string): { owner: string; repo: string } | null {
-  try {
-    const u = new URL(url);
-    if (!u.hostname.includes("github.com")) return null;
-    const parts = u.pathname.replace(/^\//, "").split("/");
-    if (parts.length < 2) return null;
-    return { owner: parts[0], repo: parts[1].replace(/\.git$/, "") };
-  } catch { return null; }
+// `parseGithubUrl` used to live here and matched the host with
+// `hostname.includes("github.com")`, which accepted `github.com.evil.example`
+// among others. It now lives in ../lib/github-url.ts with the exact-match
+// version, the proof table, and the tests for each bypass — S7.
+
+/** The URL the routes echo back, rebuilt from the validated parts. */
+function canonicalRepoUrl(owner: string, repo: string): string {
+  return `https://github.com/${owner}/${repo}`;
 }
 
 function getExtension(path: string): string {
@@ -104,13 +110,16 @@ function makeGitHubHeaders(): Record<string, string> {
 // ── Fetch with retry + exponential backoff ────────────────────────────────────
 async function fetchWithRetry(
   url: string,
-  options: RequestInit,
+  options: { headers?: Record<string, string>; method?: string },
   maxRetries = 3,
 ): Promise<Response> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const res = await fetch(url, options);
+      // githubFetch, not fetch: host allowlist on every redirect hop, an
+      // explicit timeout, and the Authorization header dropped across an
+      // origin change (S7).
+      const res = await githubFetch(url, options);
       // On 429 or 403 (rate limit), respect Retry-After or back off
       if (res.status === 429 || res.status === 403) {
         const retryAfter = res.headers.get("Retry-After");
@@ -129,6 +138,9 @@ async function fetchWithRetry(
       }
       return res;
     } catch (err) {
+      // A refused redirect is a security decision, not a transient failure:
+      // retrying it just re-issues the same disallowed hop.
+      if (err instanceof DisallowedRedirectError) throw err;
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < maxRetries - 1) {
         await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 500));
@@ -151,7 +163,7 @@ async function fetchRepoTree(
 
   try {
     const res = await fetchWithRetry(
-      `https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`,
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/HEAD?recursive=1`,
       { headers },
     );
 
@@ -196,9 +208,10 @@ async function fetchRepoTree(
 
 // ── Detect default branch ─────────────────────────────────────────────────────
 async function detectBranch(owner: string, repo: string, headers: Record<string, string>): Promise<string> {
+  const base = `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
   const [mainRes, masterRes] = await Promise.allSettled([
-    fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/README.md`, { method: "HEAD", headers }),
-    fetch(`https://raw.githubusercontent.com/${owner}/${repo}/master/README.md`, { method: "HEAD", headers }),
+    githubFetch(`${base}/main/README.md`, { method: "HEAD", headers }),
+    githubFetch(`${base}/master/README.md`, { method: "HEAD", headers }),
   ]);
   if (mainRes.status === "fulfilled" && mainRes.value.ok) return "main";
   if (masterRes.status === "fulfilled" && masterRes.value.ok) return "master";
@@ -210,6 +223,15 @@ async function fetchRawFile(
   owner: string, repo: string, branch: string, filePath: string,
   headers: Record<string, string>,
 ): Promise<string | null> {
+  // The tree comes from GitHub rather than the caller, but it is still remote
+  // input being spliced into a URL: a `..` segment would climb out of the
+  // repository, and an unencoded one could reshape the path (S7).
+  const encodedPath = encodeRepoFilePath(filePath);
+  if (encodedPath === null) {
+    logger.warn({ owner, repo, filePath }, "Skipping a repository path that is not safe to request");
+    return null;
+  }
+
   const branches = branch === "main" ? ["main", "master"] : ["master", "main"];
   for (const b of branches) {
     const cacheKey = `raw:${owner}/${repo}/${b}/${filePath}`;
@@ -219,7 +241,7 @@ async function fetchRawFile(
     try {
       // Pass auth headers so raw.githubusercontent.com counts against the authenticated quota
       const res = await fetchWithRetry(
-        `https://raw.githubusercontent.com/${owner}/${repo}/${b}/${filePath}`,
+        `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${b}/${encodedPath}`,
         { headers },
         2,
       );
@@ -262,7 +284,7 @@ async function fetchAndScanFiles(
 router.get("/github/rate-limit", async (_req: Request, res: ExpressResponse): Promise<void> => {
   const headers = makeGitHubHeaders();
   try {
-    const r = await fetch("https://api.github.com/rate_limit", { headers });
+    const r = await githubFetch("https://api.github.com/rate_limit", { headers });
     const data = await r.json() as { resources: { core: { limit: number; remaining: number; reset: number } } };
     const core = data.resources.core;
     const resetMs = core.reset * 1000;
@@ -295,7 +317,7 @@ router.post("/github/scan", async (req: Request, res: ExpressResponse): Promise<
     .slice(0, MAX_FILES);
 
   if (!candidates.length) {
-    res.json({ repoUrl, owner, repo, totalFiles: 0, findings: [], criticalCount: 0, alertCount: 0, cleanCount: 0, riskScore: 0, totalLines: 0, executiveSummary: "No scannable source files found.", fileResults: [] }); return;
+    res.json({ repoUrl: canonicalRepoUrl(owner, repo), owner, repo, totalFiles: 0, findings: [], criticalCount: 0, alertCount: 0, cleanCount: 0, riskScore: 0, totalLines: 0, executiveSummary: "No scannable source files found.", fileResults: [] }); return;
   }
 
   const fileResults = await fetchAndScanFiles(owner, repo, treeResult.branch, candidates, headers);
@@ -305,7 +327,7 @@ router.post("/github/scan", async (req: Request, res: ExpressResponse): Promise<
   const primaryLang = fileResults.length ? [...fileResults].sort((a, b) => b.lines - a.lines)[0].language : "unknown";
 
   res.json({
-    repoUrl, owner, repo, totalFiles: fileResults.length, findings: allFindings,
+    repoUrl: canonicalRepoUrl(owner, repo), owner, repo, totalFiles: fileResults.length, findings: allFindings,
     criticalCount: result.criticalCount, alertCount: result.alertCount,
     cleanCount: result.cleanCount, riskScore: result.riskScore, totalLines,
     totalEffortHours: result.totalEffortHours,
@@ -357,16 +379,29 @@ router.post("/github/fetch", async (req: Request, res: ExpressResponse): Promise
     }));
   }
 
-  res.json({ owner, repo, repoUrl, branch: treeResult.branch, totalNodes: totalFileCount, truncated: treeResult.truncated, fullTree, fetchedFiles });
+  // Echo the canonical URL rather than the caller's string. The client feeds
+  // this straight back into POST /github/scan-files, which now validates it —
+  // reflecting raw input would make that round trip fail on a URL we accepted.
+  res.json({ owner, repo, repoUrl: canonicalRepoUrl(owner, repo), branch: treeResult.branch, totalNodes: totalFileCount, truncated: treeResult.truncated, fullTree, fetchedFiles });
 });
 
 // ── Route: PHASE 2 — scan pre-fetched files (zero GitHub API calls) ───────────
 router.post("/github/scan-files", async (req: Request, res: ExpressResponse): Promise<void> => {
-  const { repoUrl, owner, repo, files } = req.body as {
+  const { repoUrl, files } = req.body as {
     repoUrl: string; owner: string; repo: string;
     files: Array<{ path: string; content: string; language: string; lines: number }>;
   };
   if (!files || !Array.isArray(files) || !files.length) { res.status(400).json({ error: "files array is required" }); return; }
+
+  // This route makes no outbound request, so `repoUrl`/`owner`/`repo` used to
+  // be echoed straight back unvalidated. They are still attacker-controlled
+  // strings that a client renders as a link, so they get the same host
+  // allowlist as the fetching routes and the owner/repo in the response are
+  // the parsed ones rather than whatever was posted (S7).
+  if (typeof repoUrl !== "string") { res.status(400).json({ error: "repoUrl is required" }); return; }
+  const parsed = parseGithubUrl(repoUrl.trim());
+  if (!parsed) { res.status(400).json({ error: "Invalid GitHub URL. Use format: https://github.com/owner/repo" }); return; }
+  const { owner, repo } = parsed;
 
   const fileResults: Array<{ path: string; language: string; content: string; findings: ReturnType<typeof scanCode>; lines: number }> = [];
   for (const file of files.slice(0, MAX_FILES)) {
@@ -381,7 +416,7 @@ router.post("/github/scan-files", async (req: Request, res: ExpressResponse): Pr
   const primaryLang = fileResults.length ? [...fileResults].sort((a, b) => b.lines - a.lines)[0].language : "unknown";
 
   res.json({
-    repoUrl, owner, repo, totalFiles: fileResults.length, findings: allFindings,
+    repoUrl: canonicalRepoUrl(owner, repo), owner, repo, totalFiles: fileResults.length, findings: allFindings,
     criticalCount: result.criticalCount, alertCount: result.alertCount,
     cleanCount: result.cleanCount, riskScore: result.riskScore,
     totalLines, totalEffortHours: result.totalEffortHours,

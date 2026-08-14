@@ -48,7 +48,12 @@ const PRESENTATION: Record<CollectorSurfaceId, SurfacePresentation> = {
   },
   kms: {
     icon: <KeyRound className="h-5 w-5" />,
-    blurb: "Vault, AWS KMS, Azure Key Vault and GCP KMS, via read-only, narrowly-scoped credentials you issue.",
+    // Rewritten when B5 shipped. This previously read "via read-only,
+    // narrowly-scoped credentials you issue" — which described a design that
+    // was never built and, once the surface went `live`, became a false
+    // claim on a public page about how we hold customer credentials. What
+    // shipped takes no credential at all.
+    blurb: "Vault, AWS KMS, Azure Key Vault and GCP KMS. You submit the key inventory your own tooling already produces — no credential to your key store ever reaches us. Each key's provider-native spec is resolved against the providers' own published documentation; a spec we cannot cite is reported unclassified rather than guessed.",
   },
   config: {
     icon: <Server className="h-5 w-5" />,

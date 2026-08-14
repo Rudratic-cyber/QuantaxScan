@@ -30,10 +30,17 @@ tags:
     description: Estate-wide inventory exports and posture
   - name: chat
     description: AI assistant
+  - name: ot-fleets
+    description: Manual OT/embedded device fleet register (B8)
 
 # Interim shared-key authentication (S1 / G-12). Applies to every operation
 # unless overridden with `security: []`. This carries no per-user identity and
 # no organisation scoping — see docs/Claude/08-security.md.
+#
+# Every operation can also answer 429 (S6). Budgets are per route and keyed on
+# the API key, falling back to the client address on the public operations;
+# `Retry-After` is always set. The store is in-process, so the documented
+# allowance is per replica. See `components/responses/RateLimited`.
 security:
   - apiKeyHeader: []
   - bearerApiKey: []
@@ -47,6 +54,8 @@ paths:
       summary: Health check
       description: Returns server health status
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Healthy
           content:
@@ -60,6 +69,8 @@ paths:
       tags: [projects]
       summary: List all projects
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: List of projects
           content:
@@ -79,6 +90,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateProjectBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "201":
           description: Created project
           content:
@@ -98,6 +111,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Project details
           content:
@@ -117,6 +132,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "204":
           description: Deleted
 
@@ -136,6 +153,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Project findings
           content:
@@ -164,6 +183,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Coverage summary
           content:
@@ -174,6 +195,173 @@ paths:
           description: Invalid project ID
         "404":
           description: Not found
+
+  /projects/{id}/dependencies:
+    post:
+      operationId: submitProjectDependencies
+      tags: [projects]
+      summary: Submit a project's lockfiles for dependency/SBOM collection (B2)
+      description: >-
+        Runs the dependency collector over the submitted files and persists what it finds as
+        assets on the `dependency` surface, which is what makes that surface count as examined
+        in `GET /projects/{id}/coverage`.
+
+
+        Files are selected by basename, not by extension: `pnpm-lock.yaml`, `package-lock.json`,
+        `npm-shrinkwrap.json`, `yarn.lock` and `requirements*.txt`. Anything else in `files` is
+        ignored rather than rejected, so a caller may submit a whole tree.
+
+
+        **If no submitted file is a recognised lockfile, no collection run is recorded** and
+        `lockfilesRecognised` is 0. That is deliberate: writing a run would make the meter
+        report the dependency surface as examined-and-empty, when the truth is that nothing
+        readable was submitted. It is a 200, not an error — a repository legitimately may have
+        no lockfile.
+
+
+        A package that leaves a resubmitted lockfile marks its asset `gone`, scoped to the
+        ecosystems this submission actually carried a lockfile for. Submitting only
+        `requirements.txt` therefore never touches the project's npm assets.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectDependenciesBody"
+      responses:
+        "200":
+          description: Collection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DependencyIngestSummary"
+        "400":
+          description: Invalid project ID or body
+        "404":
+          description: Not found
+
+  /ot-fleets:
+    get:
+      operationId: listOtFleets
+      tags: [ot-fleets]
+      summary: List this organisation's OT/embedded device fleets (B8)
+      description: >-
+        The manual register — every fleet a customer has recorded by hand, newest first. Each
+        entry carries `exposure`, computed fresh on every read against the current Q-Day
+        scenarios, so a scenario or date change is reflected without a backfill.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: OT fleets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OtFleet"
+    post:
+      operationId: createOtFleet
+      tags: [ot-fleets]
+      summary: Record a new device fleet (B8)
+      description: >-
+        A form submission, not a collector run: every field but `name` is optional, and an
+        omitted field is stored as `null` — "not supplied" — rather than a guessed default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOtFleetBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "400":
+          description: Invalid body
+        "201":
+          description: Created fleet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtFleet"
+
+  /ot-fleets/{id}:
+    get:
+      operationId: getOtFleet
+      tags: [ot-fleets]
+      summary: Get one OT fleet by id (B8)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: OT fleet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtFleet"
+        "400":
+          description: Invalid fleet ID
+        "404":
+          description: Not found
+    patch:
+      operationId: updateOtFleet
+      tags: [ot-fleets]
+      summary: Update fields the customer has learned since the fleet was recorded (B8)
+      description: >-
+        Every field is optional and only the fields present in the body are changed — omitting a
+        field leaves the stored value (including `null`) exactly as it was, it does not clear it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOtFleetBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Updated fleet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtFleet"
+        "400":
+          description: Invalid fleet ID or body
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteOtFleet
+      tags: [ot-fleets]
+      summary: Remove a fleet from the register (B8)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "204":
+          description: Deleted
 
   /inventory/timeline:
     get:
@@ -187,6 +375,8 @@ paths:
         because that would draw a smooth trend on an estate that never changed. When fewer than
         two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Posture timeline
           content:
@@ -205,12 +395,62 @@ paths:
         auditor must not list crypto that a later run proved absent. **Not public** — a CBOM
         is a complete map of an organisation's cryptographic weaknesses.
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: CycloneDX 1.7 document
           content:
             application/vnd.cyclonedx+json; version=1.7:
               schema:
                 $ref: "#/components/schemas/CbomDocument"
+
+  /inventory/readiness:
+    get:
+      operationId: getInventoryReadiness
+      tags: [inventory]
+      summary: CISA quantum-readiness posture tracker (D1)
+      description: >-
+        Five sections tracking the named parts of the joint CISA/NSA/NIST quantum-readiness
+        factsheet (August 2023), plus the estate-wide coverage meter the first section is
+        defined against — bundled in one payload so the two cannot disagree. A section with
+        no data source in this product (roadmap document attachment, the vendor register)
+        reports `percentComplete: null` and `state: "not-tracked"`, never `0`. There is no
+        combined/overall readiness score.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Readiness posture and estate coverage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessSummary"
+
+  /inventory/assets:
+    get:
+      operationId: getInventoryAssets
+      tags: [inventory]
+      summary: Estate inventory table, PQC track and Mosca breach per asset (D1 Row 4)
+      description: >-
+        Present assets only (`status !== "gone"`), each carrying its resolved compliance
+        track (post-quantum vs. classical hygiene — G-10) and which Q-Day scenarios it
+        breaches. `statusCounts` covers every asset in the organisation regardless of status,
+        `gone` included, so drift can be reported without listing removed assets as present.
+      parameters:
+        - name: surface
+          in: query
+          description: Filter to one collector surface, e.g. `certificate` for the cert-expiry panel.
+          schema:
+            type: string
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Enriched asset inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryAssetsSummary"
 
   /scans:
     post:
@@ -224,6 +464,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateScanBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "201":
           description: Scan initiated
           content:
@@ -243,6 +485,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Scan results
           content:
@@ -264,6 +508,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Scan findings
           content:
@@ -290,6 +536,8 @@ paths:
             schema:
               $ref: "#/components/schemas/MultiScanBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "201":
           description: Multi-file scan summary
           content:
@@ -315,6 +563,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateSharedReportBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Share link created
           content:
@@ -344,6 +594,8 @@ paths:
           schema:
             type: string
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: The shared report row
           content:
@@ -372,6 +624,8 @@ paths:
             schema:
               $ref: "#/components/schemas/ChatBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Server-sent event stream
           content:
@@ -403,6 +657,8 @@ paths:
             type: integer
             default: 20
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Community posts
           content:
@@ -422,6 +678,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateCommunityPostBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "201":
           description: Created post
           content:
@@ -447,6 +705,8 @@ paths:
             schema:
               $ref: "#/components/schemas/VoteBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Updated post
           content:
@@ -467,6 +727,8 @@ paths:
             type: integer
             default: 10
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Leaderboard
           content:
@@ -482,6 +744,8 @@ paths:
       tags: [stats]
       summary: Get global platform statistics
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Global stats
           content:
@@ -496,6 +760,8 @@ paths:
       tags: [demo]
       summary: List available demo repositories
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Demo repos
           content:
@@ -521,6 +787,8 @@ paths:
           schema:
             type: string
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Demo scan results
           content:
@@ -553,7 +821,9 @@ paths:
         "404":
           description: Repository not found
         "429":
-          description: GitHub API rate limit
+          description: >-
+            Rate limited. Either this server's own per-route budget (S6) or GitHub's
+            upstream quota; `Retry-After` is set in both cases.
 
   /github/rate-limit:
     get:
@@ -561,6 +831,8 @@ paths:
       tags: [github]
       summary: Remaining GitHub API quota
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Rate limit status
           content:
@@ -597,7 +869,9 @@ paths:
         "404":
           description: Repository not found
         "429":
-          description: GitHub API rate limit
+          description: >-
+            Rate limited. Either this server's own per-route budget (S6) or GitHub's
+            upstream quota; `Retry-After` is set in both cases.
         "502":
           description: GitHub API unreachable
 
@@ -617,6 +891,8 @@ paths:
             schema:
               $ref: "#/components/schemas/GithubScanFilesBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Scan results
           content:
@@ -626,7 +902,530 @@ paths:
         "400":
           description: files array is required
 
+
+  /projects/{id}/certificates:
+    post:
+      operationId: submitProjectCertificates
+      tags: [projects]
+      summary: Submit certificates for X.509 collection (B4)
+      description: >-
+        Runs the certificate collector over the submitted PEM/DER files and persists what it
+        finds as assets on the `certificate` surface, which is what makes that surface count
+        as examined in `GET /projects/{id}/coverage`.
+
+
+        `content` is PEM text (one or more concatenated `-----BEGIN/END CERTIFICATE-----`
+        blocks — a full chain is read entirely, not just its leaf) or base64-encoded DER.
+        A file that is neither contributes nothing, silently.
+
+
+        **If no submitted file contains a parseable certificate, no collection run is
+        recorded** and `certificatesRecognised` is 0 — the same "examined nothing, not
+        found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200,
+        not an error.
+
+
+        Each returned certificate carries `qDay`: whether its `notAfter` falls on or after
+        each Q-Day scenario's year, derived fresh on every call rather than stored — see
+        `GET /projects/{id}/certificates` for the persisted-inventory read this backs.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectCertificatesBody"
+      responses:
+        "200":
+          description: Collection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateIngestSummary"
+        "400":
+          description: Invalid project ID, body, or too many certificates in one submission
+        "404":
+          description: Not found
+    get:
+      operationId: getProjectCertificates
+      tags: [projects]
+      summary: The project's certificate inventory, evaluated against Q-Day (B4)
+      description: >-
+        Every certificate asset attributed to this project, each evaluated against every
+        Q-Day scenario at read time — never persisted, because Q-Day scenarios are
+        customer-overridable (see `lib/risk`) and a stored verdict would go stale exactly the
+        way C1 exists to prevent. Includes assets of every lifecycle status, not only
+        `active`; a report of what was found must keep what was later remediated or waived
+        in the record.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Certificate inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectCertificates"
+        "400":
+          description: Invalid project ID
+        "404":
+          description: Not found
+
+  /projects/{id}/tls:
+    post:
+      operationId: submitProjectTls
+      tags: [projects]
+      summary: Probe a project's hosts for the TLS handshake they actually negotiate (B3)
+      description: >-
+        Opens a real TLS connection to each submitted `host`/`port` and records what was
+        *negotiated* — cipher suite, key-exchange group, protocol version, and the peer
+        certificate's public key type/size — not what a config file claims. Persists what it
+        finds as assets on the `tls` surface, which is what makes that surface count as
+        examined in `GET /projects/{id}/coverage`.
+
+
+        A caller-supplied host is refused before any connection is attempted if it resolves to
+        a loopback, private, link-local (including the cloud metadata service) or otherwise
+        non-routable address. The refusal reason is not detailed in the response — only
+        `refused`, distinguished from a target that was reachable in principle but did not
+        answer (`unreachable`) or one that completed a handshake (`probed`).
+
+
+        **If no target's handshake completes, no collection run is recorded** and
+        `targetsProbed` is 0 — the same honesty rule `POST /projects/{id}/dependencies` applies
+        for `lockfilesRecognised: 0`. It is a 200, not an error: every target may legitimately
+        be unreachable or filtered.
+
+
+        A host that no longer answers on a resubmission marks its assets `gone`, scoped to
+        exactly the targets that were actually probed in this submission — a target refused by
+        the guard or that timed out was not observed and does not affect any other target's
+        assets.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectTlsBody"
+      responses:
+        "200":
+          description: Probe result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TlsProbeSummary"
+        "400":
+          description: Invalid project ID or body
+        "404":
+          description: Not found
+
+  /projects/{id}/protocol-config:
+    post:
+      operationId: submitProjectProtocolConfig
+      tags: [projects]
+      summary: Read the crypto a project's protocol configuration declares (B6)
+      description: >-
+        Parses submitted SSH (`sshd_config`, `ssh_config`, `authorized_keys`), IPsec/IKE
+        (`ipsec.conf`, `swanctl.conf`), JOSE (a JWKS, an OpenID Connect discovery document)
+        and SAML metadata files, and persists the algorithms they *declare* as assets on the
+        `config` surface — which is what makes that surface count as examined in
+        `GET /projects/{id}/coverage`.
+
+
+        **A declaration is not a negotiation.** This route records what a file states, at
+        `configuration_information` modality and a confidence well below `POST
+        /projects/{id}/tls`'s observed handshake: a `Ciphers` list is an upper bound on what a
+        daemon will accept, not evidence any peer selected an entry from it. Each declaration
+        carries a `strength` — `permitted` (an algorithm the endpoint would accept) or
+        `materialised` (a specific key or a chosen algorithm, such as an `authorized_keys`
+        entry or a published JWK) — because those are different claims.
+
+
+        The SSH and IPsec families are recognised by filename (including `sshd_config.d/`
+        drop-ins); JOSE and SAML files have no conventional filename and are recognised by an
+        unambiguous structural marker instead (a `keys` array of JWKs, an
+        `*_alg_values_supported` field, an `EntityDescriptor` element).
+
+
+        **If no submitted file is a configuration this collector understands, no collection run
+        is recorded** and `configFilesRecognised` is 0 — the same "examined nothing, not found
+        nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an
+        error. A recognised file that declares no crypto is the *other* case and **does** record
+        a run: it was read, and it states nothing. Removing a directive and resubmitting the
+        file marks its assets `gone`, scoped to exactly the files this submission read.
+
+
+        Three deliberate silences, all restated in `evidenceCaveat`: `Include` directives are
+        not followed (the caller submits contents, not a filesystem); the absence of a directive
+        is not read as the compiled-in default; and an algorithm token with no canonical name —
+        including hybrid post-quantum key exchange such as `sntrup761x25519-sha512` — produces
+        no declaration rather than a guess.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectProtocolConfigBody"
+      responses:
+        "200":
+          description: Collection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProtocolConfigIngestSummary"
+        "400":
+          description: Invalid project ID, body, or too many configuration files in one submission
+        "404":
+          description: Not found
+
+  /vendor-assessments:
+    get:
+      operationId: listVendorAssessments
+      tags: [vendor-assessments]
+      summary: List this organisation's vendor / third-party assessments (B9)
+      description: >-
+        The vendor register — every supplier a customer has recorded, newest first. Each entry
+        carries `posture`, computed fresh on every read: the `manual_attestation` stamp and its
+        confidence, the Q-Day verdicts against the date the vendor *claims* it will be
+        post-quantum ready, and the contract-clause reading. Nothing here was observed by a
+        collector.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Vendor assessments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VendorAssessment"
+    post:
+      operationId: createVendorAssessment
+      tags: [vendor-assessments]
+      summary: Record a vendor assessment (B9)
+      description: >-
+        A form submission, not a collector run: every field but `vendorName` is optional, and an
+        omitted field is stored as `null` — "not supplied" — rather than a guessed default. A
+        vendor recorded with nothing else reads as awaiting a response, never as compliant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVendorAssessmentBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "400":
+          description: Invalid body
+        "201":
+          description: Created vendor assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorAssessment"
+
+  /vendor-assessments/{id}:
+    get:
+      operationId: getVendorAssessment
+      tags: [vendor-assessments]
+      summary: Get one vendor assessment by id (B9)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Vendor assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorAssessment"
+        "400":
+          description: Invalid vendor assessment ID
+        "404":
+          description: Not found
+    patch:
+      operationId: updateVendorAssessment
+      tags: [vendor-assessments]
+      summary: Update fields as a questionnaire comes back or a contract is read (B9)
+      description: >-
+        Every field is optional and only the fields present in the body are changed — omitting a
+        field leaves the stored value (including `null`) exactly as it was, it does not clear it.
+        Sending an explicit `null` does clear it, which is how a `contractPqcClause` of `absent`
+        that turned out to be a misreading is withdrawn back to "nobody has checked" rather than
+        to the opposite finding.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVendorAssessmentBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Updated vendor assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorAssessment"
+        "400":
+          description: Invalid vendor assessment ID or body
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteVendorAssessment
+      tags: [vendor-assessments]
+      summary: Remove a vendor from the register (B9)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "204":
+          description: Deleted
+
+  /projects/{id}/kms:
+    post:
+      operationId: submitProjectKms
+      tags: [projects]
+      summary: Submit a managed key-store inventory for collection (B5)
+      description: >-
+        Classifies the keys a managed key store holds — HashiCorp Vault, AWS KMS, Azure Key
+        Vault, GCP KMS — and persists what it finds as assets on the `kms` surface, which is
+        what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+
+        **This is a submission route, not a credentialed poller.** You send the key inventory
+        your own tooling already produced; no credential for the key store ever reaches this
+        product, and nothing here connects to a cloud provider. The corollary is stated in
+        every response's `evidenceCaveat`: the export is taken at its word, and nothing proves
+        it is complete, current, or from the key store you say it is.
+
+
+        Each key's provider-native spec string is resolved against the cited table in
+        `docs/Claude/mappings/kms-key-specs.json`. A spec whose primitive this product does
+        not report on (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's
+        `kty: oct`) yields no asset and is returned with `outcome: no-algorithm` and the
+        table's own reason — never the nearest similar algorithm.
+
+
+        **A submission whose keys are all unclassified still records a collection run.** That
+        is the one place this route's honesty rule differs from
+        `POST /projects/{id}/dependencies`: a key store holding only symmetric keys was
+        genuinely examined, and reporting it as un-examined would be the false statement. Only
+        an empty `keys` array records no run.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectKmsBody"
+      responses:
+        "200":
+          description: Collection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KmsIngestSummary"
+        "400":
+          description: Invalid project ID, body, or too many keys in one submission
+        "404":
+          description: Not found
+    get:
+      operationId: getProjectKmsKeys
+      tags: [projects]
+      summary: The project's managed key inventory, including rotation posture (B5)
+      description: >-
+        Every KMS key asset attributed to this project. This is the read that answers "what
+        does the inventory say", as opposed to the POST response, which only reports what one
+        submission found at the moment it was submitted.
+
+
+        It exists as its own route rather than leaning on `GET /inventory/assets` because that
+        endpoint does not return `locationDetail`, and everything specific to a key store —
+        provider, key id, spec, rotation state, origin, key store — lives there. Includes
+        assets of every lifecycle status, not only `active`.
+
+
+        `rotationEnabled` is null when the submitted export did not state it. That is not the
+        same fact as rotation being off, and the two are never collapsed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: KMS key inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectKmsKeys"
+        "400":
+          description: Invalid project ID
+        "404":
+          description: Not found
+
+  /projects/{id}/data-at-rest:
+    post:
+      operationId: submitProjectDataAtRest
+      tags: [projects]
+      summary: Submit a description of encrypted stores for data-at-rest collection (B7)
+      description: >-
+        Records what a database, backup, archive, volume or object store reports about its
+        own encryption, and persists it as assets on the `data-at-rest` surface — which is
+        what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+
+        Nothing is connected to. The caller submits what their engine's configuration
+        already reports (`pg_settings`, `sys.dm_database_encryption_keys`,
+        `V$ENCRYPTED_TABLESPACES`, a bucket's SSE configuration, a backup job definition).
+        Credentialed collection against a live database is deliberately not offered: it
+        would need a secret-handling design this product does not have yet (F4).
+
+
+        **Each store produces up to two assets, not one.** `dataEncryption` is the bulk
+        cipher over the stored data — usually AES, which NIST does not consider
+        quantum-vulnerable. `keyProtection` is how that data key is wrapped, and that is
+        where Shor applies: an AES-256 store whose key is wrapped with RSA-2048 is a
+        harvest-now-decrypt-later target however strong the bulk cipher is.
+
+
+        **A store reported as encrypted with no cipher named records nothing and is
+        returned as a `cipher-not-reported` gap.** It never becomes AES-256. That case is
+        also excluded from the reobservation scope, so leaving the field blank on a
+        resubmission cannot mark a previously recorded cipher `gone`.
+
+
+        `dataClassification` / `secrecyLifetimeYears` are persisted on the store's assets
+        and are what `GET /api/inventory/assets` resolves X from. Omit them and X falls
+        back to the project's default and then the product's, flagged as assumed — see
+        `classificationSource` on the read below.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectDataAtRestBody"
+      responses:
+        "200":
+          description: Collection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataAtRestIngestSummary"
+        "400":
+          description: Invalid project ID, body, or too many stores in one submission
+        "404":
+          description: Not found
+    get:
+      operationId: getProjectDataAtRest
+      tags: [projects]
+      summary: The project's data-at-rest inventory with its Mosca verdict (B7)
+      description: >-
+        Every data-at-rest asset attributed to this project, grouped back into the store it
+        belongs to, with X resolved and Mosca evaluated at read time — never persisted,
+        because the Q-Day scenario years and the standards data behind `quantumVulnerable`
+        are both revisable and a stored verdict would go stale exactly the way C1 exists to
+        prevent.
+
+
+        `xAssumed` and `classificationSource` are the honesty half: a store nobody
+        classified is reported with the product's default X and says so, rather than
+        quietly presenting an assumption as a measurement.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Data-at-rest inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDataAtRest"
+        "400":
+          description: Invalid project ID
+        "404":
+          description: Not found
 components:
+  responses:
+    RateLimited:
+      description: >-
+        Rate limited (S6). The budget depends on the route: GitHub-facing scans,
+        local scans, chat and everything else have separate allowances, and the
+        health check is exempt. Buckets are keyed on the API key where one is
+        presented and on the client address otherwise, so the response is
+        identical whether or not the key was valid. `Retry-After` carries the
+        number of seconds until the window resets.
+      headers:
+        Retry-After:
+          description: Seconds until the caller may retry.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+            required:
+              - error
+
   securitySchemes:
     apiKeyHeader:
       type: apiKey
@@ -811,6 +1610,306 @@ components:
         - hygiene
         - mosca
         - createdAt
+
+    SubmitProjectDependenciesBody:
+      type: object
+      properties:
+        files:
+          type: array
+          description: >-
+            Repository files. Only recognised lockfiles are read; everything else is ignored.
+            `content` is the file verbatim — truncating a lockfile silently drops packages, so
+            callers must not send an excerpt.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              content:
+                type: string
+            required:
+              - path
+              - content
+      required:
+        - files
+
+    DependencyIngestSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        lockfilesRecognised:
+          type: integer
+          description: >-
+            How many submitted files the collector could read. Zero means no collection run was
+            recorded and the dependency surface is still un-examined for this project.
+        lockfiles:
+          type: array
+          description: The recognised lockfiles and which format each was read as.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              kind:
+                type: string
+                enum: [pnpm-lock, npm-lock, yarn-lock, pip-requirements]
+            required:
+              - path
+              - kind
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: Null when no run was recorded (`lockfilesRecognised` is 0).
+        assetsCreated:
+          type: integer
+        assetsUpdated:
+          type: integer
+        observationsCreated:
+          type: integer
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Assets whose package is no longer in a resubmitted lockfile. Scoped to the
+            ecosystems this submission carried a lockfile for.
+        evidenceCaveat:
+          type: string
+          description: >-
+            Stated in every response rather than left to the client: a lockfile records the
+            fully resolved dependency graph, so a match may be a transitive dependency of the
+            toolchain rather than a library the project's own code calls.
+      required:
+        - projectId
+        - lockfilesRecognised
+        - lockfiles
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - evidenceCaveat
+
+    OtExposureState:
+      type: string
+      description: >-
+        `unknown` is distinct from `clear` — no recorded procurement date means nobody has
+        asserted a replacement is coming, which must never be read as safe.
+      enum: [exposed, clear, unknown]
+
+    OtExposureVerdict:
+      type: object
+      description: One Q-Day scenario's exposure verdict for a fleet's next procurement date.
+      properties:
+        scenario:
+          type: string
+          enum: [conservative, central, aggressive]
+        qDayYear:
+          type: integer
+        state:
+          $ref: "#/components/schemas/OtExposureState"
+        narrative:
+          type: string
+          description: The board-deck sentence — names the date and the scenario, not just the verdict.
+      required:
+        - scenario
+        - qDayYear
+        - state
+        - narrative
+
+    OtExposureAssessment:
+      type: object
+      description: >-
+        B8's payoff: whether this fleet's next procurement decision falls after each Q-Day
+        scenario's year, computed fresh on every read so a scenario change never needs a
+        backfill. A fleet with no recorded procurement date is `unknown` under every scenario,
+        never `clear`.
+      properties:
+        nextProcurementDate:
+          type: string
+          format: date-time
+          nullable: true
+        verdicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/OtExposureVerdict"
+        exposedScenarioCount:
+          type: integer
+        unknownScenarioCount:
+          type: integer
+        scenarioCount:
+          type: integer
+        framing:
+          type: string
+          description: Mandatory framing for any customer-facing use of the scenario years.
+      required:
+        - nextProcurementDate
+        - verdicts
+        - exposedScenarioCount
+        - unknownScenarioCount
+        - scenarioCount
+        - framing
+
+    OtFleet:
+      type: object
+      description: >-
+        An `ot_fleets` row plus its computed exposure — B8, the manual OT/embedded register.
+        docs/Claude/03-features.md §B8. Not an `Asset`: nothing here is collected, a human enters
+        and edits it by hand, and it carries no `fingerprint`/`surface`/observation lifecycle.
+      properties:
+        id:
+          type: integer
+        organizationId:
+          type: integer
+        name:
+          type: string
+        vendor:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        deviceCount:
+          type: integer
+          nullable: true
+          description: Null means nobody has counted yet — distinct from a recorded zero.
+        site:
+          type: string
+          nullable: true
+        owner:
+          type: string
+          nullable: true
+          description: Free text — a team, role or vendor contact, not necessarily an app user.
+        cryptoInUse:
+          type: string
+          nullable: true
+          description: Free-form, customer-asserted description of the cryptography in use.
+        cryptoAlgorithm:
+          type: string
+          nullable: true
+          description: >-
+            The structured half of `cryptoInUse`, and the only part that becomes an inventory
+            asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the
+            customer asserts — and is never parsed into an algorithm. Null means nobody stated
+            one, and a fleet with none produces no asset at all.
+        cryptoKeySize:
+          type: integer
+          nullable: true
+          description: Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.
+        refreshCycleYears:
+          type: integer
+          nullable: true
+        nextProcurementDate:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        exposure:
+          $ref: "#/components/schemas/OtExposureAssessment"
+      required:
+        - id
+        - organizationId
+        - name
+        - vendor
+        - model
+        - deviceCount
+        - site
+        - owner
+        - cryptoInUse
+        - refreshCycleYears
+        - nextProcurementDate
+        - createdAt
+        - updatedAt
+        - exposure
+
+    CreateOtFleetBody:
+      type: object
+      properties:
+        name:
+          type: string
+        vendor:
+          type: string
+        model:
+          type: string
+        deviceCount:
+          type: integer
+          minimum: 0
+        site:
+          type: string
+        owner:
+          type: string
+        cryptoInUse:
+          type: string
+        cryptoAlgorithm:
+          type: string
+          nullable: true
+          description: >-
+            The structured half of `cryptoInUse`, and the only part that becomes an inventory
+            asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the
+            customer asserts — and is never parsed into an algorithm. Null means nobody stated
+            one, and a fleet with none produces no asset at all.
+        cryptoKeySize:
+          type: integer
+          nullable: true
+          description: Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.
+        refreshCycleYears:
+          type: integer
+          minimum: 0
+        nextProcurementDate:
+          type: string
+          format: date-time
+      required:
+        - name
+
+    UpdateOtFleetBody:
+      type: object
+      description: Every field optional; only fields present in the body are changed.
+      properties:
+        name:
+          type: string
+        vendor:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        deviceCount:
+          type: integer
+          minimum: 0
+          nullable: true
+        site:
+          type: string
+          nullable: true
+        owner:
+          type: string
+          nullable: true
+        cryptoInUse:
+          type: string
+          nullable: true
+        cryptoAlgorithm:
+          type: string
+          nullable: true
+          description: >-
+            The structured half of `cryptoInUse`, and the only part that becomes an inventory
+            asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the
+            customer asserts — and is never parsed into an algorithm. Null means nobody stated
+            one, and a fleet with none produces no asset at all.
+        cryptoKeySize:
+          type: integer
+          nullable: true
+          description: Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.
+        refreshCycleYears:
+          type: integer
+          minimum: 0
+          nullable: true
+        nextProcurementDate:
+          type: string
+          format: date-time
+          nullable: true
 
     CreateScanBody:
       type: object
@@ -2662,3 +3761,1716 @@ components:
         - metadata
         - components
         - dependencies
+
+    ReadinessSection:
+      type: object
+      description: >-
+        One named part of the CISA/NSA/NIST factsheet. `state: "not-tracked"` means this
+        product has no data source for the section at all (e.g. no roadmap-document
+        attachment, no vendor register) — `percentComplete` is null in that case, never 0,
+        because 0 would assert a measurement nobody took.
+      properties:
+        id:
+          type: string
+          enum: [roadmap, cryptographic-inventory, prioritisation, vendor-engagement, supply-chain]
+        label:
+          type: string
+        definition:
+          type: string
+          description: What "complete" means for this section, stated plainly rather than left implicit.
+        state:
+          type: string
+          enum: [tracked, not-tracked]
+        percentComplete:
+          type: integer
+          nullable: true
+        numerator:
+          type: integer
+          nullable: true
+        denominator:
+          type: integer
+          nullable: true
+        reason:
+          type: string
+      required:
+        - id
+        - label
+        - definition
+        - state
+        - percentComplete
+        - numerator
+        - denominator
+        - reason
+
+    ReadinessSummary:
+      type: object
+      description: >-
+        D1 Row 1 plus the estate coverage meter (Row 3) it is partly defined against, in one
+        payload so the two cannot disagree. Deliberately carries no combined/overall
+        readiness score — averaging a measured section with an untracked one would invent a
+        denominator, and that is the one number a buyer would screenshot and nobody could
+        defend.
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        framing:
+          type: string
+          description: >-
+            States the factsheet's name and date. The factsheet is organised into named
+            sections, not a numbered stage sequence — this must never read as a CISA-authored
+            numbering.
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReadinessSection"
+        coverage:
+          $ref: "#/components/schemas/EstateCoverage"
+      required:
+        - generatedAt
+        - framing
+        - sections
+        - coverage
+
+    EstateCoverage:
+      type: object
+      description: >-
+        The same shape and the same honesty rules as `ProjectCoverage` (D3's per-project
+        meter), computed over the whole organisation instead of one project — reusing
+        `summariseProjectCoverage` verbatim, since its output never depended on a project
+        scope in the first place. No `projectId`: the whole point is that it is not one.
+      properties:
+        examinedSurfaces:
+          type: integer
+        totalSurfaces:
+          type: integer
+        surfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/SurfaceCoverage"
+        confidence:
+          $ref: "#/components/schemas/ConfidenceSummary"
+      required:
+        - examinedSurfaces
+        - totalSurfaces
+        - surfaces
+        - confidence
+
+    InventoryMoscaSummary:
+      type: object
+      description: >-
+        Reuses the same exported Mosca primitives `PostureTimeline` scores its estate-wide
+        series with, so the two panels cannot disagree about what "breached" means.
+      properties:
+        x:
+          type: number
+          description: Secrecy lifetime in years, as resolved through A3 (asset → project → product default).
+        y:
+          type: number
+          description: Migration time in years, from effort hours. Zero across the board until effort estimation ships.
+        xAssumed:
+          type: boolean
+          description: True when X was defaulted rather than supplied at the asset or project level.
+        applicable:
+          type: boolean
+          description: False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break.
+        breachedScenarios:
+          type: array
+          items:
+            type: string
+          description: Q-Day scenario names this asset breaches under. Empty when not applicable.
+      required:
+        - x
+        - y
+        - xAssumed
+        - applicable
+        - breachedScenarios
+
+    EnrichedInventoryAsset:
+      type: object
+      properties:
+        id:
+          type: integer
+        fingerprint:
+          type: string
+        projectId:
+          type: integer
+          nullable: true
+          description: Null for a surface with no project association (TLS, certificate, KMS).
+        surface:
+          type: string
+        algorithm:
+          type: string
+        keySize:
+          type: integer
+          nullable: true
+        location:
+          type: string
+        status:
+          type: string
+        firstSeen:
+          type: string
+          format: date-time
+        lastSeen:
+          type: string
+          format: date-time
+        ownerId:
+          type: integer
+          nullable: true
+        dataClassification:
+          type: string
+          nullable: true
+        secrecyLifetimeYears:
+          type: integer
+          nullable: true
+        classificationSource:
+          type: string
+          enum: [asset, project, default]
+          description: Where the classification behind `mosca.x` actually came from.
+        latestConfidence:
+          type: number
+          nullable: true
+          description: Most recent observation's confidence. Null when the asset has never been observed.
+        compliance:
+          allOf:
+            - $ref: "#/components/schemas/FindingCompliance"
+          nullable: true
+          description: Null when the mapping data has no entry for this algorithm.
+        mosca:
+          $ref: "#/components/schemas/InventoryMoscaSummary"
+      required:
+        - id
+        - fingerprint
+        - projectId
+        - surface
+        - algorithm
+        - keySize
+        - location
+        - status
+        - firstSeen
+        - lastSeen
+        - ownerId
+        - dataClassification
+        - secrecyLifetimeYears
+        - classificationSource
+        - latestConfidence
+        - compliance
+        - mosca
+
+    InventoryAssetsSummary:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        assets:
+          type: array
+          items:
+            $ref: "#/components/schemas/EnrichedInventoryAsset"
+        statusCounts:
+          type: object
+          additionalProperties:
+            type: integer
+          description: >-
+            Every asset status in the organisation, `gone` included — so drift can be
+            reported without a removed asset ever appearing in `assets` as if still present.
+        scenarios:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              qDayYear: { type: integer }
+              rationale: { type: string }
+              confidence: { type: string }
+            required: [name, qDayYear, rationale, confidence]
+        framing:
+          type: string
+          description: Mandatory wherever a scenario year is shown.
+      required:
+        - generatedAt
+        - assets
+        - statusCounts
+        - scenarios
+        - framing
+
+    SubmitProjectCertificatesBody:
+      type: object
+      properties:
+        files:
+          type: array
+          description: >-
+            Certificate files. `content` is PEM text (one or more concatenated certificate
+            blocks) or base64-encoded DER. Anything else is ignored rather than rejected, so a
+            caller may submit a whole tree.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              content:
+                type: string
+            required:
+              - path
+              - content
+      required:
+        - files
+
+    CertificateQDayVerdict:
+      type: object
+      description: >-
+        Whether one certificate's `notAfter` falls on or after one Q-Day scenario's year.
+        Derived at read time from `lib/risk`'s scenario set — never persisted, since the
+        scenario years are customer-overridable.
+      properties:
+        scenario:
+          type: string
+          enum: [conservative, central, aggressive]
+        qDayYear:
+          type: integer
+        rationale:
+          type: string
+        confidence:
+          type: string
+          enum: [verified, needs-check]
+        outlivesQDay:
+          type: boolean
+      required:
+        - scenario
+        - qDayYear
+        - rationale
+        - confidence
+        - outlivesQDay
+
+    CertificateIngestEntry:
+      type: object
+      description: One certificate this submission parsed, with its Q-Day comparison.
+      properties:
+        location:
+          type: string
+        algorithm:
+          type: string
+        keySize:
+          type: integer
+          nullable: true
+        issuer:
+          type: string
+        serialNumber:
+          type: string
+        subject:
+          type: string
+          nullable: true
+        notBefore:
+          type: string
+          format: date-time
+        notAfter:
+          type: string
+          format: date-time
+        signatureAlgorithm:
+          type: string
+          nullable: true
+        qDay:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificateQDayVerdict"
+      required:
+        - location
+        - algorithm
+        - keySize
+        - issuer
+        - serialNumber
+        - subject
+        - notBefore
+        - notAfter
+        - signatureAlgorithm
+        - qDay
+
+    CertificateIngestSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        certificatesRecognised:
+          type: integer
+          description: >-
+            How many certificates the collector could actually parse. Zero means no collection
+            run was recorded and the certificate surface is still un-examined for this project.
+        certificateFiles:
+          type: array
+          description: The submitted files that carried at least one parseable certificate, and how many.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              certificateCount:
+                type: integer
+            required:
+              - path
+              - certificateCount
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: Null when no run was recorded (`certificatesRecognised` is 0).
+        assetsCreated:
+          type: integer
+        assetsUpdated:
+          type: integer
+        observationsCreated:
+          type: integer
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Always 0 in practice today: a certificate's identity is its own issuer+serial, not a
+            shared slot, so an omitted certificate is never inferred as retired by a later
+            submission — see the reobservation-scope note in `asset-ingest.ts`.
+        certificates:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificateIngestEntry"
+        evidenceCaveat:
+          type: string
+      required:
+        - projectId
+        - certificatesRecognised
+        - certificateFiles
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - certificates
+        - evidenceCaveat
+
+    ProjectCertificateAsset:
+      type: object
+      description: A persisted certificate asset, with its Q-Day comparison evaluated fresh on this read.
+      properties:
+        assetId:
+          type: integer
+        algorithm:
+          type: string
+        keySize:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [active, remediated, waived, gone]
+        issuer:
+          type: string
+        serialNumber:
+          type: string
+        subject:
+          type: string
+          nullable: true
+        notBefore:
+          type: string
+          format: date-time
+        notAfter:
+          type: string
+          format: date-time
+        signatureAlgorithm:
+          type: string
+          nullable: true
+        firstSeen:
+          type: string
+          format: date-time
+        lastSeen:
+          type: string
+          format: date-time
+        qDay:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificateQDayVerdict"
+      required:
+        - assetId
+        - algorithm
+        - keySize
+        - status
+        - issuer
+        - serialNumber
+        - subject
+        - notBefore
+        - notAfter
+        - signatureAlgorithm
+        - firstSeen
+        - lastSeen
+        - qDay
+
+    ProjectCertificates:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        generatedAt:
+          type: string
+          format: date-time
+        certificates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectCertificateAsset"
+      required:
+        - projectId
+        - generatedAt
+        - certificates
+
+    SubmitProjectTlsBody:
+      type: object
+      properties:
+        targets:
+          type: array
+          description: >-
+            Hosts to open a real TLS connection to. A caller-named host that resolves to a
+            loopback/private/link-local/other non-routable address is refused before any
+            connection is attempted — see `TlsProbeSummary.targets[].outcome`.
+          maxItems: 20
+          items:
+            type: object
+            properties:
+              host:
+                type: string
+                description: Hostname or IP literal. Never a URL — no scheme, path or credentials.
+              port:
+                type: integer
+                minimum: 1
+                maximum: 65535
+            required:
+              - host
+              - port
+      required:
+        - targets
+
+    TlsProbeSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        targetsSubmitted:
+          type: integer
+        targetsProbed:
+          type: integer
+          description: >-
+            How many targets completed a handshake. Zero means no collection run was recorded
+            and the tls surface is still un-examined for this project.
+        targets:
+          type: array
+          description: The per-target outcome — a submission of five hosts where three are refused and one times out must not collapse into a single number.
+          items:
+            type: object
+            properties:
+              host:
+                type: string
+              port:
+                type: integer
+              outcome:
+                type: string
+                description: >-
+                  `refused` means the SSRF guard rejected the target before any connection was
+                  attempted; `unreachable` means the guard allowed it but the handshake did not
+                  complete (timeout, connection refused, TLS negotiation failure); `probed` means
+                  a handshake completed. The specific refusal reason is deliberately not exposed
+                  here — see `tls-ssrf-guard.ts` — the same posture `parseGithubUrl` takes with a
+                  bare rejection.
+                enum: [probed, refused, unreachable]
+            required:
+              - host
+              - port
+              - outcome
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: Null when no run was recorded (`targetsProbed` is 0).
+        assetsCreated:
+          type: integer
+        assetsUpdated:
+          type: integer
+        observationsCreated:
+          type: integer
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Assets at a host:port this submission actually probed and no longer found there.
+            Scoped to exactly the targets that completed a handshake in this submission.
+        evidenceCaveat:
+          type: string
+          description: >-
+            Stated in every response: this collector records the negotiated key-exchange
+            algorithm/group and the peer certificate's public key type/size only — no
+            certificate identity, chain or validity. It does not verify trust (certificates are
+            not validated against any CA), because the point is to observe what a host actually
+            negotiates, not whether a browser would accept it.
+      required:
+        - projectId
+        - targetsSubmitted
+        - targetsProbed
+        - targets
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - evidenceCaveat
+
+    SubmitProjectProtocolConfigBody:
+      type: object
+      properties:
+        files:
+          type: array
+          description: >-
+            Configuration files, submitted as path + content — the same shape
+            `POST /projects/{id}/dependencies` and `POST /projects/{id}/certificates` use. The
+            path matters: the SSH and IPsec families are recognised by basename, so
+            `/etc/ssh/sshd_config` is read and a copy renamed `sshd_config.bak.txt` is not.
+            Anything unrecognised is ignored rather than rejected, so a caller may submit a
+            whole tree.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              content:
+                type: string
+            required:
+              - path
+              - content
+      required:
+        - files
+
+    ProtocolConfigDeclaration:
+      type: object
+      description: One algorithm a configuration file declares, read verbatim from a named directive.
+      properties:
+        path:
+          type: string
+        format:
+          type: string
+          description: >-
+            Which configuration format the file was read as — `sshd-config`, `ssh-config`,
+            `authorized-keys`, `ipsec-config`, `jwks`, `oidc-discovery`, `saml-metadata`.
+        directive:
+          type: string
+          description: The keyword or field the token was written under, e.g. `KexAlgorithms`, `alg`, `SignatureMethod`, `esp`.
+        declaredValue:
+          type: string
+          description: The token exactly as the file wrote it, so a reader can go back to the line and check.
+        algorithm:
+          type: string
+          description: Canonical name, resolving in the mappings data. A token with no canonical name produces no declaration at all.
+        keySize:
+          type: integer
+          nullable: true
+          description: >-
+            The stated parameter size where the token names one (a curve, a MODP group, an AES
+            width, a JWK modulus). Null means undetermined — an `ssh-rsa` authorized_keys entry
+            does not state its modulus and this collector does not decode the blob to guess one.
+        strength:
+          type: string
+          enum: [permitted, materialised]
+          description: >-
+            `permitted` — an algorithm the endpoint would accept if a peer asked, which it may
+            never select. `materialised` — a specific key or a chosen algorithm that exists now.
+            Priced into `confidence`, but reported separately because they are different claims.
+        condition:
+          type: string
+          nullable: true
+          description: The enclosing `Match`/`Host` block. Null when the directive applies unconditionally.
+        confidence:
+          type: number
+          description: 0.6 for a permitted declaration, 0.8 for a materialised one — both well below an observed TLS handshake's 1.0.
+      required:
+        - path
+        - format
+        - directive
+        - declaredValue
+        - algorithm
+        - keySize
+        - strength
+        - condition
+        - confidence
+
+    ProtocolConfigIngestSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        configFilesRecognised:
+          type: integer
+          description: >-
+            How many submitted files were a protocol configuration this collector understands.
+            Zero means no collection run was recorded and the config surface is still
+            un-examined for this project. A recognised file that declares nothing still counts
+            here — it was examined.
+        configFiles:
+          type: array
+          description: >-
+            The recognised files, each with how many declarations it carried. A
+            `declarationCount` of 0 is read-and-states-nothing, not unreadable.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              format:
+                type: string
+              declarationCount:
+                type: integer
+            required:
+              - path
+              - format
+              - declarationCount
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: Null when no run was recorded (`configFilesRecognised` is 0).
+        assetsCreated:
+          type: integer
+        assetsUpdated:
+          type: integer
+        observationsCreated:
+          type: integer
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Declarations previously read from one of the files in this submission and no longer
+            present in it — an administrator removed the directive. Scoped to exactly the files
+            this submission read, so a file that was not submitted is untouched.
+        declarations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProtocolConfigDeclaration"
+        evidenceCaveat:
+          type: string
+          description: >-
+            Stated on every response: this collector reads what a configuration file declares,
+            not what an endpoint negotiates; `Include` directives are not followed; the absence
+            of a directive is not read as the compiled-in default; and an unrecognised token,
+            including hybrid post-quantum key exchange, contributes nothing rather than a guess.
+      required:
+        - projectId
+        - configFilesRecognised
+        - configFiles
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - declarations
+        - evidenceCaveat
+
+    VendorPqcRoadmapStatus:
+      type: string
+      description: >-
+        How the vendor answered "do you have a post-quantum migration plan?". `none` is an
+        answer — the vendor told us it has no plan. Not the same as `null`, which means the
+        vendor has told us nothing.
+      enum: [none, assessing, roadmap_published, migration_underway, pqc_available]
+
+    VendorContractClause:
+      type: string
+      description: >-
+        Whether the contract in force with this vendor obliges them to migrate. There is
+        deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has
+        read the contract. `absent` means somebody read it and there is no clause — a finding.
+      enum: [present, absent, in_negotiation]
+
+    VendorClauseState:
+      type: string
+      description: >-
+        The four-state read of `contractPqcClause`. `unknown` is the null case promoted to a
+        first-class value so a client cannot render "nobody has read the contract" as "there is
+        no clause" — the two point in opposite directions and both are wrong to guess.
+      enum: [present, absent, in_negotiation, unknown]
+
+    VendorResponseState:
+      type: string
+      description: >-
+        How much of the questionnaire the vendor has actually answered, derived from the answers
+        themselves rather than from `respondedAt`, so a row cannot claim a response it does not
+        contain. Only the vendor's own three answers count — the customer's contract filing does
+        not make an unresponsive vendor look like it replied.
+      enum: [awaiting_response, partial, answered]
+
+    VendorReadinessState:
+      type: string
+      description: >-
+        Exposure under one Q-Day scenario, against the date the vendor *claims*. `unknown` when
+        no date was given — never `clear`.
+      enum: [exposed, clear, unknown]
+
+    VendorAttestation:
+      type: object
+      description: The provenance stamp that keeps a vendor's claim from being read as an observation (B9).
+      properties:
+        discoveryModality:
+          type: string
+          enum: [manual_attestation]
+          description: >-
+            Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for
+            exactly this case. Nothing on this surface is observed.
+        confidence:
+          type: number
+          nullable: true
+          description: >-
+            Below every collector's, and `null` rather than a floor value when the vendor has
+            answered nothing at all: no claim exists, so there is nothing to be confident about.
+            The scale's anchors are documented on `RawObservation.confidence` — regex is about
+            0.7, a completed TLS handshake about 1.0.
+        caveat:
+          type: string
+          description: The sentence a report must carry alongside any use of this vendor's answers.
+      required:
+        - discoveryModality
+        - confidence
+        - caveat
+
+    VendorReadinessVerdict:
+      type: object
+      description: One Q-Day scenario's verdict against the date the vendor claims it will be post-quantum ready.
+      properties:
+        scenario:
+          type: string
+          enum: [conservative, central, aggressive]
+        qDayYear:
+          type: integer
+        state:
+          $ref: "#/components/schemas/VendorReadinessState"
+        narrative:
+          type: string
+          description: >-
+            Written in the vendor's voice ("the vendor states"), never the product's, so a board
+            deck built from these sentences cannot launder a claim into a finding.
+      required:
+        - scenario
+        - qDayYear
+        - state
+        - narrative
+
+    VendorClauseAssessment:
+      type: object
+      description: >-
+        The contractual lever — the only instrument a customer actually has over a vendor that is
+        not moving.
+      properties:
+        state:
+          $ref: "#/components/schemas/VendorClauseState"
+        contractRenewalDate:
+          type: string
+          format: date-time
+          nullable: true
+        noLeverScheduled:
+          type: boolean
+          description: >-
+            True only when a clause is known to be *missing* and no renewal is scheduled — no
+            obligation, and no scheduled moment at which one could be created. False when the
+            contract has merely not been read, because that is not a claim about the contract.
+        narrative:
+          type: string
+      required:
+        - state
+        - contractRenewalDate
+        - noLeverScheduled
+        - narrative
+
+    VendorPostureAssessment:
+      type: object
+      description: >-
+        B9's payoff, computed fresh on every read so a corrected date or a revised Q-Day scenario
+        needs no backfill. A vendor that has answered nothing is `awaiting_response` with a
+        `null` confidence and an `unknown` verdict under every scenario — never `clear`.
+      properties:
+        responseState:
+          $ref: "#/components/schemas/VendorResponseState"
+        answeredQuestionCount:
+          type: integer
+        questionCount:
+          type: integer
+        respondedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pqcRoadmapStatus:
+          allOf:
+            - $ref: "#/components/schemas/VendorPqcRoadmapStatus"
+          nullable: true
+        statedPqcReadyDate:
+          type: string
+          format: date-time
+          nullable: true
+        attestation:
+          $ref: "#/components/schemas/VendorAttestation"
+        verdicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/VendorReadinessVerdict"
+        exposedScenarioCount:
+          type: integer
+        unknownScenarioCount:
+          type: integer
+        scenarioCount:
+          type: integer
+        clause:
+          $ref: "#/components/schemas/VendorClauseAssessment"
+        framing:
+          type: string
+          description: Mandatory framing for any customer-facing use of the scenario years.
+      required:
+        - responseState
+        - answeredQuestionCount
+        - questionCount
+        - respondedAt
+        - pqcRoadmapStatus
+        - statedPqcReadyDate
+        - attestation
+        - verdicts
+        - exposedScenarioCount
+        - unknownScenarioCount
+        - scenarioCount
+        - clause
+        - framing
+
+    VendorAssessment:
+      type: object
+      description: >-
+        A `vendor_assessments` row plus its computed posture — B9, the vendor/third-party
+        register. docs/Claude/03-features.md §B9. Not an `Asset`: nothing here was collected, and
+        a questionnaire answer is a claim by an interested party rather than an observation, so
+        it carries no `fingerprint`/`surface`/observation lifecycle and does not count towards
+        the D3 coverage meter.
+      properties:
+        id:
+          type: integer
+        organizationId:
+          type: integer
+        vendorName:
+          type: string
+        productOrService:
+          type: string
+          nullable: true
+        internalOwner:
+          type: string
+          nullable: true
+          description: Free text — the internal team or person who owns the relationship, not necessarily an app user.
+        questionnaireSentAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null means the questionnaire has not been sent — a different state from sent and ignored.
+        respondedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pqcRoadmapStatus:
+          allOf:
+            - $ref: "#/components/schemas/VendorPqcRoadmapStatus"
+          nullable: true
+        statedPqcReadyDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: The date the vendor *states* it will be post-quantum ready. A quote, not a verified commitment.
+        cryptoDisclosed:
+          type: string
+          nullable: true
+          description: Free-form, vendor-asserted description of the cryptography they use.
+        contractPqcClause:
+          allOf:
+            - $ref: "#/components/schemas/VendorContractClause"
+          nullable: true
+          description: >-
+            `absent` = the contract was read and has no PQC clause. `null` = nobody has read it.
+            Rendering the second as the first invents a finding.
+        contractRenewalDate:
+          type: string
+          format: date-time
+          nullable: true
+        attestationEvidence:
+          type: string
+          nullable: true
+          description: Where the answers are recorded — a document reference, ticket or URL. Not fetched or validated.
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        posture:
+          $ref: "#/components/schemas/VendorPostureAssessment"
+      required:
+        - id
+        - organizationId
+        - vendorName
+        - productOrService
+        - internalOwner
+        - questionnaireSentAt
+        - respondedAt
+        - pqcRoadmapStatus
+        - statedPqcReadyDate
+        - cryptoDisclosed
+        - contractPqcClause
+        - contractRenewalDate
+        - attestationEvidence
+        - notes
+        - createdAt
+        - updatedAt
+        - posture
+
+    CreateVendorAssessmentBody:
+      type: object
+      properties:
+        vendorName:
+          type: string
+        productOrService:
+          type: string
+        internalOwner:
+          type: string
+        questionnaireSentAt:
+          type: string
+          format: date-time
+        respondedAt:
+          type: string
+          format: date-time
+        pqcRoadmapStatus:
+          $ref: "#/components/schemas/VendorPqcRoadmapStatus"
+        statedPqcReadyDate:
+          type: string
+          format: date-time
+        cryptoDisclosed:
+          type: string
+        contractPqcClause:
+          $ref: "#/components/schemas/VendorContractClause"
+        contractRenewalDate:
+          type: string
+          format: date-time
+        attestationEvidence:
+          type: string
+        notes:
+          type: string
+      required:
+        - vendorName
+
+    UpdateVendorAssessmentBody:
+      type: object
+      description: >-
+        Every field optional; only fields present in the body are changed. An explicit null
+        clears a field back to "not supplied".
+      properties:
+        vendorName:
+          type: string
+        productOrService:
+          type: string
+          nullable: true
+        internalOwner:
+          type: string
+          nullable: true
+        questionnaireSentAt:
+          type: string
+          format: date-time
+          nullable: true
+        respondedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pqcRoadmapStatus:
+          allOf:
+            - $ref: "#/components/schemas/VendorPqcRoadmapStatus"
+          nullable: true
+        statedPqcReadyDate:
+          type: string
+          format: date-time
+          nullable: true
+        cryptoDisclosed:
+          type: string
+          nullable: true
+        contractPqcClause:
+          allOf:
+            - $ref: "#/components/schemas/VendorContractClause"
+          nullable: true
+        contractRenewalDate:
+          type: string
+          format: date-time
+          nullable: true
+        attestationEvidence:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    SubmitProjectKmsBody:
+      type: object
+      properties:
+        keys:
+          type: array
+          description: >-
+            The key inventory your own key store already produced — the output of
+            `aws kms describe-key`, `az keyvault key show`, `gcloud kms keys list` or
+            `vault read transit/keys/<name>`, transcribed into these fields. No credential
+            for the key store ever reaches this product.
+
+
+            Every field beyond `provider` and `keyId` is optional because every field beyond
+            those is optional in those exports: `aws kms list-keys` returns identifiers only,
+            and Azure Key Vault's list operation returns `kid` and `attributes` with no key
+            type at all. An omitted field means "the export did not state this" and is never
+            substituted for — `rotationEnabled` in particular is left absent rather than sent
+            as `false`, because "not stated" and "not rotated" are different claims.
+          maxItems: 500
+          items:
+            type: object
+            properties:
+              provider:
+                type: string
+                description: Which key store this key lives in.
+                enum: [aws-kms, azure-key-vault, gcp-kms, hashicorp-vault]
+              keyId:
+                type: string
+                description: >-
+                  ARN, resource name, `kid` URL, or mount-qualified key name — whatever the
+                  provider calls the key's identity. Together with `provider` this is the
+                  asset's identity; an alias is deliberately not used, since an alias can be
+                  repointed at a different key.
+              keySpec:
+                type: string
+                description: >-
+                  The provider-native spec string: AWS `KeySpec`, GCP `CryptoKeyVersion.algorithm`,
+                  Azure `kty`, Vault `type`. Matched case-insensitively against
+                  `docs/Claude/mappings/kms-key-specs.json`. Omit it and the key is recorded as
+                  present and unclassified rather than guessed at.
+              curve:
+                type: string
+                description: Curve name where the provider states it separately from the spec — Azure's `crv`. Resolved through the shared named-curve table.
+              keySize:
+                type: integer
+                description: >-
+                  A key size your export has and the spec does not state (Azure's Create Key
+                  `key_size`). Used only when neither the key spec nor a curve supplies one, so
+                  it cannot override a size the provider's documentation states.
+              alias:
+                type: string
+              keyState:
+                type: string
+                description: The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`), recorded verbatim and never mapped onto the asset's lifecycle status.
+              rotationEnabled:
+                type: boolean
+              rotationPeriodDays:
+                type: integer
+                minimum: 1
+              lastRotatedAt:
+                type: string
+                format: date-time
+              origin:
+                type: string
+              region:
+                type: string
+              keyStore:
+                type: string
+                description: The containing vault, key ring or mount path.
+            required:
+              - provider
+              - keyId
+      required:
+        - keys
+
+    KmsKeyOutcome:
+      type: object
+      description: >-
+        What the collector concluded about one submitted key. The four `outcome` values are
+        deliberately not collapsed into "classified / skipped": only one of the three
+        non-observed values is actionable, and hiding which is which would hide it.
+      properties:
+        provider:
+          type: string
+        keyId:
+          type: string
+        keySpec:
+          type: string
+          nullable: true
+        alias:
+          type: string
+          nullable: true
+        keyState:
+          type: string
+          nullable: true
+        outcome:
+          type: string
+          description: >-
+            `observed` — the spec resolved to an algorithm this product reports on, and an
+            asset was written. `no-algorithm` — the spec is known and its primitive is not one
+            `algorithms.json` catalogues (HMAC, ChaCha20-Poly1305, SM2, any post-quantum
+            parameter set, Azure's `kty: oct`); the key is real, counted and examined, and
+            there is nothing to report about it. `unrecognised-spec` — the provider stated a
+            spec the curated table does not have, which means our data is behind the provider
+            and is the one outcome a data update fixes. `no-spec` — the entry named a key and
+            stated nothing about it, the expected shape of a list-without-describe export.
+          enum: [observed, no-algorithm, unrecognised-spec, no-spec]
+        reason:
+          type: string
+          nullable: true
+          description: Why no observation was produced, verbatim from the curated table where the table has an opinion. Null for `observed`.
+        algorithm:
+          type: string
+          nullable: true
+          description: Null for every outcome except `observed`.
+        keySize:
+          type: integer
+          nullable: true
+          description: >-
+            The size the provider states for this key. **Null means the provider stated none**
+            — an Azure JsonWebKey carries no `key_size` member at all — never a default. G-05.
+        keySizeSource:
+          type: string
+          nullable: true
+          description: >-
+            Which of four sources supplied `keySize`, so a reader never has to guess: the key
+            spec's documented size, a named curve, a value you submitted, or none of them.
+          enum: [key-spec, curve, submitted, not-supplied]
+        rotationEnabled:
+          type: boolean
+          nullable: true
+          description: Null when the submitted export did not state it. Not the same as `false`.
+        location:
+          type: string
+          nullable: true
+          description: The asset locator this key was written under. Null when no asset was written.
+      required:
+        - provider
+        - keyId
+        - keySpec
+        - alias
+        - keyState
+        - outcome
+        - reason
+        - algorithm
+        - keySize
+        - keySizeSource
+        - rotationEnabled
+        - location
+
+    KmsIngestSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        keysSubmitted:
+          type: integer
+        keysObserved:
+          type: integer
+          description: How many submitted keys resolved to an algorithm this product reports on and became assets.
+        keysUnclassified:
+          type: integer
+          description: >-
+            Submitted keys that produced no observation, for any of the three non-`observed`
+            reasons. This being non-zero while `collectionRunId` is set is the normal and
+            correct state for a key store holding symmetric or post-quantum keys — the surface
+            was examined, and nothing reportable was in it.
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/KmsKeyOutcome"
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: >-
+            Null only when the submission carried no key entries at all. A submission whose
+            keys all came back unclassified DOES record a run — that is an examination that
+            found nothing, not an absent examination, and the D3 meter must be able to tell
+            them apart.
+        assetsCreated:
+          type: integer
+        assetsUpdated:
+          type: integer
+        observationsCreated:
+          type: integer
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Always 0 in practice today. A submitted export is never assumed to be a complete
+            enumeration of a key store — one page of a paginated `list-keys`, one region or
+            one Vault mount is the normal case — so a key absent from a later submission is
+            not inferred to have been deleted. See the reobservation-scope note in
+            `asset-ingest.ts`.
+        evidenceCaveat:
+          type: string
+      required:
+        - projectId
+        - keysSubmitted
+        - keysObserved
+        - keysUnclassified
+        - keys
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - evidenceCaveat
+
+    ProjectKmsKey:
+      type: object
+      description: A persisted KMS key asset, as the inventory read returns it.
+      properties:
+        assetId:
+          type: integer
+        provider:
+          type: string
+        keyId:
+          type: string
+        keySpec:
+          type: string
+          nullable: true
+        alias:
+          type: string
+          nullable: true
+        keyState:
+          type: string
+          nullable: true
+        algorithm:
+          type: string
+        keySize:
+          type: integer
+          nullable: true
+          description: Null when the provider stated no size. Never a default — G-05.
+        status:
+          type: string
+          enum: [active, remediated, waived, gone]
+        rotationEnabled:
+          type: boolean
+          nullable: true
+          description: Null when the submitted export did not state it, which is a different fact from rotation being off.
+        rotationPeriodDays:
+          type: integer
+          nullable: true
+        lastRotatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        origin:
+          type: string
+          nullable: true
+        region:
+          type: string
+          nullable: true
+        keyStore:
+          type: string
+          nullable: true
+        firstSeen:
+          type: string
+          format: date-time
+        lastSeen:
+          type: string
+          format: date-time
+      required:
+        - assetId
+        - provider
+        - keyId
+        - keySpec
+        - alias
+        - keyState
+        - algorithm
+        - keySize
+        - status
+        - rotationEnabled
+        - rotationPeriodDays
+        - lastRotatedAt
+        - origin
+        - region
+        - keyStore
+        - firstSeen
+        - lastSeen
+
+    ProjectKmsKeys:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        generatedAt:
+          type: string
+          format: date-time
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectKmsKey"
+      required:
+        - projectId
+        - generatedAt
+        - keys
+
+    DataAtRestCryptoSubmission:
+      type: object
+      description: >-
+        One reported cryptographic setting. Every field is optional because every field is
+        genuinely often unreported, and an unreported field must stay unreported — see the
+        `cipher-not-reported` gap reason.
+      properties:
+        algorithm:
+          type: string
+          nullable: true
+          description: >-
+            As the caller's tooling reports it — `AES-256-CBC`, `aes256`, `RSA-2048`, `ECDH`.
+            Canonicalised on the way in; the original string is kept on the asset's
+            `locationDetail.reportedAlgorithm` so the canonicalisation stays auditable. A string
+            that resolves to no entry in the standards data records nothing and is returned as
+            an `algorithm-not-recognised` gap.
+        keySize:
+          type: integer
+          nullable: true
+          description: >-
+            The stated parameter size, when the caller supplies one separately. Wins over any
+            size parsed out of `algorithm`. Bare `AES` yields no key size at all rather than an
+            assumed 256 (G-05).
+        source:
+          type: string
+          nullable: true
+          description: >-
+            Free text, e.g. `aws-kms`, `pkcs11-hsm`, `software-keystore`, `passphrase`. Recorded
+            as evidence, never parsed into a verdict.
+
+    DataAtRestStoreSubmission:
+      type: object
+      properties:
+        storeId:
+          type: string
+          description: >-
+            The caller's stable identifier for this store — an instance/database name, a bucket
+            ARN, a backup job name. Part of the asset identity, so changing it orphans the
+            previous asset and creates a new one.
+        engine:
+          type: string
+          description: Engine or product, e.g. `postgresql`, `mssql`, `oracle`, `s3`, `veeam`. Part of the asset identity.
+        storeKind:
+          type: string
+          enum: [database, backup, archive, volume, object-store, other]
+          description: Grouping and presentation only — deliberately not part of the asset identity.
+        encryptionState:
+          type: string
+          enum: [encrypted, not-encrypted, unknown]
+          description: >-
+            `unknown` (the default when omitted) is not a synonym for `not-encrypted`: one means
+            nobody has checked, the other means someone checked and there is none. Only the
+            second is a statement this route reconciles against, so only the second can mark a
+            previously recorded cipher `gone`.
+        evidenceSource:
+          type: string
+          enum: [configuration-report, attestation]
+          description: >-
+            Drives the discovery modality and the confidence recorded on the observation:
+            `configuration-report` reads a real setting (0.6, `configuration_information`),
+            `attestation` is a human's statement with no artefact behind it (0.4,
+            `manual_attestation`). Defaults to `attestation`, the weaker of the two, so an
+            unstated evidence source understates rather than overstates what is known.
+        description:
+          type: string
+          description: Free text for the report, e.g. "nightly full backups, 7-year retention".
+        dataEncryption:
+          $ref: "#/components/schemas/DataAtRestCryptoSubmission"
+        keyProtection:
+          $ref: "#/components/schemas/DataAtRestCryptoSubmission"
+        dataClassification:
+          type: string
+          enum: [public, internal, confidential, regulated, indefinite]
+          description: >-
+            A3's classification for the data *in* this store, persisted on both of its assets.
+            Omit it and X is inherited from the project, then from the product default, and the
+            read below reports it as assumed. Omitting it on a resubmission leaves a previously
+            supplied value in place rather than clearing it.
+        secrecyLifetimeYears:
+          type: integer
+          minimum: 0
+          description: X in years, overriding the preset implied by `dataClassification`.
+      required:
+        - storeId
+        - engine
+
+    SubmitProjectDataAtRestBody:
+      type: object
+      properties:
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataAtRestStoreSubmission"
+      required:
+        - stores
+
+    DataAtRestGap:
+      type: object
+      description: >-
+        Something this submission did not say, reported rather than filled in. The whole reason
+        this surface earns its keep is being able to tell a CISO which of their long-lived
+        ciphertext they actually know something about.
+      properties:
+        role:
+          type: string
+          enum: [data-encryption, key-protection]
+        reason:
+          type: string
+          enum:
+            - encryption-state-unknown
+            - cipher-not-reported
+            - key-protection-not-reported
+            - algorithm-not-recognised
+        reported:
+          type: string
+          nullable: true
+          description: The string the caller supplied, present only for `algorithm-not-recognised`.
+      required:
+        - role
+        - reason
+        - reported
+
+    DataAtRestRecordedCrypto:
+      type: object
+      description: One crypto fact this submission actually recorded for a store.
+      properties:
+        role:
+          type: string
+          enum: [data-encryption, key-protection]
+        algorithm:
+          type: string
+          description: The canonical name, which is what the standards data is resolved against.
+        keySize:
+          type: integer
+          nullable: true
+        reportedAlgorithm:
+          type: string
+          description: The caller's original string, kept so the canonicalisation can be audited.
+        location:
+          type: string
+      required:
+        - role
+        - algorithm
+        - keySize
+        - reportedAlgorithm
+        - location
+
+    DataAtRestStoreResult:
+      type: object
+      properties:
+        storeId:
+          type: string
+        engine:
+          type: string
+        recorded:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataAtRestRecordedCrypto"
+        gaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataAtRestGap"
+      required:
+        - storeId
+        - engine
+        - recorded
+        - gaps
+
+    DataAtRestIngestSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        storesSubmitted:
+          type: integer
+        storesWithRecordedCrypto:
+          type: integer
+          description: >-
+            How many submitted stores produced at least one asset. The difference between this
+            and `storesSubmitted` is the honest measure of how much of the estate was described
+            rather than merely listed — every shortfall is itemised in `stores[].gaps`.
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: >-
+            Null when the submission said nothing reconcilable about any store (every store
+            `unknown`, or every crypto field blank), in which case no run is recorded and the
+            surface stays un-examined for this project. A submission of stores that are all
+            `not-encrypted` DOES record a run: that is a real examination with a real result.
+        assetsCreated:
+          type: integer
+        assetsUpdated:
+          type: integer
+        observationsCreated:
+          type: integer
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Assets at a store slot this submission made a statement about and no longer found
+            there — a rekey, or encryption turned off. Never a store whose cipher field was
+            simply left blank.
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataAtRestStoreResult"
+        evidenceCaveat:
+          type: string
+      required:
+        - projectId
+        - storesSubmitted
+        - storesWithRecordedCrypto
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - stores
+        - evidenceCaveat
+
+    DataAtRestMosca:
+      type: object
+      properties:
+        x:
+          type: number
+          description: Secrecy lifetime in years, as resolved for this asset.
+        y:
+          type: number
+          description: Migration time in years.
+        applicable:
+          type: boolean
+          description: False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break.
+        breachedScenarios:
+          type: array
+          items:
+            type: string
+      required:
+        - x
+        - y
+        - applicable
+        - breachedScenarios
+
+    DataAtRestComponent:
+      type: object
+      description: One persisted data-at-rest asset, with its Mosca verdict derived at read time.
+      properties:
+        assetId:
+          type: integer
+        role:
+          type: string
+          enum: [data-encryption, key-protection]
+        algorithm:
+          type: string
+        keySize:
+          type: integer
+          nullable: true
+        reportedAlgorithm:
+          type: string
+        keySource:
+          type: string
+          nullable: true
+        status:
+          type: string
+          description: Lifecycle status. `gone`/`remediated`/`waived` assets are included — a record of what was found must keep them.
+        firstSeen:
+          type: string
+          format: date-time
+        lastSeen:
+          type: string
+          format: date-time
+        quantumVulnerable:
+          type: boolean
+          nullable: true
+          description: >-
+            From the standards data, null when it has no entry for this algorithm. False for the
+            bulk cipher of a typical TDE'd store — which is exactly why `key-protection` is
+            recorded separately rather than folded into one verdict per store.
+        mosca:
+          $ref: "#/components/schemas/DataAtRestMosca"
+      required:
+        - assetId
+        - role
+        - algorithm
+        - keySize
+        - reportedAlgorithm
+        - keySource
+        - status
+        - firstSeen
+        - lastSeen
+        - quantumVulnerable
+        - mosca
+
+    ProjectDataAtRestStore:
+      type: object
+      properties:
+        storeId:
+          type: string
+        engine:
+          type: string
+        storeKind:
+          type: string
+        encryptionState:
+          type: string
+        description:
+          type: string
+          nullable: true
+        dataClassification:
+          type: string
+          nullable: true
+          description: What was supplied for this store. Null means nobody classified it — see `classificationSource`.
+        secrecyLifetimeYears:
+          type: integer
+          nullable: true
+        classificationSource:
+          type: string
+          enum: [asset, project, default]
+          description: >-
+            Where the classification *label* came from — the same meaning this field carries on
+            `GET /inventory/assets`. Never re-derived by the client. It is not always the
+            provenance of X: a store may supply `secrecyLifetimeYears` without a label, in which
+            case the years are asset-supplied while the label is still inherited. Read `xAssumed`
+            for X's own provenance.
+        xAssumed:
+          type: boolean
+          description: >-
+            True whenever X was not supplied for this store, whatever the label's provenance.
+            Reports must say so.
+        secrecyLifetimeBasis:
+          type: string
+          description: One report-ready sentence stating the provenance of X in plain English.
+        components:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataAtRestComponent"
+      required:
+        - storeId
+        - engine
+        - storeKind
+        - encryptionState
+        - description
+        - dataClassification
+        - secrecyLifetimeYears
+        - classificationSource
+        - xAssumed
+        - secrecyLifetimeBasis
+        - components
+
+    ProjectDataAtRest:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        generatedAt:
+          type: string
+          format: date-time
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectDataAtRestStore"
+        scenarios:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              qDayYear: { type: integer }
+              rationale: { type: string }
+              confidence: { type: string }
+            required: [name, qDayYear, rationale, confidence]
+        framing:
+          type: string
+          description: Mandatory wherever a scenario year is shown.
+      required:
+        - projectId
+        - generatedAt
+        - stores
+        - scenarios
+        - framing

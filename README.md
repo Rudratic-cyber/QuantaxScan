@@ -260,7 +260,11 @@ reads `findings`. See [docs/Claude/03-features.md](docs/Claude/03-features.md) (
 | `DATABASE_URL` | API | **yes** | PostgreSQL connection. The process exits at import time without it |
 | `PORT` | API, Vite | **yes** for API | API throws if unset; Vite defaults to 5173 |
 | `QUANTAXSCAN_API_KEYS` | API | **yes** | Comma-separated API keys. The API refuses to start without it, so it can never serve an unauthenticated API. Keep it out of `.env` — that file is tracked in git |
+| `QUANTAXSCAN_API_KEY_ORG_ID` | API | no | Legacy single binding: every configured key acts as this organisation. Defaults to `1`. Ignored when `QUANTAXSCAN_API_KEY_ORG_IDS` is set |
+| `QUANTAXSCAN_API_KEY_ORG_IDS` | API | no | One organisation id per key in `QUANTAXSCAN_API_KEYS`, comma-separated, same order — the F1 multi-tenant binding. A length mismatch refuses to start rather than defaulting an unlisted key to organisation `1`. See `artifacts/api-server/src/lib/principal.ts` and `pnpm --filter @workspace/db run create-organization` |
 | `CORS_ALLOWED_ORIGINS` | API | no | Comma-separated origins allowed to call the API cross-origin. Unset means same-origin only |
+| `TRUST_PROXY` | API | **behind a proxy** | Number of proxies in front of the API (`1` for a single load balancer). Rate limiting keys public routes on `req.ip`; unset behind a proxy, every caller shares one bucket and the public demo path rate-limits the world together. A bare `true` is rejected at startup — it lets a client forge `X-Forwarded-For` |
+| `RATE_LIMIT_*` | API | no | Per-window budgets; see `.env.example` and `artifacts/api-server/src/lib/rate-limit.ts`. The store is in-process, so each is per replica |
 | `VITE_API_BASE_URL` | frontend | dev only | API origin — no dev proxy exists |
 | `API_BASE_URL` | docker frontend | docker only | Injected into `config.js` at container start |
 | `GITHUB_TOKEN` | API | no | Raises the GitHub rate limit above 60 req/hr |
@@ -275,12 +279,30 @@ reads `findings`. See [docs/Claude/03-features.md](docs/Claude/03-features.md) (
 
 ## Project status
 
-**This is an early-stage project.** The scanner works and is deployed, but it covers one surface
-of many.
+**This is an early-stage project.** It now covers **eight of the ten surfaces** a cryptographic
+inventory needs — source, dependencies, TLS, certificates, KMS, protocol config, data-at-rest and
+the manual OT register. Two remain with no collector: vendor/third-party and binaries/firmware.
+See [the coverage page](https://quantaxscan.swotpam.com/coverage), which reads those numbers from
+the same catalogue the API does rather than from a second hardcoded list.
 
-**Works today:** regex detection across 7 algorithm families, single-file / ZIP / GitHub
-scanning, NIST replacement mapping, risk and effort scoring, dashboard, community hub, shareable
-reports.
+**Read "eight of ten" carefully, because the page does.** The denominator is *collector surfaces*,
+not your estate: how much cryptography sits inside a surface nobody has examined is not estimable
+from anything this system holds, and nothing here will guess it. And only two of the eight observe
+anything by themselves — the source scanner reads your repository, and the TLS prober opens a real
+handshake. The other six read what you submit to them (a lockfile, a certificate, a key inventory,
+a config file, a description of an encrypted store, a form). That is a deliberate trade: a
+credentialed collector needs a secret-handling design this product does not have yet (F4), and a
+surface that can record what you send it is worth more than one that stays permanently
+never-examined.
+
+**Works today:** regex detection across 7 algorithm families over source; dependency detection
+from lockfiles (pnpm/npm/yarn, `requirements.txt`) against a cited package table; a TLS prober that
+records the key exchange actually negotiated; X.509 parsing with an expiry-vs-Q-Day verdict per
+scenario; a KMS/secret-store inventory across AWS, GCP, Azure and Vault key specs; SSH/IPsec/JWT/
+SAML protocol-config reading; data-at-rest recording that carries data classification into the
+Mosca calculation; manual OT and vendor registers; single-file / ZIP / GitHub scanning, NIST
+replacement mapping, risk and effort scoring, coverage and confidence reporting, the CISA
+quantum-readiness dashboard, community hub, shareable reports.
 
 **Known limitations, honestly:**
 
@@ -291,19 +313,38 @@ reports.
   (never guessed), and the value is recorded on the new `assets`/`observations` tables, not on the
   findings the API returns. NIST's rules are keyed on security strength (112-bit vs ≥128-bit), so
   deadline mapping is still approximate. This remains the largest known gap.
-- **Dependencies are invisible *to a scan*.** Most real cryptography lives in OpenSSL,
-  BouncyCastle and your TLS stack — not application source. The dependency collector that reads
-  lockfiles (pnpm/npm/yarn, `requirements.txt`) is built and tested in `lib/collectors`, but no
-  route submits a lockfile to it and no dependency asset is persisted yet, so nothing you scan
-  today reports one.
+- **Dependencies are read from lockfiles, and a lockfile is not first-party use.** Submit them to
+  `POST /api/projects/:id/dependencies` and matched packages persist as `dependency` assets. Two
+  limits worth stating before a customer sees a finding: a lockfile records the fully *resolved*
+  graph, so a match may be a transitive dependency of the build toolchain rather than a library
+  your own code calls (G-20 — the caveat ships on every response, the detection does not); and the
+  package table applies one claim to every version of a package, though capabilities move under a
+  version bump (G-21 — paramiko removed DSA in 4.0.0). Ecosystems: npm and PyPI
+  (`requirements.txt` only — `poetry.lock` and `Pipfile.lock` are not read). No version-range or
+  advisory reasoning.
+- **Six of the eight surfaces are submission-based, not agents.** TLS is the exception that
+  probes for itself; source reads a repository you hand over. Your KMS, your protocol config, your
+  encryption-at-rest and your OT fleet are recorded from what you submit or type in — nothing here
+  polls your cloud account or your database, because storing a production credential needs
+  controls that are not built (F4). The inventory is therefore as complete as what you send it,
+  and the coverage meter counts a surface examined only for the material it actually received.
+- **A manual register is evidence, but the weakest kind.** The OT register's entries become assets
+  at confidence 0.3 — below every automated collector — and only when someone names an algorithm
+  in the structured field. A fleet described only in prose is tracked for procurement exposure but
+  contributes nothing to the cryptographic inventory, because parsing prose into an algorithm
+  would be a guess.
 - **One finding per line.** EdDSA (Ed25519/Ed448) is detected now and resolves its curve size,
   but a line naming two algorithms — an SSH key list with both `ssh-rsa` and `ssh-ed25519` — is
   reported as the first pattern that matches it, and the second algorithm is silently lost.
-- **Authentication is a single shared API key**, not per-user accounts — so there is no
-  organisation scoping and no tenant isolation. See below.
+- **Authentication is a single shared API key**, not per-user accounts. Organisation scoping *is*
+  built — every scoped table carries `organization_id` under a row-level-security policy, the
+  runtime connects as a role without `BYPASSRLS`, and a cross-tenant suite proves it with a
+  negative control. What is missing is the other half: no per-user identity, so no action can be
+  attributed to a person, and **only one organisation can exist** — the shared key is bound to it.
+  You cannot host two customers on one instance today. See below.
 - Findings are per-scan, so there is no drift detection or remediation tracking yet.
 
-The full plan for addressing these — and a 19-item gap register — is in
+The full plan for addressing these — and the open-gap register — is in
 **[`docs/Claude/`](docs/Claude/)**. Start with [the index](docs/Claude/README.md), or
 [09-open-gaps.md](docs/Claude/09-open-gaps.md) for what is broken and why.
 
@@ -322,8 +363,11 @@ now generated with `crypto.randomBytes`, and CORS uses an explicit origin allowl
 
 What that does **not** give you:
 
-- **No per-user identity and no organisation scoping.** One key grants access to everything.
-  There is no tenant isolation, and access cannot be attributed to a person in the logs.
+- **No per-user identity.** One key grants access to everything the organisation it is bound to
+  can see, and access cannot be attributed to a person in the logs. Organisation scoping and
+  tenant isolation *are* enforced in the database (see
+  [13-auth-and-tenancy.md](docs/Claude/13-auth-and-tenancy.md)), but there is no way to create a
+  second organisation, so the isolation has nothing to isolate from yet.
 - **No key rotation story**, and shared report links still have no expiry or revocation.
 - **Submitted source is still stored in full** in the database (`scans.code`).
 

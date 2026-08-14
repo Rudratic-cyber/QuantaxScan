@@ -39,23 +39,58 @@ export interface CollectorSurfaceEntry {
   /**
    * The `Surface` enum value this collector's assets and collection runs are
    * recorded under — or `null` when the asset model has no value for it at
-   * all. Two of the ten are `null` today (`data-at-rest`, `vendor`): the
-   * database could not store a finding from them even if a collector existed,
-   * which is a *deeper* absence than "planned" and the meter says so.
+   * all, a *deeper* absence than "planned" which the meter reports separately.
+   *
+   * No entry is `null` as of 2026-08-14: `data-at-rest` and `vendor` were the
+   * last two, and their enum values landed ahead of their collectors (see
+   * `SURFACE_VALUES` in enums.ts for why both at once). The type stays
+   * nullable because the distinction is real and a future surface can be
+   * catalogued before the schema can store it — that a collector is planned
+   * and that its findings are unstorable are different facts, and collapsing
+   * them would make the meter overstate what this product is ready to record.
    */
   surface: Surface | null;
 }
 
 export const COLLECTOR_SURFACES = [
   { id: "source", name: "Source code", status: "live", surface: "source" },
-  { id: "dependency", name: "Dependencies / SBOM", status: "planned", surface: "dependency" },
-  { id: "tls", name: "TLS & cipher suites", status: "planned", surface: "tls" },
-  { id: "certificate", name: "Certificates (X.509)", status: "planned", surface: "certificate" },
-  { id: "kms", name: "KMS & secret stores", status: "planned", surface: "kms" },
-  { id: "config", name: "Protocol config", status: "planned", surface: "config" },
-  { id: "data-at-rest", name: "Data-at-rest", status: "planned", surface: null },
-  { id: "ot", name: "Manual OT / embedded register", status: "planned", surface: "ot" },
-  { id: "vendor", name: "Vendor / third-party", status: "planned", surface: null },
+  // `live` since B2's ingest path landed. The collector alone was not enough
+  // to earn it: until `POST /projects/:id/dependencies` persisted what it
+  // found, no run of it could ever be recorded, and a surface whose results
+  // are unreachable has not been examined in any sense a CISO cares about.
+  { id: "dependency", name: "Dependencies / SBOM", status: "live", surface: "dependency" },
+  // Both `live` since their ingest paths landed — B3's `POST /projects/:id/tls`
+  // and B4's `POST /projects/:id/certificates`. Same bar as `dependency`
+  // above: a collector alone does not earn `live`, a route that persists what
+  // it finds does.
+  { id: "tls", name: "TLS & cipher suites", status: "live", surface: "tls" },
+  { id: "certificate", name: "Certificates (X.509)", status: "live", surface: "certificate" },
+  // `live` since B5's `POST /projects/:id/kms` persisted its first key. Same
+  // bar as every entry above: the collector alone never earns it, a route
+  // that writes what it finds does. Worth noting what `live` does *not*
+  // claim here — the collector reads a submitted key inventory rather than
+  // polling the key store with a credential, so this surface counts as
+  // examined for the keys a caller sent, exactly as `dependency` counts as
+  // examined for the lockfiles a caller sent.
+  { id: "kms", name: "KMS & secret stores", status: "live", surface: "kms" },
+  // `live` since B6's `POST /projects/:id/protocol-config` landed, on the same
+  // bar, and with the same qualification: a config collector reads what a
+  // submitted file *declares*, which is a weaker claim than what B3 observed
+  // being negotiated on the wire.
+  { id: "config", name: "Protocol config", status: "live", surface: "config" },
+  // `live` since B7's ingest path landed — `POST /projects/:id/data-at-rest`.
+  // Same bar as the four above: the collector is a submission mapper, and what
+  // earned the status is a route that persists what it maps.
+  { id: "data-at-rest", name: "Data-at-rest", status: "live", surface: "data-at-rest" },
+  // `live` since the register's writes began deriving assets on this surface
+  // — every edit re-derives it (`ingestOtObservations`). It is the one live
+  // surface whose evidence is `manual_attestation` rather than something
+  // observed, and the confidence on its observations says so: 0.3, below every
+  // automated collector. A register whose fleets carry only free-text
+  // descriptions still produces nothing, so `live` here means "the register
+  // can record cryptography", not "the register has any".
+  { id: "ot", name: "Manual OT / embedded register", status: "live", surface: "ot" },
+  { id: "vendor", name: "Vendor / third-party", status: "planned", surface: "vendor" },
   { id: "binary", name: "Binaries / firmware", status: "planned", surface: "binary" },
 ] as const satisfies readonly CollectorSurfaceEntry[];
 

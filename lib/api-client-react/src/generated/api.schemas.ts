@@ -401,6 +401,159 @@ export interface Scan {
   completedAt?: string | null;
 }
 
+export type SubmitProjectDependenciesBodyFilesItem = {
+  path: string;
+  content: string;
+};
+
+export interface SubmitProjectDependenciesBody {
+  /** Repository files. Only recognised lockfiles are read; everything else is ignored. `content` is the file verbatim — truncating a lockfile silently drops packages, so callers must not send an excerpt. */
+  files: SubmitProjectDependenciesBodyFilesItem[];
+}
+
+export type DependencyIngestSummaryLockfilesItemKind =
+  (typeof DependencyIngestSummaryLockfilesItemKind)[keyof typeof DependencyIngestSummaryLockfilesItemKind];
+
+export const DependencyIngestSummaryLockfilesItemKind = {
+  "pnpm-lock": "pnpm-lock",
+  "npm-lock": "npm-lock",
+  "yarn-lock": "yarn-lock",
+  "pip-requirements": "pip-requirements",
+} as const;
+
+export type DependencyIngestSummaryLockfilesItem = {
+  path: string;
+  kind: DependencyIngestSummaryLockfilesItemKind;
+};
+
+export interface DependencyIngestSummary {
+  projectId: number;
+  /** How many submitted files the collector could read. Zero means no collection run was recorded and the dependency surface is still un-examined for this project. */
+  lockfilesRecognised: number;
+  /** The recognised lockfiles and which format each was read as. */
+  lockfiles: DependencyIngestSummaryLockfilesItem[];
+  /** Null when no run was recorded (`lockfilesRecognised` is 0). */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Assets whose package is no longer in a resubmitted lockfile. Scoped to the ecosystems this submission carried a lockfile for. */
+  assetsMarkedGone: number;
+  /** Stated in every response rather than left to the client: a lockfile records the fully resolved dependency graph, so a match may be a transitive dependency of the toolchain rather than a library the project's own code calls. */
+  evidenceCaveat: string;
+}
+
+/**
+ * `unknown` is distinct from `clear` — no recorded procurement date means nobody has asserted a replacement is coming, which must never be read as safe.
+ */
+export type OtExposureState =
+  (typeof OtExposureState)[keyof typeof OtExposureState];
+
+export const OtExposureState = {
+  exposed: "exposed",
+  clear: "clear",
+  unknown: "unknown",
+} as const;
+
+export type OtExposureVerdictScenario =
+  (typeof OtExposureVerdictScenario)[keyof typeof OtExposureVerdictScenario];
+
+export const OtExposureVerdictScenario = {
+  conservative: "conservative",
+  central: "central",
+  aggressive: "aggressive",
+} as const;
+
+/**
+ * One Q-Day scenario's exposure verdict for a fleet's next procurement date.
+ */
+export interface OtExposureVerdict {
+  scenario: OtExposureVerdictScenario;
+  qDayYear: number;
+  state: OtExposureState;
+  /** The board-deck sentence — names the date and the scenario, not just the verdict. */
+  narrative: string;
+}
+
+/**
+ * B8's payoff: whether this fleet's next procurement decision falls after each Q-Day scenario's year, computed fresh on every read so a scenario change never needs a backfill. A fleet with no recorded procurement date is `unknown` under every scenario, never `clear`.
+ */
+export interface OtExposureAssessment {
+  nextProcurementDate: string | null;
+  verdicts: OtExposureVerdict[];
+  exposedScenarioCount: number;
+  unknownScenarioCount: number;
+  scenarioCount: number;
+  /** Mandatory framing for any customer-facing use of the scenario years. */
+  framing: string;
+}
+
+/**
+ * An `ot_fleets` row plus its computed exposure — B8, the manual OT/embedded register. docs/Claude/03-features.md §B8. Not an `Asset`: nothing here is collected, a human enters and edits it by hand, and it carries no `fingerprint`/`surface`/observation lifecycle.
+ */
+export interface OtFleet {
+  id: number;
+  organizationId: number;
+  name: string;
+  vendor: string | null;
+  model: string | null;
+  /** Null means nobody has counted yet — distinct from a recorded zero. */
+  deviceCount: number | null;
+  site: string | null;
+  /** Free text — a team, role or vendor contact, not necessarily an app user. */
+  owner: string | null;
+  /** Free-form, customer-asserted description of the cryptography in use. */
+  cryptoInUse: string | null;
+  /** The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all. */
+  cryptoAlgorithm?: string | null;
+  /** Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size. */
+  cryptoKeySize?: number | null;
+  refreshCycleYears: number | null;
+  nextProcurementDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  exposure: OtExposureAssessment;
+}
+
+export interface CreateOtFleetBody {
+  name: string;
+  vendor?: string;
+  model?: string;
+  /** @minimum 0 */
+  deviceCount?: number;
+  site?: string;
+  owner?: string;
+  cryptoInUse?: string;
+  /** The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all. */
+  cryptoAlgorithm?: string | null;
+  /** Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size. */
+  cryptoKeySize?: number | null;
+  /** @minimum 0 */
+  refreshCycleYears?: number;
+  nextProcurementDate?: string;
+}
+
+/**
+ * Every field optional; only fields present in the body are changed.
+ */
+export interface UpdateOtFleetBody {
+  name?: string;
+  vendor?: string | null;
+  model?: string | null;
+  /** @minimum 0 */
+  deviceCount?: number | null;
+  site?: string | null;
+  owner?: string | null;
+  cryptoInUse?: string | null;
+  /** The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all. */
+  cryptoAlgorithm?: string | null;
+  /** Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size. */
+  cryptoKeySize?: number | null;
+  /** @minimum 0 */
+  refreshCycleYears?: number | null;
+  nextProcurementDate?: string | null;
+}
+
 export type CreateScanBodyMode =
   (typeof CreateScanBodyMode)[keyof typeof CreateScanBodyMode];
 
@@ -1179,6 +1332,983 @@ export interface CbomDocument {
   components: CycloneDxComponent[];
   dependencies: CycloneDxDependency[];
 }
+
+export type ReadinessSectionId =
+  (typeof ReadinessSectionId)[keyof typeof ReadinessSectionId];
+
+export const ReadinessSectionId = {
+  roadmap: "roadmap",
+  "cryptographic-inventory": "cryptographic-inventory",
+  prioritisation: "prioritisation",
+  "vendor-engagement": "vendor-engagement",
+  "supply-chain": "supply-chain",
+} as const;
+
+export type ReadinessSectionState =
+  (typeof ReadinessSectionState)[keyof typeof ReadinessSectionState];
+
+export const ReadinessSectionState = {
+  tracked: "tracked",
+  "not-tracked": "not-tracked",
+} as const;
+
+/**
+ * One named part of the CISA/NSA/NIST factsheet. `state: "not-tracked"` means this product has no data source for the section at all (e.g. no roadmap-document attachment, no vendor register) — `percentComplete` is null in that case, never 0, because 0 would assert a measurement nobody took.
+ */
+export interface ReadinessSection {
+  id: ReadinessSectionId;
+  label: string;
+  /** What "complete" means for this section, stated plainly rather than left implicit. */
+  definition: string;
+  state: ReadinessSectionState;
+  percentComplete: number | null;
+  numerator: number | null;
+  denominator: number | null;
+  reason: string;
+}
+
+/**
+ * The same shape and the same honesty rules as `ProjectCoverage` (D3's per-project meter), computed over the whole organisation instead of one project — reusing `summariseProjectCoverage` verbatim, since its output never depended on a project scope in the first place. No `projectId`: the whole point is that it is not one.
+ */
+export interface EstateCoverage {
+  examinedSurfaces: number;
+  totalSurfaces: number;
+  surfaces: SurfaceCoverage[];
+  confidence: ConfidenceSummary;
+}
+
+/**
+ * D1 Row 1 plus the estate coverage meter (Row 3) it is partly defined against, in one payload so the two cannot disagree. Deliberately carries no combined/overall readiness score — averaging a measured section with an untracked one would invent a denominator, and that is the one number a buyer would screenshot and nobody could defend.
+ */
+export interface ReadinessSummary {
+  generatedAt: string;
+  /** States the factsheet's name and date. The factsheet is organised into named sections, not a numbered stage sequence — this must never read as a CISA-authored numbering. */
+  framing: string;
+  sections: ReadinessSection[];
+  coverage: EstateCoverage;
+}
+
+/**
+ * Reuses the same exported Mosca primitives `PostureTimeline` scores its estate-wide series with, so the two panels cannot disagree about what "breached" means.
+ */
+export interface InventoryMoscaSummary {
+  /** Secrecy lifetime in years, as resolved through A3 (asset → project → product default). */
+  x: number;
+  /** Migration time in years, from effort hours. Zero across the board until effort estimation ships. */
+  y: number;
+  /** True when X was defaulted rather than supplied at the asset or project level. */
+  xAssumed: boolean;
+  /** False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break. */
+  applicable: boolean;
+  /** Q-Day scenario names this asset breaches under. Empty when not applicable. */
+  breachedScenarios: string[];
+}
+
+/**
+ * Where the classification behind `mosca.x` actually came from.
+ */
+export type EnrichedInventoryAssetClassificationSource =
+  (typeof EnrichedInventoryAssetClassificationSource)[keyof typeof EnrichedInventoryAssetClassificationSource];
+
+export const EnrichedInventoryAssetClassificationSource = {
+  asset: "asset",
+  project: "project",
+  default: "default",
+} as const;
+
+export interface EnrichedInventoryAsset {
+  id: number;
+  fingerprint: string;
+  /** Null for a surface with no project association (TLS, certificate, KMS). */
+  projectId: number | null;
+  surface: string;
+  algorithm: string;
+  keySize: number | null;
+  location: string;
+  status: string;
+  firstSeen: string;
+  lastSeen: string;
+  ownerId: number | null;
+  dataClassification: string | null;
+  secrecyLifetimeYears: number | null;
+  /** Where the classification behind `mosca.x` actually came from. */
+  classificationSource: EnrichedInventoryAssetClassificationSource;
+  /** Most recent observation's confidence. Null when the asset has never been observed. */
+  latestConfidence: number | null;
+  /** Null when the mapping data has no entry for this algorithm. */
+  compliance: FindingCompliance | null;
+  mosca: InventoryMoscaSummary;
+}
+
+/**
+ * Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present.
+ */
+export type InventoryAssetsSummaryStatusCounts = { [key: string]: number };
+
+export type InventoryAssetsSummaryScenariosItem = {
+  name: string;
+  qDayYear: number;
+  rationale: string;
+  confidence: string;
+};
+
+export interface InventoryAssetsSummary {
+  generatedAt: string;
+  assets: EnrichedInventoryAsset[];
+  /** Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present. */
+  statusCounts: InventoryAssetsSummaryStatusCounts;
+  scenarios: InventoryAssetsSummaryScenariosItem[];
+  /** Mandatory wherever a scenario year is shown. */
+  framing: string;
+}
+
+export type SubmitProjectCertificatesBodyFilesItem = {
+  path: string;
+  content: string;
+};
+
+export interface SubmitProjectCertificatesBody {
+  /** Certificate files. `content` is PEM text (one or more concatenated certificate blocks) or base64-encoded DER. Anything else is ignored rather than rejected, so a caller may submit a whole tree. */
+  files: SubmitProjectCertificatesBodyFilesItem[];
+}
+
+export type CertificateQDayVerdictScenario =
+  (typeof CertificateQDayVerdictScenario)[keyof typeof CertificateQDayVerdictScenario];
+
+export const CertificateQDayVerdictScenario = {
+  conservative: "conservative",
+  central: "central",
+  aggressive: "aggressive",
+} as const;
+
+export type CertificateQDayVerdictConfidence =
+  (typeof CertificateQDayVerdictConfidence)[keyof typeof CertificateQDayVerdictConfidence];
+
+export const CertificateQDayVerdictConfidence = {
+  verified: "verified",
+  "needs-check": "needs-check",
+} as const;
+
+/**
+ * Whether one certificate's `notAfter` falls on or after one Q-Day scenario's year. Derived at read time from `lib/risk`'s scenario set — never persisted, since the scenario years are customer-overridable.
+ */
+export interface CertificateQDayVerdict {
+  scenario: CertificateQDayVerdictScenario;
+  qDayYear: number;
+  rationale: string;
+  confidence: CertificateQDayVerdictConfidence;
+  outlivesQDay: boolean;
+}
+
+/**
+ * One certificate this submission parsed, with its Q-Day comparison.
+ */
+export interface CertificateIngestEntry {
+  location: string;
+  algorithm: string;
+  keySize: number | null;
+  issuer: string;
+  serialNumber: string;
+  subject: string | null;
+  notBefore: string;
+  notAfter: string;
+  signatureAlgorithm: string | null;
+  qDay: CertificateQDayVerdict[];
+}
+
+export type CertificateIngestSummaryCertificateFilesItem = {
+  path: string;
+  certificateCount: number;
+};
+
+export interface CertificateIngestSummary {
+  projectId: number;
+  /** How many certificates the collector could actually parse. Zero means no collection run was recorded and the certificate surface is still un-examined for this project. */
+  certificatesRecognised: number;
+  /** The submitted files that carried at least one parseable certificate, and how many. */
+  certificateFiles: CertificateIngestSummaryCertificateFilesItem[];
+  /** Null when no run was recorded (`certificatesRecognised` is 0). */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Always 0 in practice today: a certificate's identity is its own issuer+serial, not a shared slot, so an omitted certificate is never inferred as retired by a later submission — see the reobservation-scope note in `asset-ingest.ts`. */
+  assetsMarkedGone: number;
+  certificates: CertificateIngestEntry[];
+  evidenceCaveat: string;
+}
+
+export type ProjectCertificateAssetStatus =
+  (typeof ProjectCertificateAssetStatus)[keyof typeof ProjectCertificateAssetStatus];
+
+export const ProjectCertificateAssetStatus = {
+  active: "active",
+  remediated: "remediated",
+  waived: "waived",
+  gone: "gone",
+} as const;
+
+/**
+ * A persisted certificate asset, with its Q-Day comparison evaluated fresh on this read.
+ */
+export interface ProjectCertificateAsset {
+  assetId: number;
+  algorithm: string;
+  keySize: number | null;
+  status: ProjectCertificateAssetStatus;
+  issuer: string;
+  serialNumber: string;
+  subject: string | null;
+  notBefore: string;
+  notAfter: string;
+  signatureAlgorithm: string | null;
+  firstSeen: string;
+  lastSeen: string;
+  qDay: CertificateQDayVerdict[];
+}
+
+export interface ProjectCertificates {
+  projectId: number;
+  generatedAt: string;
+  certificates: ProjectCertificateAsset[];
+}
+
+export type SubmitProjectTlsBodyTargetsItem = {
+  /** Hostname or IP literal. Never a URL — no scheme, path or credentials. */
+  host: string;
+  /**
+   * @minimum 1
+   * @maximum 65535
+   */
+  port: number;
+};
+
+export interface SubmitProjectTlsBody {
+  /**
+   * Hosts to open a real TLS connection to. A caller-named host that resolves to a loopback/private/link-local/other non-routable address is refused before any connection is attempted — see `TlsProbeSummary.targets[].outcome`.
+   * @maxItems 20
+   */
+  targets: SubmitProjectTlsBodyTargetsItem[];
+}
+
+/**
+ * `refused` means the SSRF guard rejected the target before any connection was attempted; `unreachable` means the guard allowed it but the handshake did not complete (timeout, connection refused, TLS negotiation failure); `probed` means a handshake completed. The specific refusal reason is deliberately not exposed here — see `tls-ssrf-guard.ts` — the same posture `parseGithubUrl` takes with a bare rejection.
+ */
+export type TlsProbeSummaryTargetsItemOutcome =
+  (typeof TlsProbeSummaryTargetsItemOutcome)[keyof typeof TlsProbeSummaryTargetsItemOutcome];
+
+export const TlsProbeSummaryTargetsItemOutcome = {
+  probed: "probed",
+  refused: "refused",
+  unreachable: "unreachable",
+} as const;
+
+export type TlsProbeSummaryTargetsItem = {
+  host: string;
+  port: number;
+  /** `refused` means the SSRF guard rejected the target before any connection was attempted; `unreachable` means the guard allowed it but the handshake did not complete (timeout, connection refused, TLS negotiation failure); `probed` means a handshake completed. The specific refusal reason is deliberately not exposed here — see `tls-ssrf-guard.ts` — the same posture `parseGithubUrl` takes with a bare rejection. */
+  outcome: TlsProbeSummaryTargetsItemOutcome;
+};
+
+export interface TlsProbeSummary {
+  projectId: number;
+  targetsSubmitted: number;
+  /** How many targets completed a handshake. Zero means no collection run was recorded and the tls surface is still un-examined for this project. */
+  targetsProbed: number;
+  /** The per-target outcome — a submission of five hosts where three are refused and one times out must not collapse into a single number. */
+  targets: TlsProbeSummaryTargetsItem[];
+  /** Null when no run was recorded (`targetsProbed` is 0). */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Assets at a host:port this submission actually probed and no longer found there. Scoped to exactly the targets that completed a handshake in this submission. */
+  assetsMarkedGone: number;
+  /** Stated in every response: this collector records the negotiated key-exchange algorithm/group and the peer certificate's public key type/size only — no certificate identity, chain or validity. It does not verify trust (certificates are not validated against any CA), because the point is to observe what a host actually negotiates, not whether a browser would accept it. */
+  evidenceCaveat: string;
+}
+
+export type SubmitProjectProtocolConfigBodyFilesItem = {
+  path: string;
+  content: string;
+};
+
+export interface SubmitProjectProtocolConfigBody {
+  /** Configuration files, submitted as path + content — the same shape `POST /projects/{id}/dependencies` and `POST /projects/{id}/certificates` use. The path matters: the SSH and IPsec families are recognised by basename, so `/etc/ssh/sshd_config` is read and a copy renamed `sshd_config.bak.txt` is not. Anything unrecognised is ignored rather than rejected, so a caller may submit a whole tree. */
+  files: SubmitProjectProtocolConfigBodyFilesItem[];
+}
+
+/**
+ * `permitted` — an algorithm the endpoint would accept if a peer asked, which it may never select. `materialised` — a specific key or a chosen algorithm that exists now. Priced into `confidence`, but reported separately because they are different claims.
+ */
+export type ProtocolConfigDeclarationStrength =
+  (typeof ProtocolConfigDeclarationStrength)[keyof typeof ProtocolConfigDeclarationStrength];
+
+export const ProtocolConfigDeclarationStrength = {
+  permitted: "permitted",
+  materialised: "materialised",
+} as const;
+
+/**
+ * One algorithm a configuration file declares, read verbatim from a named directive.
+ */
+export interface ProtocolConfigDeclaration {
+  path: string;
+  /** Which configuration format the file was read as — `sshd-config`, `ssh-config`, `authorized-keys`, `ipsec-config`, `jwks`, `oidc-discovery`, `saml-metadata`. */
+  format: string;
+  /** The keyword or field the token was written under, e.g. `KexAlgorithms`, `alg`, `SignatureMethod`, `esp`. */
+  directive: string;
+  /** The token exactly as the file wrote it, so a reader can go back to the line and check. */
+  declaredValue: string;
+  /** Canonical name, resolving in the mappings data. A token with no canonical name produces no declaration at all. */
+  algorithm: string;
+  /** The stated parameter size where the token names one (a curve, a MODP group, an AES width, a JWK modulus). Null means undetermined — an `ssh-rsa` authorized_keys entry does not state its modulus and this collector does not decode the blob to guess one. */
+  keySize: number | null;
+  /** `permitted` — an algorithm the endpoint would accept if a peer asked, which it may never select. `materialised` — a specific key or a chosen algorithm that exists now. Priced into `confidence`, but reported separately because they are different claims. */
+  strength: ProtocolConfigDeclarationStrength;
+  /** The enclosing `Match`/`Host` block. Null when the directive applies unconditionally. */
+  condition: string | null;
+  /** 0.6 for a permitted declaration, 0.8 for a materialised one — both well below an observed TLS handshake's 1.0. */
+  confidence: number;
+}
+
+export type ProtocolConfigIngestSummaryConfigFilesItem = {
+  path: string;
+  format: string;
+  declarationCount: number;
+};
+
+export interface ProtocolConfigIngestSummary {
+  projectId: number;
+  /** How many submitted files were a protocol configuration this collector understands. Zero means no collection run was recorded and the config surface is still un-examined for this project. A recognised file that declares nothing still counts here — it was examined. */
+  configFilesRecognised: number;
+  /** The recognised files, each with how many declarations it carried. A `declarationCount` of 0 is read-and-states-nothing, not unreadable. */
+  configFiles: ProtocolConfigIngestSummaryConfigFilesItem[];
+  /** Null when no run was recorded (`configFilesRecognised` is 0). */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Declarations previously read from one of the files in this submission and no longer present in it — an administrator removed the directive. Scoped to exactly the files this submission read, so a file that was not submitted is untouched. */
+  assetsMarkedGone: number;
+  declarations: ProtocolConfigDeclaration[];
+  /** Stated on every response: this collector reads what a configuration file declares, not what an endpoint negotiates; `Include` directives are not followed; the absence of a directive is not read as the compiled-in default; and an unrecognised token, including hybrid post-quantum key exchange, contributes nothing rather than a guess. */
+  evidenceCaveat: string;
+}
+
+/**
+ * How the vendor answered "do you have a post-quantum migration plan?". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.
+ */
+export type VendorPqcRoadmapStatus =
+  (typeof VendorPqcRoadmapStatus)[keyof typeof VendorPqcRoadmapStatus];
+
+export const VendorPqcRoadmapStatus = {
+  none: "none",
+  assessing: "assessing",
+  roadmap_published: "roadmap_published",
+  migration_underway: "migration_underway",
+  pqc_available: "pqc_available",
+} as const;
+
+/**
+ * Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.
+ */
+export type VendorContractClause =
+  (typeof VendorContractClause)[keyof typeof VendorContractClause];
+
+export const VendorContractClause = {
+  present: "present",
+  absent: "absent",
+  in_negotiation: "in_negotiation",
+} as const;
+
+/**
+ * The four-state read of `contractPqcClause`. `unknown` is the null case promoted to a first-class value so a client cannot render "nobody has read the contract" as "there is no clause" — the two point in opposite directions and both are wrong to guess.
+ */
+export type VendorClauseState =
+  (typeof VendorClauseState)[keyof typeof VendorClauseState];
+
+export const VendorClauseState = {
+  present: "present",
+  absent: "absent",
+  in_negotiation: "in_negotiation",
+  unknown: "unknown",
+} as const;
+
+/**
+ * How much of the questionnaire the vendor has actually answered, derived from the answers themselves rather than from `respondedAt`, so a row cannot claim a response it does not contain. Only the vendor's own three answers count — the customer's contract filing does not make an unresponsive vendor look like it replied.
+ */
+export type VendorResponseState =
+  (typeof VendorResponseState)[keyof typeof VendorResponseState];
+
+export const VendorResponseState = {
+  awaiting_response: "awaiting_response",
+  partial: "partial",
+  answered: "answered",
+} as const;
+
+/**
+ * Exposure under one Q-Day scenario, against the date the vendor *claims*. `unknown` when no date was given — never `clear`.
+ */
+export type VendorReadinessState =
+  (typeof VendorReadinessState)[keyof typeof VendorReadinessState];
+
+export const VendorReadinessState = {
+  exposed: "exposed",
+  clear: "clear",
+  unknown: "unknown",
+} as const;
+
+/**
+ * Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for exactly this case. Nothing on this surface is observed.
+ */
+export type VendorAttestationDiscoveryModality =
+  (typeof VendorAttestationDiscoveryModality)[keyof typeof VendorAttestationDiscoveryModality];
+
+export const VendorAttestationDiscoveryModality = {
+  manual_attestation: "manual_attestation",
+} as const;
+
+/**
+ * The provenance stamp that keeps a vendor's claim from being read as an observation (B9).
+ */
+export interface VendorAttestation {
+  /** Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for exactly this case. Nothing on this surface is observed. */
+  discoveryModality: VendorAttestationDiscoveryModality;
+  /** Below every collector's, and `null` rather than a floor value when the vendor has answered nothing at all: no claim exists, so there is nothing to be confident about. The scale's anchors are documented on `RawObservation.confidence` — regex is about 0.7, a completed TLS handshake about 1.0. */
+  confidence: number | null;
+  /** The sentence a report must carry alongside any use of this vendor's answers. */
+  caveat: string;
+}
+
+export type VendorReadinessVerdictScenario =
+  (typeof VendorReadinessVerdictScenario)[keyof typeof VendorReadinessVerdictScenario];
+
+export const VendorReadinessVerdictScenario = {
+  conservative: "conservative",
+  central: "central",
+  aggressive: "aggressive",
+} as const;
+
+/**
+ * One Q-Day scenario's verdict against the date the vendor claims it will be post-quantum ready.
+ */
+export interface VendorReadinessVerdict {
+  scenario: VendorReadinessVerdictScenario;
+  qDayYear: number;
+  state: VendorReadinessState;
+  /** Written in the vendor's voice ("the vendor states"), never the product's, so a board deck built from these sentences cannot launder a claim into a finding. */
+  narrative: string;
+}
+
+/**
+ * The contractual lever — the only instrument a customer actually has over a vendor that is not moving.
+ */
+export interface VendorClauseAssessment {
+  state: VendorClauseState;
+  contractRenewalDate: string | null;
+  /** True only when a clause is known to be *missing* and no renewal is scheduled — no obligation, and no scheduled moment at which one could be created. False when the contract has merely not been read, because that is not a claim about the contract. */
+  noLeverScheduled: boolean;
+  narrative: string;
+}
+
+/**
+ * B9's payoff, computed fresh on every read so a corrected date or a revised Q-Day scenario needs no backfill. A vendor that has answered nothing is `awaiting_response` with a `null` confidence and an `unknown` verdict under every scenario — never `clear`.
+ */
+export interface VendorPostureAssessment {
+  responseState: VendorResponseState;
+  answeredQuestionCount: number;
+  questionCount: number;
+  respondedAt: string | null;
+  pqcRoadmapStatus: VendorPqcRoadmapStatus | null;
+  statedPqcReadyDate: string | null;
+  attestation: VendorAttestation;
+  verdicts: VendorReadinessVerdict[];
+  exposedScenarioCount: number;
+  unknownScenarioCount: number;
+  scenarioCount: number;
+  clause: VendorClauseAssessment;
+  /** Mandatory framing for any customer-facing use of the scenario years. */
+  framing: string;
+}
+
+/**
+ * A `vendor_assessments` row plus its computed posture — B9, the vendor/third-party register. docs/Claude/03-features.md §B9. Not an `Asset`: nothing here was collected, and a questionnaire answer is a claim by an interested party rather than an observation, so it carries no `fingerprint`/`surface`/observation lifecycle and does not count towards the D3 coverage meter.
+ */
+export interface VendorAssessment {
+  id: number;
+  organizationId: number;
+  vendorName: string;
+  productOrService: string | null;
+  /** Free text — the internal team or person who owns the relationship, not necessarily an app user. */
+  internalOwner: string | null;
+  /** Null means the questionnaire has not been sent — a different state from sent and ignored. */
+  questionnaireSentAt: string | null;
+  respondedAt: string | null;
+  pqcRoadmapStatus: VendorPqcRoadmapStatus | null;
+  /** The date the vendor *states* it will be post-quantum ready. A quote, not a verified commitment. */
+  statedPqcReadyDate: string | null;
+  /** Free-form, vendor-asserted description of the cryptography they use. */
+  cryptoDisclosed: string | null;
+  /** `absent` = the contract was read and has no PQC clause. `null` = nobody has read it. Rendering the second as the first invents a finding. */
+  contractPqcClause: VendorContractClause | null;
+  contractRenewalDate: string | null;
+  /** Where the answers are recorded — a document reference, ticket or URL. Not fetched or validated. */
+  attestationEvidence: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  posture: VendorPostureAssessment;
+}
+
+export interface CreateVendorAssessmentBody {
+  vendorName: string;
+  productOrService?: string;
+  internalOwner?: string;
+  questionnaireSentAt?: string;
+  respondedAt?: string;
+  pqcRoadmapStatus?: VendorPqcRoadmapStatus;
+  statedPqcReadyDate?: string;
+  cryptoDisclosed?: string;
+  contractPqcClause?: VendorContractClause;
+  contractRenewalDate?: string;
+  attestationEvidence?: string;
+  notes?: string;
+}
+
+/**
+ * Every field optional; only fields present in the body are changed. An explicit null clears a field back to "not supplied".
+ */
+export interface UpdateVendorAssessmentBody {
+  vendorName?: string;
+  productOrService?: string | null;
+  internalOwner?: string | null;
+  questionnaireSentAt?: string | null;
+  respondedAt?: string | null;
+  pqcRoadmapStatus?: VendorPqcRoadmapStatus | null;
+  statedPqcReadyDate?: string | null;
+  cryptoDisclosed?: string | null;
+  contractPqcClause?: VendorContractClause | null;
+  contractRenewalDate?: string | null;
+  attestationEvidence?: string | null;
+  notes?: string | null;
+}
+
+/**
+ * Which key store this key lives in.
+ */
+export type SubmitProjectKmsBodyKeysItemProvider =
+  (typeof SubmitProjectKmsBodyKeysItemProvider)[keyof typeof SubmitProjectKmsBodyKeysItemProvider];
+
+export const SubmitProjectKmsBodyKeysItemProvider = {
+  "aws-kms": "aws-kms",
+  "azure-key-vault": "azure-key-vault",
+  "gcp-kms": "gcp-kms",
+  "hashicorp-vault": "hashicorp-vault",
+} as const;
+
+export type SubmitProjectKmsBodyKeysItem = {
+  /** Which key store this key lives in. */
+  provider: SubmitProjectKmsBodyKeysItemProvider;
+  /** ARN, resource name, `kid` URL, or mount-qualified key name — whatever the provider calls the key's identity. Together with `provider` this is the asset's identity; an alias is deliberately not used, since an alias can be repointed at a different key. */
+  keyId: string;
+  /** The provider-native spec string: AWS `KeySpec`, GCP `CryptoKeyVersion.algorithm`, Azure `kty`, Vault `type`. Matched case-insensitively against `docs/Claude/mappings/kms-key-specs.json`. Omit it and the key is recorded as present and unclassified rather than guessed at. */
+  keySpec?: string;
+  /** Curve name where the provider states it separately from the spec — Azure's `crv`. Resolved through the shared named-curve table. */
+  curve?: string;
+  /** A key size your export has and the spec does not state (Azure's Create Key `key_size`). Used only when neither the key spec nor a curve supplies one, so it cannot override a size the provider's documentation states. */
+  keySize?: number;
+  alias?: string;
+  /** The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`), recorded verbatim and never mapped onto the asset's lifecycle status. */
+  keyState?: string;
+  rotationEnabled?: boolean;
+  /** @minimum 1 */
+  rotationPeriodDays?: number;
+  lastRotatedAt?: string;
+  origin?: string;
+  region?: string;
+  /** The containing vault, key ring or mount path. */
+  keyStore?: string;
+};
+
+export interface SubmitProjectKmsBody {
+  /**
+   * The key inventory your own key store already produced — the output of `aws kms describe-key`, `az keyvault key show`, `gcloud kms keys list` or `vault read transit/keys/<name>`, transcribed into these fields. No credential for the key store ever reaches this product.
+
+Every field beyond `provider` and `keyId` is optional because every field beyond those is optional in those exports: `aws kms list-keys` returns identifiers only, and Azure Key Vault's list operation returns `kid` and `attributes` with no key type at all. An omitted field means "the export did not state this" and is never substituted for — `rotationEnabled` in particular is left absent rather than sent as `false`, because "not stated" and "not rotated" are different claims.
+   * @maxItems 500
+   */
+  keys: SubmitProjectKmsBodyKeysItem[];
+}
+
+/**
+ * `observed` — the spec resolved to an algorithm this product reports on, and an asset was written. `no-algorithm` — the spec is known and its primitive is not one `algorithms.json` catalogues (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`); the key is real, counted and examined, and there is nothing to report about it. `unrecognised-spec` — the provider stated a spec the curated table does not have, which means our data is behind the provider and is the one outcome a data update fixes. `no-spec` — the entry named a key and stated nothing about it, the expected shape of a list-without-describe export.
+ */
+export type KmsKeyOutcomeOutcome =
+  (typeof KmsKeyOutcomeOutcome)[keyof typeof KmsKeyOutcomeOutcome];
+
+export const KmsKeyOutcomeOutcome = {
+  observed: "observed",
+  "no-algorithm": "no-algorithm",
+  "unrecognised-spec": "unrecognised-spec",
+  "no-spec": "no-spec",
+} as const;
+
+/**
+ * Which of four sources supplied `keySize`, so a reader never has to guess: the key spec's documented size, a named curve, a value you submitted, or none of them.
+ */
+export type KmsKeyOutcomeKeySizeSource =
+  | (typeof KmsKeyOutcomeKeySizeSource)[keyof typeof KmsKeyOutcomeKeySizeSource]
+  | null;
+
+export const KmsKeyOutcomeKeySizeSource = {
+  "key-spec": "key-spec",
+  curve: "curve",
+  submitted: "submitted",
+  "not-supplied": "not-supplied",
+} as const;
+
+/**
+ * What the collector concluded about one submitted key. The four `outcome` values are deliberately not collapsed into "classified / skipped": only one of the three non-observed values is actionable, and hiding which is which would hide it.
+ */
+export interface KmsKeyOutcome {
+  provider: string;
+  keyId: string;
+  keySpec: string | null;
+  alias: string | null;
+  keyState: string | null;
+  /** `observed` — the spec resolved to an algorithm this product reports on, and an asset was written. `no-algorithm` — the spec is known and its primitive is not one `algorithms.json` catalogues (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`); the key is real, counted and examined, and there is nothing to report about it. `unrecognised-spec` — the provider stated a spec the curated table does not have, which means our data is behind the provider and is the one outcome a data update fixes. `no-spec` — the entry named a key and stated nothing about it, the expected shape of a list-without-describe export. */
+  outcome: KmsKeyOutcomeOutcome;
+  /** Why no observation was produced, verbatim from the curated table where the table has an opinion. Null for `observed`. */
+  reason: string | null;
+  /** Null for every outcome except `observed`. */
+  algorithm: string | null;
+  /** The size the provider states for this key. **Null means the provider stated none** — an Azure JsonWebKey carries no `key_size` member at all — never a default. G-05. */
+  keySize: number | null;
+  /** Which of four sources supplied `keySize`, so a reader never has to guess: the key spec's documented size, a named curve, a value you submitted, or none of them. */
+  keySizeSource: KmsKeyOutcomeKeySizeSource;
+  /** Null when the submitted export did not state it. Not the same as `false`. */
+  rotationEnabled: boolean | null;
+  /** The asset locator this key was written under. Null when no asset was written. */
+  location: string | null;
+}
+
+export interface KmsIngestSummary {
+  projectId: number;
+  keysSubmitted: number;
+  /** How many submitted keys resolved to an algorithm this product reports on and became assets. */
+  keysObserved: number;
+  /** Submitted keys that produced no observation, for any of the three non-`observed` reasons. This being non-zero while `collectionRunId` is set is the normal and correct state for a key store holding symmetric or post-quantum keys — the surface was examined, and nothing reportable was in it. */
+  keysUnclassified: number;
+  keys: KmsKeyOutcome[];
+  /** Null only when the submission carried no key entries at all. A submission whose keys all came back unclassified DOES record a run — that is an examination that found nothing, not an absent examination, and the D3 meter must be able to tell them apart. */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Always 0 in practice today. A submitted export is never assumed to be a complete enumeration of a key store — one page of a paginated `list-keys`, one region or one Vault mount is the normal case — so a key absent from a later submission is not inferred to have been deleted. See the reobservation-scope note in `asset-ingest.ts`. */
+  assetsMarkedGone: number;
+  evidenceCaveat: string;
+}
+
+export type ProjectKmsKeyStatus =
+  (typeof ProjectKmsKeyStatus)[keyof typeof ProjectKmsKeyStatus];
+
+export const ProjectKmsKeyStatus = {
+  active: "active",
+  remediated: "remediated",
+  waived: "waived",
+  gone: "gone",
+} as const;
+
+/**
+ * A persisted KMS key asset, as the inventory read returns it.
+ */
+export interface ProjectKmsKey {
+  assetId: number;
+  provider: string;
+  keyId: string;
+  keySpec: string | null;
+  alias: string | null;
+  keyState: string | null;
+  algorithm: string;
+  /** Null when the provider stated no size. Never a default — G-05. */
+  keySize: number | null;
+  status: ProjectKmsKeyStatus;
+  /** Null when the submitted export did not state it, which is a different fact from rotation being off. */
+  rotationEnabled: boolean | null;
+  rotationPeriodDays: number | null;
+  lastRotatedAt: string | null;
+  origin: string | null;
+  region: string | null;
+  keyStore: string | null;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface ProjectKmsKeys {
+  projectId: number;
+  generatedAt: string;
+  keys: ProjectKmsKey[];
+}
+
+/**
+ * One reported cryptographic setting. Every field is optional because every field is genuinely often unreported, and an unreported field must stay unreported — see the `cipher-not-reported` gap reason.
+ */
+export interface DataAtRestCryptoSubmission {
+  /** As the caller's tooling reports it — `AES-256-CBC`, `aes256`, `RSA-2048`, `ECDH`. Canonicalised on the way in; the original string is kept on the asset's `locationDetail.reportedAlgorithm` so the canonicalisation stays auditable. A string that resolves to no entry in the standards data records nothing and is returned as an `algorithm-not-recognised` gap. */
+  algorithm?: string | null;
+  /** The stated parameter size, when the caller supplies one separately. Wins over any size parsed out of `algorithm`. Bare `AES` yields no key size at all rather than an assumed 256 (G-05). */
+  keySize?: number | null;
+  /** Free text, e.g. `aws-kms`, `pkcs11-hsm`, `software-keystore`, `passphrase`. Recorded as evidence, never parsed into a verdict. */
+  source?: string | null;
+}
+
+/**
+ * Grouping and presentation only — deliberately not part of the asset identity.
+ */
+export type DataAtRestStoreSubmissionStoreKind =
+  (typeof DataAtRestStoreSubmissionStoreKind)[keyof typeof DataAtRestStoreSubmissionStoreKind];
+
+export const DataAtRestStoreSubmissionStoreKind = {
+  database: "database",
+  backup: "backup",
+  archive: "archive",
+  volume: "volume",
+  "object-store": "object-store",
+  other: "other",
+} as const;
+
+/**
+ * `unknown` (the default when omitted) is not a synonym for `not-encrypted`: one means nobody has checked, the other means someone checked and there is none. Only the second is a statement this route reconciles against, so only the second can mark a previously recorded cipher `gone`.
+ */
+export type DataAtRestStoreSubmissionEncryptionState =
+  (typeof DataAtRestStoreSubmissionEncryptionState)[keyof typeof DataAtRestStoreSubmissionEncryptionState];
+
+export const DataAtRestStoreSubmissionEncryptionState = {
+  encrypted: "encrypted",
+  "not-encrypted": "not-encrypted",
+  unknown: "unknown",
+} as const;
+
+/**
+ * Drives the discovery modality and the confidence recorded on the observation: `configuration-report` reads a real setting (0.6, `configuration_information`), `attestation` is a human's statement with no artefact behind it (0.4, `manual_attestation`). Defaults to `attestation`, the weaker of the two, so an unstated evidence source understates rather than overstates what is known.
+ */
+export type DataAtRestStoreSubmissionEvidenceSource =
+  (typeof DataAtRestStoreSubmissionEvidenceSource)[keyof typeof DataAtRestStoreSubmissionEvidenceSource];
+
+export const DataAtRestStoreSubmissionEvidenceSource = {
+  "configuration-report": "configuration-report",
+  attestation: "attestation",
+} as const;
+
+/**
+ * A3's classification for the data *in* this store, persisted on both of its assets. Omit it and X is inherited from the project, then from the product default, and the read below reports it as assumed. Omitting it on a resubmission leaves a previously supplied value in place rather than clearing it.
+ */
+export type DataAtRestStoreSubmissionDataClassification =
+  (typeof DataAtRestStoreSubmissionDataClassification)[keyof typeof DataAtRestStoreSubmissionDataClassification];
+
+export const DataAtRestStoreSubmissionDataClassification = {
+  public: "public",
+  internal: "internal",
+  confidential: "confidential",
+  regulated: "regulated",
+  indefinite: "indefinite",
+} as const;
+
+export interface DataAtRestStoreSubmission {
+  /** The caller's stable identifier for this store — an instance/database name, a bucket ARN, a backup job name. Part of the asset identity, so changing it orphans the previous asset and creates a new one. */
+  storeId: string;
+  /** Engine or product, e.g. `postgresql`, `mssql`, `oracle`, `s3`, `veeam`. Part of the asset identity. */
+  engine: string;
+  /** Grouping and presentation only — deliberately not part of the asset identity. */
+  storeKind?: DataAtRestStoreSubmissionStoreKind;
+  /** `unknown` (the default when omitted) is not a synonym for `not-encrypted`: one means nobody has checked, the other means someone checked and there is none. Only the second is a statement this route reconciles against, so only the second can mark a previously recorded cipher `gone`. */
+  encryptionState?: DataAtRestStoreSubmissionEncryptionState;
+  /** Drives the discovery modality and the confidence recorded on the observation: `configuration-report` reads a real setting (0.6, `configuration_information`), `attestation` is a human's statement with no artefact behind it (0.4, `manual_attestation`). Defaults to `attestation`, the weaker of the two, so an unstated evidence source understates rather than overstates what is known. */
+  evidenceSource?: DataAtRestStoreSubmissionEvidenceSource;
+  /** Free text for the report, e.g. "nightly full backups, 7-year retention". */
+  description?: string;
+  dataEncryption?: DataAtRestCryptoSubmission;
+  keyProtection?: DataAtRestCryptoSubmission;
+  /** A3's classification for the data *in* this store, persisted on both of its assets. Omit it and X is inherited from the project, then from the product default, and the read below reports it as assumed. Omitting it on a resubmission leaves a previously supplied value in place rather than clearing it. */
+  dataClassification?: DataAtRestStoreSubmissionDataClassification;
+  /**
+   * X in years, overriding the preset implied by `dataClassification`.
+   * @minimum 0
+   */
+  secrecyLifetimeYears?: number;
+}
+
+export interface SubmitProjectDataAtRestBody {
+  stores: DataAtRestStoreSubmission[];
+}
+
+export type DataAtRestGapRole =
+  (typeof DataAtRestGapRole)[keyof typeof DataAtRestGapRole];
+
+export const DataAtRestGapRole = {
+  "data-encryption": "data-encryption",
+  "key-protection": "key-protection",
+} as const;
+
+export type DataAtRestGapReason =
+  (typeof DataAtRestGapReason)[keyof typeof DataAtRestGapReason];
+
+export const DataAtRestGapReason = {
+  "encryption-state-unknown": "encryption-state-unknown",
+  "cipher-not-reported": "cipher-not-reported",
+  "key-protection-not-reported": "key-protection-not-reported",
+  "algorithm-not-recognised": "algorithm-not-recognised",
+} as const;
+
+/**
+ * Something this submission did not say, reported rather than filled in. The whole reason this surface earns its keep is being able to tell a CISO which of their long-lived ciphertext they actually know something about.
+ */
+export interface DataAtRestGap {
+  role: DataAtRestGapRole;
+  reason: DataAtRestGapReason;
+  /** The string the caller supplied, present only for `algorithm-not-recognised`. */
+  reported: string | null;
+}
+
+export type DataAtRestRecordedCryptoRole =
+  (typeof DataAtRestRecordedCryptoRole)[keyof typeof DataAtRestRecordedCryptoRole];
+
+export const DataAtRestRecordedCryptoRole = {
+  "data-encryption": "data-encryption",
+  "key-protection": "key-protection",
+} as const;
+
+/**
+ * One crypto fact this submission actually recorded for a store.
+ */
+export interface DataAtRestRecordedCrypto {
+  role: DataAtRestRecordedCryptoRole;
+  /** The canonical name, which is what the standards data is resolved against. */
+  algorithm: string;
+  keySize: number | null;
+  /** The caller's original string, kept so the canonicalisation can be audited. */
+  reportedAlgorithm: string;
+  location: string;
+}
+
+export interface DataAtRestStoreResult {
+  storeId: string;
+  engine: string;
+  recorded: DataAtRestRecordedCrypto[];
+  gaps: DataAtRestGap[];
+}
+
+export interface DataAtRestIngestSummary {
+  projectId: number;
+  storesSubmitted: number;
+  /** How many submitted stores produced at least one asset. The difference between this and `storesSubmitted` is the honest measure of how much of the estate was described rather than merely listed — every shortfall is itemised in `stores[].gaps`. */
+  storesWithRecordedCrypto: number;
+  /** Null when the submission said nothing reconcilable about any store (every store `unknown`, or every crypto field blank), in which case no run is recorded and the surface stays un-examined for this project. A submission of stores that are all `not-encrypted` DOES record a run: that is a real examination with a real result. */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Assets at a store slot this submission made a statement about and no longer found there — a rekey, or encryption turned off. Never a store whose cipher field was simply left blank. */
+  assetsMarkedGone: number;
+  stores: DataAtRestStoreResult[];
+  evidenceCaveat: string;
+}
+
+export interface DataAtRestMosca {
+  /** Secrecy lifetime in years, as resolved for this asset. */
+  x: number;
+  /** Migration time in years. */
+  y: number;
+  /** False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break. */
+  applicable: boolean;
+  breachedScenarios: string[];
+}
+
+export type DataAtRestComponentRole =
+  (typeof DataAtRestComponentRole)[keyof typeof DataAtRestComponentRole];
+
+export const DataAtRestComponentRole = {
+  "data-encryption": "data-encryption",
+  "key-protection": "key-protection",
+} as const;
+
+/**
+ * One persisted data-at-rest asset, with its Mosca verdict derived at read time.
+ */
+export interface DataAtRestComponent {
+  assetId: number;
+  role: DataAtRestComponentRole;
+  algorithm: string;
+  keySize: number | null;
+  reportedAlgorithm: string;
+  keySource: string | null;
+  /** Lifecycle status. `gone`/`remediated`/`waived` assets are included — a record of what was found must keep them. */
+  status: string;
+  firstSeen: string;
+  lastSeen: string;
+  /** From the standards data, null when it has no entry for this algorithm. False for the bulk cipher of a typical TDE'd store — which is exactly why `key-protection` is recorded separately rather than folded into one verdict per store. */
+  quantumVulnerable: boolean | null;
+  mosca: DataAtRestMosca;
+}
+
+/**
+ * Where the classification *label* came from — the same meaning this field carries on `GET /inventory/assets`. Never re-derived by the client. It is not always the provenance of X: a store may supply `secrecyLifetimeYears` without a label, in which case the years are asset-supplied while the label is still inherited. Read `xAssumed` for X's own provenance.
+ */
+export type ProjectDataAtRestStoreClassificationSource =
+  (typeof ProjectDataAtRestStoreClassificationSource)[keyof typeof ProjectDataAtRestStoreClassificationSource];
+
+export const ProjectDataAtRestStoreClassificationSource = {
+  asset: "asset",
+  project: "project",
+  default: "default",
+} as const;
+
+export interface ProjectDataAtRestStore {
+  storeId: string;
+  engine: string;
+  storeKind: string;
+  encryptionState: string;
+  description: string | null;
+  /** What was supplied for this store. Null means nobody classified it — see `classificationSource`. */
+  dataClassification: string | null;
+  secrecyLifetimeYears: number | null;
+  /** Where the classification *label* came from — the same meaning this field carries on `GET /inventory/assets`. Never re-derived by the client. It is not always the provenance of X: a store may supply `secrecyLifetimeYears` without a label, in which case the years are asset-supplied while the label is still inherited. Read `xAssumed` for X's own provenance. */
+  classificationSource: ProjectDataAtRestStoreClassificationSource;
+  /** True whenever X was not supplied for this store, whatever the label's provenance. Reports must say so. */
+  xAssumed: boolean;
+  /** One report-ready sentence stating the provenance of X in plain English. */
+  secrecyLifetimeBasis: string;
+  components: DataAtRestComponent[];
+}
+
+export type ProjectDataAtRestScenariosItem = {
+  name: string;
+  qDayYear: number;
+  rationale: string;
+  confidence: string;
+};
+
+export interface ProjectDataAtRest {
+  projectId: number;
+  generatedAt: string;
+  stores: ProjectDataAtRestStore[];
+  scenarios: ProjectDataAtRestScenariosItem[];
+  /** Mandatory wherever a scenario year is shown. */
+  framing: string;
+}
+
+export type RateLimitedResponse = {
+  error: string;
+};
+
+export type GetInventoryAssetsParams = {
+  /**
+   * Filter to one collector surface, e.g. `certificate` for the cert-expiry panel.
+   */
+  surface?: string;
+};
 
 export type ListCommunityPostsParams = {
   type?: ListCommunityPostsType;

@@ -378,6 +378,415 @@ export const GetProjectCoverageResponse = zod
   );
 
 /**
+ * Runs the dependency collector over the submitted files and persists what it finds as assets on the `dependency` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+Files are selected by basename, not by extension: `pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock` and `requirements*.txt`. Anything else in `files` is ignored rather than rejected, so a caller may submit a whole tree.
+
+**If no submitted file is a recognised lockfile, no collection run is recorded** and `lockfilesRecognised` is 0. That is deliberate: writing a run would make the meter report the dependency surface as examined-and-empty, when the truth is that nothing readable was submitted. It is a 200, not an error — a repository legitimately may have no lockfile.
+
+A package that leaves a resubmitted lockfile marks its asset `gone`, scoped to the ecosystems this submission actually carried a lockfile for. Submitting only `requirements.txt` therefore never touches the project's npm assets.
+ * @summary Submit a project's lockfiles for dependency/SBOM collection (B2)
+ */
+export const SubmitProjectDependenciesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SubmitProjectDependenciesBody = zod.object({
+  files: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        content: zod.string(),
+      }),
+    )
+    .describe(
+      "Repository files. Only recognised lockfiles are read; everything else is ignored. `content` is the file verbatim — truncating a lockfile silently drops packages, so callers must not send an excerpt.",
+    ),
+});
+
+export const SubmitProjectDependenciesResponse = zod.object({
+  projectId: zod.number(),
+  lockfilesRecognised: zod
+    .number()
+    .describe(
+      "How many submitted files the collector could read. Zero means no collection run was recorded and the dependency surface is still un-examined for this project.",
+    ),
+  lockfiles: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        kind: zod.enum([
+          "pnpm-lock",
+          "npm-lock",
+          "yarn-lock",
+          "pip-requirements",
+        ]),
+      }),
+    )
+    .describe("The recognised lockfiles and which format each was read as."),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe("Null when no run was recorded (`lockfilesRecognised` is 0)."),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Assets whose package is no longer in a resubmitted lockfile. Scoped to the ecosystems this submission carried a lockfile for.",
+    ),
+  evidenceCaveat: zod
+    .string()
+    .describe(
+      "Stated in every response rather than left to the client: a lockfile records the fully resolved dependency graph, so a match may be a transitive dependency of the toolchain rather than a library the project's own code calls.",
+    ),
+});
+
+/**
+ * The manual register — every fleet a customer has recorded by hand, newest first. Each entry carries `exposure`, computed fresh on every read against the current Q-Day scenarios, so a scenario or date change is reflected without a backfill.
+ * @summary List this organisation's OT/embedded device fleets (B8)
+ */
+export const ListOtFleetsResponseItem = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    name: zod.string(),
+    vendor: zod.string().nullable(),
+    model: zod.string().nullable(),
+    deviceCount: zod
+      .number()
+      .nullable()
+      .describe(
+        "Null means nobody has counted yet — distinct from a recorded zero.",
+      ),
+    site: zod.string().nullable(),
+    owner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — a team, role or vendor contact, not necessarily an app user.",
+      ),
+    cryptoInUse: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, customer-asserted description of the cryptography in use.",
+      ),
+    cryptoAlgorithm: zod
+      .string()
+      .nullish()
+      .describe(
+        "The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all.",
+      ),
+    cryptoKeySize: zod
+      .number()
+      .nullish()
+      .describe(
+        "Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.",
+      ),
+    refreshCycleYears: zod.number().nullable(),
+    nextProcurementDate: zod.coerce.date().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    exposure: zod
+      .object({
+        nextProcurementDate: zod.coerce.date().nullable(),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "`unknown` is distinct from `clear` — no recorded procurement date means nobody has asserted a replacement is coming, which must never be read as safe.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "The board-deck sentence — names the date and the scenario, not just the verdict.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's exposure verdict for a fleet's next procurement date.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B8's payoff: whether this fleet's next procurement decision falls after each Q-Day scenario's year, computed fresh on every read so a scenario change never needs a backfill. A fleet with no recorded procurement date is `unknown` under every scenario, never `clear`.",
+      ),
+  })
+  .describe(
+    "An `ot_fleets` row plus its computed exposure — B8, the manual OT\/embedded register. docs\/Claude\/03-features.md §B8. Not an `Asset`: nothing here is collected, a human enters and edits it by hand, and it carries no `fingerprint`\/`surface`\/observation lifecycle.",
+  );
+export const ListOtFleetsResponse = zod.array(ListOtFleetsResponseItem);
+
+/**
+ * A form submission, not a collector run: every field but `name` is optional, and an omitted field is stored as `null` — "not supplied" — rather than a guessed default.
+ * @summary Record a new device fleet (B8)
+ */
+export const createOtFleetBodyDeviceCountMin = 0;
+
+export const createOtFleetBodyRefreshCycleYearsMin = 0;
+
+export const CreateOtFleetBody = zod.object({
+  name: zod.string(),
+  vendor: zod.string().optional(),
+  model: zod.string().optional(),
+  deviceCount: zod.number().min(createOtFleetBodyDeviceCountMin).optional(),
+  site: zod.string().optional(),
+  owner: zod.string().optional(),
+  cryptoInUse: zod.string().optional(),
+  cryptoAlgorithm: zod
+    .string()
+    .nullish()
+    .describe(
+      "The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all.",
+    ),
+  cryptoKeySize: zod
+    .number()
+    .nullish()
+    .describe(
+      "Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.",
+    ),
+  refreshCycleYears: zod
+    .number()
+    .min(createOtFleetBodyRefreshCycleYearsMin)
+    .optional(),
+  nextProcurementDate: zod.coerce.date().optional(),
+});
+
+/**
+ * @summary Get one OT fleet by id (B8)
+ */
+export const GetOtFleetParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetOtFleetResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    name: zod.string(),
+    vendor: zod.string().nullable(),
+    model: zod.string().nullable(),
+    deviceCount: zod
+      .number()
+      .nullable()
+      .describe(
+        "Null means nobody has counted yet — distinct from a recorded zero.",
+      ),
+    site: zod.string().nullable(),
+    owner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — a team, role or vendor contact, not necessarily an app user.",
+      ),
+    cryptoInUse: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, customer-asserted description of the cryptography in use.",
+      ),
+    cryptoAlgorithm: zod
+      .string()
+      .nullish()
+      .describe(
+        "The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all.",
+      ),
+    cryptoKeySize: zod
+      .number()
+      .nullish()
+      .describe(
+        "Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.",
+      ),
+    refreshCycleYears: zod.number().nullable(),
+    nextProcurementDate: zod.coerce.date().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    exposure: zod
+      .object({
+        nextProcurementDate: zod.coerce.date().nullable(),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "`unknown` is distinct from `clear` — no recorded procurement date means nobody has asserted a replacement is coming, which must never be read as safe.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "The board-deck sentence — names the date and the scenario, not just the verdict.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's exposure verdict for a fleet's next procurement date.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B8's payoff: whether this fleet's next procurement decision falls after each Q-Day scenario's year, computed fresh on every read so a scenario change never needs a backfill. A fleet with no recorded procurement date is `unknown` under every scenario, never `clear`.",
+      ),
+  })
+  .describe(
+    "An `ot_fleets` row plus its computed exposure — B8, the manual OT\/embedded register. docs\/Claude\/03-features.md §B8. Not an `Asset`: nothing here is collected, a human enters and edits it by hand, and it carries no `fingerprint`\/`surface`\/observation lifecycle.",
+  );
+
+/**
+ * Every field is optional and only the fields present in the body are changed — omitting a field leaves the stored value (including `null`) exactly as it was, it does not clear it.
+ * @summary Update fields the customer has learned since the fleet was recorded (B8)
+ */
+export const UpdateOtFleetParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateOtFleetBodyDeviceCountMin = 0;
+
+export const updateOtFleetBodyRefreshCycleYearsMin = 0;
+
+export const UpdateOtFleetBody = zod
+  .object({
+    name: zod.string().optional(),
+    vendor: zod.string().nullish(),
+    model: zod.string().nullish(),
+    deviceCount: zod.number().min(updateOtFleetBodyDeviceCountMin).nullish(),
+    site: zod.string().nullish(),
+    owner: zod.string().nullish(),
+    cryptoInUse: zod.string().nullish(),
+    cryptoAlgorithm: zod
+      .string()
+      .nullish()
+      .describe(
+        "The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all.",
+      ),
+    cryptoKeySize: zod
+      .number()
+      .nullish()
+      .describe(
+        "Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.",
+      ),
+    refreshCycleYears: zod
+      .number()
+      .min(updateOtFleetBodyRefreshCycleYearsMin)
+      .nullish(),
+    nextProcurementDate: zod.coerce.date().nullish(),
+  })
+  .describe(
+    "Every field optional; only fields present in the body are changed.",
+  );
+
+export const UpdateOtFleetResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    name: zod.string(),
+    vendor: zod.string().nullable(),
+    model: zod.string().nullable(),
+    deviceCount: zod
+      .number()
+      .nullable()
+      .describe(
+        "Null means nobody has counted yet — distinct from a recorded zero.",
+      ),
+    site: zod.string().nullable(),
+    owner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — a team, role or vendor contact, not necessarily an app user.",
+      ),
+    cryptoInUse: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, customer-asserted description of the cryptography in use.",
+      ),
+    cryptoAlgorithm: zod
+      .string()
+      .nullish()
+      .describe(
+        "The structured half of `cryptoInUse`, and the only part that becomes an inventory asset on the `ot` surface. `cryptoInUse` stays free text — an approximation the customer asserts — and is never parsed into an algorithm. Null means nobody stated one, and a fleet with none produces no asset at all.",
+      ),
+    cryptoKeySize: zod
+      .number()
+      .nullish()
+      .describe(
+        "Key size for `cryptoAlgorithm`. Null is undetermined, never an assumed size.",
+      ),
+    refreshCycleYears: zod.number().nullable(),
+    nextProcurementDate: zod.coerce.date().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    exposure: zod
+      .object({
+        nextProcurementDate: zod.coerce.date().nullable(),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "`unknown` is distinct from `clear` — no recorded procurement date means nobody has asserted a replacement is coming, which must never be read as safe.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "The board-deck sentence — names the date and the scenario, not just the verdict.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's exposure verdict for a fleet's next procurement date.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B8's payoff: whether this fleet's next procurement decision falls after each Q-Day scenario's year, computed fresh on every read so a scenario change never needs a backfill. A fleet with no recorded procurement date is `unknown` under every scenario, never `clear`.",
+      ),
+  })
+  .describe(
+    "An `ot_fleets` row plus its computed exposure — B8, the manual OT\/embedded register. docs\/Claude\/03-features.md §B8. Not an `Asset`: nothing here is collected, a human enters and edits it by hand, and it carries no `fingerprint`\/`surface`\/observation lifecycle.",
+  );
+
+/**
+ * @summary Remove a fleet from the register (B8)
+ */
+export const DeleteOtFleetParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * Observed history from real collection instants, plus a projected horizon and the obligation deadlines that fall in it. Observed points come only from instants at which a collection actually happened — the series is never resampled onto a regular grid, because that would draw a smooth trend on an estate that never changed. When fewer than two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
 
  * @summary Estate cryptographic posture over time (D7)
@@ -566,6 +975,367 @@ export const GetInventoryTimelineResponse = zod.object({
     .describe(
       "Facts a reader expects on a time-pressure panel that this product cannot produce, stated rather than omitted.",
     ),
+});
+
+/**
+ * Five sections tracking the named parts of the joint CISA/NSA/NIST quantum-readiness factsheet (August 2023), plus the estate-wide coverage meter the first section is defined against — bundled in one payload so the two cannot disagree. A section with no data source in this product (roadmap document attachment, the vendor register) reports `percentComplete: null` and `state: "not-tracked"`, never `0`. There is no combined/overall readiness score.
+ * @summary CISA quantum-readiness posture tracker (D1)
+ */
+export const GetInventoryReadinessResponse = zod
+  .object({
+    generatedAt: zod.coerce.date(),
+    framing: zod
+      .string()
+      .describe(
+        "States the factsheet's name and date. The factsheet is organised into named sections, not a numbered stage sequence — this must never read as a CISA-authored numbering.",
+      ),
+    sections: zod.array(
+      zod
+        .object({
+          id: zod.enum([
+            "roadmap",
+            "cryptographic-inventory",
+            "prioritisation",
+            "vendor-engagement",
+            "supply-chain",
+          ]),
+          label: zod.string(),
+          definition: zod
+            .string()
+            .describe(
+              'What \"complete\" means for this section, stated plainly rather than left implicit.',
+            ),
+          state: zod.enum(["tracked", "not-tracked"]),
+          percentComplete: zod.number().nullable(),
+          numerator: zod.number().nullable(),
+          denominator: zod.number().nullable(),
+          reason: zod.string(),
+        })
+        .describe(
+          'One named part of the CISA\/NSA\/NIST factsheet. `state: \"not-tracked\"` means this product has no data source for the section at all (e.g. no roadmap-document attachment, no vendor register) — `percentComplete` is null in that case, never 0, because 0 would assert a measurement nobody took.',
+        ),
+    ),
+    coverage: zod
+      .object({
+        examinedSurfaces: zod.number(),
+        totalSurfaces: zod.number(),
+        surfaces: zod.array(
+          zod.object({
+            surface: zod
+              .string()
+              .describe(
+                "The `Surface` enum value, i.e. how the database records it.",
+              ),
+            surfaceId: zod
+              .string()
+              .nullable()
+              .describe(
+                "The collector catalogue id, so a caller can join presentation without re-deriving the mapping. Null for a surface with no catalogue entry.",
+              ),
+            state: zod
+              .enum(["examined", "examined-nothing-found", "never-examined"])
+              .describe(
+                "`examined-nothing-found` is its own state on purpose: a clean result and an absent one are different facts, and collapsing them loses the only one a reader cares about when the answer is zero.",
+              ),
+            completedRuns: zod.number(),
+            failedRuns: zod
+              .number()
+              .describe(
+                "A failed run is an attempt, not an examination. It is counted here and kept out of `completedRuns` so it can never make a surface look examined.",
+              ),
+            lastExaminedAt: zod.coerce.date().nullable(),
+            assets: zod.number(),
+            activeAssets: zod.number(),
+          }),
+        ),
+        confidence: zod.object({
+          basis: zod
+            .enum(["latest observation per active asset"])
+            .describe(
+              "Stated in the payload so a report built from it can quote the basis rather than guess it. One point per asset, not per observation — weighting by scan frequency would describe our scheduling, not our evidence quality.",
+            ),
+          scored: zod.number(),
+          unscored: zod
+            .number()
+            .describe(
+              "Active assets with no observation at all. Non-zero means a data problem, and hiding it would be the wrong default.",
+            ),
+          excludedByAssetStatus: zod
+            .record(zod.string(), zod.number())
+            .describe(
+              "Assets deliberately left out of the distribution, keyed by asset status.",
+            ),
+          distinctValues: zod.number(),
+          min: zod.number().nullable(),
+          max: zod.number().nullable(),
+          mean: zod.number().nullable(),
+          buckets: zod.array(
+            zod
+              .object({
+                label: zod.string(),
+                lower: zod.number(),
+                upper: zod.number(),
+                count: zod.number(),
+              })
+              .describe(
+                "Half-open bucket, [lower, upper), except the last which includes 1.0.",
+              ),
+          ),
+        }),
+      })
+      .describe(
+        "The same shape and the same honesty rules as `ProjectCoverage` (D3's per-project meter), computed over the whole organisation instead of one project — reusing `summariseProjectCoverage` verbatim, since its output never depended on a project scope in the first place. No `projectId`: the whole point is that it is not one.",
+      ),
+  })
+  .describe(
+    "D1 Row 1 plus the estate coverage meter (Row 3) it is partly defined against, in one payload so the two cannot disagree. Deliberately carries no combined\/overall readiness score — averaging a measured section with an untracked one would invent a denominator, and that is the one number a buyer would screenshot and nobody could defend.",
+  );
+
+/**
+ * Present assets only (`status !== "gone"`), each carrying its resolved compliance track (post-quantum vs. classical hygiene — G-10) and which Q-Day scenarios it breaches. `statusCounts` covers every asset in the organisation regardless of status, `gone` included, so drift can be reported without listing removed assets as present.
+ * @summary Estate inventory table, PQC track and Mosca breach per asset (D1 Row 4)
+ */
+export const GetInventoryAssetsQueryParams = zod.object({
+  surface: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Filter to one collector surface, e.g. `certificate` for the cert-expiry panel.",
+    ),
+});
+
+export const GetInventoryAssetsResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  assets: zod.array(
+    zod.object({
+      id: zod.number(),
+      fingerprint: zod.string(),
+      projectId: zod
+        .number()
+        .nullable()
+        .describe(
+          "Null for a surface with no project association (TLS, certificate, KMS).",
+        ),
+      surface: zod.string(),
+      algorithm: zod.string(),
+      keySize: zod.number().nullable(),
+      location: zod.string(),
+      status: zod.string(),
+      firstSeen: zod.coerce.date(),
+      lastSeen: zod.coerce.date(),
+      ownerId: zod.number().nullable(),
+      dataClassification: zod.string().nullable(),
+      secrecyLifetimeYears: zod.number().nullable(),
+      classificationSource: zod
+        .enum(["asset", "project", "default"])
+        .describe(
+          "Where the classification behind `mosca.x` actually came from.",
+        ),
+      latestConfidence: zod
+        .number()
+        .nullable()
+        .describe(
+          "Most recent observation's confidence. Null when the asset has never been observed.",
+        ),
+      compliance: zod
+        .object({
+          algorithm: zod.string(),
+          algorithmId: zod.string(),
+          quantumVulnerable: zod.boolean(),
+          riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+          complianceStatus: zod.enum([
+            "immediate-failure",
+            "future-obligation",
+            "no-obligation",
+          ]),
+          bucket: zod.enum([
+            "immediate-compliance-failure",
+            "pqc-migration",
+            "classical-hygiene",
+            "best-practice",
+            "no-obligation",
+          ]),
+          bucketLabel: zod.string(),
+          bucketDescription: zod.string(),
+          countsTowardPostQuantumScore: zod
+            .boolean()
+            .describe(
+              "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+            ),
+          headline: zod.string(),
+          useDependent: zod
+            .boolean()
+            .describe(
+              "True when the standard's answer depends on how the algorithm is used.",
+            ),
+          useConditions: zod.array(
+            zod.object({
+              use: zod.string(),
+              status: zod.string(),
+              permitted: zod.boolean(),
+              framework: zod.string(),
+            }),
+          ),
+          obligations: zod.array(
+            zod.object({
+              framework: zod.string(),
+              frameworkName: zod.string().optional(),
+              requirement: zod.string(),
+              severity: zod.enum([
+                "critical",
+                "high",
+                "medium",
+                "informational",
+              ]),
+              replacement: zod
+                .object({
+                  algorithm: zod.string(),
+                  standard: zod.string(),
+                  purpose: zod.string().optional(),
+                  note: zod.string().optional(),
+                })
+                .optional(),
+              deadline: zod
+                .object({
+                  type: zod
+                    .string()
+                    .describe(
+                      "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                    ),
+                  label: zod.string(),
+                  effect: zod.enum(["prohibition", "caution", "permitted"]),
+                  inEffect: zod
+                    .boolean()
+                    .describe("Whether the rule binds at the resolution date."),
+                  after: zod.string().optional(),
+                  in: zod.string().optional(),
+                  since: zod.string().optional(),
+                  appliesTo: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                    ),
+                  securityStrength: zod.string().optional(),
+                  source: zod.string().optional(),
+                  note: zod.string().optional(),
+                })
+                .optional(),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  section: zod.string().optional(),
+                  url: zod.string(),
+                  retrievedAt: zod.string().optional(),
+                  published: zod.string().optional(),
+                })
+                .describe(
+                  "Provenance for a single regulatory claim. Required on every obligation.",
+                ),
+              confidence: zod
+                .string()
+                .describe(
+                  "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+                ),
+              draftStatus: zod
+                .string()
+                .optional()
+                .describe(
+                  "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                ),
+              caveats: zod.array(zod.string()),
+              source: zod.enum([
+                "algorithm-deadline",
+                "algorithm-replacement",
+                "algorithm-best-practice",
+                "framework",
+              ]),
+            }),
+          ),
+          detection: zod.object({
+            multiplier: zod.number(),
+            adjustedConfidence: zod.number().optional(),
+            reviewRequired: zod.boolean(),
+            reason: zod.string().nullable(),
+          }),
+          reportingNote: zod.string().nullable(),
+          caveats: zod.array(zod.string()),
+          citation: zod
+            .object({
+              document: zod.string(),
+              section: zod.string().optional(),
+              url: zod.string(),
+              retrievedAt: zod.string().optional(),
+              published: zod.string().optional(),
+            })
+            .describe(
+              "Provenance for a single regulatory claim. Required on every obligation.",
+            ),
+          dataVersion: zod
+            .string()
+            .describe(
+              "Pin this with the report. A report is only reproducible against the data version that produced it.",
+            ),
+          asOf: zod
+            .string()
+            .describe("ISO date the deadlines were evaluated against."),
+        })
+        .describe(
+          "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+        )
+        .nullable()
+        .describe(
+          "Null when the mapping data has no entry for this algorithm.",
+        ),
+      mosca: zod
+        .object({
+          x: zod
+            .number()
+            .describe(
+              "Secrecy lifetime in years, as resolved through A3 (asset → project → product default).",
+            ),
+          y: zod
+            .number()
+            .describe(
+              "Migration time in years, from effort hours. Zero across the board until effort estimation ships.",
+            ),
+          xAssumed: zod
+            .boolean()
+            .describe(
+              "True when X was defaulted rather than supplied at the asset or project level.",
+            ),
+          applicable: zod
+            .boolean()
+            .describe(
+              "False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break.",
+            ),
+          breachedScenarios: zod
+            .array(zod.string())
+            .describe(
+              "Q-Day scenario names this asset breaches under. Empty when not applicable.",
+            ),
+        })
+        .describe(
+          'Reuses the same exported Mosca primitives `PostureTimeline` scores its estate-wide series with, so the two panels cannot disagree about what \"breached\" means.',
+        ),
+    }),
+  ),
+  statusCounts: zod
+    .record(zod.string(), zod.number())
+    .describe(
+      "Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present.",
+    ),
+  scenarios: zod.array(
+    zod.object({
+      name: zod.string(),
+      qDayYear: zod.number(),
+      rationale: zod.string(),
+      confidence: zod.string(),
+    }),
+  ),
+  framing: zod
+    .string()
+    .describe("Mandatory wherever a scenario year is shown."),
 });
 
 /**
@@ -3147,4 +3917,1421 @@ export const ScanGithubFilesResponse = zod.object({
       alertCount: zod.number(),
     }),
   ),
+});
+
+/**
+ * Runs the certificate collector over the submitted PEM/DER files and persists what it finds as assets on the `certificate` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+`content` is PEM text (one or more concatenated `-----BEGIN/END CERTIFICATE-----` blocks — a full chain is read entirely, not just its leaf) or base64-encoded DER. A file that is neither contributes nothing, silently.
+
+**If no submitted file contains a parseable certificate, no collection run is recorded** and `certificatesRecognised` is 0 — the same "examined nothing, not found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an error.
+
+Each returned certificate carries `qDay`: whether its `notAfter` falls on or after each Q-Day scenario's year, derived fresh on every call rather than stored — see `GET /projects/{id}/certificates` for the persisted-inventory read this backs.
+ * @summary Submit certificates for X.509 collection (B4)
+ */
+export const SubmitProjectCertificatesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SubmitProjectCertificatesBody = zod.object({
+  files: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        content: zod.string(),
+      }),
+    )
+    .describe(
+      "Certificate files. `content` is PEM text (one or more concatenated certificate blocks) or base64-encoded DER. Anything else is ignored rather than rejected, so a caller may submit a whole tree.",
+    ),
+});
+
+export const SubmitProjectCertificatesResponse = zod.object({
+  projectId: zod.number(),
+  certificatesRecognised: zod
+    .number()
+    .describe(
+      "How many certificates the collector could actually parse. Zero means no collection run was recorded and the certificate surface is still un-examined for this project.",
+    ),
+  certificateFiles: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        certificateCount: zod.number(),
+      }),
+    )
+    .describe(
+      "The submitted files that carried at least one parseable certificate, and how many.",
+    ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe("Null when no run was recorded (`certificatesRecognised` is 0)."),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Always 0 in practice today: a certificate's identity is its own issuer+serial, not a shared slot, so an omitted certificate is never inferred as retired by a later submission — see the reobservation-scope note in `asset-ingest.ts`.",
+    ),
+  certificates: zod.array(
+    zod
+      .object({
+        location: zod.string(),
+        algorithm: zod.string(),
+        keySize: zod.number().nullable(),
+        issuer: zod.string(),
+        serialNumber: zod.string(),
+        subject: zod.string().nullable(),
+        notBefore: zod.coerce.date(),
+        notAfter: zod.coerce.date(),
+        signatureAlgorithm: zod.string().nullable(),
+        qDay: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              rationale: zod.string(),
+              confidence: zod.enum(["verified", "needs-check"]),
+              outlivesQDay: zod.boolean(),
+            })
+            .describe(
+              "Whether one certificate's `notAfter` falls on or after one Q-Day scenario's year. Derived at read time from `lib\/risk`'s scenario set — never persisted, since the scenario years are customer-overridable.",
+            ),
+        ),
+      })
+      .describe(
+        "One certificate this submission parsed, with its Q-Day comparison.",
+      ),
+  ),
+  evidenceCaveat: zod.string(),
+});
+
+/**
+ * Every certificate asset attributed to this project, each evaluated against every Q-Day scenario at read time — never persisted, because Q-Day scenarios are customer-overridable (see `lib/risk`) and a stored verdict would go stale exactly the way C1 exists to prevent. Includes assets of every lifecycle status, not only `active`; a report of what was found must keep what was later remediated or waived in the record.
+ * @summary The project's certificate inventory, evaluated against Q-Day (B4)
+ */
+export const GetProjectCertificatesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectCertificatesResponse = zod.object({
+  projectId: zod.number(),
+  generatedAt: zod.coerce.date(),
+  certificates: zod.array(
+    zod
+      .object({
+        assetId: zod.number(),
+        algorithm: zod.string(),
+        keySize: zod.number().nullable(),
+        status: zod.enum(["active", "remediated", "waived", "gone"]),
+        issuer: zod.string(),
+        serialNumber: zod.string(),
+        subject: zod.string().nullable(),
+        notBefore: zod.coerce.date(),
+        notAfter: zod.coerce.date(),
+        signatureAlgorithm: zod.string().nullable(),
+        firstSeen: zod.coerce.date(),
+        lastSeen: zod.coerce.date(),
+        qDay: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              rationale: zod.string(),
+              confidence: zod.enum(["verified", "needs-check"]),
+              outlivesQDay: zod.boolean(),
+            })
+            .describe(
+              "Whether one certificate's `notAfter` falls on or after one Q-Day scenario's year. Derived at read time from `lib\/risk`'s scenario set — never persisted, since the scenario years are customer-overridable.",
+            ),
+        ),
+      })
+      .describe(
+        "A persisted certificate asset, with its Q-Day comparison evaluated fresh on this read.",
+      ),
+  ),
+});
+
+/**
+ * Opens a real TLS connection to each submitted `host`/`port` and records what was *negotiated* — cipher suite, key-exchange group, protocol version, and the peer certificate's public key type/size — not what a config file claims. Persists what it finds as assets on the `tls` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+A caller-supplied host is refused before any connection is attempted if it resolves to a loopback, private, link-local (including the cloud metadata service) or otherwise non-routable address. The refusal reason is not detailed in the response — only `refused`, distinguished from a target that was reachable in principle but did not answer (`unreachable`) or one that completed a handshake (`probed`).
+
+**If no target's handshake completes, no collection run is recorded** and `targetsProbed` is 0 — the same honesty rule `POST /projects/{id}/dependencies` applies for `lockfilesRecognised: 0`. It is a 200, not an error: every target may legitimately be unreachable or filtered.
+
+A host that no longer answers on a resubmission marks its assets `gone`, scoped to exactly the targets that were actually probed in this submission — a target refused by the guard or that timed out was not observed and does not affect any other target's assets.
+ * @summary Probe a project's hosts for the TLS handshake they actually negotiate (B3)
+ */
+export const SubmitProjectTlsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const submitProjectTlsBodyTargetsItemPortMax = 65535;
+
+export const submitProjectTlsBodyTargetsMax = 20;
+
+export const SubmitProjectTlsBody = zod.object({
+  targets: zod
+    .array(
+      zod.object({
+        host: zod
+          .string()
+          .describe(
+            "Hostname or IP literal. Never a URL — no scheme, path or credentials.",
+          ),
+        port: zod.number().min(1).max(submitProjectTlsBodyTargetsItemPortMax),
+      }),
+    )
+    .max(submitProjectTlsBodyTargetsMax)
+    .describe(
+      "Hosts to open a real TLS connection to. A caller-named host that resolves to a loopback\/private\/link-local\/other non-routable address is refused before any connection is attempted — see `TlsProbeSummary.targets[].outcome`.",
+    ),
+});
+
+export const SubmitProjectTlsResponse = zod.object({
+  projectId: zod.number(),
+  targetsSubmitted: zod.number(),
+  targetsProbed: zod
+    .number()
+    .describe(
+      "How many targets completed a handshake. Zero means no collection run was recorded and the tls surface is still un-examined for this project.",
+    ),
+  targets: zod
+    .array(
+      zod.object({
+        host: zod.string(),
+        port: zod.number(),
+        outcome: zod
+          .enum(["probed", "refused", "unreachable"])
+          .describe(
+            "`refused` means the SSRF guard rejected the target before any connection was attempted; `unreachable` means the guard allowed it but the handshake did not complete (timeout, connection refused, TLS negotiation failure); `probed` means a handshake completed. The specific refusal reason is deliberately not exposed here — see `tls-ssrf-guard.ts` — the same posture `parseGithubUrl` takes with a bare rejection.",
+          ),
+      }),
+    )
+    .describe(
+      "The per-target outcome — a submission of five hosts where three are refused and one times out must not collapse into a single number.",
+    ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe("Null when no run was recorded (`targetsProbed` is 0)."),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Assets at a host:port this submission actually probed and no longer found there. Scoped to exactly the targets that completed a handshake in this submission.",
+    ),
+  evidenceCaveat: zod
+    .string()
+    .describe(
+      "Stated in every response: this collector records the negotiated key-exchange algorithm\/group and the peer certificate's public key type\/size only — no certificate identity, chain or validity. It does not verify trust (certificates are not validated against any CA), because the point is to observe what a host actually negotiates, not whether a browser would accept it.",
+    ),
+});
+
+/**
+ * Parses submitted SSH (`sshd_config`, `ssh_config`, `authorized_keys`), IPsec/IKE (`ipsec.conf`, `swanctl.conf`), JOSE (a JWKS, an OpenID Connect discovery document) and SAML metadata files, and persists the algorithms they *declare* as assets on the `config` surface — which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+**A declaration is not a negotiation.** This route records what a file states, at `configuration_information` modality and a confidence well below `POST /projects/{id}/tls`'s observed handshake: a `Ciphers` list is an upper bound on what a daemon will accept, not evidence any peer selected an entry from it. Each declaration carries a `strength` — `permitted` (an algorithm the endpoint would accept) or `materialised` (a specific key or a chosen algorithm, such as an `authorized_keys` entry or a published JWK) — because those are different claims.
+
+The SSH and IPsec families are recognised by filename (including `sshd_config.d/` drop-ins); JOSE and SAML files have no conventional filename and are recognised by an unambiguous structural marker instead (a `keys` array of JWKs, an `*_alg_values_supported` field, an `EntityDescriptor` element).
+
+**If no submitted file is a configuration this collector understands, no collection run is recorded** and `configFilesRecognised` is 0 — the same "examined nothing, not found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an error. A recognised file that declares no crypto is the *other* case and **does** record a run: it was read, and it states nothing. Removing a directive and resubmitting the file marks its assets `gone`, scoped to exactly the files this submission read.
+
+Three deliberate silences, all restated in `evidenceCaveat`: `Include` directives are not followed (the caller submits contents, not a filesystem); the absence of a directive is not read as the compiled-in default; and an algorithm token with no canonical name — including hybrid post-quantum key exchange such as `sntrup761x25519-sha512` — produces no declaration rather than a guess.
+ * @summary Read the crypto a project's protocol configuration declares (B6)
+ */
+export const SubmitProjectProtocolConfigParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SubmitProjectProtocolConfigBody = zod.object({
+  files: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        content: zod.string(),
+      }),
+    )
+    .describe(
+      "Configuration files, submitted as path + content — the same shape `POST \/projects\/{id}\/dependencies` and `POST \/projects\/{id}\/certificates` use. The path matters: the SSH and IPsec families are recognised by basename, so `\/etc\/ssh\/sshd_config` is read and a copy renamed `sshd_config.bak.txt` is not. Anything unrecognised is ignored rather than rejected, so a caller may submit a whole tree.",
+    ),
+});
+
+export const SubmitProjectProtocolConfigResponse = zod.object({
+  projectId: zod.number(),
+  configFilesRecognised: zod
+    .number()
+    .describe(
+      "How many submitted files were a protocol configuration this collector understands. Zero means no collection run was recorded and the config surface is still un-examined for this project. A recognised file that declares nothing still counts here — it was examined.",
+    ),
+  configFiles: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        format: zod.string(),
+        declarationCount: zod.number(),
+      }),
+    )
+    .describe(
+      "The recognised files, each with how many declarations it carried. A `declarationCount` of 0 is read-and-states-nothing, not unreadable.",
+    ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe("Null when no run was recorded (`configFilesRecognised` is 0)."),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Declarations previously read from one of the files in this submission and no longer present in it — an administrator removed the directive. Scoped to exactly the files this submission read, so a file that was not submitted is untouched.",
+    ),
+  declarations: zod.array(
+    zod
+      .object({
+        path: zod.string(),
+        format: zod
+          .string()
+          .describe(
+            "Which configuration format the file was read as — `sshd-config`, `ssh-config`, `authorized-keys`, `ipsec-config`, `jwks`, `oidc-discovery`, `saml-metadata`.",
+          ),
+        directive: zod
+          .string()
+          .describe(
+            "The keyword or field the token was written under, e.g. `KexAlgorithms`, `alg`, `SignatureMethod`, `esp`.",
+          ),
+        declaredValue: zod
+          .string()
+          .describe(
+            "The token exactly as the file wrote it, so a reader can go back to the line and check.",
+          ),
+        algorithm: zod
+          .string()
+          .describe(
+            "Canonical name, resolving in the mappings data. A token with no canonical name produces no declaration at all.",
+          ),
+        keySize: zod
+          .number()
+          .nullable()
+          .describe(
+            "The stated parameter size where the token names one (a curve, a MODP group, an AES width, a JWK modulus). Null means undetermined — an `ssh-rsa` authorized_keys entry does not state its modulus and this collector does not decode the blob to guess one.",
+          ),
+        strength: zod
+          .enum(["permitted", "materialised"])
+          .describe(
+            "`permitted` — an algorithm the endpoint would accept if a peer asked, which it may never select. `materialised` — a specific key or a chosen algorithm that exists now. Priced into `confidence`, but reported separately because they are different claims.",
+          ),
+        condition: zod
+          .string()
+          .nullable()
+          .describe(
+            "The enclosing `Match`\/`Host` block. Null when the directive applies unconditionally.",
+          ),
+        confidence: zod
+          .number()
+          .describe(
+            "0.6 for a permitted declaration, 0.8 for a materialised one — both well below an observed TLS handshake's 1.0.",
+          ),
+      })
+      .describe(
+        "One algorithm a configuration file declares, read verbatim from a named directive.",
+      ),
+  ),
+  evidenceCaveat: zod
+    .string()
+    .describe(
+      "Stated on every response: this collector reads what a configuration file declares, not what an endpoint negotiates; `Include` directives are not followed; the absence of a directive is not read as the compiled-in default; and an unrecognised token, including hybrid post-quantum key exchange, contributes nothing rather than a guess.",
+    ),
+});
+
+/**
+ * The vendor register — every supplier a customer has recorded, newest first. Each entry carries `posture`, computed fresh on every read: the `manual_attestation` stamp and its confidence, the Q-Day verdicts against the date the vendor *claims* it will be post-quantum ready, and the contract-clause reading. Nothing here was observed by a collector.
+ * @summary List this organisation's vendor / third-party assessments (B9)
+ */
+export const ListVendorAssessmentsResponseItem = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    vendorName: zod.string(),
+    productOrService: zod.string().nullable(),
+    internalOwner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — the internal team or person who owns the relationship, not necessarily an app user.",
+      ),
+    questionnaireSentAt: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "Null means the questionnaire has not been sent — a different state from sent and ignored.",
+      ),
+    respondedAt: zod.coerce.date().nullable(),
+    pqcRoadmapStatus: zod
+      .enum([
+        "none",
+        "assessing",
+        "roadmap_published",
+        "migration_underway",
+        "pqc_available",
+      ])
+      .describe(
+        'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+      )
+      .nullable(),
+    statedPqcReadyDate: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "The date the vendor \*states\* it will be post-quantum ready. A quote, not a verified commitment.",
+      ),
+    cryptoDisclosed: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, vendor-asserted description of the cryptography they use.",
+      ),
+    contractPqcClause: zod
+      .enum(["present", "absent", "in_negotiation"])
+      .describe(
+        "Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.",
+      )
+      .nullable()
+      .describe(
+        "`absent` = the contract was read and has no PQC clause. `null` = nobody has read it. Rendering the second as the first invents a finding.",
+      ),
+    contractRenewalDate: zod.coerce.date().nullable(),
+    attestationEvidence: zod
+      .string()
+      .nullable()
+      .describe(
+        "Where the answers are recorded — a document reference, ticket or URL. Not fetched or validated.",
+      ),
+    notes: zod.string().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    posture: zod
+      .object({
+        responseState: zod
+          .enum(["awaiting_response", "partial", "answered"])
+          .describe(
+            "How much of the questionnaire the vendor has actually answered, derived from the answers themselves rather than from `respondedAt`, so a row cannot claim a response it does not contain. Only the vendor's own three answers count — the customer's contract filing does not make an unresponsive vendor look like it replied.",
+          ),
+        answeredQuestionCount: zod.number(),
+        questionCount: zod.number(),
+        respondedAt: zod.coerce.date().nullable(),
+        pqcRoadmapStatus: zod
+          .enum([
+            "none",
+            "assessing",
+            "roadmap_published",
+            "migration_underway",
+            "pqc_available",
+          ])
+          .describe(
+            'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+          )
+          .nullable(),
+        statedPqcReadyDate: zod.coerce.date().nullable(),
+        attestation: zod
+          .object({
+            discoveryModality: zod
+              .enum(["manual_attestation"])
+              .describe(
+                "Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for exactly this case. Nothing on this surface is observed.",
+              ),
+            confidence: zod
+              .number()
+              .nullable()
+              .describe(
+                "Below every collector's, and `null` rather than a floor value when the vendor has answered nothing at all: no claim exists, so there is nothing to be confident about. The scale's anchors are documented on `RawObservation.confidence` — regex is about 0.7, a completed TLS handshake about 1.0.",
+              ),
+            caveat: zod
+              .string()
+              .describe(
+                "The sentence a report must carry alongside any use of this vendor's answers.",
+              ),
+          })
+          .describe(
+            "The provenance stamp that keeps a vendor's claim from being read as an observation (B9).",
+          ),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "Exposure under one Q-Day scenario, against the date the vendor \*claims\*. `unknown` when no date was given — never `clear`.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "Written in the vendor's voice (\"the vendor states\"), never the product's, so a board deck built from these sentences cannot launder a claim into a finding.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's verdict against the date the vendor claims it will be post-quantum ready.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        clause: zod
+          .object({
+            state: zod
+              .enum(["present", "absent", "in_negotiation", "unknown"])
+              .describe(
+                'The four-state read of `contractPqcClause`. `unknown` is the null case promoted to a first-class value so a client cannot render \"nobody has read the contract\" as \"there is no clause\" — the two point in opposite directions and both are wrong to guess.',
+              ),
+            contractRenewalDate: zod.coerce.date().nullable(),
+            noLeverScheduled: zod
+              .boolean()
+              .describe(
+                "True only when a clause is known to be \*missing\* and no renewal is scheduled — no obligation, and no scheduled moment at which one could be created. False when the contract has merely not been read, because that is not a claim about the contract.",
+              ),
+            narrative: zod.string(),
+          })
+          .describe(
+            "The contractual lever — the only instrument a customer actually has over a vendor that is not moving.",
+          ),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B9's payoff, computed fresh on every read so a corrected date or a revised Q-Day scenario needs no backfill. A vendor that has answered nothing is `awaiting_response` with a `null` confidence and an `unknown` verdict under every scenario — never `clear`.",
+      ),
+  })
+  .describe(
+    "A `vendor_assessments` row plus its computed posture — B9, the vendor\/third-party register. docs\/Claude\/03-features.md §B9. Not an `Asset`: nothing here was collected, and a questionnaire answer is a claim by an interested party rather than an observation, so it carries no `fingerprint`\/`surface`\/observation lifecycle and does not count towards the D3 coverage meter.",
+  );
+export const ListVendorAssessmentsResponse = zod.array(
+  ListVendorAssessmentsResponseItem,
+);
+
+/**
+ * A form submission, not a collector run: every field but `vendorName` is optional, and an omitted field is stored as `null` — "not supplied" — rather than a guessed default. A vendor recorded with nothing else reads as awaiting a response, never as compliant.
+ * @summary Record a vendor assessment (B9)
+ */
+export const CreateVendorAssessmentBody = zod.object({
+  vendorName: zod.string(),
+  productOrService: zod.string().optional(),
+  internalOwner: zod.string().optional(),
+  questionnaireSentAt: zod.coerce.date().optional(),
+  respondedAt: zod.coerce.date().optional(),
+  pqcRoadmapStatus: zod
+    .enum([
+      "none",
+      "assessing",
+      "roadmap_published",
+      "migration_underway",
+      "pqc_available",
+    ])
+    .optional()
+    .describe(
+      'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+    ),
+  statedPqcReadyDate: zod.coerce.date().optional(),
+  cryptoDisclosed: zod.string().optional(),
+  contractPqcClause: zod
+    .enum(["present", "absent", "in_negotiation"])
+    .optional()
+    .describe(
+      "Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.",
+    ),
+  contractRenewalDate: zod.coerce.date().optional(),
+  attestationEvidence: zod.string().optional(),
+  notes: zod.string().optional(),
+});
+
+/**
+ * @summary Get one vendor assessment by id (B9)
+ */
+export const GetVendorAssessmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetVendorAssessmentResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    vendorName: zod.string(),
+    productOrService: zod.string().nullable(),
+    internalOwner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — the internal team or person who owns the relationship, not necessarily an app user.",
+      ),
+    questionnaireSentAt: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "Null means the questionnaire has not been sent — a different state from sent and ignored.",
+      ),
+    respondedAt: zod.coerce.date().nullable(),
+    pqcRoadmapStatus: zod
+      .enum([
+        "none",
+        "assessing",
+        "roadmap_published",
+        "migration_underway",
+        "pqc_available",
+      ])
+      .describe(
+        'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+      )
+      .nullable(),
+    statedPqcReadyDate: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "The date the vendor \*states\* it will be post-quantum ready. A quote, not a verified commitment.",
+      ),
+    cryptoDisclosed: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, vendor-asserted description of the cryptography they use.",
+      ),
+    contractPqcClause: zod
+      .enum(["present", "absent", "in_negotiation"])
+      .describe(
+        "Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.",
+      )
+      .nullable()
+      .describe(
+        "`absent` = the contract was read and has no PQC clause. `null` = nobody has read it. Rendering the second as the first invents a finding.",
+      ),
+    contractRenewalDate: zod.coerce.date().nullable(),
+    attestationEvidence: zod
+      .string()
+      .nullable()
+      .describe(
+        "Where the answers are recorded — a document reference, ticket or URL. Not fetched or validated.",
+      ),
+    notes: zod.string().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    posture: zod
+      .object({
+        responseState: zod
+          .enum(["awaiting_response", "partial", "answered"])
+          .describe(
+            "How much of the questionnaire the vendor has actually answered, derived from the answers themselves rather than from `respondedAt`, so a row cannot claim a response it does not contain. Only the vendor's own three answers count — the customer's contract filing does not make an unresponsive vendor look like it replied.",
+          ),
+        answeredQuestionCount: zod.number(),
+        questionCount: zod.number(),
+        respondedAt: zod.coerce.date().nullable(),
+        pqcRoadmapStatus: zod
+          .enum([
+            "none",
+            "assessing",
+            "roadmap_published",
+            "migration_underway",
+            "pqc_available",
+          ])
+          .describe(
+            'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+          )
+          .nullable(),
+        statedPqcReadyDate: zod.coerce.date().nullable(),
+        attestation: zod
+          .object({
+            discoveryModality: zod
+              .enum(["manual_attestation"])
+              .describe(
+                "Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for exactly this case. Nothing on this surface is observed.",
+              ),
+            confidence: zod
+              .number()
+              .nullable()
+              .describe(
+                "Below every collector's, and `null` rather than a floor value when the vendor has answered nothing at all: no claim exists, so there is nothing to be confident about. The scale's anchors are documented on `RawObservation.confidence` — regex is about 0.7, a completed TLS handshake about 1.0.",
+              ),
+            caveat: zod
+              .string()
+              .describe(
+                "The sentence a report must carry alongside any use of this vendor's answers.",
+              ),
+          })
+          .describe(
+            "The provenance stamp that keeps a vendor's claim from being read as an observation (B9).",
+          ),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "Exposure under one Q-Day scenario, against the date the vendor \*claims\*. `unknown` when no date was given — never `clear`.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "Written in the vendor's voice (\"the vendor states\"), never the product's, so a board deck built from these sentences cannot launder a claim into a finding.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's verdict against the date the vendor claims it will be post-quantum ready.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        clause: zod
+          .object({
+            state: zod
+              .enum(["present", "absent", "in_negotiation", "unknown"])
+              .describe(
+                'The four-state read of `contractPqcClause`. `unknown` is the null case promoted to a first-class value so a client cannot render \"nobody has read the contract\" as \"there is no clause\" — the two point in opposite directions and both are wrong to guess.',
+              ),
+            contractRenewalDate: zod.coerce.date().nullable(),
+            noLeverScheduled: zod
+              .boolean()
+              .describe(
+                "True only when a clause is known to be \*missing\* and no renewal is scheduled — no obligation, and no scheduled moment at which one could be created. False when the contract has merely not been read, because that is not a claim about the contract.",
+              ),
+            narrative: zod.string(),
+          })
+          .describe(
+            "The contractual lever — the only instrument a customer actually has over a vendor that is not moving.",
+          ),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B9's payoff, computed fresh on every read so a corrected date or a revised Q-Day scenario needs no backfill. A vendor that has answered nothing is `awaiting_response` with a `null` confidence and an `unknown` verdict under every scenario — never `clear`.",
+      ),
+  })
+  .describe(
+    "A `vendor_assessments` row plus its computed posture — B9, the vendor\/third-party register. docs\/Claude\/03-features.md §B9. Not an `Asset`: nothing here was collected, and a questionnaire answer is a claim by an interested party rather than an observation, so it carries no `fingerprint`\/`surface`\/observation lifecycle and does not count towards the D3 coverage meter.",
+  );
+
+/**
+ * Every field is optional and only the fields present in the body are changed — omitting a field leaves the stored value (including `null`) exactly as it was, it does not clear it. Sending an explicit `null` does clear it, which is how a `contractPqcClause` of `absent` that turned out to be a misreading is withdrawn back to "nobody has checked" rather than to the opposite finding.
+ * @summary Update fields as a questionnaire comes back or a contract is read (B9)
+ */
+export const UpdateVendorAssessmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateVendorAssessmentBody = zod
+  .object({
+    vendorName: zod.string().optional(),
+    productOrService: zod.string().nullish(),
+    internalOwner: zod.string().nullish(),
+    questionnaireSentAt: zod.coerce.date().nullish(),
+    respondedAt: zod.coerce.date().nullish(),
+    pqcRoadmapStatus: zod
+      .enum([
+        "none",
+        "assessing",
+        "roadmap_published",
+        "migration_underway",
+        "pqc_available",
+      ])
+      .describe(
+        'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+      )
+      .nullish(),
+    statedPqcReadyDate: zod.coerce.date().nullish(),
+    cryptoDisclosed: zod.string().nullish(),
+    contractPqcClause: zod
+      .enum(["present", "absent", "in_negotiation"])
+      .describe(
+        "Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.",
+      )
+      .nullish(),
+    contractRenewalDate: zod.coerce.date().nullish(),
+    attestationEvidence: zod.string().nullish(),
+    notes: zod.string().nullish(),
+  })
+  .describe(
+    'Every field optional; only fields present in the body are changed. An explicit null clears a field back to \"not supplied\".',
+  );
+
+export const UpdateVendorAssessmentResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    vendorName: zod.string(),
+    productOrService: zod.string().nullable(),
+    internalOwner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — the internal team or person who owns the relationship, not necessarily an app user.",
+      ),
+    questionnaireSentAt: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "Null means the questionnaire has not been sent — a different state from sent and ignored.",
+      ),
+    respondedAt: zod.coerce.date().nullable(),
+    pqcRoadmapStatus: zod
+      .enum([
+        "none",
+        "assessing",
+        "roadmap_published",
+        "migration_underway",
+        "pqc_available",
+      ])
+      .describe(
+        'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+      )
+      .nullable(),
+    statedPqcReadyDate: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "The date the vendor \*states\* it will be post-quantum ready. A quote, not a verified commitment.",
+      ),
+    cryptoDisclosed: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, vendor-asserted description of the cryptography they use.",
+      ),
+    contractPqcClause: zod
+      .enum(["present", "absent", "in_negotiation"])
+      .describe(
+        "Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.",
+      )
+      .nullable()
+      .describe(
+        "`absent` = the contract was read and has no PQC clause. `null` = nobody has read it. Rendering the second as the first invents a finding.",
+      ),
+    contractRenewalDate: zod.coerce.date().nullable(),
+    attestationEvidence: zod
+      .string()
+      .nullable()
+      .describe(
+        "Where the answers are recorded — a document reference, ticket or URL. Not fetched or validated.",
+      ),
+    notes: zod.string().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    posture: zod
+      .object({
+        responseState: zod
+          .enum(["awaiting_response", "partial", "answered"])
+          .describe(
+            "How much of the questionnaire the vendor has actually answered, derived from the answers themselves rather than from `respondedAt`, so a row cannot claim a response it does not contain. Only the vendor's own three answers count — the customer's contract filing does not make an unresponsive vendor look like it replied.",
+          ),
+        answeredQuestionCount: zod.number(),
+        questionCount: zod.number(),
+        respondedAt: zod.coerce.date().nullable(),
+        pqcRoadmapStatus: zod
+          .enum([
+            "none",
+            "assessing",
+            "roadmap_published",
+            "migration_underway",
+            "pqc_available",
+          ])
+          .describe(
+            'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+          )
+          .nullable(),
+        statedPqcReadyDate: zod.coerce.date().nullable(),
+        attestation: zod
+          .object({
+            discoveryModality: zod
+              .enum(["manual_attestation"])
+              .describe(
+                "Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for exactly this case. Nothing on this surface is observed.",
+              ),
+            confidence: zod
+              .number()
+              .nullable()
+              .describe(
+                "Below every collector's, and `null` rather than a floor value when the vendor has answered nothing at all: no claim exists, so there is nothing to be confident about. The scale's anchors are documented on `RawObservation.confidence` — regex is about 0.7, a completed TLS handshake about 1.0.",
+              ),
+            caveat: zod
+              .string()
+              .describe(
+                "The sentence a report must carry alongside any use of this vendor's answers.",
+              ),
+          })
+          .describe(
+            "The provenance stamp that keeps a vendor's claim from being read as an observation (B9).",
+          ),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "Exposure under one Q-Day scenario, against the date the vendor \*claims\*. `unknown` when no date was given — never `clear`.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "Written in the vendor's voice (\"the vendor states\"), never the product's, so a board deck built from these sentences cannot launder a claim into a finding.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's verdict against the date the vendor claims it will be post-quantum ready.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        clause: zod
+          .object({
+            state: zod
+              .enum(["present", "absent", "in_negotiation", "unknown"])
+              .describe(
+                'The four-state read of `contractPqcClause`. `unknown` is the null case promoted to a first-class value so a client cannot render \"nobody has read the contract\" as \"there is no clause\" — the two point in opposite directions and both are wrong to guess.',
+              ),
+            contractRenewalDate: zod.coerce.date().nullable(),
+            noLeverScheduled: zod
+              .boolean()
+              .describe(
+                "True only when a clause is known to be \*missing\* and no renewal is scheduled — no obligation, and no scheduled moment at which one could be created. False when the contract has merely not been read, because that is not a claim about the contract.",
+              ),
+            narrative: zod.string(),
+          })
+          .describe(
+            "The contractual lever — the only instrument a customer actually has over a vendor that is not moving.",
+          ),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B9's payoff, computed fresh on every read so a corrected date or a revised Q-Day scenario needs no backfill. A vendor that has answered nothing is `awaiting_response` with a `null` confidence and an `unknown` verdict under every scenario — never `clear`.",
+      ),
+  })
+  .describe(
+    "A `vendor_assessments` row plus its computed posture — B9, the vendor\/third-party register. docs\/Claude\/03-features.md §B9. Not an `Asset`: nothing here was collected, and a questionnaire answer is a claim by an interested party rather than an observation, so it carries no `fingerprint`\/`surface`\/observation lifecycle and does not count towards the D3 coverage meter.",
+  );
+
+/**
+ * @summary Remove a vendor from the register (B9)
+ */
+export const DeleteVendorAssessmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * Classifies the keys a managed key store holds — HashiCorp Vault, AWS KMS, Azure Key Vault, GCP KMS — and persists what it finds as assets on the `kms` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+**This is a submission route, not a credentialed poller.** You send the key inventory your own tooling already produced; no credential for the key store ever reaches this product, and nothing here connects to a cloud provider. The corollary is stated in every response's `evidenceCaveat`: the export is taken at its word, and nothing proves it is complete, current, or from the key store you say it is.
+
+Each key's provider-native spec string is resolved against the cited table in `docs/Claude/mappings/kms-key-specs.json`. A spec whose primitive this product does not report on (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`) yields no asset and is returned with `outcome: no-algorithm` and the table's own reason — never the nearest similar algorithm.
+
+**A submission whose keys are all unclassified still records a collection run.** That is the one place this route's honesty rule differs from `POST /projects/{id}/dependencies`: a key store holding only symmetric keys was genuinely examined, and reporting it as un-examined would be the false statement. Only an empty `keys` array records no run.
+ * @summary Submit a managed key-store inventory for collection (B5)
+ */
+export const SubmitProjectKmsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const submitProjectKmsBodyKeysMax = 500;
+
+export const SubmitProjectKmsBody = zod.object({
+  keys: zod
+    .array(
+      zod.object({
+        provider: zod
+          .enum(["aws-kms", "azure-key-vault", "gcp-kms", "hashicorp-vault"])
+          .describe("Which key store this key lives in."),
+        keyId: zod
+          .string()
+          .describe(
+            "ARN, resource name, `kid` URL, or mount-qualified key name — whatever the provider calls the key's identity. Together with `provider` this is the asset's identity; an alias is deliberately not used, since an alias can be repointed at a different key.",
+          ),
+        keySpec: zod
+          .string()
+          .optional()
+          .describe(
+            "The provider-native spec string: AWS `KeySpec`, GCP `CryptoKeyVersion.algorithm`, Azure `kty`, Vault `type`. Matched case-insensitively against `docs\/Claude\/mappings\/kms-key-specs.json`. Omit it and the key is recorded as present and unclassified rather than guessed at.",
+          ),
+        curve: zod
+          .string()
+          .optional()
+          .describe(
+            "Curve name where the provider states it separately from the spec — Azure's `crv`. Resolved through the shared named-curve table.",
+          ),
+        keySize: zod
+          .number()
+          .optional()
+          .describe(
+            "A key size your export has and the spec does not state (Azure's Create Key `key_size`). Used only when neither the key spec nor a curve supplies one, so it cannot override a size the provider's documentation states.",
+          ),
+        alias: zod.string().optional(),
+        keyState: zod
+          .string()
+          .optional()
+          .describe(
+            "The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`), recorded verbatim and never mapped onto the asset's lifecycle status.",
+          ),
+        rotationEnabled: zod.boolean().optional(),
+        rotationPeriodDays: zod.number().min(1).optional(),
+        lastRotatedAt: zod.coerce.date().optional(),
+        origin: zod.string().optional(),
+        region: zod.string().optional(),
+        keyStore: zod
+          .string()
+          .optional()
+          .describe("The containing vault, key ring or mount path."),
+      }),
+    )
+    .max(submitProjectKmsBodyKeysMax)
+    .describe(
+      'The key inventory your own key store already produced — the output of `aws kms describe-key`, `az keyvault key show`, `gcloud kms keys list` or `vault read transit\/keys\/<name>`, transcribed into these fields. No credential for the key store ever reaches this product.\n\nEvery field beyond `provider` and `keyId` is optional because every field beyond those is optional in those exports: `aws kms list-keys` returns identifiers only, and Azure Key Vault\'s list operation returns `kid` and `attributes` with no key type at all. An omitted field means \"the export did not state this\" and is never substituted for — `rotationEnabled` in particular is left absent rather than sent as `false`, because \"not stated\" and \"not rotated\" are different claims.',
+    ),
+});
+
+export const SubmitProjectKmsResponse = zod.object({
+  projectId: zod.number(),
+  keysSubmitted: zod.number(),
+  keysObserved: zod
+    .number()
+    .describe(
+      "How many submitted keys resolved to an algorithm this product reports on and became assets.",
+    ),
+  keysUnclassified: zod
+    .number()
+    .describe(
+      "Submitted keys that produced no observation, for any of the three non-`observed` reasons. This being non-zero while `collectionRunId` is set is the normal and correct state for a key store holding symmetric or post-quantum keys — the surface was examined, and nothing reportable was in it.",
+    ),
+  keys: zod.array(
+    zod
+      .object({
+        provider: zod.string(),
+        keyId: zod.string(),
+        keySpec: zod.string().nullable(),
+        alias: zod.string().nullable(),
+        keyState: zod.string().nullable(),
+        outcome: zod
+          .enum(["observed", "no-algorithm", "unrecognised-spec", "no-spec"])
+          .describe(
+            "`observed` — the spec resolved to an algorithm this product reports on, and an asset was written. `no-algorithm` — the spec is known and its primitive is not one `algorithms.json` catalogues (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`); the key is real, counted and examined, and there is nothing to report about it. `unrecognised-spec` — the provider stated a spec the curated table does not have, which means our data is behind the provider and is the one outcome a data update fixes. `no-spec` — the entry named a key and stated nothing about it, the expected shape of a list-without-describe export.",
+          ),
+        reason: zod
+          .string()
+          .nullable()
+          .describe(
+            "Why no observation was produced, verbatim from the curated table where the table has an opinion. Null for `observed`.",
+          ),
+        algorithm: zod
+          .string()
+          .nullable()
+          .describe("Null for every outcome except `observed`."),
+        keySize: zod
+          .number()
+          .nullable()
+          .describe(
+            "The size the provider states for this key. \*\*Null means the provider stated none\*\* — an Azure JsonWebKey carries no `key_size` member at all — never a default. G-05.",
+          ),
+        keySizeSource: zod
+          .enum(["key-spec", "curve", "submitted", "not-supplied"])
+          .nullable()
+          .describe(
+            "Which of four sources supplied `keySize`, so a reader never has to guess: the key spec's documented size, a named curve, a value you submitted, or none of them.",
+          ),
+        rotationEnabled: zod
+          .boolean()
+          .nullable()
+          .describe(
+            "Null when the submitted export did not state it. Not the same as `false`.",
+          ),
+        location: zod
+          .string()
+          .nullable()
+          .describe(
+            "The asset locator this key was written under. Null when no asset was written.",
+          ),
+      })
+      .describe(
+        'What the collector concluded about one submitted key. The four `outcome` values are deliberately not collapsed into \"classified \/ skipped\": only one of the three non-observed values is actionable, and hiding which is which would hide it.',
+      ),
+  ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe(
+      "Null only when the submission carried no key entries at all. A submission whose keys all came back unclassified DOES record a run — that is an examination that found nothing, not an absent examination, and the D3 meter must be able to tell them apart.",
+    ),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Always 0 in practice today. A submitted export is never assumed to be a complete enumeration of a key store — one page of a paginated `list-keys`, one region or one Vault mount is the normal case — so a key absent from a later submission is not inferred to have been deleted. See the reobservation-scope note in `asset-ingest.ts`.",
+    ),
+  evidenceCaveat: zod.string(),
+});
+
+/**
+ * Every KMS key asset attributed to this project. This is the read that answers "what does the inventory say", as opposed to the POST response, which only reports what one submission found at the moment it was submitted.
+
+It exists as its own route rather than leaning on `GET /inventory/assets` because that endpoint does not return `locationDetail`, and everything specific to a key store — provider, key id, spec, rotation state, origin, key store — lives there. Includes assets of every lifecycle status, not only `active`.
+
+`rotationEnabled` is null when the submitted export did not state it. That is not the same fact as rotation being off, and the two are never collapsed.
+ * @summary The project's managed key inventory, including rotation posture (B5)
+ */
+export const GetProjectKmsKeysParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectKmsKeysResponse = zod.object({
+  projectId: zod.number(),
+  generatedAt: zod.coerce.date(),
+  keys: zod.array(
+    zod
+      .object({
+        assetId: zod.number(),
+        provider: zod.string(),
+        keyId: zod.string(),
+        keySpec: zod.string().nullable(),
+        alias: zod.string().nullable(),
+        keyState: zod.string().nullable(),
+        algorithm: zod.string(),
+        keySize: zod
+          .number()
+          .nullable()
+          .describe(
+            "Null when the provider stated no size. Never a default — G-05.",
+          ),
+        status: zod.enum(["active", "remediated", "waived", "gone"]),
+        rotationEnabled: zod
+          .boolean()
+          .nullable()
+          .describe(
+            "Null when the submitted export did not state it, which is a different fact from rotation being off.",
+          ),
+        rotationPeriodDays: zod.number().nullable(),
+        lastRotatedAt: zod.coerce.date().nullable(),
+        origin: zod.string().nullable(),
+        region: zod.string().nullable(),
+        keyStore: zod.string().nullable(),
+        firstSeen: zod.coerce.date(),
+        lastSeen: zod.coerce.date(),
+      })
+      .describe("A persisted KMS key asset, as the inventory read returns it."),
+  ),
+});
+
+/**
+ * Records what a database, backup, archive, volume or object store reports about its own encryption, and persists it as assets on the `data-at-rest` surface — which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+Nothing is connected to. The caller submits what their engine's configuration already reports (`pg_settings`, `sys.dm_database_encryption_keys`, `V$ENCRYPTED_TABLESPACES`, a bucket's SSE configuration, a backup job definition). Credentialed collection against a live database is deliberately not offered: it would need a secret-handling design this product does not have yet (F4).
+
+**Each store produces up to two assets, not one.** `dataEncryption` is the bulk cipher over the stored data — usually AES, which NIST does not consider quantum-vulnerable. `keyProtection` is how that data key is wrapped, and that is where Shor applies: an AES-256 store whose key is wrapped with RSA-2048 is a harvest-now-decrypt-later target however strong the bulk cipher is.
+
+**A store reported as encrypted with no cipher named records nothing and is returned as a `cipher-not-reported` gap.** It never becomes AES-256. That case is also excluded from the reobservation scope, so leaving the field blank on a resubmission cannot mark a previously recorded cipher `gone`.
+
+`dataClassification` / `secrecyLifetimeYears` are persisted on the store's assets and are what `GET /api/inventory/assets` resolves X from. Omit them and X falls back to the project's default and then the product's, flagged as assumed — see `classificationSource` on the read below.
+ * @summary Submit a description of encrypted stores for data-at-rest collection (B7)
+ */
+export const SubmitProjectDataAtRestParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const submitProjectDataAtRestBodyStoresItemSecrecyLifetimeYearsMin = 0;
+
+export const SubmitProjectDataAtRestBody = zod.object({
+  stores: zod.array(
+    zod.object({
+      storeId: zod
+        .string()
+        .describe(
+          "The caller's stable identifier for this store — an instance\/database name, a bucket ARN, a backup job name. Part of the asset identity, so changing it orphans the previous asset and creates a new one.",
+        ),
+      engine: zod
+        .string()
+        .describe(
+          "Engine or product, e.g. `postgresql`, `mssql`, `oracle`, `s3`, `veeam`. Part of the asset identity.",
+        ),
+      storeKind: zod
+        .enum([
+          "database",
+          "backup",
+          "archive",
+          "volume",
+          "object-store",
+          "other",
+        ])
+        .optional()
+        .describe(
+          "Grouping and presentation only — deliberately not part of the asset identity.",
+        ),
+      encryptionState: zod
+        .enum(["encrypted", "not-encrypted", "unknown"])
+        .optional()
+        .describe(
+          "`unknown` (the default when omitted) is not a synonym for `not-encrypted`: one means nobody has checked, the other means someone checked and there is none. Only the second is a statement this route reconciles against, so only the second can mark a previously recorded cipher `gone`.",
+        ),
+      evidenceSource: zod
+        .enum(["configuration-report", "attestation"])
+        .optional()
+        .describe(
+          "Drives the discovery modality and the confidence recorded on the observation: `configuration-report` reads a real setting (0.6, `configuration_information`), `attestation` is a human's statement with no artefact behind it (0.4, `manual_attestation`). Defaults to `attestation`, the weaker of the two, so an unstated evidence source understates rather than overstates what is known.",
+        ),
+      description: zod
+        .string()
+        .optional()
+        .describe(
+          'Free text for the report, e.g. \"nightly full backups, 7-year retention\".',
+        ),
+      dataEncryption: zod
+        .object({
+          algorithm: zod
+            .string()
+            .nullish()
+            .describe(
+              "As the caller's tooling reports it — `AES-256-CBC`, `aes256`, `RSA-2048`, `ECDH`. Canonicalised on the way in; the original string is kept on the asset's `locationDetail.reportedAlgorithm` so the canonicalisation stays auditable. A string that resolves to no entry in the standards data records nothing and is returned as an `algorithm-not-recognised` gap.",
+            ),
+          keySize: zod
+            .number()
+            .nullish()
+            .describe(
+              "The stated parameter size, when the caller supplies one separately. Wins over any size parsed out of `algorithm`. Bare `AES` yields no key size at all rather than an assumed 256 (G-05).",
+            ),
+          source: zod
+            .string()
+            .nullish()
+            .describe(
+              "Free text, e.g. `aws-kms`, `pkcs11-hsm`, `software-keystore`, `passphrase`. Recorded as evidence, never parsed into a verdict.",
+            ),
+        })
+        .optional()
+        .describe(
+          "One reported cryptographic setting. Every field is optional because every field is genuinely often unreported, and an unreported field must stay unreported — see the `cipher-not-reported` gap reason.",
+        ),
+      keyProtection: zod
+        .object({
+          algorithm: zod
+            .string()
+            .nullish()
+            .describe(
+              "As the caller's tooling reports it — `AES-256-CBC`, `aes256`, `RSA-2048`, `ECDH`. Canonicalised on the way in; the original string is kept on the asset's `locationDetail.reportedAlgorithm` so the canonicalisation stays auditable. A string that resolves to no entry in the standards data records nothing and is returned as an `algorithm-not-recognised` gap.",
+            ),
+          keySize: zod
+            .number()
+            .nullish()
+            .describe(
+              "The stated parameter size, when the caller supplies one separately. Wins over any size parsed out of `algorithm`. Bare `AES` yields no key size at all rather than an assumed 256 (G-05).",
+            ),
+          source: zod
+            .string()
+            .nullish()
+            .describe(
+              "Free text, e.g. `aws-kms`, `pkcs11-hsm`, `software-keystore`, `passphrase`. Recorded as evidence, never parsed into a verdict.",
+            ),
+        })
+        .optional()
+        .describe(
+          "One reported cryptographic setting. Every field is optional because every field is genuinely often unreported, and an unreported field must stay unreported — see the `cipher-not-reported` gap reason.",
+        ),
+      dataClassification: zod
+        .enum(["public", "internal", "confidential", "regulated", "indefinite"])
+        .optional()
+        .describe(
+          "A3's classification for the data \*in\* this store, persisted on both of its assets. Omit it and X is inherited from the project, then from the product default, and the read below reports it as assumed. Omitting it on a resubmission leaves a previously supplied value in place rather than clearing it.",
+        ),
+      secrecyLifetimeYears: zod
+        .number()
+        .min(submitProjectDataAtRestBodyStoresItemSecrecyLifetimeYearsMin)
+        .optional()
+        .describe(
+          "X in years, overriding the preset implied by `dataClassification`.",
+        ),
+    }),
+  ),
+});
+
+export const SubmitProjectDataAtRestResponse = zod.object({
+  projectId: zod.number(),
+  storesSubmitted: zod.number(),
+  storesWithRecordedCrypto: zod
+    .number()
+    .describe(
+      "How many submitted stores produced at least one asset. The difference between this and `storesSubmitted` is the honest measure of how much of the estate was described rather than merely listed — every shortfall is itemised in `stores[].gaps`.",
+    ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe(
+      "Null when the submission said nothing reconcilable about any store (every store `unknown`, or every crypto field blank), in which case no run is recorded and the surface stays un-examined for this project. A submission of stores that are all `not-encrypted` DOES record a run: that is a real examination with a real result.",
+    ),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Assets at a store slot this submission made a statement about and no longer found there — a rekey, or encryption turned off. Never a store whose cipher field was simply left blank.",
+    ),
+  stores: zod.array(
+    zod.object({
+      storeId: zod.string(),
+      engine: zod.string(),
+      recorded: zod.array(
+        zod
+          .object({
+            role: zod.enum(["data-encryption", "key-protection"]),
+            algorithm: zod
+              .string()
+              .describe(
+                "The canonical name, which is what the standards data is resolved against.",
+              ),
+            keySize: zod.number().nullable(),
+            reportedAlgorithm: zod
+              .string()
+              .describe(
+                "The caller's original string, kept so the canonicalisation can be audited.",
+              ),
+            location: zod.string(),
+          })
+          .describe(
+            "One crypto fact this submission actually recorded for a store.",
+          ),
+      ),
+      gaps: zod.array(
+        zod
+          .object({
+            role: zod.enum(["data-encryption", "key-protection"]),
+            reason: zod.enum([
+              "encryption-state-unknown",
+              "cipher-not-reported",
+              "key-protection-not-reported",
+              "algorithm-not-recognised",
+            ]),
+            reported: zod
+              .string()
+              .nullable()
+              .describe(
+                "The string the caller supplied, present only for `algorithm-not-recognised`.",
+              ),
+          })
+          .describe(
+            "Something this submission did not say, reported rather than filled in. The whole reason this surface earns its keep is being able to tell a CISO which of their long-lived ciphertext they actually know something about.",
+          ),
+      ),
+    }),
+  ),
+  evidenceCaveat: zod.string(),
+});
+
+/**
+ * Every data-at-rest asset attributed to this project, grouped back into the store it belongs to, with X resolved and Mosca evaluated at read time — never persisted, because the Q-Day scenario years and the standards data behind `quantumVulnerable` are both revisable and a stored verdict would go stale exactly the way C1 exists to prevent.
+
+`xAssumed` and `classificationSource` are the honesty half: a store nobody classified is reported with the product's default X and says so, rather than quietly presenting an assumption as a measurement.
+ * @summary The project's data-at-rest inventory with its Mosca verdict (B7)
+ */
+export const GetProjectDataAtRestParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectDataAtRestResponse = zod.object({
+  projectId: zod.number(),
+  generatedAt: zod.coerce.date(),
+  stores: zod.array(
+    zod.object({
+      storeId: zod.string(),
+      engine: zod.string(),
+      storeKind: zod.string(),
+      encryptionState: zod.string(),
+      description: zod.string().nullable(),
+      dataClassification: zod
+        .string()
+        .nullable()
+        .describe(
+          "What was supplied for this store. Null means nobody classified it — see `classificationSource`.",
+        ),
+      secrecyLifetimeYears: zod.number().nullable(),
+      classificationSource: zod
+        .enum(["asset", "project", "default"])
+        .describe(
+          "Where the classification \*label\* came from — the same meaning this field carries on `GET \/inventory\/assets`. Never re-derived by the client. It is not always the provenance of X: a store may supply `secrecyLifetimeYears` without a label, in which case the years are asset-supplied while the label is still inherited. Read `xAssumed` for X's own provenance.",
+        ),
+      xAssumed: zod
+        .boolean()
+        .describe(
+          "True whenever X was not supplied for this store, whatever the label's provenance. Reports must say so.",
+        ),
+      secrecyLifetimeBasis: zod
+        .string()
+        .describe(
+          "One report-ready sentence stating the provenance of X in plain English.",
+        ),
+      components: zod.array(
+        zod
+          .object({
+            assetId: zod.number(),
+            role: zod.enum(["data-encryption", "key-protection"]),
+            algorithm: zod.string(),
+            keySize: zod.number().nullable(),
+            reportedAlgorithm: zod.string(),
+            keySource: zod.string().nullable(),
+            status: zod
+              .string()
+              .describe(
+                "Lifecycle status. `gone`\/`remediated`\/`waived` assets are included — a record of what was found must keep them.",
+              ),
+            firstSeen: zod.coerce.date(),
+            lastSeen: zod.coerce.date(),
+            quantumVulnerable: zod
+              .boolean()
+              .nullable()
+              .describe(
+                "From the standards data, null when it has no entry for this algorithm. False for the bulk cipher of a typical TDE'd store — which is exactly why `key-protection` is recorded separately rather than folded into one verdict per store.",
+              ),
+            mosca: zod.object({
+              x: zod
+                .number()
+                .describe(
+                  "Secrecy lifetime in years, as resolved for this asset.",
+                ),
+              y: zod.number().describe("Migration time in years."),
+              applicable: zod
+                .boolean()
+                .describe(
+                  "False when the algorithm carries no quantum-vulnerable track — nothing for Q-Day to break.",
+                ),
+              breachedScenarios: zod.array(zod.string()),
+            }),
+          })
+          .describe(
+            "One persisted data-at-rest asset, with its Mosca verdict derived at read time.",
+          ),
+      ),
+    }),
+  ),
+  scenarios: zod.array(
+    zod.object({
+      name: zod.string(),
+      qDayYear: zod.number(),
+      rationale: zod.string(),
+      confidence: zod.string(),
+    }),
+  ),
+  framing: zod
+    .string()
+    .describe("Mandatory wherever a scenario year is shown."),
 });

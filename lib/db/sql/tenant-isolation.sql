@@ -73,7 +73,7 @@ GRANT USAGE ON SCHEMA public TO quantaxscan_app;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   projects, scans, findings, assets, observations, collection_runs,
-  activity, shared_reports, community_posts,
+  activity, shared_reports, community_posts, ot_fleets, vendor_assessments,
   organizations, organization_members, user_identities, users, sessions
 TO quantaxscan_app;
 
@@ -151,6 +151,23 @@ ALTER TABLE collection_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE collection_runs FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS collection_runs_org_isolation ON collection_runs;
 CREATE POLICY collection_runs_org_isolation ON collection_runs AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+ALTER TABLE ot_fleets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ot_fleets FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ot_fleets_org_isolation ON ot_fleets;
+CREATE POLICY ot_fleets_org_isolation ON ot_fleets AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+-- B9 — the vendor/third-party register. Standard shape: a manual register
+-- carrying what a supplier claimed and what the contract with them says, both
+-- of which are as tenant-private as any scan result.
+ALTER TABLE vendor_assessments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vendor_assessments FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS vendor_assessments_org_isolation ON vendor_assessments;
+CREATE POLICY vendor_assessments_org_isolation ON vendor_assessments AS PERMISSIVE FOR ALL TO quantaxscan_app
   USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 

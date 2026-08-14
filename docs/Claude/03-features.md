@@ -210,35 +210,179 @@ another silo.
 | # | Collector | Status | Pri | Notes |
 |---|---|---|---|---|
 | B1 | Source code (regex) | `built` | — | Now `SourceRegexCollector` behind A2 (`lib/collectors/`). **Key size (G-05): partially closed** — extracts a same-line literal modulus or named-curve size, undetermined (not defaulted) otherwise; no cross-line/AST resolution. **Confidence (G-11): closed** for this collector — `0.7`, persisted. **EdDSA (G-06): closed** — eighth pattern added, Ed25519/Ed448 resolve their curve bit sizes; one finding per line still means a line naming both `ssh-rsa` and `ssh-ed25519` reports only RSA |
-| B2 | Dependency / SBOM | `built`* | **P0** | Biggest coverage jump. `DependencyCollector` (`lib/collectors/src/dependency-collector.ts`) parses pnpm/npm/yarn lockfiles and `requirements.txt` → curated crypto-package table → observations at `0.8` (single-purpose library) or `0.5` (general-purpose library) confidence |
-| B3 | TLS / cipher suite prober | `planned` | **P1** | Active handshake against hosts. Records *negotiated* KEX, not configured |
-| B4 | Certificate / X.509 | `planned` | **P1** | Key type, size, expiry. Expiry-vs-Q-Day is the killer chart |
-| B5 | KMS / secret stores | `planned` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS. Read-only creds |
-| B6 | Protocol config | `planned` | **P2** | SSH, IPsec, JWT `alg`, SAML/OIDC signing |
-| B7 | Data-at-rest | `planned` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets |
-| B8 | Manual OT/embedded register | `planned` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first |
-| B9 | Vendor / third-party | `planned` | **P3** | Questionnaire + contractual PQC clause tracking |
+| B2 | Dependency / SBOM | `built` | **P0** | Biggest coverage jump, and now wired end to end. `DependencyCollector` (`lib/collectors/src/dependency-collector.ts`) parses pnpm/npm/yarn lockfiles and `requirements.txt` → the cited package table in [`mappings/crypto-packages.json`](mappings/crypto-packages.json) → observations at `0.8` (single-purpose library) or `0.5` (general-purpose library) confidence, persisted as `surface: "dependency"` assets by `POST /api/projects/:id/dependencies`. **`dependency` is the second `live` surface**, so the D3 meter reads 2 of 10 for a project with a scanned lockfile |
+| B3 | TLS / cipher suite prober | `built` | **P1** | Active handshake against hosts, recording the *negotiated* key exchange rather than the configured one — `tls-collector.ts` maps the handshake, `tls-probe.ts` opens the socket, and `tls-ssrf-guard.ts` resolves-then-pins so a caller-named host cannot be turned into an SSRF. `POST /projects/:id/tls`. Confidence 1.0, the only collector that earns it. TLS 1.3 records its key-exchange size as undetermined rather than guessing — Node reports no group there |
+| B4 | Certificate / X.509 | `built` | **P1** | Key type, size, expiry, parsed with `node:crypto`'s `X509Certificate` — no third-party dependency, so `lib/collectors` stays shippable as a standalone agent. Every certificate in a submitted chain is read, not just the leaf. `POST` / `GET /projects/:id/certificates`, with the Q-Day verdict derived per scenario on read |
+| B5 | KMS / secret stores | `built` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS — **submission-based, not credentialed**. `POST /api/projects/:id/kms` takes the key inventory your own `describe-key`/`keys list` produced; `GET` returns the persisted inventory with rotation posture. Spec → algorithm resolution is cited data in [`mappings/kms-key-specs.json`](mappings/kms-key-specs.json) (84 specs, four primary sources). **`kms` is the fifth `live` surface** |
+| B6 | Protocol config | `built` | **P2** | `ProtocolConfigCollector` (`lib/collectors/src/protocol-config.ts` + `protocol-config-collector.ts`) parses `sshd_config`/`ssh_config`/`authorized_keys`, `ipsec.conf`/`swanctl.conf`, a JWKS, an OIDC discovery document and SAML metadata, and `POST /api/projects/:id/protocol-config` persists them as `surface: "config"` assets — **`config` is the fifth `live` surface**. Reads what a file *declares*, never what a peer negotiates (that is B3), at `configuration_information` modality and two confidence tiers: `0.6` for a permitted-algorithm list, `0.8` for a materialised key (an `authorized_keys` entry, a published JWK, the method a SAML document was signed with). Whole-token matching only, so hybrid PQC key exchange (`sntrup761x25519-sha512`) is silently absent rather than misreported as vulnerable `ECDH/DH`. `Include` is not followed and an absent directive is not read as the compiled-in default |
+| B7 | Data-at-rest | `built` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets. Submission-based (`POST/GET /api/projects/:id/data-at-rest`), no database credentials. **Two assets per store**: the bulk cipher and the key-wrapping algorithm, because only the second is what Shor breaks. **The only ingest that accepts a data classification**, so a Regulated archive reaches the risk engine with X = 25 rather than an assumed 3. A store reported as encrypted with no cipher named records nothing and is returned as a gap. **`data-at-rest` is the fifth `live` surface** |
+| B8 | Manual OT/embedded register | `built` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first. Since 2026-08-14 it also **records cryptography on the `ot` surface**: an optional structured `cryptoAlgorithm`/`cryptoKeySize` becomes an asset at `manual_attestation` modality and confidence 0.3, while `cryptoInUse` stays free text and is never parsed. A fleet described only in prose produces no asset — the register is still the estate's enumeration, so clearing the claim or deleting the fleet retires the asset |
+| B9 | Vendor / third-party | `built` | **P3** | A *form*, not a scanner — the only route to crypto the customer does not operate. Org-scoped `vendor_assessments` table, CRUD at `/api/vendor-assessments`, register page at `/vendor-register`. Every answer is stamped `manual_attestation` at confidence 0.3 (below every collector's) and `null` when the vendor has answered nothing. The `vendor` surface stays `planned`: nothing here was examined |
 | B10 | Binaries / firmware | `deferred` | **P3** | Hard. Defer until coverage elsewhere is complete |
 
-\* B2's **collector** is built and tested (`lib/collectors/src/{dependency-collector,lockfiles,crypto-packages}.ts`).
-**Not built:** nothing submits lockfiles to it yet and nothing persists what it finds — the
-ingest path (`artifacts/api-server/src/lib/asset-ingest.ts`) computes a `surface: "source"`
-fingerprint only, so a `surface: "dependency"` ingest (`ecosystem + package + algorithm`, per
-`fingerprint.ts`) plus a route that accepts lockfiles is the follow-up. Ecosystems covered: npm
-(pnpm-lock.yaml, package-lock.json, yarn.lock — both yarn dialects) and PyPI
-(`requirements.txt` only; `poetry.lock`/`Pipfile.lock` are not read). No version-range
-reasoning: the pinned version is recorded, but "vulnerable before x.y.z" is advisory data with
-its own provenance requirements and is deliberately absent. **The package → algorithm table
-(`crypto-packages.ts`) is hand-curated and uncited** — it carries none of the
-`verified`/`needs-check` discipline [`mappings/`](mappings/README.md) imposes on standards data,
-which makes auditing it (or moving it into `mappings/` with citations) the first follow-up
-before a dependency finding reaches a customer.
+**B2, as shipped 2026-08-14.** Ecosystems covered: npm (pnpm-lock.yaml, package-lock.json,
+yarn.lock — both yarn dialects) and PyPI (`requirements.txt` only; `poetry.lock`/`Pipfile.lock`
+are not read). Submission is `POST /api/projects/:id/dependencies`, org-scoped like every other
+persisting route; files are selected by basename, so a caller may submit a whole tree.
+`POST /api/github/scan-files` was considered and rejected as the host: no lockfile reaches it
+(`SCANNABLE_EXTENSIONS` lists source extensions only, so `/github/fetch` filters them out before
+a client sees them) and it persists nothing at all — no project, no organisation scope, no row.
+
+Three things it deliberately does **not** do:
+
+- **No version-range reasoning.** The pinned version is recorded; "vulnerable before x.y.z" is
+  advisory data with its own provenance requirements. A consequence surfaced by the audit below:
+  a *capability* can also be version-dependent (paramiko removed `ssh-dss` in 4.0.0), which is
+  tracked as G-21 rather than papered over.
+- **No direct/transitive distinction.** A lockfile records the resolved graph, so a match may be
+  a toolchain dependency rather than something the project's own code calls. Every response and
+  every observation carries that caveat explicitly — G-20.
+- **No collection run when nothing readable was submitted.** "We examined the dependencies and
+  found nothing" and "you sent us nothing we can read" are different statements, and the meter
+  must not collapse them.
+
+**The package → algorithm table is now cited data**, at
+[`mappings/crypto-packages.json`](mappings/crypto-packages.json) rather than in TypeScript: every
+claim carries a `verified`/`needs-check` status and, when verified, a verbatim quote from the
+package's own documentation with a retrieval date that `pnpm run check:standards` will age out
+after 180 days. The audit that moved it corrected three customer-facing claims — see
+[09-open-gaps.md](09-open-gaps.md) §"B2 provenance audit".
 
 ### On B2 — say this out loud
 
 The current scanner cannot see crypto inside dependencies, and that is where most enterprise
 crypto lives. B2 is not an incremental improvement; it is the difference between a demo and a
 product. Prioritise accordingly.
+
+**B5, as shipped 2026-08-14.** Four providers, 84 curated key specs, and one design decision
+worth defending: **the first ingest path is submission-based rather than live-credentialed.** The
+caller posts the key inventory their own `aws kms describe-key` / `az keyvault key show` /
+`gcloud kms keys list` / `vault read transit/keys/<name>` already produced, exactly as B4 accepts
+a submitted PEM. Live polling would have meant four cloud SDKs inside `lib/collectors` — which is
+deliberately dependency-free so it can ship as a standalone on-prem agent — four auth flows, and
+long-lived read-only credentials into a customer's key store held by a product whose
+source-code/secret-handling controls (F4) are not built. None of that is needed to make the
+surface real, and a credentialed poller is strictly additive: it produces the same
+`KmsKeyDescription` values this collector already maps. What the submission model costs is stated
+in every response: the export is taken at its word, so nothing proves it complete, current, or
+from the key store named. That is why the observation confidence is 0.85 — above B2's 0.8
+(a key store states what a key *is*, not what a library *could do*) and below B4's 0.9 (a parsed
+certificate is the artifact itself; this is metadata about a key, relayed).
+
+Three honesty properties it was built around, each with a test that fails if it regresses:
+
+- **A key with no stated size records null.** An Azure Key Vault `JsonWebKey` has no `key_size`
+  member at all — the RSA modulus length is only implicit in the base64url `n`, and the list
+  operation returns no key type either. So "RSA, size unknown" is the *normal* Azure case, not a
+  contrived one, and it survives the round trip to `assets.key_size` as NULL (G-05). Size
+  precedence is documented-spec → named curve → caller-supplied → null; a caller cannot override
+  a size AWS's own guide states.
+- **An uncatalogued primitive gets no algorithm, not the nearest one.** HMAC, ChaCha20-Poly1305,
+  SM2, every ML-KEM/ML-DSA/SLH-DSA parameter set and Azure's `kty: oct` resolve to
+  `outcome: no-algorithm` with the curated table's own reason. Inferring AES from `kty: oct`
+  because AES is the common case is the manufactured finding `crypto-packages.json` already
+  refuses for JWT libraries. The three non-observed outcomes stay distinct
+  (`no-algorithm` / `unrecognised-spec` / `no-spec`) because only the middle one is fixed by a
+  data update.
+- **A key store holding only symmetric keys was still examined.** This is the one place B5's run
+  gate differs from B2/B3/B4's: those refuse a run when nothing *readable* was submitted, whereas
+  here every key was read and classified and simply none of them is reportable. That is
+  `examined-nothing-found`, and only an empty `keys` array records no run.
+
+Two limits to know about. `assetsMarkedGone` is always 0: a submitted export is never assumed to
+be a complete enumeration of a key store — one page of a paginated `list-keys`, one region, one
+Vault mount is the normal case — so a key absent from a later submission is not inferred deleted.
+And AWS's `SYMMETRIC_DEFAULT` is 128-bit SM4 rather than AES-256 in China Regions; the table
+cannot tell them apart from a spec string, so the region is recorded on the observation.
+
+**B8, as shipped 2026-08-14.** Org-scoped `ot_fleets` table, CRUD routes at `/api/ot-fleets`, and
+a form + list page at `/ot-register`. **Deliberately not an `assets` row.** `assets` exists to
+answer "what did a collector observe and does it still hold" — a stable `fingerprint` reconciled
+against a `collection_runs` row on a `surface` a collector actually flipped to `live`. Nothing
+here is ever collected; a human types it in and edits it by hand as facts change, which is the
+opposite lifecycle. Routing a fleet through the asset/observation model would mean inventing an
+`ot` surface that no collector ever populates — exactly the dishonesty the D3 coverage meter
+exists to prevent — so B8 does not touch `assets`, `observations`, `collection_runs` or the D3
+meter at all; it is orthogonal coverage, not a re-skin of the collector pipeline.
+
+The payoff is `assessOtExposure()` (`artifacts/api-server/src/lib/ot-exposure.ts`): a fleet's
+next procurement date is checked against every `DEFAULT_QDAY_SCENARIOS` year from
+`@workspace/risk` (never hardcoded), and a fleet whose next procurement falls after a scenario's
+Q-Day is `"exposed"` under that scenario by definition — no replacement is scheduled before the
+deadline. A fleet with no recorded date reads `"unknown"` under every scenario, never `"clear"`;
+collapsing the two would be the guessed-default failure CLAUDE.md's "null means not supplied"
+rule exists to prevent, applied to a date instead of a key size.
+
+**B9, as shipped 2026-08-14.** Org-scoped `vendor_assessments` table, CRUD routes at
+`/api/vendor-assessments`, and a form + list page at `/vendor-register`. It exists because a
+vendor's cryptography is invisible to every other collector in this product — B1 through B8 all
+read something the customer owns — and the only instrument that reaches it is asking.
+
+**A claim is not an observation, and this is the surface where that distinction is load-bearing.**
+Everything in this register is a self-report by the party with the strongest incentive to
+overstate. `assessVendorPosture()` (`artifacts/api-server/src/lib/vendor-posture.ts`) enforces
+that on the way out: every response carries `attestation.discoveryModality:
+"manual_attestation"` and a confidence of `0.3` — below the anchors documented on
+`RawObservation.confidence` (regex 0.7, a completed TLS handshake 1.0) and below every live
+collector — with the number stated as *chosen, not measured*. A vendor who has answered nothing
+gets `confidence: null`, not a floor value: no claim exists, so there is nothing to be confident
+about, and a low number would read as weak evidence where there is none. Every narrative is
+written in the vendor's voice ("the vendor states"), never the product's, so a board deck built
+from these sentences cannot launder a claim into a finding.
+
+Q-Day readiness is checked against the date the vendor *claims*, using `DEFAULT_QDAY_SCENARIOS`
+from `@workspace/risk` (never hardcoded), on B8's model: after a scenario's Q-Day is `exposed`,
+before it is `clear` (rendered "Claimed in time"), and no date at all is `unknown` under every
+scenario — never `clear`. A `pqcRoadmapStatus` of `none` does **not** synthesise a verdict: a
+status is not a date, and inferring one would manufacture the vendor's commitment on their behalf.
+
+**The second honesty rule, specific to this lane: `absent` and `null` on `contractPqcClause`
+point in opposite directions and both are wrong to guess.** `absent` means somebody read the
+contract and there is no PQC migration clause — a finding, and an actionable one. `null` means
+nobody has read it. Rendering the second as the first invents an obligation the customer never
+established; rendering the first as neutral hides one. So the stored column is deliberately
+three-valued-plus-null, the derived `clause.state` promotes null to a fourth `unknown` value with
+its own narrative and its own colour, and `noLeverScheduled` (no clause *and* no scheduled
+renewal) is true only when the contract was actually read. `tests/e2e/12-vendor.spec.ts` asserts
+both directions.
+
+**Deliberately not an `assets` row on the `vendor` surface.** Same reasoning as B8's `ot_fleets`,
+plus one specific to this lane: `assets` records what a collector observed, and a questionnaire
+answer is not an observation of anything. Persisting it beside a TLS handshake — same table, same
+lifecycle, same `confidence` column read by the same meters — would put an interested party's
+assertion and a completed handshake on one footing. The consequence, stated rather than hidden:
+`vendor` stays `planned` in `COLLECTOR_SURFACES`, so the D3 meter keeps reporting the vendor
+surface as never examined even when this register is full. That is the honest reading — nothing
+was examined; somebody was asked. It is the same unresolved inconsistency B8 left on `ot`, and
+resolving it properly means teaching the coverage meter that "a manual register exists" is a
+third state alongside `live` and `planned`, which is D3's work rather than a collector lane's.
+**B7, as shipped 2026-08-14.** `POST /api/projects/:id/data-at-rest` takes a *description* of an
+encrypted store — engine, store id, encryption state, cipher, key protection, key source — and
+persists it as `data-at-rest` assets; `GET` returns the same stores with X resolved and Mosca
+evaluated at read time. `DataAtRestCollector` is pure and does no I/O
+(`lib/collectors/src/data-at-rest-collector.ts`), the same split B3 uses.
+
+Four decisions worth stating:
+
+- **Submission, not credentials.** Connecting to a live database needs somewhere to put a
+  production credential, and F4 is unbuilt. Inventing a secret-handling design inside a collector
+  lane is how a product ends up storing database passwords by accident — the same reasoning B5
+  applies to KMS.
+- **Two assets per store, not one.** The bulk cipher (usually AES, which NIST does not treat as
+  quantum-vulnerable) and the algorithm wrapping the data key are separate facts, and only the
+  second is a Shor target. A collector that recorded the cipher alone would report an AES-256
+  store whose key is wrapped with RSA-2048 as carrying nothing quantum-vulnerable. The role is
+  part of the fingerprint so an AES-wrapped-with-AES hierarchy cannot collapse into one asset.
+- **The only ingest that accepts a data classification.** Data at rest is the case where the
+  ciphertext really can be copied today and decrypted after Q-Day, so X is the whole question and
+  the caller knows it at submission time. It is persisted on the asset, which is what makes
+  `GET /api/inventory/assets` resolve X = 25 for a Regulated archive rather than the product's
+  assumed 3. The upsert `COALESCE`s it: omitting it on a later submission leaves a human's earlier
+  assertion in place rather than blanking it.
+- **"Encrypted: yes, cipher unknown" records nothing.** It is returned as a `cipher-not-reported`
+  gap and — the sharp edge — is excluded from the reobservation scope, so leaving the field blank
+  on a resubmission cannot mark a previously recorded cipher `gone`. `not-encrypted` *is* in
+  scope, because that is a positive statement of absence rather than a missing field.
 
 ---
 
@@ -384,13 +528,20 @@ sign-in design is specified in [13-auth-and-tenancy.md](13-auth-and-tenancy.md) 
 built. Do not read `partial` as "nearly done" — it is the larger and more visible half that
 remains.
 
-**F2 `partial` — the isolation is real; the tenants are not yet.** Every organisation-scoped table
-carries `organization_id` under a PostgreSQL row-level-security policy, the runtime connects as a
-role without `BYPASSRLS`, and every route goes through `withOrg`, so a forgotten `where` clause
-returns zero rows rather than another tenant's data. An automated cross-tenant suite proves it,
-with a negative control demonstrated able to fail. What is missing is the ability to *create* a
-second tenant: there is one organisation, and the shared API key is bound to it. Detail and
-deploy order: [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §5, §9, §10.
+**F2 `partial` — the isolation is real, and a second tenant can now exist.** Every
+organisation-scoped table carries `organization_id` under a PostgreSQL row-level-security policy,
+the runtime connects as a role without `BYPASSRLS`, and every route goes through `withOrg`, so a
+forgotten `where` clause returns zero rows rather than another tenant's data. An automated
+cross-tenant suite proves it, with a negative control demonstrated able to fail. What used to be
+missing — the ability to *create* a second tenant and bind more than one API key to it — is
+closed: `pnpm --filter @workspace/db run create-organization` creates an organisation (and purges
+the legacy NULL-org `activity` rows the design doc's §10 flags as a leak once a second tenant
+exists), and `QUANTAXSCAN_API_KEY_ORG_IDS` binds N keys to N organisations positionally, replacing
+the single `QUANTAXSCAN_API_KEY_ORG_ID`. Proven cross-tenant with two live keys, two organisations,
+through the real stack (`cross-tenant.test.ts`, `tests/e2e/07-multi-org.spec.ts`). Still missing:
+everything that needs a *person* rather than a machine key — self-serve organisation creation over
+HTTP, and per-user membership — both of which need F1's sign-in first. Detail and deploy order:
+[13-auth-and-tenancy.md](13-auth-and-tenancy.md) §5, §9, §10.
 
 **F7 `partial`** — `.env` is out of git and gitignored (S5/G-13). Secret scanning in CI is not
 done.

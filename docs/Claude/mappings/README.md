@@ -8,11 +8,13 @@ change; nothing in `src/` should have to change when they do.
 | `algorithms.json` | Canonical algorithms → PQC replacements, deprecation timelines |
 | `frameworks.json` | Framework definitions, versions, applicability rules |
 | `controls.json` | Crosswalk to general control frameworks |
+| `crypto-packages.json` | B2's package → algorithm table: which primitives a dependency puts in the graph |
 
 See [../05-compliance-mapping.md](../05-compliance-mapping.md) for the engine design.
 
 **Sharp edge — these are build inputs, not runtime files.** `lib/mappings/src/data.ts` (and
-`lib/collectors/src/algorithm-mapping.ts`) import them as JSON modules (`with { type: "json" }`)
+`lib/collectors/src/algorithm-mapping.ts` and `lib/collectors/src/crypto-packages.ts`) import
+them as JSON modules (`with { type: "json" }`)
 so esbuild inlines them into the API bundle; there is no runtime read of these paths. Editing the
 JSON therefore has no effect until the API is rebuilt and redeployed. That is a *deploy* step, not
 a code change, which is why the M2 exit criterion still holds.
@@ -31,6 +33,39 @@ changes with no TypeScript edit:
 | `deadlineTypes` | `algorithms.json` | The whole deadline vocabulary — label, `effect` (`prohibition`/`caution`/`permitted`) and severity per term. Adding a term here teaches the engine a new kind of rule. |
 | `detectionConfidence` | `algorithms.json`, per entry | Confidence multiplier, `reviewRequired` and the customer-facing reason for algorithms whose answer depends on call-site context (`dsa`, `sha1`). |
 | `findingObligations` | `frameworks.json`, per framework | Framework-level requirements matched to an algorithm entry by `quantumVulnerable` / `algorithmIds` / `families` / `purposes`. How CISA-QR and CNSA 2.0 attach to a finding. |
+
+---
+
+## `crypto-packages.json` — a different kind of source, the same discipline
+
+Added 2026-08-14, moved here from `lib/collectors/src/crypto-packages.ts`. It is the one file in
+this directory whose primary sources are **package documentation** rather than standards
+documents, which changes two things and nothing else:
+
+- **`verified` means something narrower.** A verbatim quote from the package's own README or API
+  docs supports the claim on `retrievedAt`. It does *not* mean the claim was checked against the
+  version a given lockfile pins — a library's algorithm set moves under a version bump (paramiko
+  removed `ssh-dss` in 4.0.0; jsrsasign removed RSA encryption in 11.0.0). That limit is
+  [G-21](../09-open-gaps.md).
+- **Staleness matters more, not less.** README-sourced claims decay faster than NIST documents,
+  so the 180-day `retrievedAt` window doing its job here is the point rather than an annoyance.
+
+Everything else is unchanged: `needs-check` entries carry **no** `retrievedAt` (dating an
+unverified claim is the one failure `check:standards` cannot see), a `verified` claim without a
+quote fails `lib/collectors/src/crypto-packages.test.ts`, and the confidence numbers behind the
+two evidence tiers live in the JSON's `evidenceTiers` block so moving one is a data revision.
+
+A claim can be `needs-check` at the *algorithm* level inside an otherwise `verified` package —
+that is how paramiko's DSA entry is handled, so one version-dependent claim does not discredit
+the other three. Full audit trail: [09-open-gaps.md §"B2 provenance audit"](../09-open-gaps.md).
+
+| Entry | Status |
+|---|---|
+| 27 of 29 packages, against their own README / API docs | ✅ `verified` 2026-08-14 |
+| `pypi/pycryptodomex` | ⚠️ `needs-check` — transposed from `pycryptodome`'s shared codebase; the Cryptodomex namespace's own docs were not read |
+| `pypi/pycrypto` | ⚠️ `needs-check` — unmaintained since 2014, no authoritative documentation read |
+| `pypi/paramiko` → DSA only | ⚠️ `needs-check` — removed by paramiko 4.0.0; true of 3.x |
+| Evidence-tier confidences (0.8 / 0.5) | ⚠️ engineering judgement, not a source claim — as with `detectionConfidence` in `algorithms.json` |
 
 ---
 

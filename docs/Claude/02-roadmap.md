@@ -97,12 +97,20 @@ about third-party dependencies is **not** met by it. Per-feature status lives in
 | TLS / cipher-suite collector | Coverage | External surface, demos instantly |
 | Certificate / X.509 collector | Coverage | Expiry-vs-Q-Day is a visceral chart |
 
+*Update 2026-08-14:* the coverage track of this phase is complete. TLS (B3), certificates (B4),
+KMS (B5), protocol config (B6) and data-at-rest (B7) all landed with ingest paths, taking the
+catalogue from two live surfaces to eight — the manual OT register (B8) began recording
+cryptography on its own surface at the same time. What is *not* done is the report half: E1's
+board pack is the only outstanding M2 exit criterion.
+
 **M2 exit criteria**
 - ✅ A finding maps to its NIST/CNSA/CISA obligations **without a code change** when standards data
   updates — C1 shipped 2026-08-13; the criterion is asserted executably in
   `lib/mappings/src/engine.test.ts`, which mutates the data and checks the output follows
-- Board pack PDF generates end-to-end from real inventory data
-- Certificate inventory shows which certs outlive the conservative Q-Day scenario
+- Board pack PDF generates end-to-end from real inventory data — **the one criterion still open**
+- ✅ Certificate inventory shows which certs outlive the conservative Q-Day scenario — B4 shipped
+  2026-08-14; asserted end to end in `tests/e2e/04-certificates.spec.ts` against real
+  openssl-generated certificates, per scenario rather than against one hardcoded year
 
 ---
 
@@ -116,8 +124,8 @@ about third-party dependencies is **not** met by it. Per-feature status lives in
 | Crypto-agility scoring | Product |
 | Waivers / exceptions register with expiry and sign-off | Product |
 | Scheduled re-collection | Product |
-| KMS / secret-store collectors (Vault, AWS KMS, Azure Key Vault) | Coverage |
-| Protocol config collector (SSH, IPsec/VPN, JWT `alg`, SAML/OIDC) | Coverage |
+| ~~KMS / secret-store collectors (Vault, AWS KMS, Azure Key Vault)~~ — landed early with B5 | Coverage |
+| ~~Protocol config collector (SSH, IPsec/VPN, JWT `alg`, SAML/OIDC)~~ — landed early with B6 | Coverage |
 
 ---
 

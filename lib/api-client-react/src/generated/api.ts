@@ -18,16 +18,22 @@ import type {
 
 import type {
   CbomDocument,
+  CertificateIngestSummary,
   ChatBody,
   CommunityPost,
   CreateCommunityPostBody,
+  CreateOtFleetBody,
   CreateProjectBody,
   CreateScanBody,
   CreateSharedReportBody,
   CreateSharedReportResponse,
+  CreateVendorAssessmentBody,
+  DataAtRestIngestSummary,
   DemoRepo,
   DemoScanResult,
+  DependencyIngestSummary,
   Finding,
+  GetInventoryAssetsParams,
   GetLeaderboardParams,
   GithubFetchResult,
   GithubRateLimit,
@@ -36,15 +42,34 @@ import type {
   GithubScanResult,
   GlobalStats,
   HealthStatus,
+  InventoryAssetsSummary,
+  KmsIngestSummary,
   LeaderboardEntry,
   ListCommunityPostsParams,
   MultiScanBody,
   MultiScanResult,
+  OtFleet,
   PostureTimeline,
   Project,
+  ProjectCertificates,
   ProjectCoverage,
+  ProjectDataAtRest,
+  ProjectKmsKeys,
+  ProtocolConfigIngestSummary,
+  RateLimitedResponse,
+  ReadinessSummary,
   Scan,
   SharedReport,
+  SubmitProjectCertificatesBody,
+  SubmitProjectDataAtRestBody,
+  SubmitProjectDependenciesBody,
+  SubmitProjectKmsBody,
+  SubmitProjectProtocolConfigBody,
+  SubmitProjectTlsBody,
+  TlsProbeSummary,
+  UpdateOtFleetBody,
+  UpdateVendorAssessmentBody,
+  VendorAssessment,
   VoteBody,
 } from "./api.schemas";
 
@@ -80,7 +105,7 @@ export const getHealthCheckQueryKey = () => {
 
 export const getHealthCheckQueryOptions = <
   TData = Awaited<ReturnType<typeof healthCheck>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
@@ -107,7 +132,7 @@ export const getHealthCheckQueryOptions = <
 export type HealthCheckQueryResult = NonNullable<
   Awaited<ReturnType<typeof healthCheck>>
 >;
-export type HealthCheckQueryError = ErrorType<unknown>;
+export type HealthCheckQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Health check
@@ -115,7 +140,7 @@ export type HealthCheckQueryError = ErrorType<unknown>;
 
 export function useHealthCheck<
   TData = Awaited<ReturnType<typeof healthCheck>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
@@ -155,7 +180,7 @@ export const getListProjectsQueryKey = () => {
 
 export const getListProjectsQueryOptions = <
   TData = Awaited<ReturnType<typeof listProjects>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof listProjects>>,
@@ -182,7 +207,7 @@ export const getListProjectsQueryOptions = <
 export type ListProjectsQueryResult = NonNullable<
   Awaited<ReturnType<typeof listProjects>>
 >;
-export type ListProjectsQueryError = ErrorType<unknown>;
+export type ListProjectsQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary List all projects
@@ -190,7 +215,7 @@ export type ListProjectsQueryError = ErrorType<unknown>;
 
 export function useListProjects<
   TData = Awaited<ReturnType<typeof listProjects>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof listProjects>>,
@@ -228,7 +253,7 @@ export const createProject = async (
 };
 
 export const getCreateProjectMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -269,13 +294,13 @@ export type CreateProjectMutationResult = NonNullable<
   Awaited<ReturnType<typeof createProject>>
 >;
 export type CreateProjectMutationBody = BodyType<CreateProjectBody>;
-export type CreateProjectMutationError = ErrorType<unknown>;
+export type CreateProjectMutationError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Create a new project
  */
 export const useCreateProject = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -317,7 +342,7 @@ export const getGetProjectQueryKey = (id: number) => {
 
 export const getGetProjectQueryOptions = <
   TData = Awaited<ReturnType<typeof getProject>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -352,7 +377,7 @@ export const getGetProjectQueryOptions = <
 export type GetProjectQueryResult = NonNullable<
   Awaited<ReturnType<typeof getProject>>
 >;
-export type GetProjectQueryError = ErrorType<void>;
+export type GetProjectQueryError = ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Get a project by ID
@@ -360,7 +385,7 @@ export type GetProjectQueryError = ErrorType<void>;
 
 export function useGetProject<
   TData = Awaited<ReturnType<typeof getProject>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -399,7 +424,7 @@ export const deleteProject = async (
 };
 
 export const getDeleteProjectMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -440,13 +465,13 @@ export type DeleteProjectMutationResult = NonNullable<
   Awaited<ReturnType<typeof deleteProject>>
 >;
 
-export type DeleteProjectMutationError = ErrorType<unknown>;
+export type DeleteProjectMutationError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Delete a project
  */
 export const useDeleteProject = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -489,7 +514,7 @@ export const getGetProjectFindingsQueryKey = (id: number) => {
 
 export const getGetProjectFindingsQueryOptions = <
   TData = Awaited<ReturnType<typeof getProjectFindings>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -524,7 +549,8 @@ export const getGetProjectFindingsQueryOptions = <
 export type GetProjectFindingsQueryResult = NonNullable<
   Awaited<ReturnType<typeof getProjectFindings>>
 >;
-export type GetProjectFindingsQueryError = ErrorType<void>;
+export type GetProjectFindingsQueryError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Get every finding across every scan in a project
@@ -532,7 +558,7 @@ export type GetProjectFindingsQueryError = ErrorType<void>;
 
 export function useGetProjectFindings<
   TData = Awaited<ReturnType<typeof getProjectFindings>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -577,7 +603,7 @@ export const getGetProjectCoverageQueryKey = (id: number) => {
 
 export const getGetProjectCoverageQueryOptions = <
   TData = Awaited<ReturnType<typeof getProjectCoverage>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -612,7 +638,8 @@ export const getGetProjectCoverageQueryOptions = <
 export type GetProjectCoverageQueryResult = NonNullable<
   Awaited<ReturnType<typeof getProjectCoverage>>
 >;
-export type GetProjectCoverageQueryError = ErrorType<void>;
+export type GetProjectCoverageQueryError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Coverage and confidence meter for a project (D3)
@@ -620,7 +647,7 @@ export type GetProjectCoverageQueryError = ErrorType<void>;
 
 export function useGetProjectCoverage<
   TData = Awaited<ReturnType<typeof getProjectCoverage>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -640,6 +667,526 @@ export function useGetProjectCoverage<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Runs the dependency collector over the submitted files and persists what it finds as assets on the `dependency` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+Files are selected by basename, not by extension: `pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock` and `requirements*.txt`. Anything else in `files` is ignored rather than rejected, so a caller may submit a whole tree.
+
+**If no submitted file is a recognised lockfile, no collection run is recorded** and `lockfilesRecognised` is 0. That is deliberate: writing a run would make the meter report the dependency surface as examined-and-empty, when the truth is that nothing readable was submitted. It is a 200, not an error — a repository legitimately may have no lockfile.
+
+A package that leaves a resubmitted lockfile marks its asset `gone`, scoped to the ecosystems this submission actually carried a lockfile for. Submitting only `requirements.txt` therefore never touches the project's npm assets.
+ * @summary Submit a project's lockfiles for dependency/SBOM collection (B2)
+ */
+export const getSubmitProjectDependenciesUrl = (id: number) => {
+  return `/api/projects/${id}/dependencies`;
+};
+
+export const submitProjectDependencies = async (
+  id: number,
+  submitProjectDependenciesBody: SubmitProjectDependenciesBody,
+  options?: RequestInit,
+): Promise<DependencyIngestSummary> => {
+  return customFetch<DependencyIngestSummary>(
+    getSubmitProjectDependenciesUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(submitProjectDependenciesBody),
+    },
+  );
+};
+
+export const getSubmitProjectDependenciesMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectDependencies>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectDependenciesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectDependencies>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectDependenciesBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectDependencies"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectDependencies>>,
+    { id: number; data: BodyType<SubmitProjectDependenciesBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectDependencies(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectDependenciesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectDependencies>>
+>;
+export type SubmitProjectDependenciesMutationBody =
+  BodyType<SubmitProjectDependenciesBody>;
+export type SubmitProjectDependenciesMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit a project's lockfiles for dependency/SBOM collection (B2)
+ */
+export const useSubmitProjectDependencies = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectDependencies>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectDependenciesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectDependencies>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectDependenciesBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectDependenciesMutationOptions(options));
+};
+
+/**
+ * The manual register — every fleet a customer has recorded by hand, newest first. Each entry carries `exposure`, computed fresh on every read against the current Q-Day scenarios, so a scenario or date change is reflected without a backfill.
+ * @summary List this organisation's OT/embedded device fleets (B8)
+ */
+export const getListOtFleetsUrl = () => {
+  return `/api/ot-fleets`;
+};
+
+export const listOtFleets = async (
+  options?: RequestInit,
+): Promise<OtFleet[]> => {
+  return customFetch<OtFleet[]>(getListOtFleetsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListOtFleetsQueryKey = () => {
+  return [`/api/ot-fleets`] as const;
+};
+
+export const getListOtFleetsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listOtFleets>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOtFleets>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListOtFleetsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listOtFleets>>> = ({
+    signal,
+  }) => listOtFleets({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listOtFleets>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListOtFleetsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listOtFleets>>
+>;
+export type ListOtFleetsQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary List this organisation's OT/embedded device fleets (B8)
+ */
+
+export function useListOtFleets<
+  TData = Awaited<ReturnType<typeof listOtFleets>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOtFleets>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListOtFleetsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * A form submission, not a collector run: every field but `name` is optional, and an omitted field is stored as `null` — "not supplied" — rather than a guessed default.
+ * @summary Record a new device fleet (B8)
+ */
+export const getCreateOtFleetUrl = () => {
+  return `/api/ot-fleets`;
+};
+
+export const createOtFleet = async (
+  createOtFleetBody: CreateOtFleetBody,
+  options?: RequestInit,
+): Promise<OtFleet> => {
+  return customFetch<OtFleet>(getCreateOtFleetUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createOtFleetBody),
+  });
+};
+
+export const getCreateOtFleetMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createOtFleet>>,
+    TError,
+    { data: BodyType<CreateOtFleetBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createOtFleet>>,
+  TError,
+  { data: BodyType<CreateOtFleetBody> },
+  TContext
+> => {
+  const mutationKey = ["createOtFleet"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createOtFleet>>,
+    { data: BodyType<CreateOtFleetBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createOtFleet(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateOtFleetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createOtFleet>>
+>;
+export type CreateOtFleetMutationBody = BodyType<CreateOtFleetBody>;
+export type CreateOtFleetMutationError = ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Record a new device fleet (B8)
+ */
+export const useCreateOtFleet = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createOtFleet>>,
+    TError,
+    { data: BodyType<CreateOtFleetBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createOtFleet>>,
+  TError,
+  { data: BodyType<CreateOtFleetBody> },
+  TContext
+> => {
+  return useMutation(getCreateOtFleetMutationOptions(options));
+};
+
+/**
+ * @summary Get one OT fleet by id (B8)
+ */
+export const getGetOtFleetUrl = (id: number) => {
+  return `/api/ot-fleets/${id}`;
+};
+
+export const getOtFleet = async (
+  id: number,
+  options?: RequestInit,
+): Promise<OtFleet> => {
+  return customFetch<OtFleet>(getGetOtFleetUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetOtFleetQueryKey = (id: number) => {
+  return [`/api/ot-fleets/${id}`] as const;
+};
+
+export const getGetOtFleetQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOtFleet>>,
+  TError = ErrorType<void | RateLimitedResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOtFleet>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetOtFleetQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOtFleet>>> = ({
+    signal,
+  }) => getOtFleet(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOtFleet>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOtFleetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOtFleet>>
+>;
+export type GetOtFleetQueryError = ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Get one OT fleet by id (B8)
+ */
+
+export function useGetOtFleet<
+  TData = Awaited<ReturnType<typeof getOtFleet>>,
+  TError = ErrorType<void | RateLimitedResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOtFleet>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOtFleetQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Every field is optional and only the fields present in the body are changed — omitting a field leaves the stored value (including `null`) exactly as it was, it does not clear it.
+ * @summary Update fields the customer has learned since the fleet was recorded (B8)
+ */
+export const getUpdateOtFleetUrl = (id: number) => {
+  return `/api/ot-fleets/${id}`;
+};
+
+export const updateOtFleet = async (
+  id: number,
+  updateOtFleetBody: UpdateOtFleetBody,
+  options?: RequestInit,
+): Promise<OtFleet> => {
+  return customFetch<OtFleet>(getUpdateOtFleetUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateOtFleetBody),
+  });
+};
+
+export const getUpdateOtFleetMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateOtFleet>>,
+    TError,
+    { id: number; data: BodyType<UpdateOtFleetBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateOtFleet>>,
+  TError,
+  { id: number; data: BodyType<UpdateOtFleetBody> },
+  TContext
+> => {
+  const mutationKey = ["updateOtFleet"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateOtFleet>>,
+    { id: number; data: BodyType<UpdateOtFleetBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateOtFleet(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateOtFleetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateOtFleet>>
+>;
+export type UpdateOtFleetMutationBody = BodyType<UpdateOtFleetBody>;
+export type UpdateOtFleetMutationError = ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Update fields the customer has learned since the fleet was recorded (B8)
+ */
+export const useUpdateOtFleet = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateOtFleet>>,
+    TError,
+    { id: number; data: BodyType<UpdateOtFleetBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateOtFleet>>,
+  TError,
+  { id: number; data: BodyType<UpdateOtFleetBody> },
+  TContext
+> => {
+  return useMutation(getUpdateOtFleetMutationOptions(options));
+};
+
+/**
+ * @summary Remove a fleet from the register (B8)
+ */
+export const getDeleteOtFleetUrl = (id: number) => {
+  return `/api/ot-fleets/${id}`;
+};
+
+export const deleteOtFleet = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteOtFleetUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteOtFleetMutationOptions = <
+  TError = ErrorType<RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteOtFleet>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteOtFleet>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteOtFleet"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteOtFleet>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteOtFleet(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteOtFleetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteOtFleet>>
+>;
+
+export type DeleteOtFleetMutationError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Remove a fleet from the register (B8)
+ */
+export const useDeleteOtFleet = <
+  TError = ErrorType<RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteOtFleet>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteOtFleet>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteOtFleetMutationOptions(options));
+};
 
 /**
  * Observed history from real collection instants, plus a projected horizon and the obligation deadlines that fall in it. Observed points come only from instants at which a collection actually happened — the series is never resampled onto a regular grid, because that would draw a smooth trend on an estate that never changed. When fewer than two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
@@ -665,7 +1212,7 @@ export const getGetInventoryTimelineQueryKey = () => {
 
 export const getGetInventoryTimelineQueryOptions = <
   TData = Awaited<ReturnType<typeof getInventoryTimeline>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getInventoryTimeline>>,
@@ -692,7 +1239,7 @@ export const getGetInventoryTimelineQueryOptions = <
 export type GetInventoryTimelineQueryResult = NonNullable<
   Awaited<ReturnType<typeof getInventoryTimeline>>
 >;
-export type GetInventoryTimelineQueryError = ErrorType<unknown>;
+export type GetInventoryTimelineQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Estate cryptographic posture over time (D7)
@@ -700,7 +1247,7 @@ export type GetInventoryTimelineQueryError = ErrorType<unknown>;
 
 export function useGetInventoryTimeline<
   TData = Awaited<ReturnType<typeof getInventoryTimeline>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getInventoryTimeline>>,
@@ -741,7 +1288,7 @@ export const getGetInventoryCbomQueryKey = () => {
 
 export const getGetInventoryCbomQueryOptions = <
   TData = Awaited<ReturnType<typeof getInventoryCbom>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getInventoryCbom>>,
@@ -768,7 +1315,7 @@ export const getGetInventoryCbomQueryOptions = <
 export type GetInventoryCbomQueryResult = NonNullable<
   Awaited<ReturnType<typeof getInventoryCbom>>
 >;
-export type GetInventoryCbomQueryError = ErrorType<unknown>;
+export type GetInventoryCbomQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Export the cryptographic inventory as a CycloneDX 1.7 CBOM
@@ -776,7 +1323,7 @@ export type GetInventoryCbomQueryError = ErrorType<unknown>;
 
 export function useGetInventoryCbom<
   TData = Awaited<ReturnType<typeof getInventoryCbom>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getInventoryCbom>>,
@@ -786,6 +1333,180 @@ export function useGetInventoryCbom<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetInventoryCbomQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Five sections tracking the named parts of the joint CISA/NSA/NIST quantum-readiness factsheet (August 2023), plus the estate-wide coverage meter the first section is defined against — bundled in one payload so the two cannot disagree. A section with no data source in this product (roadmap document attachment, the vendor register) reports `percentComplete: null` and `state: "not-tracked"`, never `0`. There is no combined/overall readiness score.
+ * @summary CISA quantum-readiness posture tracker (D1)
+ */
+export const getGetInventoryReadinessUrl = () => {
+  return `/api/inventory/readiness`;
+};
+
+export const getInventoryReadiness = async (
+  options?: RequestInit,
+): Promise<ReadinessSummary> => {
+  return customFetch<ReadinessSummary>(getGetInventoryReadinessUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetInventoryReadinessQueryKey = () => {
+  return [`/api/inventory/readiness`] as const;
+};
+
+export const getGetInventoryReadinessQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInventoryReadiness>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryReadiness>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetInventoryReadinessQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getInventoryReadiness>>
+  > = ({ signal }) => getInventoryReadiness({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryReadiness>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInventoryReadinessQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInventoryReadiness>>
+>;
+export type GetInventoryReadinessQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary CISA quantum-readiness posture tracker (D1)
+ */
+
+export function useGetInventoryReadiness<
+  TData = Awaited<ReturnType<typeof getInventoryReadiness>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryReadiness>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInventoryReadinessQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Present assets only (`status !== "gone"`), each carrying its resolved compliance track (post-quantum vs. classical hygiene — G-10) and which Q-Day scenarios it breaches. `statusCounts` covers every asset in the organisation regardless of status, `gone` included, so drift can be reported without listing removed assets as present.
+ * @summary Estate inventory table, PQC track and Mosca breach per asset (D1 Row 4)
+ */
+export const getGetInventoryAssetsUrl = (params?: GetInventoryAssetsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/inventory/assets?${stringifiedParams}`
+    : `/api/inventory/assets`;
+};
+
+export const getInventoryAssets = async (
+  params?: GetInventoryAssetsParams,
+  options?: RequestInit,
+): Promise<InventoryAssetsSummary> => {
+  return customFetch<InventoryAssetsSummary>(getGetInventoryAssetsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetInventoryAssetsQueryKey = (
+  params?: GetInventoryAssetsParams,
+) => {
+  return [`/api/inventory/assets`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetInventoryAssetsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getInventoryAssets>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(
+  params?: GetInventoryAssetsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInventoryAssets>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetInventoryAssetsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getInventoryAssets>>
+  > = ({ signal }) => getInventoryAssets(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getInventoryAssets>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetInventoryAssetsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getInventoryAssets>>
+>;
+export type GetInventoryAssetsQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Estate inventory table, PQC track and Mosca breach per asset (D1 Row 4)
+ */
+
+export function useGetInventoryAssets<
+  TData = Awaited<ReturnType<typeof getInventoryAssets>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(
+  params?: GetInventoryAssetsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getInventoryAssets>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetInventoryAssetsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -814,7 +1535,7 @@ export const createScan = async (
 };
 
 export const getCreateScanMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -855,13 +1576,13 @@ export type CreateScanMutationResult = NonNullable<
   Awaited<ReturnType<typeof createScan>>
 >;
 export type CreateScanMutationBody = BodyType<CreateScanBody>;
-export type CreateScanMutationError = ErrorType<unknown>;
+export type CreateScanMutationError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Start a new scan
  */
 export const useCreateScan = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -903,7 +1624,7 @@ export const getGetScanQueryKey = (id: number) => {
 
 export const getGetScanQueryOptions = <
   TData = Awaited<ReturnType<typeof getScan>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -932,7 +1653,7 @@ export const getGetScanQueryOptions = <
 export type GetScanQueryResult = NonNullable<
   Awaited<ReturnType<typeof getScan>>
 >;
-export type GetScanQueryError = ErrorType<void>;
+export type GetScanQueryError = ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Get scan results
@@ -940,7 +1661,7 @@ export type GetScanQueryError = ErrorType<void>;
 
 export function useGetScan<
   TData = Awaited<ReturnType<typeof getScan>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -980,7 +1701,7 @@ export const getGetScanFindingsQueryKey = (id: number) => {
 
 export const getGetScanFindingsQueryOptions = <
   TData = Awaited<ReturnType<typeof getScanFindings>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -1015,7 +1736,7 @@ export const getGetScanFindingsQueryOptions = <
 export type GetScanFindingsQueryResult = NonNullable<
   Awaited<ReturnType<typeof getScanFindings>>
 >;
-export type GetScanFindingsQueryError = ErrorType<unknown>;
+export type GetScanFindingsQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Get all findings for a scan
@@ -1023,7 +1744,7 @@ export type GetScanFindingsQueryError = ErrorType<unknown>;
 
 export function useGetScanFindings<
   TData = Awaited<ReturnType<typeof getScanFindings>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -1065,7 +1786,7 @@ export const createMultiScan = async (
 };
 
 export const getCreateMultiScanMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1106,13 +1827,14 @@ export type CreateMultiScanMutationResult = NonNullable<
   Awaited<ReturnType<typeof createMultiScan>>
 >;
 export type CreateMultiScanMutationBody = BodyType<MultiScanBody>;
-export type CreateMultiScanMutationError = ErrorType<void>;
+export type CreateMultiScanMutationError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Scan several files as one new project
  */
 export const useCreateMultiScan = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1152,7 +1874,7 @@ export const createSharedReport = async (
 };
 
 export const getCreateSharedReportMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1193,13 +1915,14 @@ export type CreateSharedReportMutationResult = NonNullable<
   Awaited<ReturnType<typeof createSharedReport>>
 >;
 export type CreateSharedReportMutationBody = BodyType<CreateSharedReportBody>;
-export type CreateSharedReportMutationError = ErrorType<void>;
+export type CreateSharedReportMutationError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Create a share link for a report
  */
 export const useCreateSharedReport = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1242,7 +1965,7 @@ export const getGetSharedReportQueryKey = (id: string) => {
 
 export const getGetSharedReportQueryOptions = <
   TData = Awaited<ReturnType<typeof getSharedReport>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: string,
   options?: {
@@ -1277,7 +2000,7 @@ export const getGetSharedReportQueryOptions = <
 export type GetSharedReportQueryResult = NonNullable<
   Awaited<ReturnType<typeof getSharedReport>>
 >;
-export type GetSharedReportQueryError = ErrorType<void>;
+export type GetSharedReportQueryError = ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Read a shared report by its link id
@@ -1285,7 +2008,7 @@ export type GetSharedReportQueryError = ErrorType<void>;
 
 export function useGetSharedReport<
   TData = Awaited<ReturnType<typeof getSharedReport>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: string,
   options?: {
@@ -1327,7 +2050,7 @@ export const createChatCompletion = async (
 };
 
 export const getCreateChatCompletionMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1368,13 +2091,14 @@ export type CreateChatCompletionMutationResult = NonNullable<
   Awaited<ReturnType<typeof createChatCompletion>>
 >;
 export type CreateChatCompletionMutationBody = BodyType<ChatBody>;
-export type CreateChatCompletionMutationError = ErrorType<void>;
+export type CreateChatCompletionMutationError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Stream an AI answer about a scan
  */
 export const useCreateChatCompletion = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1430,7 +2154,7 @@ export const getListCommunityPostsQueryKey = (
 
 export const getListCommunityPostsQueryOptions = <
   TData = Awaited<ReturnType<typeof listCommunityPosts>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   params?: ListCommunityPostsParams,
   options?: {
@@ -1461,7 +2185,7 @@ export const getListCommunityPostsQueryOptions = <
 export type ListCommunityPostsQueryResult = NonNullable<
   Awaited<ReturnType<typeof listCommunityPosts>>
 >;
-export type ListCommunityPostsQueryError = ErrorType<unknown>;
+export type ListCommunityPostsQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary List community posts
@@ -1469,7 +2193,7 @@ export type ListCommunityPostsQueryError = ErrorType<unknown>;
 
 export function useListCommunityPosts<
   TData = Awaited<ReturnType<typeof listCommunityPosts>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   params?: ListCommunityPostsParams,
   options?: {
@@ -1510,7 +2234,7 @@ export const createCommunityPost = async (
 };
 
 export const getCreateCommunityPostMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1551,13 +2275,13 @@ export type CreateCommunityPostMutationResult = NonNullable<
   Awaited<ReturnType<typeof createCommunityPost>>
 >;
 export type CreateCommunityPostMutationBody = BodyType<CreateCommunityPostBody>;
-export type CreateCommunityPostMutationError = ErrorType<unknown>;
+export type CreateCommunityPostMutationError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Create a community post
  */
 export const useCreateCommunityPost = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1597,7 +2321,7 @@ export const voteCommunityPost = async (
 };
 
 export const getVoteCommunityPostMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1638,13 +2362,13 @@ export type VoteCommunityPostMutationResult = NonNullable<
   Awaited<ReturnType<typeof voteCommunityPost>>
 >;
 export type VoteCommunityPostMutationBody = BodyType<VoteBody>;
-export type VoteCommunityPostMutationError = ErrorType<unknown>;
+export type VoteCommunityPostMutationError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Vote on a community post
  */
 export const useVoteCommunityPost = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1698,7 +2422,7 @@ export const getGetLeaderboardQueryKey = (params?: GetLeaderboardParams) => {
 
 export const getGetLeaderboardQueryOptions = <
   TData = Awaited<ReturnType<typeof getLeaderboard>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   params?: GetLeaderboardParams,
   options?: {
@@ -1728,7 +2452,7 @@ export const getGetLeaderboardQueryOptions = <
 export type GetLeaderboardQueryResult = NonNullable<
   Awaited<ReturnType<typeof getLeaderboard>>
 >;
-export type GetLeaderboardQueryError = ErrorType<unknown>;
+export type GetLeaderboardQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Get top contributors leaderboard
@@ -1736,7 +2460,7 @@ export type GetLeaderboardQueryError = ErrorType<unknown>;
 
 export function useGetLeaderboard<
   TData = Awaited<ReturnType<typeof getLeaderboard>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   params?: GetLeaderboardParams,
   options?: {
@@ -1779,7 +2503,7 @@ export const getGetGlobalStatsQueryKey = () => {
 
 export const getGetGlobalStatsQueryOptions = <
   TData = Awaited<ReturnType<typeof getGlobalStats>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getGlobalStats>>,
@@ -1806,7 +2530,7 @@ export const getGetGlobalStatsQueryOptions = <
 export type GetGlobalStatsQueryResult = NonNullable<
   Awaited<ReturnType<typeof getGlobalStats>>
 >;
-export type GetGlobalStatsQueryError = ErrorType<unknown>;
+export type GetGlobalStatsQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Get global platform statistics
@@ -1814,7 +2538,7 @@ export type GetGlobalStatsQueryError = ErrorType<unknown>;
 
 export function useGetGlobalStats<
   TData = Awaited<ReturnType<typeof getGlobalStats>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getGlobalStats>>,
@@ -1854,7 +2578,7 @@ export const getListDemoReposQueryKey = () => {
 
 export const getListDemoReposQueryOptions = <
   TData = Awaited<ReturnType<typeof listDemoRepos>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof listDemoRepos>>,
@@ -1881,7 +2605,7 @@ export const getListDemoReposQueryOptions = <
 export type ListDemoReposQueryResult = NonNullable<
   Awaited<ReturnType<typeof listDemoRepos>>
 >;
-export type ListDemoReposQueryError = ErrorType<unknown>;
+export type ListDemoReposQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary List available demo repositories
@@ -1889,7 +2613,7 @@ export type ListDemoReposQueryError = ErrorType<unknown>;
 
 export function useListDemoRepos<
   TData = Awaited<ReturnType<typeof listDemoRepos>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof listDemoRepos>>,
@@ -1926,7 +2650,7 @@ export const runDemoScan = async (
 };
 
 export const getRunDemoScanMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1967,13 +2691,13 @@ export type RunDemoScanMutationResult = NonNullable<
   Awaited<ReturnType<typeof runDemoScan>>
 >;
 
-export type RunDemoScanMutationError = ErrorType<void>;
+export type RunDemoScanMutationError = ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Run a scan on a demo repository
  */
 export const useRunDemoScan = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2100,7 +2824,7 @@ export const getGetGithubRateLimitQueryKey = () => {
 
 export const getGetGithubRateLimitQueryOptions = <
   TData = Awaited<ReturnType<typeof getGithubRateLimit>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<RateLimitedResponse | void>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getGithubRateLimit>>,
@@ -2127,7 +2851,8 @@ export const getGetGithubRateLimitQueryOptions = <
 export type GetGithubRateLimitQueryResult = NonNullable<
   Awaited<ReturnType<typeof getGithubRateLimit>>
 >;
-export type GetGithubRateLimitQueryError = ErrorType<void>;
+export type GetGithubRateLimitQueryError =
+  ErrorType<RateLimitedResponse | void>;
 
 /**
  * @summary Remaining GitHub API quota
@@ -2135,7 +2860,7 @@ export type GetGithubRateLimitQueryError = ErrorType<void>;
 
 export function useGetGithubRateLimit<
   TData = Awaited<ReturnType<typeof getGithubRateLimit>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<RateLimitedResponse | void>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getGithubRateLimit>>,
@@ -2261,7 +2986,7 @@ export const scanGithubFiles = async (
 };
 
 export const getScanGithubFilesMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2302,13 +3027,14 @@ export type ScanGithubFilesMutationResult = NonNullable<
   Awaited<ReturnType<typeof scanGithubFiles>>
 >;
 export type ScanGithubFilesMutationBody = BodyType<GithubScanFilesBody>;
-export type ScanGithubFilesMutationError = ErrorType<void>;
+export type ScanGithubFilesMutationError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Phase 2 — scan already-fetched files, with no GitHub API calls
  */
 export const useScanGithubFiles = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2326,3 +3052,1189 @@ export const useScanGithubFiles = <
 > => {
   return useMutation(getScanGithubFilesMutationOptions(options));
 };
+
+/**
+ * Runs the certificate collector over the submitted PEM/DER files and persists what it finds as assets on the `certificate` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+`content` is PEM text (one or more concatenated `-----BEGIN/END CERTIFICATE-----` blocks — a full chain is read entirely, not just its leaf) or base64-encoded DER. A file that is neither contributes nothing, silently.
+
+**If no submitted file contains a parseable certificate, no collection run is recorded** and `certificatesRecognised` is 0 — the same "examined nothing, not found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an error.
+
+Each returned certificate carries `qDay`: whether its `notAfter` falls on or after each Q-Day scenario's year, derived fresh on every call rather than stored — see `GET /projects/{id}/certificates` for the persisted-inventory read this backs.
+ * @summary Submit certificates for X.509 collection (B4)
+ */
+export const getSubmitProjectCertificatesUrl = (id: number) => {
+  return `/api/projects/${id}/certificates`;
+};
+
+export const submitProjectCertificates = async (
+  id: number,
+  submitProjectCertificatesBody: SubmitProjectCertificatesBody,
+  options?: RequestInit,
+): Promise<CertificateIngestSummary> => {
+  return customFetch<CertificateIngestSummary>(
+    getSubmitProjectCertificatesUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(submitProjectCertificatesBody),
+    },
+  );
+};
+
+export const getSubmitProjectCertificatesMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectCertificates>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectCertificatesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectCertificates>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectCertificatesBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectCertificates"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectCertificates>>,
+    { id: number; data: BodyType<SubmitProjectCertificatesBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectCertificates(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectCertificatesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectCertificates>>
+>;
+export type SubmitProjectCertificatesMutationBody =
+  BodyType<SubmitProjectCertificatesBody>;
+export type SubmitProjectCertificatesMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit certificates for X.509 collection (B4)
+ */
+export const useSubmitProjectCertificates = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectCertificates>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectCertificatesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectCertificates>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectCertificatesBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectCertificatesMutationOptions(options));
+};
+
+/**
+ * Every certificate asset attributed to this project, each evaluated against every Q-Day scenario at read time — never persisted, because Q-Day scenarios are customer-overridable (see `lib/risk`) and a stored verdict would go stale exactly the way C1 exists to prevent. Includes assets of every lifecycle status, not only `active`; a report of what was found must keep what was later remediated or waived in the record.
+ * @summary The project's certificate inventory, evaluated against Q-Day (B4)
+ */
+export const getGetProjectCertificatesUrl = (id: number) => {
+  return `/api/projects/${id}/certificates`;
+};
+
+export const getProjectCertificates = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProjectCertificates> => {
+  return customFetch<ProjectCertificates>(getGetProjectCertificatesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectCertificatesQueryKey = (id: number) => {
+  return [`/api/projects/${id}/certificates`] as const;
+};
+
+export const getGetProjectCertificatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectCertificates>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectCertificates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProjectCertificatesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectCertificates>>
+  > = ({ signal }) => getProjectCertificates(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectCertificates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectCertificatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectCertificates>>
+>;
+export type GetProjectCertificatesQueryError = ErrorType<void>;
+
+/**
+ * @summary The project's certificate inventory, evaluated against Q-Day (B4)
+ */
+
+export function useGetProjectCertificates<
+  TData = Awaited<ReturnType<typeof getProjectCertificates>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectCertificates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectCertificatesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Opens a real TLS connection to each submitted `host`/`port` and records what was *negotiated* — cipher suite, key-exchange group, protocol version, and the peer certificate's public key type/size — not what a config file claims. Persists what it finds as assets on the `tls` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+A caller-supplied host is refused before any connection is attempted if it resolves to a loopback, private, link-local (including the cloud metadata service) or otherwise non-routable address. The refusal reason is not detailed in the response — only `refused`, distinguished from a target that was reachable in principle but did not answer (`unreachable`) or one that completed a handshake (`probed`).
+
+**If no target's handshake completes, no collection run is recorded** and `targetsProbed` is 0 — the same honesty rule `POST /projects/{id}/dependencies` applies for `lockfilesRecognised: 0`. It is a 200, not an error: every target may legitimately be unreachable or filtered.
+
+A host that no longer answers on a resubmission marks its assets `gone`, scoped to exactly the targets that were actually probed in this submission — a target refused by the guard or that timed out was not observed and does not affect any other target's assets.
+ * @summary Probe a project's hosts for the TLS handshake they actually negotiate (B3)
+ */
+export const getSubmitProjectTlsUrl = (id: number) => {
+  return `/api/projects/${id}/tls`;
+};
+
+export const submitProjectTls = async (
+  id: number,
+  submitProjectTlsBody: SubmitProjectTlsBody,
+  options?: RequestInit,
+): Promise<TlsProbeSummary> => {
+  return customFetch<TlsProbeSummary>(getSubmitProjectTlsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(submitProjectTlsBody),
+  });
+};
+
+export const getSubmitProjectTlsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectTls>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectTlsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectTls>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectTlsBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectTls"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectTls>>,
+    { id: number; data: BodyType<SubmitProjectTlsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectTls(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectTlsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectTls>>
+>;
+export type SubmitProjectTlsMutationBody = BodyType<SubmitProjectTlsBody>;
+export type SubmitProjectTlsMutationError = ErrorType<void>;
+
+/**
+ * @summary Probe a project's hosts for the TLS handshake they actually negotiate (B3)
+ */
+export const useSubmitProjectTls = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectTls>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectTlsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectTls>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectTlsBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectTlsMutationOptions(options));
+};
+
+/**
+ * Parses submitted SSH (`sshd_config`, `ssh_config`, `authorized_keys`), IPsec/IKE (`ipsec.conf`, `swanctl.conf`), JOSE (a JWKS, an OpenID Connect discovery document) and SAML metadata files, and persists the algorithms they *declare* as assets on the `config` surface — which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+**A declaration is not a negotiation.** This route records what a file states, at `configuration_information` modality and a confidence well below `POST /projects/{id}/tls`'s observed handshake: a `Ciphers` list is an upper bound on what a daemon will accept, not evidence any peer selected an entry from it. Each declaration carries a `strength` — `permitted` (an algorithm the endpoint would accept) or `materialised` (a specific key or a chosen algorithm, such as an `authorized_keys` entry or a published JWK) — because those are different claims.
+
+The SSH and IPsec families are recognised by filename (including `sshd_config.d/` drop-ins); JOSE and SAML files have no conventional filename and are recognised by an unambiguous structural marker instead (a `keys` array of JWKs, an `*_alg_values_supported` field, an `EntityDescriptor` element).
+
+**If no submitted file is a configuration this collector understands, no collection run is recorded** and `configFilesRecognised` is 0 — the same "examined nothing, not found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an error. A recognised file that declares no crypto is the *other* case and **does** record a run: it was read, and it states nothing. Removing a directive and resubmitting the file marks its assets `gone`, scoped to exactly the files this submission read.
+
+Three deliberate silences, all restated in `evidenceCaveat`: `Include` directives are not followed (the caller submits contents, not a filesystem); the absence of a directive is not read as the compiled-in default; and an algorithm token with no canonical name — including hybrid post-quantum key exchange such as `sntrup761x25519-sha512` — produces no declaration rather than a guess.
+ * @summary Read the crypto a project's protocol configuration declares (B6)
+ */
+export const getSubmitProjectProtocolConfigUrl = (id: number) => {
+  return `/api/projects/${id}/protocol-config`;
+};
+
+export const submitProjectProtocolConfig = async (
+  id: number,
+  submitProjectProtocolConfigBody: SubmitProjectProtocolConfigBody,
+  options?: RequestInit,
+): Promise<ProtocolConfigIngestSummary> => {
+  return customFetch<ProtocolConfigIngestSummary>(
+    getSubmitProjectProtocolConfigUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(submitProjectProtocolConfigBody),
+    },
+  );
+};
+
+export const getSubmitProjectProtocolConfigMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectProtocolConfig>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectProtocolConfigBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectProtocolConfig>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectProtocolConfigBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectProtocolConfig"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectProtocolConfig>>,
+    { id: number; data: BodyType<SubmitProjectProtocolConfigBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectProtocolConfig(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectProtocolConfigMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectProtocolConfig>>
+>;
+export type SubmitProjectProtocolConfigMutationBody =
+  BodyType<SubmitProjectProtocolConfigBody>;
+export type SubmitProjectProtocolConfigMutationError = ErrorType<void>;
+
+/**
+ * @summary Read the crypto a project's protocol configuration declares (B6)
+ */
+export const useSubmitProjectProtocolConfig = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectProtocolConfig>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectProtocolConfigBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectProtocolConfig>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectProtocolConfigBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectProtocolConfigMutationOptions(options));
+};
+
+/**
+ * The vendor register — every supplier a customer has recorded, newest first. Each entry carries `posture`, computed fresh on every read: the `manual_attestation` stamp and its confidence, the Q-Day verdicts against the date the vendor *claims* it will be post-quantum ready, and the contract-clause reading. Nothing here was observed by a collector.
+ * @summary List this organisation's vendor / third-party assessments (B9)
+ */
+export const getListVendorAssessmentsUrl = () => {
+  return `/api/vendor-assessments`;
+};
+
+export const listVendorAssessments = async (
+  options?: RequestInit,
+): Promise<VendorAssessment[]> => {
+  return customFetch<VendorAssessment[]>(getListVendorAssessmentsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListVendorAssessmentsQueryKey = () => {
+  return [`/api/vendor-assessments`] as const;
+};
+
+export const getListVendorAssessmentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listVendorAssessments>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listVendorAssessments>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListVendorAssessmentsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listVendorAssessments>>
+  > = ({ signal }) => listVendorAssessments({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listVendorAssessments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListVendorAssessmentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listVendorAssessments>>
+>;
+export type ListVendorAssessmentsQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary List this organisation's vendor / third-party assessments (B9)
+ */
+
+export function useListVendorAssessments<
+  TData = Awaited<ReturnType<typeof listVendorAssessments>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listVendorAssessments>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListVendorAssessmentsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * A form submission, not a collector run: every field but `vendorName` is optional, and an omitted field is stored as `null` — "not supplied" — rather than a guessed default. A vendor recorded with nothing else reads as awaiting a response, never as compliant.
+ * @summary Record a vendor assessment (B9)
+ */
+export const getCreateVendorAssessmentUrl = () => {
+  return `/api/vendor-assessments`;
+};
+
+export const createVendorAssessment = async (
+  createVendorAssessmentBody: CreateVendorAssessmentBody,
+  options?: RequestInit,
+): Promise<VendorAssessment> => {
+  return customFetch<VendorAssessment>(getCreateVendorAssessmentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createVendorAssessmentBody),
+  });
+};
+
+export const getCreateVendorAssessmentMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createVendorAssessment>>,
+    TError,
+    { data: BodyType<CreateVendorAssessmentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createVendorAssessment>>,
+  TError,
+  { data: BodyType<CreateVendorAssessmentBody> },
+  TContext
+> => {
+  const mutationKey = ["createVendorAssessment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createVendorAssessment>>,
+    { data: BodyType<CreateVendorAssessmentBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createVendorAssessment(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateVendorAssessmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createVendorAssessment>>
+>;
+export type CreateVendorAssessmentMutationBody =
+  BodyType<CreateVendorAssessmentBody>;
+export type CreateVendorAssessmentMutationError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Record a vendor assessment (B9)
+ */
+export const useCreateVendorAssessment = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createVendorAssessment>>,
+    TError,
+    { data: BodyType<CreateVendorAssessmentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createVendorAssessment>>,
+  TError,
+  { data: BodyType<CreateVendorAssessmentBody> },
+  TContext
+> => {
+  return useMutation(getCreateVendorAssessmentMutationOptions(options));
+};
+
+/**
+ * @summary Get one vendor assessment by id (B9)
+ */
+export const getGetVendorAssessmentUrl = (id: number) => {
+  return `/api/vendor-assessments/${id}`;
+};
+
+export const getVendorAssessment = async (
+  id: number,
+  options?: RequestInit,
+): Promise<VendorAssessment> => {
+  return customFetch<VendorAssessment>(getGetVendorAssessmentUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetVendorAssessmentQueryKey = (id: number) => {
+  return [`/api/vendor-assessments/${id}`] as const;
+};
+
+export const getGetVendorAssessmentQueryOptions = <
+  TData = Awaited<ReturnType<typeof getVendorAssessment>>,
+  TError = ErrorType<void | RateLimitedResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getVendorAssessment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetVendorAssessmentQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getVendorAssessment>>
+  > = ({ signal }) => getVendorAssessment(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getVendorAssessment>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetVendorAssessmentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getVendorAssessment>>
+>;
+export type GetVendorAssessmentQueryError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Get one vendor assessment by id (B9)
+ */
+
+export function useGetVendorAssessment<
+  TData = Awaited<ReturnType<typeof getVendorAssessment>>,
+  TError = ErrorType<void | RateLimitedResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getVendorAssessment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetVendorAssessmentQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Every field is optional and only the fields present in the body are changed — omitting a field leaves the stored value (including `null`) exactly as it was, it does not clear it. Sending an explicit `null` does clear it, which is how a `contractPqcClause` of `absent` that turned out to be a misreading is withdrawn back to "nobody has checked" rather than to the opposite finding.
+ * @summary Update fields as a questionnaire comes back or a contract is read (B9)
+ */
+export const getUpdateVendorAssessmentUrl = (id: number) => {
+  return `/api/vendor-assessments/${id}`;
+};
+
+export const updateVendorAssessment = async (
+  id: number,
+  updateVendorAssessmentBody: UpdateVendorAssessmentBody,
+  options?: RequestInit,
+): Promise<VendorAssessment> => {
+  return customFetch<VendorAssessment>(getUpdateVendorAssessmentUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateVendorAssessmentBody),
+  });
+};
+
+export const getUpdateVendorAssessmentMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateVendorAssessment>>,
+    TError,
+    { id: number; data: BodyType<UpdateVendorAssessmentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateVendorAssessment>>,
+  TError,
+  { id: number; data: BodyType<UpdateVendorAssessmentBody> },
+  TContext
+> => {
+  const mutationKey = ["updateVendorAssessment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateVendorAssessment>>,
+    { id: number; data: BodyType<UpdateVendorAssessmentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateVendorAssessment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateVendorAssessmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateVendorAssessment>>
+>;
+export type UpdateVendorAssessmentMutationBody =
+  BodyType<UpdateVendorAssessmentBody>;
+export type UpdateVendorAssessmentMutationError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Update fields as a questionnaire comes back or a contract is read (B9)
+ */
+export const useUpdateVendorAssessment = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateVendorAssessment>>,
+    TError,
+    { id: number; data: BodyType<UpdateVendorAssessmentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateVendorAssessment>>,
+  TError,
+  { id: number; data: BodyType<UpdateVendorAssessmentBody> },
+  TContext
+> => {
+  return useMutation(getUpdateVendorAssessmentMutationOptions(options));
+};
+
+/**
+ * @summary Remove a vendor from the register (B9)
+ */
+export const getDeleteVendorAssessmentUrl = (id: number) => {
+  return `/api/vendor-assessments/${id}`;
+};
+
+export const deleteVendorAssessment = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteVendorAssessmentUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteVendorAssessmentMutationOptions = <
+  TError = ErrorType<RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteVendorAssessment>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteVendorAssessment>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteVendorAssessment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteVendorAssessment>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteVendorAssessment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteVendorAssessmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteVendorAssessment>>
+>;
+
+export type DeleteVendorAssessmentMutationError =
+  ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Remove a vendor from the register (B9)
+ */
+export const useDeleteVendorAssessment = <
+  TError = ErrorType<RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteVendorAssessment>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteVendorAssessment>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteVendorAssessmentMutationOptions(options));
+};
+
+/**
+ * Classifies the keys a managed key store holds — HashiCorp Vault, AWS KMS, Azure Key Vault, GCP KMS — and persists what it finds as assets on the `kms` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+**This is a submission route, not a credentialed poller.** You send the key inventory your own tooling already produced; no credential for the key store ever reaches this product, and nothing here connects to a cloud provider. The corollary is stated in every response's `evidenceCaveat`: the export is taken at its word, and nothing proves it is complete, current, or from the key store you say it is.
+
+Each key's provider-native spec string is resolved against the cited table in `docs/Claude/mappings/kms-key-specs.json`. A spec whose primitive this product does not report on (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`) yields no asset and is returned with `outcome: no-algorithm` and the table's own reason — never the nearest similar algorithm.
+
+**A submission whose keys are all unclassified still records a collection run.** That is the one place this route's honesty rule differs from `POST /projects/{id}/dependencies`: a key store holding only symmetric keys was genuinely examined, and reporting it as un-examined would be the false statement. Only an empty `keys` array records no run.
+ * @summary Submit a managed key-store inventory for collection (B5)
+ */
+export const getSubmitProjectKmsUrl = (id: number) => {
+  return `/api/projects/${id}/kms`;
+};
+
+export const submitProjectKms = async (
+  id: number,
+  submitProjectKmsBody: SubmitProjectKmsBody,
+  options?: RequestInit,
+): Promise<KmsIngestSummary> => {
+  return customFetch<KmsIngestSummary>(getSubmitProjectKmsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(submitProjectKmsBody),
+  });
+};
+
+export const getSubmitProjectKmsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectKms>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectKmsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectKms>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectKmsBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectKms"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectKms>>,
+    { id: number; data: BodyType<SubmitProjectKmsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectKms(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectKmsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectKms>>
+>;
+export type SubmitProjectKmsMutationBody = BodyType<SubmitProjectKmsBody>;
+export type SubmitProjectKmsMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit a managed key-store inventory for collection (B5)
+ */
+export const useSubmitProjectKms = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectKms>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectKmsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectKms>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectKmsBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectKmsMutationOptions(options));
+};
+
+/**
+ * Every KMS key asset attributed to this project. This is the read that answers "what does the inventory say", as opposed to the POST response, which only reports what one submission found at the moment it was submitted.
+
+It exists as its own route rather than leaning on `GET /inventory/assets` because that endpoint does not return `locationDetail`, and everything specific to a key store — provider, key id, spec, rotation state, origin, key store — lives there. Includes assets of every lifecycle status, not only `active`.
+
+`rotationEnabled` is null when the submitted export did not state it. That is not the same fact as rotation being off, and the two are never collapsed.
+ * @summary The project's managed key inventory, including rotation posture (B5)
+ */
+export const getGetProjectKmsKeysUrl = (id: number) => {
+  return `/api/projects/${id}/kms`;
+};
+
+export const getProjectKmsKeys = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProjectKmsKeys> => {
+  return customFetch<ProjectKmsKeys>(getGetProjectKmsKeysUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectKmsKeysQueryKey = (id: number) => {
+  return [`/api/projects/${id}/kms`] as const;
+};
+
+export const getGetProjectKmsKeysQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectKmsKeys>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectKmsKeys>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProjectKmsKeysQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectKmsKeys>>
+  > = ({ signal }) => getProjectKmsKeys(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectKmsKeys>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectKmsKeysQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectKmsKeys>>
+>;
+export type GetProjectKmsKeysQueryError = ErrorType<void>;
+
+/**
+ * @summary The project's managed key inventory, including rotation posture (B5)
+ */
+
+export function useGetProjectKmsKeys<
+  TData = Awaited<ReturnType<typeof getProjectKmsKeys>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectKmsKeys>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectKmsKeysQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Records what a database, backup, archive, volume or object store reports about its own encryption, and persists it as assets on the `data-at-rest` surface — which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+Nothing is connected to. The caller submits what their engine's configuration already reports (`pg_settings`, `sys.dm_database_encryption_keys`, `V$ENCRYPTED_TABLESPACES`, a bucket's SSE configuration, a backup job definition). Credentialed collection against a live database is deliberately not offered: it would need a secret-handling design this product does not have yet (F4).
+
+**Each store produces up to two assets, not one.** `dataEncryption` is the bulk cipher over the stored data — usually AES, which NIST does not consider quantum-vulnerable. `keyProtection` is how that data key is wrapped, and that is where Shor applies: an AES-256 store whose key is wrapped with RSA-2048 is a harvest-now-decrypt-later target however strong the bulk cipher is.
+
+**A store reported as encrypted with no cipher named records nothing and is returned as a `cipher-not-reported` gap.** It never becomes AES-256. That case is also excluded from the reobservation scope, so leaving the field blank on a resubmission cannot mark a previously recorded cipher `gone`.
+
+`dataClassification` / `secrecyLifetimeYears` are persisted on the store's assets and are what `GET /api/inventory/assets` resolves X from. Omit them and X falls back to the project's default and then the product's, flagged as assumed — see `classificationSource` on the read below.
+ * @summary Submit a description of encrypted stores for data-at-rest collection (B7)
+ */
+export const getSubmitProjectDataAtRestUrl = (id: number) => {
+  return `/api/projects/${id}/data-at-rest`;
+};
+
+export const submitProjectDataAtRest = async (
+  id: number,
+  submitProjectDataAtRestBody: SubmitProjectDataAtRestBody,
+  options?: RequestInit,
+): Promise<DataAtRestIngestSummary> => {
+  return customFetch<DataAtRestIngestSummary>(
+    getSubmitProjectDataAtRestUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(submitProjectDataAtRestBody),
+    },
+  );
+};
+
+export const getSubmitProjectDataAtRestMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectDataAtRest>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectDataAtRestBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectDataAtRest>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectDataAtRestBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectDataAtRest"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectDataAtRest>>,
+    { id: number; data: BodyType<SubmitProjectDataAtRestBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectDataAtRest(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectDataAtRestMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectDataAtRest>>
+>;
+export type SubmitProjectDataAtRestMutationBody =
+  BodyType<SubmitProjectDataAtRestBody>;
+export type SubmitProjectDataAtRestMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit a description of encrypted stores for data-at-rest collection (B7)
+ */
+export const useSubmitProjectDataAtRest = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectDataAtRest>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectDataAtRestBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectDataAtRest>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectDataAtRestBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectDataAtRestMutationOptions(options));
+};
+
+/**
+ * Every data-at-rest asset attributed to this project, grouped back into the store it belongs to, with X resolved and Mosca evaluated at read time — never persisted, because the Q-Day scenario years and the standards data behind `quantumVulnerable` are both revisable and a stored verdict would go stale exactly the way C1 exists to prevent.
+
+`xAssumed` and `classificationSource` are the honesty half: a store nobody classified is reported with the product's default X and says so, rather than quietly presenting an assumption as a measurement.
+ * @summary The project's data-at-rest inventory with its Mosca verdict (B7)
+ */
+export const getGetProjectDataAtRestUrl = (id: number) => {
+  return `/api/projects/${id}/data-at-rest`;
+};
+
+export const getProjectDataAtRest = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProjectDataAtRest> => {
+  return customFetch<ProjectDataAtRest>(getGetProjectDataAtRestUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectDataAtRestQueryKey = (id: number) => {
+  return [`/api/projects/${id}/data-at-rest`] as const;
+};
+
+export const getGetProjectDataAtRestQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectDataAtRest>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectDataAtRest>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProjectDataAtRestQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectDataAtRest>>
+  > = ({ signal }) => getProjectDataAtRest(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectDataAtRest>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectDataAtRestQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectDataAtRest>>
+>;
+export type GetProjectDataAtRestQueryError = ErrorType<void>;
+
+/**
+ * @summary The project's data-at-rest inventory with its Mosca verdict (B7)
+ */
+
+export function useGetProjectDataAtRest<
+  TData = Awaited<ReturnType<typeof getProjectDataAtRest>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectDataAtRest>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectDataAtRestQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

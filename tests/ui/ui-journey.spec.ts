@@ -416,7 +416,16 @@ test.describe("UI Journey Tests", () => {
 
     // Every planned surface is labelled, individually, rather than being summarised away.
     await expect(page.getByText("Data-at-rest")).toBeVisible();
-    await expect(page.getByText(/the inventory model has no place to record it yet/i).first()).toBeVisible();
+    await expect(page.getByText(/no collector has shipped for this surface/i).first()).toBeVisible();
+    // This used to assert the *deeper* absence — "the inventory model has no
+    // place to record it yet" — which `CoverageMeter` renders only for a
+    // catalogue entry whose `surface` is null. No entry is null any more:
+    // `data-at-rest` and `vendor` were the last two and both got a `Surface`
+    // value when the enum landed ahead of their collectors. The component still
+    // carries that branch on purpose, because a future surface can be
+    // catalogued before the schema can store it, and the two absences are
+    // genuinely different facts. There is simply no data in that state today,
+    // so asserting it here would be asserting a fiction.
 
     // The denominator is surfaces. Reading it as a fraction of the estate is
     // explicitly forbidden on the page, because we cannot size the blind spot.

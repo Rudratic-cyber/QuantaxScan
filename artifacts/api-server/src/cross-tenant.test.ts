@@ -1,17 +1,29 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import supertest from "supertest";
 import { sql } from "drizzle-orm";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Cross-tenant proof, through the real Express app.
  *
  * The principal here is the shared API key **bound to organisation 2**
- * (`QUANTAXSCAN_API_KEY_ORG_ID=2`), while the fixtures put most of the data in
- * organisation 1. So every assertion below is "a caller in one organisation
- * reaching for another organisation's data", exercised end to end: HTTP →
- * middleware → route → `withOrg` → policy.
+ * (via `QUANTAXSCAN_API_KEY_ORG_IDS`, F1's N-keys-to-N-orgs binding — see
+ * `artifacts/api-server/src/lib/principal.ts`), while the fixtures put most
+ * of the data in organisation 1. So every assertion below is "a caller in one
+ * organisation reaching for another organisation's data", exercised end to
+ * end: HTTP → middleware → route → `withOrg` → policy.
  *
- * Two things make it real rather than decorative:
+ * A *second* key, bound to a *third* organisation, is configured alongside
+ * it — see "multiple API keys bind to multiple organisations" below. That is
+ * what proves the binding is a real N-keys-to-N-orgs map and not just "the
+ * one env var happens to say 2 in this file": two independently-issued keys,
+ * live at the same time, resolving to two different, mutually-invisible
+ * organisations.
+ *
+ * Three things make it real rather than decorative:
  *
  *   1. The connection runs as `quantaxscan_app`, which has no BYPASSRLS. See
  *      the negative control in lib/db's tenant-isolation.test.ts — without
@@ -22,6 +34,11 @@ import { sql } from "drizzle-orm";
  *      forgetting a `where` clause", and it is why `GET /api/projects` —
  *      literally `select().from(projectsTable)` with no filter at all — is the
  *      strongest test in this file.
+ *   3. The two keys below are never sent together and never compared to each
+ *      other's digest by the test — each request carries exactly one key, the
+ *      same as a real caller, so a leak has to show up as one key's response
+ *      containing the other organisation's row, not as an artefact of the
+ *      test harness holding both credentials at once.
  *
  * The session half of the design's cross-tenant suite (two signed-in users,
  * membership revocation taking effect on the next request) needs sign-in,
@@ -30,14 +47,29 @@ import { sql } from "drizzle-orm";
 
 const API_KEY = "test-api-key-1234567890-super-secret-key-32bytes";
 const OTHER_ORG = 1; // where the fixtures live
-const OUR_ORG = 2; // who the API key is
+const OUR_ORG = 2; // who API_KEY is bound to
+
+/** A second, independently-issued key, bound to a third organisation. */
+const SECOND_API_KEY = "second-test-api-key-0987654321-super-secret-32b";
+const THIRD_ORG = 3; // who SECOND_API_KEY is bound to
 
 const { testDb, testScope, seedAsSuperuser, closeTestDb } = await vi.hoisted(async () => {
-  process.env.QUANTAXSCAN_API_KEYS = "test-api-key-1234567890-super-secret-key-32bytes";
+  process.env.QUANTAXSCAN_API_KEYS =
+    "test-api-key-1234567890-super-secret-key-32bytes,second-test-api-key-0987654321-super-secret-32b";
   process.env.DATABASE_URL = "postgres://dummy:dummy@localhost:5432/dummy";
-  process.env.QUANTAXSCAN_API_KEY_ORG_ID = "2";
+  // Positional: entry i of QUANTAXSCAN_API_KEY_ORG_IDS binds entry i of
+  // QUANTAXSCAN_API_KEYS. This is the mapping principal.ts replaced the old
+  // single QUANTAXSCAN_API_KEY_ORG_ID with — see its module doc for why an
+  // unlisted key is a startup error rather than a silent fall-back to
+  // organisation 1.
+  process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "2,3";
   const { createTestDb } = await import("@workspace/db/test-support");
-  const { db, scope, seedAsSuperuser, close } = await createTestDb({ asRole: "quantaxscan_app" });
+  // Default is [1, 2]; the third organisation is this file's own fixture for
+  // the second-key tests below, so it has to be seeded explicitly too.
+  const { db, scope, seedAsSuperuser, close } = await createTestDb({
+    asRole: "quantaxscan_app",
+    organizations: [1, 2, 3],
+  });
   return { testDb: db, testScope: scope, seedAsSuperuser, closeTestDb: close };
 });
 
@@ -53,11 +85,14 @@ import router from "./routes";
 
 const request = supertest(app);
 const auth = <T extends { set: (k: string, v: string) => T }>(r: T): T => r.set("X-API-Key", API_KEY);
+const auth2 = <T extends { set: (k: string, v: string) => T }>(r: T): T => r.set("X-API-Key", SECOND_API_KEY);
 
 /** Ids seeded into the OTHER organisation, which this caller must never reach. */
 const theirs = { projectId: 0, scanId: 0, findingId: 0, publicReport: "their-public", privateReport: "their-private" };
 /** Ids seeded into OUR organisation, which this caller must see. */
 const ours = { projectId: 0, scanId: 0 };
+/** Ids seeded into the THIRD organisation, for the second-key tests. */
+const theirsToo = { projectId: 0 };
 
 beforeAll(async () => {
   await seedAsSuperuser(async (client) => {
@@ -77,6 +112,7 @@ beforeAll(async () => {
     ours.projectId = await insertProject(OUR_ORG, "our project");
     theirs.scanId = await insertScan(OTHER_ORG, theirs.projectId);
     ours.scanId = await insertScan(OUR_ORG, ours.projectId);
+    theirsToo.projectId = await insertProject(THIRD_ORG, "third organisation's project");
 
     theirs.findingId = (await client.query<{ id: number }>(
       `insert into findings (organization_id, scan_id, file_name, line_number, severity, algorithm, code_snippet)
@@ -141,6 +177,34 @@ afterAll(async () => {
   await closeTestDb();
 });
 
+/**
+ * A real, self-signed certificate, generated at test time and never
+ * committed — a cross-tenant proof needs a submission `certificatesIn()`
+ * genuinely recognises, or the "writes nothing" assertion below would be
+ * true for the wrong reason (nothing readable was submitted at all, not
+ * "the in-scope parent check refused it").
+ */
+let testCertPem: string;
+
+beforeAll(() => {
+  const dir = mkdtempSync(join(tmpdir(), "qx-cross-tenant-cert-"));
+  try {
+    const keyPath = join(dir, "key.pem");
+    const certPath = join(dir, "cert.pem");
+    execFileSync(
+      "openssl",
+      [
+        "req", "-x509", "-newkey", "rsa:2048", "-keyout", keyPath, "-out", certPath,
+        "-days", "365", "-nodes", "-subj", "/CN=cross-tenant-test.invalid",
+      ],
+      { stdio: "pipe" },
+    );
+    testCertPem = readFileSync(certPath, "utf8");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ───────────────────────────────────────────────────────────────────────────
 
 describe("route manifest — a new route cannot ship without being considered", () => {
@@ -165,6 +229,48 @@ describe("route manifest — a new route cannot ship without being considered", 
     "DELETE /projects/:id": "org-scoped",
     "GET /projects/:id/findings": "org-scoped",
     "GET /projects/:id/coverage": "org-scoped",
+    // Writes assets stamped with the caller's organisation and attributed to a
+    // project by location prefix, so it confirms the parent inside the scope
+    // for the same reason POST /scans does.
+    "POST /projects/:id/dependencies": "org-scoped",
+    // Same shape as the dependency route immediately above, one surface over.
+    "POST /projects/:id/certificates": "org-scoped",
+    "GET /projects/:id/certificates": "org-scoped",
+    // B8 — the manual OT register. No parent id is ever accepted, so there is
+    // no foreign-key-under-RLS check to make: the row is stamped with the
+    // caller's organisation and nothing else.
+    "GET /ot-fleets": "org-scoped",
+    "POST /ot-fleets": "org-scoped",
+    "GET /ot-fleets/:id": "org-scoped",
+    "PATCH /ot-fleets/:id": "org-scoped",
+    "DELETE /ot-fleets/:id": "org-scoped",
+    // B9 — the vendor/third-party register. Same reasoning as the OT register
+    // above: no parent id is ever accepted, so there is no
+    // foreign-key-under-RLS check to make. Which suppliers a company assesses,
+    // and what those suppliers admitted about their cryptography, is as
+    // tenant-private as a scan result.
+    "GET /vendor-assessments": "org-scoped",
+    "POST /vendor-assessments": "org-scoped",
+    "GET /vendor-assessments/:id": "org-scoped",
+    "PATCH /vendor-assessments/:id": "org-scoped",
+    "DELETE /vendor-assessments/:id": "org-scoped",
+    // Same reasoning as dependencies above: assets are attributed to a
+    // project only by the `project:<id>:` location prefix, never a foreign
+    // key, so the parent is confirmed visible inside the scope.
+    "POST /projects/:id/tls": "org-scoped",
+    // B6 — same reasoning again: `config` assets are attributed to a project
+    // only by the `project:<id>:config:` location prefix, never a foreign key.
+    "POST /projects/:id/protocol-config": "org-scoped",
+    // B5 — same reasoning again: a submitted key inventory becomes assets
+    // attributed to a project only by the `project:<id>:` location prefix,
+    // never a foreign key, so the parent is confirmed visible inside the
+    // scope. The GET reads those assets with no where clause of its own.
+    "POST /projects/:id/kms": "org-scoped",
+    "GET /projects/:id/kms": "org-scoped",
+    // B7 — same shape again: assets attributed by location prefix, no
+    // foreign key, so the parent is confirmed inside the scope.
+    "POST /projects/:id/data-at-rest": "org-scoped",
+    "GET /projects/:id/data-at-rest": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",
@@ -178,6 +284,11 @@ describe("route manifest — a new route cannot ship without being considered", 
     // in the organisation with no where clause at all — the same shape as
     // `GET /projects`, and for the same reason.
     "GET /inventory/timeline": "org-scoped",
+    // D1 — same estate-wide read shape as the timeline above: every asset,
+    // project, collection run and observation in the organisation, no
+    // `where organization_id` in the handler.
+    "GET /inventory/readiness": "org-scoped",
+    "GET /inventory/assets": "org-scoped",
     // These touch no database at all: chat proxies to OpenAI and persists
     // nothing, and the github routes fetch from GitHub and hand the result
     // straight back. They still require an API key. When any of them starts
@@ -282,6 +393,46 @@ describe("list routes return this organisation's rows and only this organisation
     expect(res.body.deadlines.every((d: { algorithms: string[] }) => !d.algorithms.includes("RSA"))).toBe(true);
   });
 
+  it("GET /api/inventory/readiness scores none of another organisation's coverage or assets", async () => {
+    // Same adversarial fixture as the timeline test: their completed run and
+    // their asset are addressed at OUR project's identity, and this handler
+    // reads the whole organisation with no `where` clause. If the policy
+    // leaked, their source-surface run would mark "source" examined for us.
+    const res = await auth(request.get("/api/inventory/readiness"));
+    expect(res.status).toBe(200);
+
+    // Our own MD5 source asset is real evidence — "source" is examined for us.
+    // The claim under test is that THEIRS is not counted alongside it: their
+    // completed run at our project's `target` would additionally mark
+    // `completedRuns` on our "source" entry if the policy leaked.
+    expect(res.body.coverage.examinedSurfaces).toBe(1);
+    expect(res.body.coverage.surfaces).toEqual([
+      expect.objectContaining({ surface: "source", assets: 1, completedRuns: 0 }),
+    ]);
+
+    const inventorySection = res.body.sections.find((s: { id: string }) => s.id === "cryptographic-inventory");
+    expect(inventorySection.numerator).toBe(1);
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain("their confidential project");
+  });
+
+  it("GET /api/inventory/assets lists only our own asset, not theirs", async () => {
+    const res = await auth(request.get("/api/inventory/assets"));
+    expect(res.status).toBe(200);
+
+    expect(res.body.assets).toHaveLength(1);
+    expect(res.body.assets[0].fingerprint).toBe("our-asset-fingerprint");
+    expect(res.body.assets[0].algorithm).toBe("MD5");
+
+    // Their `active` asset must not be folded into our status counts.
+    expect(res.body.statusCounts).toEqual({ active: 1 });
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain("their-asset-fingerprint");
+    expect(serialised).not.toContain("secrets/their_key.py");
+  });
+
   it("GET /api/projects/:id/findings returns nothing for another organisation's project", async () => {
     const res = await auth(request.get(`/api/projects/${theirs.projectId}/findings`));
     expect(res.status).toBe(200);
@@ -377,6 +528,193 @@ describe("addressing another organisation's row by id is indistinguishable from 
 
     const after = await countTheirScans();
     expect(after).toEqual(before);
+  });
+
+  it("POST /api/projects/:id/dependencies naming another organisation's project writes nothing", async () => {
+    // `assets` has no foreign key to `projects` at all — the association is
+    // the `project:<id>:` prefix this route writes into `location`. So there
+    // is no database-level check to fall back on: without the in-scope parent
+    // lookup, this request would create real, RLS-stamped assets attributed
+    // to a project the caller cannot see, and the D3 meter for that project
+    // would then count a surface examined by a stranger.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirDependencyAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'dependency'`,
+        ),
+      );
+    const before = await countTheirDependencyAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/dependencies`).send({
+        files: [{ path: "pnpm-lock.yaml", content: "packages:\n\n  node-rsa@1.1.1:\n    resolution: {integrity: sha512-x==}\n" }],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirDependencyAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("POST /api/projects/:id/certificates naming another organisation's project writes nothing", async () => {
+    // Same shape as the dependency proof above, one surface over: `assets`
+    // has no foreign key to `projects`, so only the in-scope parent lookup
+    // stands between this request and a real, RLS-stamped asset attributed to
+    // a project the caller cannot see.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirCertificateAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'certificate'`,
+        ),
+      );
+    const before = await countTheirCertificateAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/certificates`).send({
+        files: [{ path: "cert.pem", content: testCertPem }],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirCertificateAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("POST /api/projects/:id/tls naming another organisation's project writes nothing", async () => {
+    // The submitted target is loopback, which the SSRF guard refuses before
+    // any socket is opened — deliberately, so this test needs no real TLS
+    // server and stays fast and deterministic. The point under test is the
+    // parent-visibility check, not the probe itself; `tls-ssrf-guard.test.ts`
+    // and the e2e spec cover the probe.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirTlsAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'tls'`,
+        ),
+      );
+    const before = await countTheirTlsAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/tls`).send({
+        targets: [{ host: "127.0.0.1", port: 1 }],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirTlsAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("GET /api/projects/:id/certificates → 404 for another organisation's project, not their certificate inventory", async () => {
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/certificates`));
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/projects/:id/protocol-config naming another organisation's project writes nothing", async () => {
+    // Same shape as the three proofs above, one surface over. The submitted
+    // file IS a valid sshd_config declaring a real algorithm, so a missing
+    // parent check would produce a genuine `config` asset attributed to a
+    // project the caller cannot see — the failure has to be reachable for the
+    // test to prove anything.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirConfigAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'config'`,
+        ),
+      );
+    const before = await countTheirConfigAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/protocol-config`).send({
+        files: [{ path: "etc/ssh/sshd_config", content: "HostKeyAlgorithms ssh-rsa\n" }],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirConfigAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("POST /api/projects/:id/kms naming another organisation's project writes nothing", async () => {
+    // Same shape again, and the submitted key deliberately resolves — an
+    // `RSA_4096` AWS spec that `kms-key-specs.json` genuinely carries. A
+    // submission the collector could not classify would make this assertion
+    // true for the wrong reason (nothing was written because nothing was
+    // classifiable), rather than because the in-scope parent check refused it.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirKmsAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'kms'`,
+        ),
+      );
+    const before = await countTheirKmsAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/kms`).send({
+        keys: [{ provider: "aws-kms", keyId: "arn:aws:kms:eu-west-2:1:key/theirs", keySpec: "RSA_4096" }],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirKmsAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("GET /api/projects/:id/kms → 404 for another organisation's project, not their key inventory", async () => {
+    // A key inventory names every key a customer holds — as bad a thing to
+    // leak across a tenant boundary as the CBOM.
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/kms`));
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/projects/:id/data-at-rest naming another organisation's project writes nothing", async () => {
+    // Same shape again, with one addition worth stating: this route also
+    // persists a caller-supplied `dataClassification` onto the asset, so a
+    // successful cross-tenant write would let one organisation assert how long
+    // another's data has to stay secret — an input the risk engine then uses.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirDataAtRestAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'data-at-rest'`,
+        ),
+      );
+    const before = await countTheirDataAtRestAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/data-at-rest`).send({
+        stores: [
+          {
+            storeId: "billing",
+            engine: "postgresql",
+            encryptionState: "encrypted",
+            dataEncryption: { algorithm: "AES-256-CBC" },
+            keyProtection: { algorithm: "RSA-2048" },
+            dataClassification: "regulated",
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirDataAtRestAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("GET /api/projects/:id/data-at-rest → 404 for another organisation's project, not their store inventory", async () => {
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/data-at-rest`));
+    expect(res.status).toBe(404);
   });
 });
 
@@ -485,5 +823,116 @@ describe("writes land in the caller's organisation, never anywhere else", () => 
       executeRows<{ n: number }>(tx, sql`select count(*)::int as n from assets where location like ${assetPrefix}`),
     );
     expect(mine[0].n).toBeGreaterThan(0);
+  });
+});
+
+describe("multiple API keys bind to multiple organisations (F1)", () => {
+  /**
+   * Everything above this point uses one key (`API_KEY`, bound to `OUR_ORG`)
+   * against fixtures in `OTHER_ORG`. That alone would still pass if the
+   * server only ever supported a single key-to-org binding — it says nothing
+   * about whether a *second*, independently-configured key resolves to a
+   * *different* organisation rather than either erroring or quietly reusing
+   * the first key's binding. These tests exist to make exactly that leak
+   * fail: `SECOND_API_KEY` is bound to `THIRD_ORG`, a organisation neither
+   * `API_KEY` nor its fixtures have any relationship to.
+   */
+
+  it("the second key reaches its own organisation and none of the other two", async () => {
+    const res = await auth2(request.get("/api/projects"));
+    expect(res.status).toBe(200);
+    expect(res.body.map((p: { name: string }) => p.name)).toEqual(["third organisation's project"]);
+  });
+
+  it("the second key cannot address the first key's organisation's project by id — 404, not 403", async () => {
+    const res = await auth2(request.get(`/api/projects/${ours.projectId}`));
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "Project not found" });
+  });
+
+  it("the second key cannot address the fixture organisation's project by id either", async () => {
+    const res = await auth2(request.get(`/api/projects/${theirs.projectId}`));
+    expect(res.status).toBe(404);
+  });
+
+  it("the FIRST key cannot address the SECOND key's organisation's project — the binding is symmetric", async () => {
+    const res = await auth(request.get(`/api/projects/${theirsToo.projectId}`));
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "Project not found" });
+  });
+
+  it("a project the second key creates lands in THIRD_ORG, invisible to the first key, and disappears from neither existing organisation's count", async () => {
+    const beforeOurs = await auth(request.get("/api/projects"));
+    const beforeCount = beforeOurs.body.length;
+
+    const created = await auth2(
+      request.post("/api/projects").send({ name: "third org new project", language: "python", code: "z = 1" }),
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.organizationId).toBe(THIRD_ORG);
+
+    // The first key's list is exactly what it was — not stamped with the
+    // third organisation's new row, and not missing anything.
+    const afterOurs = await auth(request.get("/api/projects"));
+    expect(afterOurs.body).toHaveLength(beforeCount);
+    expect(afterOurs.body.map((p: { name: string }) => p.name)).not.toContain("third org new project");
+
+    // Verified from outside either scope, the same way the rest of this file
+    // verifies writes: this is the row's real organisation, not an
+    // agreement between two reads that both trust the same broken binding.
+    const stamped = await testScope.withOrg({ organizationId: THIRD_ORG, userId: "" }, (tx) =>
+      executeRows<{ n: number }>(
+        tx,
+        sql`select count(*)::int as n from projects where name = 'third org new project'`,
+      ),
+    );
+    expect(stamped).toEqual([{ n: 1 }]);
+  });
+
+  it("an unrecognised key is still 401, unaffected by there now being two valid ones", async () => {
+    const res = await request
+      .get("/api/projects")
+      .set("X-API-Key", "not-one-of-the-configured-keys-at-all-000000000");
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("the vendor register is tenant-private (B9)", () => {
+  /**
+   * Written entirely against the two keys already configured above rather than
+   * against the shared fixture, so it seeds nothing another test can see.
+   *
+   * The stake is specific to this register: a vendor assessment names a real
+   * supplier relationship and records what that supplier admitted about its own
+   * cryptography. Leaking one across a tenant boundary discloses both a
+   * commercial relationship and a third party's weakness to a company that has
+   * no business knowing either.
+   */
+  it("an assessment one key creates is invisible to the other key, by list and by id", async () => {
+    const created = await auth(
+      request.post("/api/vendor-assessments").send({
+        vendorName: "Acme Payments — our supplier, nobody else's",
+        cryptoDisclosed: "RSA-2048 signing keys",
+      }),
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.organizationId).toBe(OUR_ORG);
+
+    const theirList = await auth2(request.get("/api/vendor-assessments"));
+    expect(theirList.status).toBe(200);
+    expect(JSON.stringify(theirList.body)).not.toContain("Acme Payments");
+    // The disclosed cryptography specifically — the third party's weakness.
+    expect(JSON.stringify(theirList.body)).not.toContain("RSA-2048 signing keys");
+
+    // 404, not 403: a 403 would confirm the row is real and therefore that the
+    // relationship exists, which is itself the disclosure.
+    const byId = await auth2(request.get(`/api/vendor-assessments/${created.body.id}`));
+    expect(byId.status).toBe(404);
+
+    // Nor can the other key edit or delete it out from under us.
+    expect((await auth2(request.patch(`/api/vendor-assessments/${created.body.id}`).send({ notes: "x" }))).status).toBe(404);
+    await auth2(request.delete(`/api/vendor-assessments/${created.body.id}`));
+    const stillOurs = await auth(request.get(`/api/vendor-assessments/${created.body.id}`));
+    expect(stillOurs.status).toBe(200);
   });
 });

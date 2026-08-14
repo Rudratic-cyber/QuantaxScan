@@ -22,6 +22,7 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Coverage Summariser Suite** | Vitest | `artifacts/api-server/src/lib/coverage.test.ts` | Pure — no database, no HTTP |
 | **Posture Timeline Suite** | Vitest | `artifacts/api-server/src/lib/posture-timeline.test.ts` | Pure — no database, `now` injected (D7's whole subject is time) |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts`, `tests/ui/timeline-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
+| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (twelve files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
 | **Continuous Integration** | GitHub Actions | `.github/workflows/ci.yml` | Ubuntu runner (`ubuntu-latest`) |
 
 The UI suite always starts its own Vite dev server (`reuseExistingServer: false`) so it can never
@@ -69,7 +70,8 @@ What each covers:
 | `artifacts/api-server/src/openapi-drift.test.ts` | `lib/api-spec/openapi.yaml` describes the server that exists: every mounted route is documented, no documented route is missing from Express, and `security: []` agrees with `PUBLIC_ROUTES` **in both directions** — documenting a protected route as public tells every consumer of the generated client that no key is needed. Reads the Express route table with the database stubbed, so it costs ~3 seconds rather than a pglite boot |
 | `artifacts/api-server/src/lib/coverage.test.ts` | D3's honesty rules, as arithmetic: a failed collection run is not coverage · examined-and-found-nothing is distinct from never-examined · the confidence distribution is one point per active asset, so a re-scan cannot reweight it · the denominator stays the ten-surface catalogue even when the data contains a surface it does not know |
 | `artifacts/api-server/src/lib/posture-timeline.test.ts` | **D7's honesty rules, as arithmetic — the timeline's equivalent of `coverage.test.ts`.** One observed point per real collection instant and no others, so a regular-grid resample (which would draw a rising curve on an unchanged estate, because Z shrinks by itself) fails · runs written in one transaction collapse to one examination · a failed run puts no point on the axis · fewer than two instants sets `sufficientForTrend: false` and supplies the sentence the panel prints · Mosca is re-evaluated at each historical instant, so the same asset with the same X breaches later but not earlier · a `gone` asset stops counting at `lastSeen` without a removal date being invented · hygiene stays out of the breach counts (G-10 on the time axis) · `project:1` does not swallow `project:10` · assets with no project are counted, not dropped. **Includes a mutation proof of its own**, separate from `engine.test.ts`'s: shifting every date in cloned mapping data by seven years must move every deadline marker *and* the projection horizon. `engine.test.ts` proves the engine is data-driven; this proves D7's markers read it rather than restating a year in TypeScript. Delete it and a hardcoded date in `posture-timeline.ts` goes unnoticed |
-| `lib/collectors/src/surface-catalogue.test.ts` | The ten collector surfaces are a bijection onto `SURFACE_VALUES` plus exactly two the asset model cannot record — so an eleventh surface, or a ninth `Surface` value, fails the build rather than silently changing what "1 of 10" means |
+| `lib/collectors/src/surface-catalogue.test.ts` | The ten collector surfaces are a bijection onto `SURFACE_VALUES` plus exactly two the asset model cannot record — so an eleventh surface, or a ninth `Surface` value, fails the build rather than silently changing what the "N of 10" on the meter means |
+| `lib/collectors/src/crypto-packages.test.ts` | **The `verified`/`needs-check` discipline applied to B2's package table**, which was exempt from it for one reason only: it was TypeScript rather than data. Every `verified` claim must carry a dated, *quoted* citation — a citation without a quote is the class of unverified claim G-07 punished — and no `needs-check` claim may carry a `retrievedAt`, since dating an unverified claim buys it 180 days of looking checked, the one failure `check:standards` cannot see. Also pins the two evidence-tier confidences to the JSON, so a second copy cannot reappear in TypeScript |
 | `lib/mappings/src/engine.test.ts` | **The M2 exit criterion, as an executable check.** It clones the bundled standards data, moves RSA's disallowance from 2035 to 2040, adds an algorithm that did not exist when the file was written, and adds a new deadline-type term — then asserts the engine's output follows, with no TypeScript edit. Also: purity, `dataVersion` stamping, version-pin refusal, applicability filtering (CNSA 2.0 hidden without a matching profile), and the G-07/G-08/G-09 bucketing and copy rules |
 | `lib/risk/src/risk-profile.test.ts` + the A4 block in `artifacts/api-server/src/lib/scanner.test.ts` | A scan containing only MD5/SHA-1/AES-ECB scores **zero** post-quantum risk, and adding hygiene findings to a mixed scan does not move its score — [G-10](09-open-gaps.md#g-10--hygiene-findings-inflate-the-pqc-risk-score) as a regression, asserted both at the engine and at `computeScanResult()` where the bug lived. Every risk test injects `now`, because Z is "years remaining" and an un-pinned clock silently changes what the assertion means. |
 
@@ -185,3 +187,56 @@ The following product areas are deliberately excluded from automated test covera
      the session half — two signed-in users, membership revocation taking effect on the next
      request — arrives with sign-in. See [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §9.3 and
      §10.
+
+---
+
+## The real-stack e2e suite
+
+`tests/ui/` mocks the API and asserts the frontend. `tests/e2e/` does not mock
+anything: `global-setup.ts` starts a real PostgreSQL container, applies the real
+migrations and RLS, builds and starts the API server as `quantaxscan_app`, and
+serves the frontend from a different origin. **`page.route` must not appear
+anywhere in `tests/e2e/`** — a fixture that fabricates a response makes the
+whole exercise pointless, and `support/fixtures.ts` says so at the top.
+
+It is **not** part of `pnpm run ci --quick`. Run it directly:
+
+```
+E2E_PG_PORT=… E2E_API_PORT=… E2E_UI_PORT=… E2E_PG_CONTAINER=… E2E_DB_NAME=… \
+  pnpm exec playwright test --config playwright.e2e.config.ts
+```
+
+Every value is yours alone — the harness does `docker rm -f <container>` on
+start, so reusing another worktree's container name destroys its database
+mid-run.
+
+| Spec | What it holds down |
+|---|---|
+| `01-stack` | The stack is genuinely up: health check, cross-origin frontend, a real 401, a real authenticated read |
+| `02-dashboard-unauthenticated` | An honest refusal rather than "no data", and a 401 answered once rather than retried |
+| `03-dashboard-authenticated-empty` | An empty estate reads as empty *because the server authorised the claim*, and the timeline refuses to draw a flat line through nothing |
+| `04-certificates` (B4) | A certificate outliving every Q-Day scenario is flagged at ingest and in the persisted inventory; a chain is read past its leaf; an unreadable submission records no run |
+| `05-tls` (B3) † | A real handshake against a real `tls.createServer`; per-target outcomes never collapsed; an unreachable host is **not** marked remediated; TLS 1.3 records an undetermined key-exchange size rather than a plausible one |
+| `06-readiness` (D1) | The coverage headline on screen is the number the payload contains; an untracked factsheet section says so instead of showing a percentage; with no credential every panel refuses rather than rendering a zero |
+| `07-multi-org` (F1) ‡ | Two keys, two organisations, exact counts, and 404-not-403 in both directions |
+| `08-ot-register` (B8) | An undated fleet reads unknown, never safe; a fleet naming an algorithm reaches the inventory at attestation confidence while a prose-only one does not; clearing the claim retires the asset without deleting the fleet |
+| `09-kms` (B5) | A key store's own "size unknown" shape (Azure) records null rather than a guess, asserted at the persisted-read level |
+| `10-protocol-config` (B6) | What a config *declares*, never conflated with what B3 observed being negotiated |
+| `11-data-at-rest` (B7) | A Regulated archive reaches the risk engine with X = 25 and `xAssumed: false`; "encrypted, cipher unknown" produces no asset; a blank resubmission does not retire a recorded cipher |
+| `12-vendor` (B9) | A vendor's claim never reads as an observation; "no clause" and "nobody read the contract" stay distinguishable in both directions |
+
+† needs `QUANTAXSCAN_TLS_PROBE_ALLOW_PRIVATE_TARGETS=1` — it must handshake with
+a server on loopback, which production correctly refuses.
+‡ needs `E2E_SECOND_ORG=1` — global setup creates the second organisation and
+its key only on that flag.
+
+Both specs `test.skip` on their own flag **with the reason printed**, so a bare
+`playwright test` run stays green and says what it skipped. A spec that fails
+the default suite over configuration, and one that skips silently, are both
+wrong.
+
+**The suite raises the S6/S7 rate-limit budgets for its own stack**
+(`global-setup.ts`). At twelve spec files it makes several hundred requests from
+one address inside the limiter's five-minute window, so it began rate-limiting
+itself; no e2e spec asserts 429, and the limiter's real behaviour is proven in
+`rate-limit.test.ts` and `rate-limit-edge.test.ts`.

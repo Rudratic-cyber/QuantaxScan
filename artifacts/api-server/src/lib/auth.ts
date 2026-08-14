@@ -90,8 +90,11 @@ function isPublic(method: string, path: string): boolean {
 
 /**
  * Extracts the presented key from `Authorization: Bearer <key>` or `X-API-Key`.
+ *
+ * Exported for the rate limiter, which keys its per-principal buckets on the
+ * digest of this value. It must never be logged or returned.
  */
-function presentedKey(headers: {
+export function presentedKey(headers: {
   authorization?: string;
   "x-api-key"?: string | string[];
 }): string | null {
@@ -106,15 +109,34 @@ function presentedKey(headers: {
   return value?.trim() || null;
 }
 
-function isValidKey(presented: string): boolean {
+/** How many keys are configured. Exported so a binding built elsewhere (one
+ * entry per key, e.g. `principal.ts`'s organisation map) can validate its own
+ * length against this without re-parsing the environment variable itself. */
+export const CONFIGURED_KEY_COUNT = configuredKeys.length;
+
+/**
+ * The index into the configured key list of the key that matches `presented`,
+ * or `null` if none does. Never returns the key itself — callers get a
+ * position, not the secret.
+ *
+ * Loops over every configured digest regardless of an earlier match, for the
+ * same reason `isValidKey` below does: once more than one key is configured,
+ * *which* key matched is exactly the information a timing side-channel would
+ * leak if the loop stopped early.
+ */
+export function matchedKeyIndex(presented: string): number | null {
   const presentedDigest = sha256(presented);
   // Digests are always 32 bytes, so timingSafeEqual cannot throw on a length
   // mismatch the way it would when comparing the raw keys.
-  let matched = false;
-  for (const digest of keyDigests) {
-    if (timingSafeEqual(presentedDigest, digest)) matched = true;
-  }
+  let matched: number | null = null;
+  keyDigests.forEach((digest, index) => {
+    if (timingSafeEqual(presentedDigest, digest)) matched = index;
+  });
   return matched;
+}
+
+function isValidKey(presented: string): boolean {
+  return matchedKeyIndex(presented) !== null;
 }
 
 /**

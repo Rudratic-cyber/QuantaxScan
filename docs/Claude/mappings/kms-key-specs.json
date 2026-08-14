@@ -1,0 +1,849 @@
+{
+  "schemaVersion": "1.0.0",
+  "dataVersion": "1.0.0",
+  "description": "B5's managed key-store spec -> algorithm table. Each entry answers one question: if a KMS reports a key under this provider-native spec string, which algorithm and which stated key size does the provider's own documentation say it is? Data, not code, for the same reasons crypto-packages.json is (C1's rule, and check:standards polices its retrievedAt dates).",
+  "criticalCaveat": "This table reports what a key IS, never what it protects. A KMS export lists the keys the provider holds; it does not say which data, service or TLS endpoint each key stands behind, and nothing here should be read as a claim about blast radius. It is also second-hand evidence: the submitter's export is taken at its word, and no credential ever reaches this product to check it against the live key store.",
+  "curationRules": [
+    "`algorithm` must be a canonicalName in algorithms.json, so algorithm-mapping.ts resolves severity, replacement and standard for it at read time. Asserted in algorithm-mapping.test.ts.",
+    "A key spec whose primitive algorithms.json does not catalogue gets `algorithm: null` and a `noAlgorithmReason`, NOT the nearest catalogued name. The key is still counted and named in the ingest response, so a KMS holding only HMAC keys reads as 'examined, nothing reportable found' rather than as un-examined. Inferring AES from Azure's `kty: oct` is the same manufactured finding crypto-packages.json refuses for JWT libraries.",
+    "`keySize` is the size the provider's own documentation states for the spec. Where the spec does not state one (Azure `kty`, Vault `hmac`, every post-quantum parameter set) it is null — never an assumed default. G-05.",
+    "`retrievedAt` lives once per provider, on the documentation page that was actually opened, not once per spec row. Four pages were read; dating eighty-odd rows individually would claim eighty-odd retrievals that never happened.",
+    "Curve bit sizes are NOT duplicated here for providers that name a curve in a separate field (Azure `crv`). Those resolve through named-curves.ts, which every other collector already uses — one curve name means one bit size across every surface."
+  ],
+  "statusValues": {
+    "verified": "A verbatim quote from the provider's own documentation supports the claim, read on the provider's `retrievedAt`. It does NOT mean the key was inspected: this product never holds a credential for the key store.",
+    "needs-check": "No supporting quote was obtained. Carries no `retrievedAt`, because there is no re-verification date to age out — dating an unverified claim is exactly the failure check:standards cannot see."
+  },
+  "providers": {
+    "aws-kms": {
+      "name": "AWS KMS",
+      "keySpecField": "KeySpec (the DescribeKey/CreateKey response field; the CustomerMasterKeySpec member carries the same value and is deprecated)",
+      "keyIdField": "KeyArn, or KeyId within a single account and region",
+      "citation": {
+        "document": "AWS Key Management Service Developer Guide — Key spec reference",
+        "url": "https://docs.aws.amazon.com/kms/latest/developerguide/asymmetric-key-specs.html",
+        "retrievedAt": "2026-08-14"
+      },
+      "note": "In China Regions SYMMETRIC_DEFAULT is a 128-bit SM4 key, not AES-256 — quoted below. This table cannot tell the two apart from a key spec string alone, so a China-Region export is mis-sized by it; the region is recorded on the observation so a reader can see which case they are in. Tracked in the report's Pending list."
+    },
+    "gcp-kms": {
+      "name": "Google Cloud KMS",
+      "keySpecField": "CryptoKeyVersion.algorithm",
+      "keyIdField": "The CryptoKeyVersion resource name (projects/…/locations/…/keyRings/…/cryptoKeys/…/cryptoKeyVersions/…)",
+      "citation": {
+        "document": "Google Cloud KMS REST reference — CryptoKeyVersionAlgorithm enum",
+        "url": "https://docs.cloud.google.com/kms/docs/reference/rest/v1/CryptoKeyVersionAlgorithm",
+        "retrievedAt": "2026-08-14"
+      }
+    },
+    "azure-key-vault": {
+      "name": "Azure Key Vault / Managed HSM",
+      "keySpecField": "JsonWebKey.kty",
+      "keyIdField": "JsonWebKey.kid",
+      "citation": {
+        "document": "Azure Key Vault REST API — Get Key (JsonWebKeyType / JsonWebKeyCurveName definitions), api-version 2025-07-01",
+        "url": "https://learn.microsoft.com/en-us/rest/api/keyvault/keys/get-key/get-key",
+        "retrievedAt": "2026-08-14"
+      },
+      "note": "Azure is the reason this table resolves a curve separately from a key spec. A JsonWebKey states `kty` and, for EC, `crv` — but it has NO key_size member (the RSA modulus length is only implicit in the base64url `n`), and the list-keys operation returns only `kid` and `attributes`. So an Azure RSA key legitimately arrives with a known algorithm and NO stated size, and this table records null for it rather than assuming 2048. That is G-05 in its purest form."
+    },
+    "hashicorp-vault": {
+      "name": "HashiCorp Vault (transit secrets engine)",
+      "keySpecField": "type (the value returned by `vault read transit/keys/<name>`)",
+      "keyIdField": "The key name, qualified by its mount path",
+      "citation": {
+        "document": "HashiCorp Vault API docs — Transit secrets engine, Create key `type` parameter",
+        "url": "https://developer.hashicorp.com/vault/api-docs/secret/transit",
+        "retrievedAt": "2026-08-14"
+      }
+    }
+  },
+  "keySpecs": [
+    {
+      "provider": "aws-kms",
+      "keySpec": "SYMMETRIC_DEFAULT",
+      "algorithm": "AES",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "SYMMETRIC_DEFAULT represents AES-256-GCM, a symmetric algorithm based on Advanced Encryption Standard (AES) in Galois Counter Mode (GCM) with 256-bit keys, an industry standard for secure encryption.",
+      "rationale": "The spec name states nothing about the algorithm; the guide does. Outside China Regions this is AES-256 — see the provider note for the China-Region SM4 exception."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "RSA_2048",
+      "algorithm": "RSA",
+      "keySize": 2048,
+      "status": "verified",
+      "quote": "RSA key specs differ by the length of the RSA key in bits.",
+      "rationale": "The spec name states the modulus length directly: RSA_2048 is a 2048-bit RSA key."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "RSA_3072",
+      "algorithm": "RSA",
+      "keySize": 3072,
+      "status": "verified",
+      "quote": "RSA key specs differ by the length of the RSA key in bits.",
+      "rationale": "The spec name states the modulus length directly: RSA_3072 is a 3072-bit RSA key."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "RSA_4096",
+      "algorithm": "RSA",
+      "keySize": 4096,
+      "status": "verified",
+      "quote": "RSA key specs differ by the length of the RSA key in bits.",
+      "rationale": "The spec name states the modulus length directly: RSA_4096 is a 4096-bit RSA key."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "ECC_NIST_P256",
+      "algorithm": "ECDSA",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "ECC_NIST_P256 (secp256r1)",
+      "rationale": "The guide names the curve (secp256r1); its parameter size is 256 bits, the same value named-curves.ts resolves for it. The supported signing algorithm the guide lists for this spec is ECDSA."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "ECC_NIST_P384",
+      "algorithm": "ECDSA",
+      "keySize": 384,
+      "status": "verified",
+      "quote": "ECC_NIST_P384 (secp384r1)",
+      "rationale": "The guide names the curve (secp384r1); its parameter size is 384 bits, the same value named-curves.ts resolves for it. The supported signing algorithm the guide lists for this spec is ECDSA."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "ECC_NIST_P521",
+      "algorithm": "ECDSA",
+      "keySize": 521,
+      "status": "verified",
+      "quote": "ECC_NIST_P521 (secp521r1)",
+      "rationale": "The guide names the curve (secp521r1); its parameter size is 521 bits, the same value named-curves.ts resolves for it. The supported signing algorithm the guide lists for this spec is ECDSA."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "ECC_SECG_P256K1",
+      "algorithm": "ECDSA",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "ECC_SECG_P256K1 (secp256k1), commonly used for cryptocurrency.",
+      "rationale": "secp256k1 is a 256-bit curve; the guide's signing-algorithm table gives ECDSA_SHA_256 for this spec."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "ECC_NIST_EDWARDS25519",
+      "algorithm": "EdDSA",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "ECC_NIST_EDWARDS25519 (ed25519) - signing and verification only",
+      "rationale": "Ed25519 is a 256-bit curve (the same value named-curves.ts resolves for ed25519); the guide's signing-algorithm table gives ED25519_SHA_512, an EdDSA signature."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "SM2",
+      "algorithm": null,
+      "keySize": 256,
+      "status": "verified",
+      "quote": "The SM2 key spec is an elliptic curve key spec defined within the GM/T series of specifications published by China's Office of State Commercial Cryptography Administration (OSCCA).",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for. SM2 is elliptic-curve and therefore Shor-vulnerable in principle, but stating that here would be this table asserting a cryptanalytic claim rather than quoting a source.",
+      "rationale": "SM2 is a 256-bit elliptic-curve spec, so its parameter size is reportable even though its algorithm is not catalogued."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "HMAC_224",
+      "algorithm": null,
+      "keySize": 224,
+      "status": "verified",
+      "quote": "AWS KMS supports symmetric HMAC keys in varying lengths. … The length of the key determines the MAC algorithm that is used in GenerateMac and VerifyMac operations.",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "The spec name states the key length (224 bits), which is reported even though the algorithm is not catalogued."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "HMAC_256",
+      "algorithm": null,
+      "keySize": 256,
+      "status": "verified",
+      "quote": "AWS KMS supports symmetric HMAC keys in varying lengths. … The length of the key determines the MAC algorithm that is used in GenerateMac and VerifyMac operations.",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "The spec name states the key length (256 bits), which is reported even though the algorithm is not catalogued."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "HMAC_384",
+      "algorithm": null,
+      "keySize": 384,
+      "status": "verified",
+      "quote": "AWS KMS supports symmetric HMAC keys in varying lengths. … The length of the key determines the MAC algorithm that is used in GenerateMac and VerifyMac operations.",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "The spec name states the key length (384 bits), which is reported even though the algorithm is not catalogued."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "HMAC_512",
+      "algorithm": null,
+      "keySize": 512,
+      "status": "verified",
+      "quote": "AWS KMS supports symmetric HMAC keys in varying lengths. … The length of the key determines the MAC algorithm that is used in GenerateMac and VerifyMac operations.",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "The spec name states the key length (512 bits), which is reported even though the algorithm is not catalogued."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "ML_DSA_44",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "An ML-DSA key is a cryptographic key used in the Module-Lattice-Based Digital Signature Algorithm (ML-DSA), which is designed for post-quantum cryptography.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "ML-DSA parameter sets are not keyed by a bit length, so no key size is reported rather than a fabricated one."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "ML_DSA_65",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "An ML-DSA key is a cryptographic key used in the Module-Lattice-Based Digital Signature Algorithm (ML-DSA), which is designed for post-quantum cryptography.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "ML-DSA parameter sets are not keyed by a bit length, so no key size is reported rather than a fabricated one."
+    },
+    {
+      "provider": "aws-kms",
+      "keySpec": "ML_DSA_87",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "An ML-DSA key is a cryptographic key used in the Module-Lattice-Based Digital Signature Algorithm (ML-DSA), which is designed for post-quantum cryptography.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "ML-DSA parameter sets are not keyed by a bit length, so no key size is reported rather than a fabricated one."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "GOOGLE_SYMMETRIC_ENCRYPTION",
+      "algorithm": "AES",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "This algorithm uses 256-bit Advanced Encryption Standard (AES-256) keys in Galois Counter Mode (GCM), padded with Cloud KMS-internal metadata.",
+      "rationale": "The enum name states neither the algorithm nor the size; the algorithms page does. This is the entry a citation actually earns its keep on."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "EXTERNAL_SYMMETRIC_ENCRYPTION",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Algorithm representing symmetric encryption by an external key manager.",
+      "noAlgorithmReason": "Cloud KMS does not state which algorithm the external key manager uses. The key is real and is counted, but naming an algorithm for it would be a guess about a system this export cannot see.",
+      "rationale": "Cloud KMS states only that an external manager holds the key. Neither the algorithm nor the size is knowable from Cloud KMS, so both are null."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "AES_128_GCM",
+      "algorithm": "AES",
+      "keySize": 128,
+      "status": "verified",
+      "quote": "AES-GCM (Galois Counter Mode) using 128-bit keys.",
+      "rationale": "The enum's own description states AES and the 128-bit key length."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "AES_256_GCM",
+      "algorithm": "AES",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "AES-GCM (Galois Counter Mode) using 256-bit keys.",
+      "rationale": "The enum's own description states AES and the 256-bit key length."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "AES_128_CBC",
+      "algorithm": "AES",
+      "keySize": 128,
+      "status": "verified",
+      "quote": "AES-CBC (Cipher Block Chaining Mode) using 128-bit keys.",
+      "rationale": "The enum's own description states AES and the 128-bit key length."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "AES_256_CBC",
+      "algorithm": "AES",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "AES-CBC (Cipher Block Chaining Mode) using 256-bit keys.",
+      "rationale": "The enum's own description states AES and the 256-bit key length."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "AES_128_CTR",
+      "algorithm": "AES",
+      "keySize": 128,
+      "status": "verified",
+      "quote": "AES-CTR (Counter Mode) using 128-bit keys.",
+      "rationale": "The enum's own description states AES and the 128-bit key length."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "AES_256_CTR",
+      "algorithm": "AES",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "AES-CTR (Counter Mode) using 256-bit keys.",
+      "rationale": "The enum's own description states AES and the 256-bit key length."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "AES_256_KWP",
+      "algorithm": "AES",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "AES key wrap with zero padding algorithm (RFC 5649).",
+      "rationale": "The enum's own description states AES; the name states the 256-bit key length."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_PSS_2048_SHA256",
+      "algorithm": "RSA",
+      "keySize": 2048,
+      "status": "verified",
+      "quote": "RSASSA-PSS 2048 bit key with a SHA256 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_PSS_3072_SHA256",
+      "algorithm": "RSA",
+      "keySize": 3072,
+      "status": "verified",
+      "quote": "RSASSA-PSS 3072 bit key with a SHA256 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_PSS_4096_SHA256",
+      "algorithm": "RSA",
+      "keySize": 4096,
+      "status": "verified",
+      "quote": "RSASSA-PSS 4096 bit key with a SHA256 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_PSS_4096_SHA512",
+      "algorithm": "RSA",
+      "keySize": 4096,
+      "status": "verified",
+      "quote": "RSASSA-PSS 4096 bit key with a SHA512 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_PKCS1_2048_SHA256",
+      "algorithm": "RSA",
+      "keySize": 2048,
+      "status": "verified",
+      "quote": "RSASSA-PKCS1-v1_5 with a 2048 bit key and a SHA256 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_PKCS1_3072_SHA256",
+      "algorithm": "RSA",
+      "keySize": 3072,
+      "status": "verified",
+      "quote": "RSASSA-PKCS1-v1_5 with a 3072 bit key and a SHA256 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_PKCS1_4096_SHA256",
+      "algorithm": "RSA",
+      "keySize": 4096,
+      "status": "verified",
+      "quote": "RSASSA-PKCS1-v1_5 with a 4096 bit key and a SHA256 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_PKCS1_4096_SHA512",
+      "algorithm": "RSA",
+      "keySize": 4096,
+      "status": "verified",
+      "quote": "RSASSA-PKCS1-v1_5 with a 4096 bit key and a SHA512 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_RAW_PKCS1_2048",
+      "algorithm": "RSA",
+      "keySize": 2048,
+      "status": "verified",
+      "quote": "RSASSA-PKCS1-v1_5 signing without encoding, with a 2048 bit key.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_RAW_PKCS1_3072",
+      "algorithm": "RSA",
+      "keySize": 3072,
+      "status": "verified",
+      "quote": "RSASSA-PKCS1-v1_5 signing without encoding, with a 3072 bit key.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_SIGN_RAW_PKCS1_4096",
+      "algorithm": "RSA",
+      "keySize": 4096,
+      "status": "verified",
+      "quote": "RSASSA-PKCS1-v1_5 signing without encoding, with a 4096 bit key.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_DECRYPT_OAEP_2048_SHA256",
+      "algorithm": "RSA",
+      "keySize": 2048,
+      "status": "verified",
+      "quote": "RSAES-OAEP 2048 bit key with a SHA256 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_DECRYPT_OAEP_3072_SHA256",
+      "algorithm": "RSA",
+      "keySize": 3072,
+      "status": "verified",
+      "quote": "RSAES-OAEP 3072 bit key with a SHA256 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_DECRYPT_OAEP_4096_SHA256",
+      "algorithm": "RSA",
+      "keySize": 4096,
+      "status": "verified",
+      "quote": "RSAES-OAEP 4096 bit key with a SHA256 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_DECRYPT_OAEP_4096_SHA512",
+      "algorithm": "RSA",
+      "keySize": 4096,
+      "status": "verified",
+      "quote": "RSAES-OAEP 4096 bit key with a SHA512 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_DECRYPT_OAEP_2048_SHA1",
+      "algorithm": "RSA",
+      "keySize": 2048,
+      "status": "verified",
+      "quote": "RSAES-OAEP 2048 bit key with a SHA1 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_DECRYPT_OAEP_3072_SHA1",
+      "algorithm": "RSA",
+      "keySize": 3072,
+      "status": "verified",
+      "quote": "RSAES-OAEP 3072 bit key with a SHA1 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "RSA_DECRYPT_OAEP_4096_SHA1",
+      "algorithm": "RSA",
+      "keySize": 4096,
+      "status": "verified",
+      "quote": "RSAES-OAEP 4096 bit key with a SHA1 digest.",
+      "rationale": "RSASSA-PSS, RSASSA-PKCS1-v1_5 and RSAES-OAEP are all RSA — the same aliases algorithms.json lists under the RSA canonical name. The digest in the enum name is the padding/signature hash, not the key, and is not reported as a separate finding."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "EC_SIGN_P256_SHA256",
+      "algorithm": "ECDSA",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "ECDSA on the NIST P-256 curve with a SHA256 digest.",
+      "rationale": "The enum's own description states ECDSA and the curve; P-256 is 256 bits."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "EC_SIGN_P384_SHA384",
+      "algorithm": "ECDSA",
+      "keySize": 384,
+      "status": "verified",
+      "quote": "ECDSA on the NIST P-384 curve with a SHA384 digest.",
+      "rationale": "The enum's own description states ECDSA and the curve; P-384 is 384 bits."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "EC_SIGN_SECP256K1_SHA256",
+      "algorithm": "ECDSA",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "ECDSA on the non-NIST secp256k1 curve.",
+      "rationale": "The enum's own description states ECDSA and the curve; secp256k1 is 256 bits."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "EC_SIGN_ED25519",
+      "algorithm": "EdDSA",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "EdDSA on the Curve25519 in pure mode (taking data as input).",
+      "rationale": "The enum's own description states EdDSA; Curve25519 is 256 bits, the value named-curves.ts resolves for it."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "HMAC_SHA1",
+      "algorithm": null,
+      "keySize": 160,
+      "status": "verified",
+      "quote": "HMAC-SHA1 signing with a 160 bit key.",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "The enum's own description states the key length, which is reported even though HMAC is not catalogued."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "HMAC_SHA224",
+      "algorithm": null,
+      "keySize": 224,
+      "status": "verified",
+      "quote": "HMAC-SHA224 signing with a 224 bit key.",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "The enum's own description states the key length, which is reported even though HMAC is not catalogued."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "HMAC_SHA256",
+      "algorithm": null,
+      "keySize": 256,
+      "status": "verified",
+      "quote": "HMAC-SHA256 signing with a 256 bit key.",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "The enum's own description states the key length, which is reported even though HMAC is not catalogued."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "HMAC_SHA384",
+      "algorithm": null,
+      "keySize": 384,
+      "status": "verified",
+      "quote": "HMAC-SHA384 signing with a 384 bit key.",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "The enum's own description states the key length, which is reported even though HMAC is not catalogued."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "HMAC_SHA512",
+      "algorithm": null,
+      "keySize": 512,
+      "status": "verified",
+      "quote": "HMAC-SHA512 signing with a 512 bit key.",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "The enum's own description states the key length, which is reported even though HMAC is not catalogued."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "ML_KEM_768",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "ML-KEM-768 (FIPS 203)",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "ML_KEM_1024",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "ML-KEM-1024 (FIPS 203)",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "KEM_XWING",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "X-Wing hybrid KEM combining ML-KEM-768 with X25519.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "PQ_SIGN_ML_DSA_44",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Post-quantum Module-Lattice-Based Digital Signature Algorithm, level 1.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "PQ_SIGN_ML_DSA_65",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Post-quantum Module-Lattice-Based Digital Signature Algorithm, level 3.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "PQ_SIGN_ML_DSA_87",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Post-quantum Module-Lattice-Based Digital Signature Algorithm, level 5.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "PQ_SIGN_SLH_DSA_SHA2_128S",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Post-quantum stateless hash-based digital signature algorithm, level 1.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "PQ_SIGN_HASH_SLH_DSA_SHA2_128S_SHA256",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Post-quantum stateless hash-based signature algorithm supporting SHA256.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "PQ_SIGN_ML_DSA_44_EXTERNAL_MU",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Post-quantum Module-Lattice-Based Digital Signature Algorithm, level 1, supporting externally-computed message representatives.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "PQ_SIGN_ML_DSA_65_EXTERNAL_MU",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Post-quantum Module-Lattice-Based Digital Signature Algorithm, level 3, supporting externally-computed message representatives.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "PQ_SIGN_ML_DSA_87_EXTERNAL_MU",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Post-quantum Module-Lattice-Based Digital Signature Algorithm, level 5, supporting externally-computed message representatives.",
+      "noAlgorithmReason": "This is a NIST post-quantum algorithm — it is the destination of a migration, not a finding. algorithms.json catalogues algorithms that need replacing and has no entry for it, so no observation is emitted; the key is still counted and named in the response.",
+      "rationale": "Parameter sets are not keyed by a bit length, so no key size is reported."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "KEM_ECDH_P256",
+      "algorithm": "ECDH/DH",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "Key encapsulation: Elliptic Curve Diffie-Hellman with NIST P-256 key.",
+      "rationale": "The enum's own description states Elliptic Curve Diffie-Hellman, an ECDH alias in algorithms.json; P-256 is 256 bits."
+    },
+    {
+      "provider": "gcp-kms",
+      "keySpec": "KEM_ECDH_P384",
+      "algorithm": "ECDH/DH",
+      "keySize": 384,
+      "status": "verified",
+      "quote": "Key encapsulation: Elliptic Curve Diffie-Hellman with NIST P-384 key.",
+      "rationale": "The enum's own description states Elliptic Curve Diffie-Hellman, an ECDH alias in algorithms.json; P-384 is 384 bits."
+    },
+    {
+      "provider": "azure-key-vault",
+      "keySpec": "RSA",
+      "algorithm": "RSA",
+      "keySize": null,
+      "status": "verified",
+      "quote": "RSA (https://tools.ietf.org/html/rfc3447)",
+      "rationale": "`kty` names the algorithm and nothing else. A JsonWebKey carries no key_size member, so the size is NOT stated by the key type — null, never an assumed 2048. Supply `keySize` on the submitted entry if your export has it."
+    },
+    {
+      "provider": "azure-key-vault",
+      "keySpec": "RSA-HSM",
+      "algorithm": "RSA",
+      "keySize": null,
+      "status": "verified",
+      "quote": "RSA (https://tools.ietf.org/html/rfc3447)",
+      "rationale": "`kty` names the algorithm and nothing else. A JsonWebKey carries no key_size member, so the size is NOT stated by the key type — null, never an assumed 2048. Supply `keySize` on the submitted entry if your export has it."
+    },
+    {
+      "provider": "azure-key-vault",
+      "keySpec": "EC",
+      "algorithm": "ECDSA",
+      "keySize": null,
+      "status": "verified",
+      "quote": "Elliptic Curve.",
+      "rationale": "`kty` names the curve family; the size lives in `crv`, which this collector resolves separately through named-curves.ts. ECDSA rather than ECDH follows the same documented simplification `certificate-collector.ts` makes for an EC public key with no usable key-usage signal."
+    },
+    {
+      "provider": "azure-key-vault",
+      "keySpec": "EC-HSM",
+      "algorithm": "ECDSA",
+      "keySize": null,
+      "status": "verified",
+      "quote": "Elliptic Curve.",
+      "rationale": "`kty` names the curve family; the size lives in `crv`, which this collector resolves separately through named-curves.ts. ECDSA rather than ECDH follows the same documented simplification `certificate-collector.ts` makes for an EC public key with no usable key-usage signal."
+    },
+    {
+      "provider": "azure-key-vault",
+      "keySpec": "oct",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Octet sequence (used to represent symmetric keys)",
+      "noAlgorithmReason": "`kty: oct` says only that the key is a symmetric octet sequence. Azure Key Vault's own type system does not say whether it is AES, HMAC or anything else, and assuming AES because AES is the common case is exactly the guess this product exists not to make.",
+      "rationale": "An octet sequence states neither an algorithm nor a length."
+    },
+    {
+      "provider": "azure-key-vault",
+      "keySpec": "oct-HSM",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "Octet sequence (used to represent symmetric keys)",
+      "noAlgorithmReason": "`kty: oct` says only that the key is a symmetric octet sequence. Azure Key Vault's own type system does not say whether it is AES, HMAC or anything else, and assuming AES because AES is the common case is exactly the guess this product exists not to make.",
+      "rationale": "An octet sequence states neither an algorithm nor a length."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "aes128-gcm96",
+      "algorithm": "AES",
+      "keySize": 128,
+      "status": "verified",
+      "quote": "AES-128 wrapped with GCM using a 96-bit nonce size AEAD (symmetric, supports derivation and convergent encryption)",
+      "rationale": "The documented description states AES and the 128-bit key length."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "aes256-gcm96",
+      "algorithm": "AES",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "AES-256 wrapped with GCM using a 96-bit nonce size AEAD (symmetric, supports derivation and convergent encryption, default)",
+      "rationale": "The documented description states AES and the 256-bit key length. This is Vault transit's default type."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "chacha20-poly1305",
+      "algorithm": null,
+      "keySize": 256,
+      "status": "verified",
+      "quote": "ChaCha20-Poly1305 AEAD (symmetric, supports derivation and convergent encryption)",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "ChaCha20 is defined with a 256-bit key (RFC 8439), so the size is reportable even though the algorithm is not catalogued."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "ed25519",
+      "algorithm": "EdDSA",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "ED25519 (asymmetric, supports derivation). When using derivation, a sign operation with the same context will derive the same key and signature; this is a signing analogue to convergent_encryption.",
+      "rationale": "Ed25519 is EdDSA over a 256-bit curve — the same resolution named-curves.ts makes for the name ed25519."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "ecdsa-p256",
+      "algorithm": "ECDSA",
+      "keySize": 256,
+      "status": "verified",
+      "quote": "ECDSA using the P-256 elliptic curve (asymmetric)",
+      "rationale": "The documented description states ECDSA and the curve; P-256 is 256 bits."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "ecdsa-p384",
+      "algorithm": "ECDSA",
+      "keySize": 384,
+      "status": "verified",
+      "quote": "ECDSA using the P-384 elliptic curve (asymmetric)",
+      "rationale": "The documented description states ECDSA and the curve; P-384 is 384 bits."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "ecdsa-p521",
+      "algorithm": "ECDSA",
+      "keySize": 521,
+      "status": "verified",
+      "quote": "ECDSA using the P-521 elliptic curve (asymmetric)",
+      "rationale": "The documented description states ECDSA and the curve; P-521 is 521 bits."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "rsa-2048",
+      "algorithm": "RSA",
+      "keySize": 2048,
+      "status": "verified",
+      "quote": "RSA with bit size of 2048 (asymmetric)",
+      "rationale": "The documented description states RSA and the bit size."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "rsa-3072",
+      "algorithm": "RSA",
+      "keySize": 3072,
+      "status": "verified",
+      "quote": "RSA with bit size of 3072 (asymmetric)",
+      "rationale": "The documented description states RSA and the bit size."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "rsa-4096",
+      "algorithm": "RSA",
+      "keySize": 4096,
+      "status": "verified",
+      "quote": "RSA with bit size of 4096 (asymmetric)",
+      "rationale": "The documented description states RSA and the bit size."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "hmac",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "HMAC (HMAC generation, verification)",
+      "noAlgorithmReason": "algorithms.json catalogues the quantum-vulnerable and classical-hygiene algorithms this product reports on, and has no entry for this primitive. Naming it anyway would put an algorithm on an asset that no mapping can resolve a severity, replacement or deadline for.",
+      "rationale": "Vault's `hmac` type takes a key_size parameter that the type string does not carry, so no size is reported from the spec alone."
+    },
+    {
+      "provider": "hashicorp-vault",
+      "keySpec": "managed_key",
+      "algorithm": null,
+      "keySize": null,
+      "status": "verified",
+      "quote": "External key via Managed Keys feature (enterprise only)",
+      "noAlgorithmReason": "A Vault managed key is backed by an external HSM or cloud KMS. Vault states only that the key is external, so naming an algorithm would be a guess about a system this export cannot see.",
+      "rationale": "A managed key is held in an external HSM/KMS; Vault's transit key type states neither algorithm nor size."
+    }
+  ]
+}

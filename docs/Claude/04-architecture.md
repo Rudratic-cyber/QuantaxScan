@@ -68,7 +68,7 @@ export const assetsTable = pgTable("assets", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").notNull(),  // no FK yet — no organizations table (F2 is out of scope)
   fingerprint: text("fingerprint").notNull(),      // deterministic identity — unique per (organizationId, fingerprint), not globally
-  surface: text("surface").notNull(),              // source | dependency | tls | certificate | kms | config | ot | binary — CHECK constraint
+  surface: text("surface").notNull(),              // source | dependency | tls | certificate | kms | config | ot | binary | data-at-rest | vendor — CHECK constraint
   algorithm: text("algorithm").notNull(),
   keySize: integer("key_size"),                    // parameter size (2048, 384, ...), null when undetermined — never a guessed default. See G-05.
   location: text("location").notNull(),            // path, host:port, cert serial, key ARN
@@ -122,10 +122,13 @@ Identity must be stable across re-scans but sensitive to real change.
 | Surface | Fingerprint inputs |
 |---|---|
 | Source | `repo + path + algorithm + normalised-symbol` — **not** line number (line numbers shift on unrelated edits) |
-| Dependency | `ecosystem + package + algorithm` |
-| TLS | `host + port + algorithm` |
-| Certificate | `issuer + serial` |
-| KMS | `provider + key ARN/ID` |
+| Dependency | `repo + ecosystem + package + algorithm` — amended 2026-08-14 when B2's ingest landed; see below |
+| TLS | `repo + host + port + algorithm` — amended 2026-08-14 when B3's ingest landed, for the same reason as Dependency; see `fingerprint.ts` |
+| Certificate | `repo + issuer + serial` — amended 2026-08-14 when B4's ingest landed, for the same reason as Dependency; see `fingerprint.ts` |
+| Protocol config | `repo + path + directive + algorithm + token` — added 2026-08-14 when B6's collector landed; see below |
+| KMS | `repo + provider + key ARN/ID` — amended 2026-08-14 when B5's ingest landed, for the same reason as Dependency; see `fingerprint.ts` |
+| Data-at-rest | `repo + engine + storeId + role + algorithm` — added 2026-08-14 with B7. `role` (`data-encryption` / `key-protection`) is in the identity because a store's two crypto facts can legitimately be the same algorithm |
+| OT register | `fleet id + algorithm` — added 2026-08-14 with B8's surface ingest. The **only** variant without `repo`: a device fleet belongs to the estate, not a repository, and the register row is the identity |
 | Binary (added — see below) | `target-or-repository + packageIdentity-or-componentName + artifactPath + binaryFormat + architecture + algorithm + evidenceDiscriminator` — **not** a content digest/sha256 |
 
 **Anti-requirement:** do not include line number or file hash in the source fingerprint.
@@ -137,12 +140,37 @@ the asset the same way a reformatted source file would. Store the digest in obse
 evidence instead, where a changed digest simply records a new observation of the same asset.
 [Source: qx-sp1800-38b investigation report, §"Binary fingerprint rule".]
 
+**Why `repo` joined the dependency rule.** The original table left it out, which would have made
+one asset row stand for a package across every project in the organisation. Three mechanisms
+attribute an asset to a project by testing `assets.location` for a `project:<id>:` prefix —
+`DELETE /projects/:id`'s reconciliation, `GET /projects/:id/coverage`, and the CBOM export's
+`containedIn` join — and `location` is a single `NOT NULL` column that cannot name two projects.
+Without `repo`, deleting one project would delete a package another still depends on (or leave it
+orphaned forever), and the D3 meter would find no dependency assets for a project that has them
+and report the surface as examined-and-empty. The cost is the estate-wide dedupe: `elliptic` in
+two projects is two rows, and "who uses `elliptic`" is a `GROUP BY` rather than one asset. That is
+the right direction to trade — a query can aggregate rows, but no query can split one row back
+into the two projects it stood for. Stability is unaffected, since `repo` is `project:<id>` and
+does not change.
+
 **As built:** `computeFingerprint()` in `lib/collectors/src/fingerprint.ts` hashes (SHA-256) a
 JSON-encoded, explicitly ordered array of the fields above per surface — not a delimiter-joined
 string — so a field value that happens to contain the delimiter cannot collide two distinct
 inputs into the same fingerprint. It currently implements `source`, `dependency`, `tls`,
-`certificate`, `kms` and `binary`; `config`/`ot` have no fingerprint rule yet because no
-collector for them exists.
+`certificate`, `config`, `kms` and `binary`; `ot` has no fingerprint rule yet, and does not
+need one — B8's register is a form whose rows are fleets, not fingerprinted assets.
+
+**Why `config` is the `source` shape and carries a `token`.** A configuration file is a stable
+slot that gets edited in place, not an artefact that gets minted, so the file's path belongs in
+the identity and the asset must survive an edit that leaves the declaration alone — which is why
+it is not the `certificate` shape. `directive` is in the identity because the same token under
+two keywords is two different facts (`ssh-rsa` under `HostKeyAlgorithms` is the server's own host
+key; under `PubkeyAcceptedAlgorithms` it is a client key the server accepts, and remediating one
+does not remediate the other). `token` sits alongside `algorithm` exactly as `symbol` does for
+`source`: without it, `Ciphers aes128-ctr,aes256-ctr` collapses into one `AES` asset whose key
+size depends on list order, reporting a 128-bit and a 256-bit cipher as the same thing. The token
+is not a content digest — reformatting the file or moving the line leaves every fingerprint
+intact.
 
 ### Migration path
 

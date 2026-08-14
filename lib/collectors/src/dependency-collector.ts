@@ -1,5 +1,5 @@
-import { lookupCryptoPackage, type EvidenceTier } from "./crypto-packages";
-import { detectLockfileKind, ecosystemForLockfile, parseLockfile, purlFor, type LockfileKind } from "./lockfiles";
+import { CONFIDENCE_BY_TIER, lookupCryptoPackage, statusOf } from "./crypto-packages";
+import { detectLockfileKind, ecosystemForLockfile, parseLockfile, purlFor, type Ecosystem, type LockfileKind } from "./lockfiles";
 import { curveBitSize } from "./named-curves";
 import type { Collector, CollectorContext, CollectionTarget, RawObservation } from "./types";
 
@@ -19,39 +19,33 @@ import type { Collector, CollectorContext, CollectionTarget, RawObservation } fr
  * exactly the A2 acceptance criterion recorded as "not yet demonstrated" in
  * docs/Claude/04-architecture.md §"Acceptance for this seam".
  *
- * Not wired into ingestion by this change: `asset-ingest.ts` computes a
- * `surface: "source"` fingerprint from `repo`/`path`, so persisting
- * dependency assets needs a `surface: "dependency"` ingest path
- * (`ecosystem + package + algorithm`, per `fingerprint.ts`). That is a
- * separate change with database and route surface; this one is the collector.
+ * Wired into ingestion by `artifacts/api-server/src/lib/asset-ingest.ts`'s
+ * `ingestDependencyObservations()`, reached from
+ * `POST /api/projects/:id/dependencies`.
  */
 
 /**
- * Confidence (docs/Claude/09-open-gaps.md G-11). Two values, because a
- * lockfile match is really two claims of very different strength:
+ * Confidence (docs/Claude/09-open-gaps.md G-11) is 0.8 / 0.5 by evidence
+ * tier, and both numbers — with the reasoning behind them — now live in
+ * `docs/Claude/mappings/crypto-packages.json`'s `evidenceTiers` block rather
+ * than in this file, so moving one is a data revision (C1's rule).
  *
- *  - *The package is in the dependency graph.* Near-certain. A lockfile is
- *    machine-generated and exactly parsed — there is no equivalent of the
- *    regex collector's false positives on prose, comments or `DHCP`. That is
- *    why the higher tier sits **above** the regex collector's 0.7.
- *  - *Therefore this algorithm is used.* Depends entirely on the package.
- *    For a single-purpose library (`node-rsa`, `@noble/ed25519`) it follows
- *    almost automatically: nobody installs it for anything else. For a
- *    general-purpose library (`cryptography`, `elliptic`, `node-forge`) it
- *    genuinely does not follow — the primitive is *available*, and which of
- *    several the caller actually invokes is not visible in a lockfile.
- *
- * Hence 0.8 / 0.5. Neither approaches 1.0, which is reserved for evidence
- * that observes the algorithm in operation (a completed TLS handshake), and
- * neither is 0: static presence of a crypto library is real inventory
- * evidence, and a CISO's blind spot today is precisely the dependency tree.
+ * The 0.5 tier was re-examined when B2 was wired, because `elliptic` and
+ * `sha.js` are transitive dependencies of much of the JS toolchain and this
+ * collector therefore fires on nearly every project. It is the right number
+ * and it stays: 0.5 is a statement about the *inference*, not about how
+ * common the package is. `elliptic` genuinely offers ECDSA, EdDSA and ECDH,
+ * and a lockfile genuinely cannot say which the caller invokes — that is
+ * exactly what "one of several primitives the package offers" means. What
+ * ubiquity actually changes is a different question (is this a finding about
+ * the customer's own code?), and lowering a confidence number would be a
+ * poor way to answer it: it would understate the evidence that the library
+ * *is* shipped, which is a fact, in order to hint at something the number
+ * does not mean. That question is answered instead by the `toolchainUbiquity`
+ * flag and the caveat carried on every observation and every response — see
+ * G-20.
  */
-const CONFIDENCE_BY_TIER: Record<EvidenceTier, number> = {
-  dedicated: 0.8,
-  "multi-primitive": 0.5,
-};
-
-/** Nominal confidence for the collector as a whole — its best tier, before the per-observation adjustment above. */
+/** Nominal confidence for the collector as a whole — its best tier, before the per-observation adjustment. */
 const NOMINAL_CONFIDENCE = CONFIDENCE_BY_TIER.dedicated;
 
 /**
@@ -92,15 +86,23 @@ export function collectDependencyObservations(target: CollectionTarget): RawObse
            */
           keySize: mapped.curve ? curveBitSize(mapped.curve) : undefined,
           /**
+           * `<repo>:<purl>`, the same `<repo>:<locator>` shape the source
+           * collector emits (`${target.repo}:${file.path}`). The prefix is
+           * not decoration: `DELETE /projects/:id`, the D3 coverage meter and
+           * the CBOM export's `containedIn` all attribute an asset to a
+           * project by testing `location` for a `project:<id>:` prefix, and a
+           * bare purl is attributable to nothing.
+           *
            * Version-free by design. `location` feeds the asset fingerprint,
-           * whose dependency variant is `ecosystem + package + algorithm`
-           * (`fingerprint.ts`) — putting the version in here would orphan
-           * and recreate the asset on every patch bump, which renders as a
-           * mass remediation followed by a mass regression in a trend chart.
-           * The version lives in `locationDetail` and `evidence`, which are
-           * explicitly allowed to change between observations of one asset.
+           * whose dependency variant is `repo + ecosystem + package +
+           * algorithm` (`fingerprint.ts`) — putting the version in here would
+           * orphan and recreate the asset on every patch bump, which renders
+           * as a mass remediation followed by a mass regression in a trend
+           * chart. The version lives in `locationDetail` and `evidence`,
+           * which are explicitly allowed to change between observations of
+           * one asset.
            */
-          location: purlFor(ecosystem, pkg.name),
+          location: `${target.repo}:${purlFor(ecosystem, pkg.name)}`,
           locationDetail: {
             kind: "dependency",
             dependency: {
@@ -121,6 +123,22 @@ export function collectDependencyObservations(target: CollectionTarget): RawObse
             version: pkg.version ?? null,
             evidenceTier: mapped.tier,
             rationale: mapped.rationale,
+            /**
+             * Provenance, carried with the observation so a reader can judge
+             * the claim rather than trust it. `curationStatus` is `verified`
+             * only when a verbatim quote from the package's own documentation
+             * supports it; `needs-check` says out loud that it does not.
+             */
+            curationStatus: statusOf(entry, mapped),
+            needsCheckReason: mapped.needsCheckReason ?? entry.needsCheckReason ?? null,
+            citation: entry.citation ?? null,
+            /**
+             * True for packages that are near-universal transitive
+             * dependencies of the JS toolchain. Presence in the graph is
+             * still a fact; what this flags is that it is probably not a
+             * fact about the customer's own code (G-20).
+             */
+            toolchainUbiquity: entry.toolchainUbiquity === true,
           },
         });
       }
@@ -135,6 +153,29 @@ export function lockfilesIn(target: CollectionTarget): Array<{ path: string; kin
   return target.files
     .map((file) => ({ path: file.path, kind: detectLockfileKind(file.path) }))
     .filter((entry): entry is { path: string; kind: LockfileKind } => entry.kind !== undefined);
+}
+
+/**
+ * The ecosystems this target actually carries a readable lockfile for.
+ *
+ * The ingest path needs this to bound its "what did this run look at, and
+ * therefore what may it declare gone?" reconciliation. A submission of only
+ * `requirements.txt` has observed nothing whatsoever about the project's npm
+ * tree, so it must not be allowed to conclude that an npm package is no
+ * longer there — the same reason `ingestSourceObservations` reconciles per
+ * scanned file rather than per repo.
+ */
+export function ecosystemsIn(target: CollectionTarget): Ecosystem[] {
+  return [...new Set(lockfilesIn(target).map((entry) => ecosystemForLockfile(entry.kind)))];
+}
+
+/**
+ * The `location` prefix every asset from one ecosystem in one target shares.
+ * One owner of the format, so the collector that writes a location and the
+ * ingest that later reconciles against it cannot spell it two ways.
+ */
+export function dependencyLocationPrefix(repo: string, ecosystem: Ecosystem): string {
+  return `${repo}:pkg:${ecosystem}/`;
 }
 
 export class DependencyCollector implements Collector {

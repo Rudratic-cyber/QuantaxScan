@@ -4,17 +4,18 @@ import {
   COLLECTOR_SURFACES,
   LIVE_COLLECTOR_SURFACES,
   catalogueEntryForSurface,
+  type CollectorSurfaceEntry,
 } from "./surface-catalogue";
 
 /**
- * The catalogue is the denominator of D3's honesty claim ("1 of 10 examined"),
+ * The catalogue is the denominator of D3's honesty claim ("2 of 10 examined"),
  * so these assertions are about the *numbers on the page*, not about tidiness.
  * Each one fails loudly for a specific real change:
  *
  *  - an eleventh surface added to the roadmap but not to the UI, or vice versa
  *  - a ninth `Surface` enum value added with no catalogue entry to record it
  *    under, which would let observations land somewhere the meter never counts
- *  - a second collector going live without the coverage copy being revisited
+ *  - a collector going live without the coverage copy being revisited
  */
 describe("collector surface catalogue", () => {
   it("has ten surfaces — the number docs/Claude/03-features.md §B and the coverage page both state", () => {
@@ -32,16 +33,47 @@ describe("collector surface catalogue", () => {
     expect([...claimed].sort()).toEqual([...SURFACE_VALUES].sort());
   });
 
-  it("records that exactly two surfaces have no `Surface` value at all", () => {
-    // Not an oversight to be fixed by inventing enum values: the asset model
-    // genuinely cannot store a data-at-rest or vendor finding today, and the
-    // meter reports that as a deeper gap than "planned".
-    const unrecordable = COLLECTOR_SURFACES.filter((entry) => entry.surface === null).map((e) => e.id);
-    expect(unrecordable).toEqual(["data-at-rest", "vendor"]);
+  it("records that every catalogued surface is now storable", () => {
+    // `data-at-rest` and `vendor` were the last two with no `Surface` value —
+    // a deeper gap than "planned", because the database could not have stored
+    // a finding from them even if a collector existed. Both enum values landed
+    // 2026-08-14, ahead of their collectors, in one migration.
+    //
+    // This asserts the current state, not a rule: a future surface may well be
+    // catalogued before the schema can record it, and `surface: null` is still
+    // the honest way to say so. What must not happen is an entry claiming a
+    // `Surface` the enum does not have — the test above covers that.
+    //
+    // Read through `CollectorSurfaceEntry` rather than the `as const` literal
+    // type: with every entry's `surface` non-null today, the narrowed literal
+    // type makes the filtered array `never[]` and `e.id` a type error, so a
+    // test asserting the runtime state would not compile. Widening keeps the
+    // assertion about the data, which is the thing that can change.
+    const catalogue: readonly CollectorSurfaceEntry[] = COLLECTOR_SURFACES;
+    const unrecordable = catalogue.filter((entry) => entry.surface === null).map((e) => e.id);
+    expect(unrecordable).toEqual([]);
   });
 
-  it("has exactly one live collector, and it is the source scanner", () => {
-    expect(LIVE_COLLECTOR_SURFACES.map((entry) => entry.id)).toEqual(["source"]);
+  it("has exactly eight live collectors, the eighth being the manual OT register", () => {
+    // `dependency` became live when B2's ingest path landed, `tls` when B3's
+    // did (`POST /projects/:id/tls`), `certificate` when B4's did
+    // (`POST /projects/:id/certificates`), `kms` when B5's did
+    // (`POST /projects/:id/kms`), `config` when B6's did
+    // (`POST /projects/:id/protocol-config`), and `data-at-rest` when B7's did
+    // (`POST /projects/:id/data-at-rest`). A collector with nowhere to write
+    // is not a live surface — the whole point of this list is that it is the
+    // denominator of an honesty claim, so an entry earns `live` by being able
+    // to record a collection run, not by existing in the repo.
+    expect(LIVE_COLLECTOR_SURFACES.map((entry) => entry.id)).toEqual([
+      "source",
+      "dependency",
+      "tls",
+      "certificate",
+      "kms",
+      "config",
+      "data-at-rest",
+      "ot",
+    ]);
   });
 
   it("gives every live surface somewhere to store what it finds", () => {

@@ -9,6 +9,8 @@ import githubRouter from "./github";
 import chatRouter from "./chat";
 import reportsRouter from "./reports";
 import inventoryRouter from "./inventory";
+import otFleetsRouter from "./ot-fleets";
+import vendorAssessmentsRouter from "./vendor-assessments";
 
 const router: IRouter = Router();
 
@@ -22,5 +24,7 @@ router.use(githubRouter);
 router.use(chatRouter);
 router.use(reportsRouter);
 router.use(inventoryRouter);
+router.use(otFleetsRouter);
+router.use(vendorAssessmentsRouter);
 
 export default router;
