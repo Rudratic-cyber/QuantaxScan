@@ -132,9 +132,43 @@ low-agility one does not. That closes the loop between the two differentiators.
 | **Consultancy audit** (Big 4) | Point-in-time, six figures, stale on delivery | Continuous, drift-detecting, a fraction of the cost |
 | **SAST vendor PQC rule pack** | Source code only — misses dependencies, TLS, certs, KMS | Multi-surface inventory; source is one collector of ten |
 | **Certificate lifecycle managers** | Certs only; no code, no data-lifetime context | Certs are one surface; we compute Mosca across all |
-| **Spreadsheet** (the real incumbent) | Manual, instantly stale, unauditable | Automated collection with provenance on every record |
+| **Spreadsheet** (the real incumbent *for the median enterprise*) | Manual, instantly stale, unauditable | Automated collection with provenance on every record |
+| **A discovery tool from the NCCoE consortium** | Mature discovery; generally weaker on risk arithmetic and evidence-grade reporting | "Discovery is necessary and not sufficient. What ranks the results against *your* data retention?" |
 
-**The incumbent is the spreadsheet.** Price and position against that, not against tools.
+> ⚠️ **Corrected 2026-08-14 — G-17.** This section used to end "The incumbent is the
+> spreadsheet. Price and position against that, not against tools." The first sentence is true
+> of the median enterprise; the second is not, and acting on it would have us walk into rooms
+> unprepared for the vendors already there.
+>
+> NIST SP 1800-38B §5.1 names the technology collaborators who contributed cryptographic
+> discovery tools to the NCCoE lab: **Cisco · IBM · Infosec Global · ISARA · Keyfactor ·
+> Microsoft · SafeLogic · Samsung SDS · SandboxAQ · wolfSSL**. Independent market research
+> (2026-08-13) adds Fortanix, the PQCA's open-source CBOMkit, and several consultancy
+> platforms. Any buyer who has read SP 1800-38 knows this list.
+>
+> Price and position against the spreadsheet for a customer who has nothing. Position against
+> *tools* for anyone who has read the practice guide — and expect the second kind increasingly.
+
+### The uncomfortable finding from the competitive research
+
+The vendors above are overwhelmingly **agentless-first**: they reach cryptography through
+read-only credentials to cloud KMS, HSMs (PKCS#11), key managers (KMIP), the CA database,
+Active Directory and database TDE metadata. That ordering is not an accident, and it has a
+consequence for us.
+
+**Source-code scanning — our only live collector — is the slowest surface to onboard and among
+the narrowest in coverage.** It needs repository access, which needs a security review, which
+is the one gate a pre-pilot product cannot clear quickly. The agentless surfaces need a
+credential and reach the material with the longest replacement lead time.
+
+This does not invalidate the roadmap; it reorders the argument. "Plug in and see your gaps"
+is a credential-first promise, not a code-first one, and B5 (KMS) plus a PKI/identity
+integration are worth more to a first conversation than more source-language coverage.
+
+**The differentiators that survive contact with that list** are the ones grounded in specifics —
+Mosca arithmetic tied to data retention, crypto-agility scoring, and honest coverage reporting —
+not "nobody else is doing this." See
+[marketing/01-positioning.md](marketing/01-positioning.md#competitive-framing).
 
 ---
 
