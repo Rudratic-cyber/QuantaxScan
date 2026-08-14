@@ -902,6 +902,83 @@ paths:
         "400":
           description: files array is required
 
+
+  /projects/{id}/certificates:
+    post:
+      operationId: submitProjectCertificates
+      tags: [projects]
+      summary: Submit certificates for X.509 collection (B4)
+      description: >-
+        Runs the certificate collector over the submitted PEM/DER files and persists what it
+        finds as assets on the `certificate` surface, which is what makes that surface count
+        as examined in `GET /projects/{id}/coverage`.
+
+
+        `content` is PEM text (one or more concatenated `-----BEGIN/END CERTIFICATE-----`
+        blocks — a full chain is read entirely, not just its leaf) or base64-encoded DER.
+        A file that is neither contributes nothing, silently.
+
+
+        **If no submitted file contains a parseable certificate, no collection run is
+        recorded** and `certificatesRecognised` is 0 — the same "examined nothing, not
+        found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200,
+        not an error.
+
+
+        Each returned certificate carries `qDay`: whether its `notAfter` falls on or after
+        each Q-Day scenario's year, derived fresh on every call rather than stored — see
+        `GET /projects/{id}/certificates` for the persisted-inventory read this backs.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectCertificatesBody"
+      responses:
+        "200":
+          description: Collection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateIngestSummary"
+        "400":
+          description: Invalid project ID, body, or too many certificates in one submission
+        "404":
+          description: Not found
+    get:
+      operationId: getProjectCertificates
+      tags: [projects]
+      summary: The project's certificate inventory, evaluated against Q-Day (B4)
+      description: >-
+        Every certificate asset attributed to this project, each evaluated against every
+        Q-Day scenario at read time — never persisted, because Q-Day scenarios are
+        customer-overridable (see `lib/risk`) and a stored verdict would go stale exactly the
+        way C1 exists to prevent. Includes assets of every lifecycle status, not only
+        `active`; a report of what was found must keep what was later remediated or waived
+        in the record.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Certificate inventory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectCertificates"
+        "400":
+          description: Invalid project ID
+        "404":
+          description: Not found
 components:
   responses:
     RateLimited:
@@ -3458,3 +3535,223 @@ components:
         - statusCounts
         - scenarios
         - framing
+
+    SubmitProjectCertificatesBody:
+      type: object
+      properties:
+        files:
+          type: array
+          description: >-
+            Certificate files. `content` is PEM text (one or more concatenated certificate
+            blocks) or base64-encoded DER. Anything else is ignored rather than rejected, so a
+            caller may submit a whole tree.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              content:
+                type: string
+            required:
+              - path
+              - content
+      required:
+        - files
+
+    CertificateQDayVerdict:
+      type: object
+      description: >-
+        Whether one certificate's `notAfter` falls on or after one Q-Day scenario's year.
+        Derived at read time from `lib/risk`'s scenario set — never persisted, since the
+        scenario years are customer-overridable.
+      properties:
+        scenario:
+          type: string
+          enum: [conservative, central, aggressive]
+        qDayYear:
+          type: integer
+        rationale:
+          type: string
+        confidence:
+          type: string
+          enum: [verified, needs-check]
+        outlivesQDay:
+          type: boolean
+      required:
+        - scenario
+        - qDayYear
+        - rationale
+        - confidence
+        - outlivesQDay
+
+    CertificateIngestEntry:
+      type: object
+      description: One certificate this submission parsed, with its Q-Day comparison.
+      properties:
+        location:
+          type: string
+        algorithm:
+          type: string
+        keySize:
+          type: integer
+          nullable: true
+        issuer:
+          type: string
+        serialNumber:
+          type: string
+        subject:
+          type: string
+          nullable: true
+        notBefore:
+          type: string
+          format: date-time
+        notAfter:
+          type: string
+          format: date-time
+        signatureAlgorithm:
+          type: string
+          nullable: true
+        qDay:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificateQDayVerdict"
+      required:
+        - location
+        - algorithm
+        - keySize
+        - issuer
+        - serialNumber
+        - subject
+        - notBefore
+        - notAfter
+        - signatureAlgorithm
+        - qDay
+
+    CertificateIngestSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        certificatesRecognised:
+          type: integer
+          description: >-
+            How many certificates the collector could actually parse. Zero means no collection
+            run was recorded and the certificate surface is still un-examined for this project.
+        certificateFiles:
+          type: array
+          description: The submitted files that carried at least one parseable certificate, and how many.
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              certificateCount:
+                type: integer
+            required:
+              - path
+              - certificateCount
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: Null when no run was recorded (`certificatesRecognised` is 0).
+        assetsCreated:
+          type: integer
+        assetsUpdated:
+          type: integer
+        observationsCreated:
+          type: integer
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Always 0 in practice today: a certificate's identity is its own issuer+serial, not a
+            shared slot, so an omitted certificate is never inferred as retired by a later
+            submission — see the reobservation-scope note in `asset-ingest.ts`.
+        certificates:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificateIngestEntry"
+        evidenceCaveat:
+          type: string
+      required:
+        - projectId
+        - certificatesRecognised
+        - certificateFiles
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - certificates
+        - evidenceCaveat
+
+    ProjectCertificateAsset:
+      type: object
+      description: A persisted certificate asset, with its Q-Day comparison evaluated fresh on this read.
+      properties:
+        assetId:
+          type: integer
+        algorithm:
+          type: string
+        keySize:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [active, remediated, waived, gone]
+        issuer:
+          type: string
+        serialNumber:
+          type: string
+        subject:
+          type: string
+          nullable: true
+        notBefore:
+          type: string
+          format: date-time
+        notAfter:
+          type: string
+          format: date-time
+        signatureAlgorithm:
+          type: string
+          nullable: true
+        firstSeen:
+          type: string
+          format: date-time
+        lastSeen:
+          type: string
+          format: date-time
+        qDay:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificateQDayVerdict"
+      required:
+        - assetId
+        - algorithm
+        - keySize
+        - status
+        - issuer
+        - serialNumber
+        - subject
+        - notBefore
+        - notAfter
+        - signatureAlgorithm
+        - firstSeen
+        - lastSeen
+        - qDay
+
+    ProjectCertificates:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        generatedAt:
+          type: string
+          format: date-time
+        certificates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectCertificateAsset"
+      required:
+        - projectId
+        - generatedAt
+        - certificates

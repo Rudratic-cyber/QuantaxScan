@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, inArray, like } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import {
   withOrg,
   projectsTable,
@@ -15,12 +15,14 @@ import {
   GetProjectParams,
   DeleteProjectParams,
   SubmitProjectDependenciesBody,
+  SubmitProjectCertificatesBody,
 } from "@workspace/api-zod";
-import { lockfilesIn } from "@workspace/collectors";
+import { lockfilesIn, certificatesIn } from "@workspace/collectors";
 import { scanCode, computeScanResult } from "../lib/scanner";
 import { summariseProjectCoverage } from "../lib/coverage";
 import { withComplianceAll } from "../lib/compliance";
-import { ingestDependencyObservations } from "../lib/asset-ingest";
+import { ingestDependencyObservations, ingestCertificateObservations, type CertificateSummary } from "../lib/asset-ingest";
+import { evaluateCertificateExpiryAgainstQDay } from "../lib/certificate-risk";
 import { orgContextFor } from "../lib/principal";
 import { logger } from "../lib/logger";
 
@@ -368,6 +370,220 @@ router.post("/projects/:id/dependencies", async (req, res): Promise<void> => {
     observationsCreated: result.observationsCreated,
     assetsMarkedGone: result.assetsMarkedGone,
     evidenceCaveat: EVIDENCE_CAVEAT,
+  });
+});
+
+/**
+ * B4 — `POST /api/projects/:id/certificates` and `GET
+ * /api/projects/:id/certificates`. docs/Claude/03-features.md §B4;
+ * docs/Claude/02-roadmap.md M2 exit criterion: "Certificate inventory shows
+ * which certs outlive the conservative Q-Day scenario."
+ *
+ * Modelled on the dependency route immediately above: same organisation
+ * scope, same in-scope parent check (a foreign key is not subject to RLS —
+ * `assets` has none to `projects` at all, so the parent must be confirmed
+ * visible inside the scope before writing a child row), same "examined
+ * nothing vs found nothing" distinction for the coverage meter.
+ *
+ * What differs is the reason a **second** route exists at all: the POST
+ * response reports what one submission found, at the moment it was
+ * submitted — that answers "did the collector run?", not "what does the
+ * inventory say?" `GET /projects/:id/certificates` is the actual inventory
+ * read, over the persisted assets, evaluated against Q-Day fresh on every
+ * call — the same "derive on read, never persist a standards-dependent
+ * verdict" discipline `lib/compliance.ts` uses for findings. Without this
+ * second route, "outlives Q-Day" would only ever have been visible once, to
+ * whoever happened to be watching the upload response, which is ingest
+ * telemetry, not an inventory.
+ */
+
+/** Mirrors `MAX_LOCKFILES_PER_SUBMISSION` above — a bound on parse work, not on request size (the body limit already caps that). */
+const MAX_CERTIFICATES_PER_SUBMISSION = 200;
+
+const CERTIFICATE_EVIDENCE_CAVEAT =
+  "This collector reads a submitted certificate's own stated public-key algorithm, size and validity period. " +
+  "It does not verify the certificate is currently presented by a live endpoint, is trusted by any client, or " +
+  "is part of a valid chain. An EC public key is reported as ECDSA: X.509 key-usage extensions are not reliably " +
+  "present to distinguish an ECDSA-signing key from an ECDH-only one, so this is a known simplification, not a claim.";
+
+function toCertificateResponseEntry(summary: CertificateSummary) {
+  return {
+    ...summary,
+    qDay: evaluateCertificateExpiryAgainstQDay(new Date(summary.notAfter)),
+  };
+}
+
+router.post("/projects/:id/certificates", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const body = SubmitProjectCertificatesBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+  const files = body.data.files;
+
+  // Which submitted files carry at least one parseable certificate.
+  // Computed before the scope is opened, same reason `lockfilesIn` is above:
+  // it decides whether there is anything to write at all, and
+  // `@workspace/collectors` is pure.
+  const recognised = certificatesIn({ kind: "source", repo, files: files.map((f) => ({ ...f, language: "certificate" })) });
+  const certificateCount = recognised.reduce((sum, f) => sum + f.certificateCount, 0);
+  if (certificateCount > MAX_CERTIFICATES_PER_SUBMISSION) {
+    res.status(400).json({
+      error: `Too many certificates in one submission (${certificateCount} > ${MAX_CERTIFICATES_PER_SUBMISSION}). Split the request rather than truncating it.`,
+    });
+    return;
+  }
+
+  const outcome = await withOrg(orgContextFor(req), async (tx) => {
+    const [parent] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!parent) return null;
+
+    // No parseable certificate means we examined nothing. Writing a
+    // collection run here would make GET /projects/:id/coverage report the
+    // certificate surface as "examined — nothing found", which is a
+    // different and false statement — the file may simply not be a
+    // certificate. Not an error either: a submission may legitimately carry
+    // none (a caller probing before it has real material to send).
+    if (recognised.length === 0) return { kind: "no-certificates" as const };
+
+    return {
+      kind: "ingested" as const,
+      result: await ingestCertificateObservations(tx, {
+        repo,
+        files,
+        organizationId: orgContextFor(req).organizationId,
+      }),
+    };
+  });
+
+  if (outcome === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  if (outcome.kind === "no-certificates") {
+    res.json({
+      projectId: id,
+      certificatesRecognised: 0,
+      certificateFiles: [],
+      collectionRunId: null,
+      assetsCreated: 0,
+      assetsUpdated: 0,
+      observationsCreated: 0,
+      assetsMarkedGone: 0,
+      certificates: [],
+      evidenceCaveat: CERTIFICATE_EVIDENCE_CAVEAT,
+    });
+    return;
+  }
+
+  const { result } = outcome;
+  logger.info(
+    {
+      projectId: id,
+      certificateFiles: result.certificateFiles.length,
+      observations: result.observationsCreated,
+      route: "POST /projects/:id/certificates",
+    },
+    "certificate collection complete",
+  );
+
+  res.json({
+    projectId: id,
+    certificatesRecognised: result.certificates.length,
+    certificateFiles: result.certificateFiles,
+    collectionRunId: result.collectionRunId,
+    assetsCreated: result.assetsCreated,
+    assetsUpdated: result.assetsUpdated,
+    observationsCreated: result.observationsCreated,
+    assetsMarkedGone: result.assetsMarkedGone,
+    certificates: result.certificates.map(toCertificateResponseEntry),
+    evidenceCaveat: CERTIFICATE_EVIDENCE_CAVEAT,
+  });
+});
+
+/**
+ * The inventory read: every certificate asset attributed to this project,
+ * each evaluated against every Q-Day scenario at read time. `status` is
+ * included and NOT filtered to `active` — a `gone` or `remediated`
+ * certificate is still part of the record docs/Claude/03-features.md A1
+ * promises ("stays in history"); the caller can filter client-side if it
+ * only wants the current picture.
+ */
+router.get("/projects/:id/certificates", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+
+  const certificates = await withOrg(orgContextFor(req), async (tx) => {
+    const [project] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!project) return null;
+
+    return tx
+      .select({
+        id: assetsTable.id,
+        algorithm: assetsTable.algorithm,
+        keySize: assetsTable.keySize,
+        location: assetsTable.location,
+        locationDetail: assetsTable.locationDetail,
+        status: assetsTable.status,
+        firstSeen: assetsTable.firstSeen,
+        lastSeen: assetsTable.lastSeen,
+      })
+      .from(assetsTable)
+      .where(and(eq(assetsTable.surface, "certificate"), like(assetsTable.location, `${repo}:%`)));
+  });
+
+  if (certificates === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  res.json({
+    projectId: id,
+    generatedAt: new Date().toISOString(),
+    certificates: certificates.flatMap((asset) => {
+      const detail = asset.locationDetail;
+      // Defensive, not expected: every row on this surface was written by
+      // ingestCertificateObservations, which always sets this. Skipping
+      // rather than throwing keeps one malformed historical row from taking
+      // the whole inventory read down.
+      if (detail?.kind !== "certificate") {
+        logger.warn({ assetId: asset.id }, "certificate asset has no certificate locationDetail — skipped");
+        return [];
+      }
+      return [
+        {
+          assetId: asset.id,
+          algorithm: asset.algorithm,
+          keySize: asset.keySize,
+          status: asset.status,
+          issuer: detail.certificate.issuer,
+          serialNumber: detail.certificate.serialNumber,
+          subject: detail.certificate.subject ?? null,
+          notBefore: detail.certificate.notBefore,
+          notAfter: detail.certificate.notAfter,
+          signatureAlgorithm: detail.certificate.signatureAlgorithm ?? null,
+          firstSeen: asset.firstSeen.toISOString(),
+          lastSeen: asset.lastSeen.toISOString(),
+          qDay: evaluateCertificateExpiryAgainstQDay(new Date(detail.certificate.notAfter)),
+        },
+      ];
+    }),
   });
 });
 

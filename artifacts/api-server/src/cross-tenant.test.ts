@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import supertest from "supertest";
 import { sql } from "drizzle-orm";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Cross-tenant proof, through the real Express app.
@@ -173,6 +177,34 @@ afterAll(async () => {
   await closeTestDb();
 });
 
+/**
+ * A real, self-signed certificate, generated at test time and never
+ * committed — a cross-tenant proof needs a submission `certificatesIn()`
+ * genuinely recognises, or the "writes nothing" assertion below would be
+ * true for the wrong reason (nothing readable was submitted at all, not
+ * "the in-scope parent check refused it").
+ */
+let testCertPem: string;
+
+beforeAll(() => {
+  const dir = mkdtempSync(join(tmpdir(), "qx-cross-tenant-cert-"));
+  try {
+    const keyPath = join(dir, "key.pem");
+    const certPath = join(dir, "cert.pem");
+    execFileSync(
+      "openssl",
+      [
+        "req", "-x509", "-newkey", "rsa:2048", "-keyout", keyPath, "-out", certPath,
+        "-days", "365", "-nodes", "-subj", "/CN=cross-tenant-test.invalid",
+      ],
+      { stdio: "pipe" },
+    );
+    testCertPem = readFileSync(certPath, "utf8");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ───────────────────────────────────────────────────────────────────────────
 
 describe("route manifest — a new route cannot ship without being considered", () => {
@@ -201,6 +233,9 @@ describe("route manifest — a new route cannot ship without being considered", 
     // project by location prefix, so it confirms the parent inside the scope
     // for the same reason POST /scans does.
     "POST /projects/:id/dependencies": "org-scoped",
+    // Same shape as the dependency route immediately above, one surface over.
+    "POST /projects/:id/certificates": "org-scoped",
+    "GET /projects/:id/certificates": "org-scoped",
     // B8 — the manual OT register. No parent id is ever accepted, so there is
     // no foreign-key-under-RLS check to make: the row is stamped with the
     // caller's organisation and nothing else.
@@ -494,6 +529,37 @@ describe("addressing another organisation's row by id is indistinguishable from 
 
     const after = await countTheirDependencyAssets();
     expect(after).toEqual(before);
+  });
+
+  it("POST /api/projects/:id/certificates naming another organisation's project writes nothing", async () => {
+    // Same shape as the dependency proof above, one surface over: `assets`
+    // has no foreign key to `projects`, so only the in-scope parent lookup
+    // stands between this request and a real, RLS-stamped asset attributed to
+    // a project the caller cannot see.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirCertificateAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'certificate'`,
+        ),
+      );
+    const before = await countTheirCertificateAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/certificates`).send({
+        files: [{ path: "cert.pem", content: testCertPem }],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirCertificateAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("GET /api/projects/:id/certificates → 404 for another organisation's project, not their certificate inventory", async () => {
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/certificates`));
+    expect(res.status).toBe(404);
   });
 });
 

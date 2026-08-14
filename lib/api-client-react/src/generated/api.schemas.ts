@@ -1450,6 +1450,117 @@ export interface InventoryAssetsSummary {
   framing: string;
 }
 
+export type SubmitProjectCertificatesBodyFilesItem = {
+  path: string;
+  content: string;
+};
+
+export interface SubmitProjectCertificatesBody {
+  /** Certificate files. `content` is PEM text (one or more concatenated certificate blocks) or base64-encoded DER. Anything else is ignored rather than rejected, so a caller may submit a whole tree. */
+  files: SubmitProjectCertificatesBodyFilesItem[];
+}
+
+export type CertificateQDayVerdictScenario =
+  (typeof CertificateQDayVerdictScenario)[keyof typeof CertificateQDayVerdictScenario];
+
+export const CertificateQDayVerdictScenario = {
+  conservative: "conservative",
+  central: "central",
+  aggressive: "aggressive",
+} as const;
+
+export type CertificateQDayVerdictConfidence =
+  (typeof CertificateQDayVerdictConfidence)[keyof typeof CertificateQDayVerdictConfidence];
+
+export const CertificateQDayVerdictConfidence = {
+  verified: "verified",
+  "needs-check": "needs-check",
+} as const;
+
+/**
+ * Whether one certificate's `notAfter` falls on or after one Q-Day scenario's year. Derived at read time from `lib/risk`'s scenario set — never persisted, since the scenario years are customer-overridable.
+ */
+export interface CertificateQDayVerdict {
+  scenario: CertificateQDayVerdictScenario;
+  qDayYear: number;
+  rationale: string;
+  confidence: CertificateQDayVerdictConfidence;
+  outlivesQDay: boolean;
+}
+
+/**
+ * One certificate this submission parsed, with its Q-Day comparison.
+ */
+export interface CertificateIngestEntry {
+  location: string;
+  algorithm: string;
+  keySize: number | null;
+  issuer: string;
+  serialNumber: string;
+  subject: string | null;
+  notBefore: string;
+  notAfter: string;
+  signatureAlgorithm: string | null;
+  qDay: CertificateQDayVerdict[];
+}
+
+export type CertificateIngestSummaryCertificateFilesItem = {
+  path: string;
+  certificateCount: number;
+};
+
+export interface CertificateIngestSummary {
+  projectId: number;
+  /** How many certificates the collector could actually parse. Zero means no collection run was recorded and the certificate surface is still un-examined for this project. */
+  certificatesRecognised: number;
+  /** The submitted files that carried at least one parseable certificate, and how many. */
+  certificateFiles: CertificateIngestSummaryCertificateFilesItem[];
+  /** Null when no run was recorded (`certificatesRecognised` is 0). */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Always 0 in practice today: a certificate's identity is its own issuer+serial, not a shared slot, so an omitted certificate is never inferred as retired by a later submission — see the reobservation-scope note in `asset-ingest.ts`. */
+  assetsMarkedGone: number;
+  certificates: CertificateIngestEntry[];
+  evidenceCaveat: string;
+}
+
+export type ProjectCertificateAssetStatus =
+  (typeof ProjectCertificateAssetStatus)[keyof typeof ProjectCertificateAssetStatus];
+
+export const ProjectCertificateAssetStatus = {
+  active: "active",
+  remediated: "remediated",
+  waived: "waived",
+  gone: "gone",
+} as const;
+
+/**
+ * A persisted certificate asset, with its Q-Day comparison evaluated fresh on this read.
+ */
+export interface ProjectCertificateAsset {
+  assetId: number;
+  algorithm: string;
+  keySize: number | null;
+  status: ProjectCertificateAssetStatus;
+  issuer: string;
+  serialNumber: string;
+  subject: string | null;
+  notBefore: string;
+  notAfter: string;
+  signatureAlgorithm: string | null;
+  firstSeen: string;
+  lastSeen: string;
+  qDay: CertificateQDayVerdict[];
+}
+
+export interface ProjectCertificates {
+  projectId: number;
+  generatedAt: string;
+  certificates: ProjectCertificateAsset[];
+}
+
 export type RateLimitedResponse = {
   error: string;
 };

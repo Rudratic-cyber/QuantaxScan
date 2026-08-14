@@ -17,6 +17,9 @@ import { isValidCpe23FormattedString, type Cpe23FormattedString } from "./cpe";
  * `binary` is the qx-sp1800-38b investigation's binary-evidence profile —
  * defined so the contract accommodates a future binary collector; no binary
  * collector is implemented by this change.
+ *
+ * `certificate` is B4's profile for a *submitted* PEM/DER artifact — see the
+ * discriminator's own comment in `enums.ts` for why it is not `network`.
  */
 
 function cpe23Schema(expectedPart: "a" | "o" | "h") {
@@ -86,10 +89,33 @@ export const BinaryLocationDetailSchema = z.object({
 });
 export type BinaryLocationDetail = z.infer<typeof BinaryLocationDetailSchema>;
 
+/**
+ * B4 — facts read directly off a parsed X.509 certificate. `notBefore` /
+ * `notAfter` are ISO 8601 strings (not `Date`): this is JSON that round-trips
+ * through `jsonb`, and a `Date` would silently become a string on the way
+ * back out anyway. `issuer` and `subject` are the RDN sequence Node's
+ * `X509Certificate` already renders as a single string (newline-joined
+ * components) — kept verbatim rather than parsed into fields, since nothing
+ * here needs to query on an individual RDN attribute.
+ */
+export const CertificateLocationDetailSchema = z.object({
+  issuer: z.string(),
+  serialNumber: z.string(),
+  notBefore: z.string(),
+  notAfter: z.string(),
+  subject: z.string().optional(),
+  /** e.g. "sha256WithRSAEncryption" — Node's own rendering, not canonicalised against `algorithms.json`. */
+  signatureAlgorithm: z.string().optional(),
+  /** Content-derived, not identity — two observations of the same certificate always agree, so this is display-only. */
+  fingerprintSha256: z.string().optional(),
+});
+export type CertificateLocationDetail = z.infer<typeof CertificateLocationDetailSchema>;
+
 export const LocationDetailSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("source"), source: SourceLocationDetailSchema }),
   z.object({ kind: z.literal("network"), network: NetworkLocationDetailSchema }),
   z.object({ kind: z.literal("dependency"), dependency: DependencyLocationDetailSchema }),
   z.object({ kind: z.literal("binary"), binary: BinaryLocationDetailSchema }),
+  z.object({ kind: z.literal("certificate"), certificate: CertificateLocationDetailSchema }),
 ]);
 export type LocationDetail = z.infer<typeof LocationDetailSchema>;

@@ -3858,3 +3858,138 @@ export const ScanGithubFilesResponse = zod.object({
     }),
   ),
 });
+
+/**
+ * Runs the certificate collector over the submitted PEM/DER files and persists what it finds as assets on the `certificate` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+`content` is PEM text (one or more concatenated `-----BEGIN/END CERTIFICATE-----` blocks — a full chain is read entirely, not just its leaf) or base64-encoded DER. A file that is neither contributes nothing, silently.
+
+**If no submitted file contains a parseable certificate, no collection run is recorded** and `certificatesRecognised` is 0 — the same "examined nothing, not found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an error.
+
+Each returned certificate carries `qDay`: whether its `notAfter` falls on or after each Q-Day scenario's year, derived fresh on every call rather than stored — see `GET /projects/{id}/certificates` for the persisted-inventory read this backs.
+ * @summary Submit certificates for X.509 collection (B4)
+ */
+export const SubmitProjectCertificatesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SubmitProjectCertificatesBody = zod.object({
+  files: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        content: zod.string(),
+      }),
+    )
+    .describe(
+      "Certificate files. `content` is PEM text (one or more concatenated certificate blocks) or base64-encoded DER. Anything else is ignored rather than rejected, so a caller may submit a whole tree.",
+    ),
+});
+
+export const SubmitProjectCertificatesResponse = zod.object({
+  projectId: zod.number(),
+  certificatesRecognised: zod
+    .number()
+    .describe(
+      "How many certificates the collector could actually parse. Zero means no collection run was recorded and the certificate surface is still un-examined for this project.",
+    ),
+  certificateFiles: zod
+    .array(
+      zod.object({
+        path: zod.string(),
+        certificateCount: zod.number(),
+      }),
+    )
+    .describe(
+      "The submitted files that carried at least one parseable certificate, and how many.",
+    ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe("Null when no run was recorded (`certificatesRecognised` is 0)."),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Always 0 in practice today: a certificate's identity is its own issuer+serial, not a shared slot, so an omitted certificate is never inferred as retired by a later submission — see the reobservation-scope note in `asset-ingest.ts`.",
+    ),
+  certificates: zod.array(
+    zod
+      .object({
+        location: zod.string(),
+        algorithm: zod.string(),
+        keySize: zod.number().nullable(),
+        issuer: zod.string(),
+        serialNumber: zod.string(),
+        subject: zod.string().nullable(),
+        notBefore: zod.coerce.date(),
+        notAfter: zod.coerce.date(),
+        signatureAlgorithm: zod.string().nullable(),
+        qDay: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              rationale: zod.string(),
+              confidence: zod.enum(["verified", "needs-check"]),
+              outlivesQDay: zod.boolean(),
+            })
+            .describe(
+              "Whether one certificate's `notAfter` falls on or after one Q-Day scenario's year. Derived at read time from `lib\/risk`'s scenario set — never persisted, since the scenario years are customer-overridable.",
+            ),
+        ),
+      })
+      .describe(
+        "One certificate this submission parsed, with its Q-Day comparison.",
+      ),
+  ),
+  evidenceCaveat: zod.string(),
+});
+
+/**
+ * Every certificate asset attributed to this project, each evaluated against every Q-Day scenario at read time — never persisted, because Q-Day scenarios are customer-overridable (see `lib/risk`) and a stored verdict would go stale exactly the way C1 exists to prevent. Includes assets of every lifecycle status, not only `active`; a report of what was found must keep what was later remediated or waived in the record.
+ * @summary The project's certificate inventory, evaluated against Q-Day (B4)
+ */
+export const GetProjectCertificatesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectCertificatesResponse = zod.object({
+  projectId: zod.number(),
+  generatedAt: zod.coerce.date(),
+  certificates: zod.array(
+    zod
+      .object({
+        assetId: zod.number(),
+        algorithm: zod.string(),
+        keySize: zod.number().nullable(),
+        status: zod.enum(["active", "remediated", "waived", "gone"]),
+        issuer: zod.string(),
+        serialNumber: zod.string(),
+        subject: zod.string().nullable(),
+        notBefore: zod.coerce.date(),
+        notAfter: zod.coerce.date(),
+        signatureAlgorithm: zod.string().nullable(),
+        firstSeen: zod.coerce.date(),
+        lastSeen: zod.coerce.date(),
+        qDay: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              rationale: zod.string(),
+              confidence: zod.enum(["verified", "needs-check"]),
+              outlivesQDay: zod.boolean(),
+            })
+            .describe(
+              "Whether one certificate's `notAfter` falls on or after one Q-Day scenario's year. Derived at read time from `lib\/risk`'s scenario set — never persisted, since the scenario years are customer-overridable.",
+            ),
+        ),
+      })
+      .describe(
+        "A persisted certificate asset, with its Q-Day comparison evaluated fresh on this read.",
+      ),
+  ),
+});

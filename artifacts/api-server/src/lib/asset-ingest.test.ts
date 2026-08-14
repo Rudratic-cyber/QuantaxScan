@@ -1,9 +1,13 @@
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, beforeAll } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { eq, and } from "drizzle-orm";
 import { assetsTable, observationsTable, collectionRunsTable } from "@workspace/db/schema";
 import type { ScopedTx } from "@workspace/db/org-scope";
 import { createTestDb, type TestDb } from "@workspace/db/test-support";
-import { ingestSourceObservations } from "./asset-ingest";
+import { ingestSourceObservations, ingestCertificateObservations } from "./asset-ingest";
 
 const ORG_ID = 1;
 const ORG = { organizationId: ORG_ID, userId: "" };
@@ -256,5 +260,142 @@ describe("ingestSourceObservations — the A1/A2 dual-write path", () => {
     const messages: string[] = [];
     for (let err = thrown; err instanceof Error; err = err.cause) messages.push(err.message);
     expect(messages.join("\n")).toMatch(/row-level security policy/);
+  });
+});
+
+/** Generated once for the whole file with the system `openssl` binary — never committed, per the lane brief's "no key material in the repo" rule. */
+function generateSelfSignedCertPem(cn: string, days = 365): string {
+  const dir = mkdtempSync(join(tmpdir(), "qx-asset-ingest-cert-"));
+  try {
+    const keyPath = join(dir, "key.pem");
+    const certPath = join(dir, "cert.pem");
+    execFileSync(
+      "openssl",
+      ["req", "-x509", "-newkey", "rsa:2048", "-keyout", keyPath, "-out", certPath, "-days", String(days), "-nodes", "-subj", `/CN=${cn}`],
+      { stdio: "pipe" },
+    );
+    return readFileSync(certPath, "utf8");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe("ingestCertificateObservations — B4", () => {
+  let harness: TestDb | undefined;
+  afterEach(async () => {
+    await harness?.close();
+    harness = undefined;
+  });
+
+  async function start(): Promise<void> {
+    harness = await createTestDb({ asRole: "quantaxscan_app" });
+  }
+
+  function ingest(params: { repo: string; files: Array<{ path: string; content: string }> }) {
+    return harness!.scope.withOrg(ORG, (tx) => ingestCertificateObservations(tx, { ...params, organizationId: ORG_ID }));
+  }
+
+  function read<T>(fn: (tx: ScopedTx) => Promise<T>): Promise<T> {
+    return harness!.scope.withOrg(ORG, fn);
+  }
+
+  let certA: string;
+  let certB: string;
+
+  beforeAll(() => {
+    certA = generateSelfSignedCertPem("cert-a.example.invalid");
+    certB = generateSelfSignedCertPem("cert-b.example.invalid");
+  });
+
+  it("creates one asset per certificate, attributed to the submitting project via the location prefix", async () => {
+    await start();
+
+    const result = await ingest({ repo: "project:1", files: [{ path: "server.pem", content: certA }] });
+    expect(result.assetsCreated).toBe(1);
+    expect(result.observationsCreated).toBe(1);
+    expect(result.certificateFiles).toEqual([{ path: "server.pem", certificateCount: 1 }]);
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets).toHaveLength(1);
+    expect(assets[0].surface).toBe("certificate");
+    expect(assets[0].algorithm).toBe("RSA");
+    expect(assets[0].keySize).toBe(2048);
+    expect(assets[0].location.startsWith("project:1:cert:")).toBe(true);
+  });
+
+  it("reads every certificate in a submitted chain bundle, not just the leaf", async () => {
+    await start();
+
+    const result = await ingest({ repo: "project:1", files: [{ path: "chain.pem", content: certA + certB }] });
+    expect(result.assetsCreated).toBe(2);
+    expect(result.certificateFiles).toEqual([{ path: "chain.pem", certificateCount: 2 }]);
+  });
+
+  it("re-ingesting the identical certificate does not create a duplicate asset, only updates lastSeen", async () => {
+    await start();
+
+    const files = [{ path: "server.pem", content: certA }];
+    const first = await ingest({ repo: "project:1", files });
+    expect(first.assetsCreated).toBe(1);
+
+    const second = await ingest({ repo: "project:1", files });
+    expect(second.assetsCreated).toBe(0);
+    expect(second.assetsUpdated).toBe(1);
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets).toHaveLength(1);
+  });
+
+  it("does NOT mark a certificate gone when a later submission simply omits it — renewal mints a new identity, not a slot update", async () => {
+    await start();
+
+    await ingest({ repo: "project:1", files: [{ path: "server.pem", content: certA }] });
+
+    // A later submission carries only a different (e.g. renewed) certificate.
+    // certA's asset must be left exactly as it was: there is no shared "slot"
+    // between an old certificate and a new one the way there is for a source
+    // file path or a dependency's ecosystem prefix — see the reobservation-
+    // scope comment in asset-ingest.ts.
+    const second = await ingest({ repo: "project:1", files: [{ path: "server.pem", content: certB }] });
+    expect(second.assetsMarkedGone).toBe(0);
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets).toHaveLength(2);
+    expect(assets.every((a) => a.status === "active")).toBe(true);
+  });
+
+  it("throws rather than recording a run when no submitted file is a parseable certificate", async () => {
+    await start();
+
+    await expect(
+      ingest({ repo: "project:1", files: [{ path: "notes.txt", content: "not a certificate" }] }),
+    ).rejects.toThrow(/no parseable certificate/);
+
+    const runs = await read((tx) => tx.select().from(collectionRunsTable).where(eq(collectionRunsTable.organizationId, ORG_ID)));
+    expect(runs).toHaveLength(0);
+  });
+
+  it("writes a collection_run on the certificate surface and links the observation to it", async () => {
+    await start();
+
+    const result = await ingest({ repo: "project:1", files: [{ path: "server.pem", content: certA }] });
+
+    const [run] = await read((tx) => tx.select().from(collectionRunsTable).where(eq(collectionRunsTable.id, result.collectionRunId)));
+    expect(run.surface).toBe("certificate");
+    expect(run.collector).toBe("certificate-x509");
+
+    const obs = await read((tx) => tx.select().from(observationsTable).where(eq(observationsTable.collectionRunId, run.id)));
+    expect(obs).toHaveLength(1);
+    expect(obs[0].discoveryModality).toBe("static_artifact_analysis");
+  });
+
+  it("returns a per-certificate summary the route can build a response from without re-parsing", async () => {
+    await start();
+
+    const result = await ingest({ repo: "project:1", files: [{ path: "server.pem", content: certA }] });
+    expect(result.certificates).toHaveLength(1);
+    expect(result.certificates[0]).toMatchObject({ algorithm: "RSA", keySize: 2048 });
+    expect(result.certificates[0].issuer).toContain("cert-a.example.invalid");
+    expect(new Date(result.certificates[0].notAfter).getTime()).toBeGreaterThan(Date.now());
   });
 });

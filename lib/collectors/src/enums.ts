@@ -67,10 +67,21 @@ export type AssetStatus = (typeof ASSET_STATUS_VALUES)[number];
 
 /**
  * Discriminator for the validated `locationDetail` shape. This is a
- * separate concept from `Surface`: several surfaces (`tls`, `certificate`)
- * share the `network` locationDetail shape, because SP 1800-38B's seven
- * network data elements apply regardless of which surface observed them.
+ * separate concept from `Surface`: `tls` and a *live-host* certificate
+ * observation share the `network` locationDetail shape, because SP 1800-38B's
+ * seven network data elements (Table 6: IP, port, hostname, protocol, three
+ * CPE profiles) describe facts about where something was observed on the
+ * wire — they apply regardless of which surface observed them.
+ *
+ * `certificate` is its own kind, not folded into `network`, because B4's
+ * collector reads a *submitted* PEM/DER artifact, not a live endpoint: there
+ * is no IP, port or hostname to report, and `network`'s schema has nowhere
+ * to put issuer/serial/notBefore/notAfter, which are facts about the
+ * certificate itself rather than about a network observation of it. A future
+ * live-TLS-fetch collector for certificates (out of scope here — see B4's
+ * task notes) would emit `network`, the same as the TLS surface; this kind is
+ * for the case where no network observation happened at all.
  */
-export const LOCATION_DETAIL_KIND_VALUES = ["source", "network", "dependency", "binary"] as const;
+export const LOCATION_DETAIL_KIND_VALUES = ["source", "network", "dependency", "binary", "certificate"] as const;
 
 export type LocationDetailKind = (typeof LOCATION_DETAIL_KIND_VALUES)[number];

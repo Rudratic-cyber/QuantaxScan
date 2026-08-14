@@ -54,7 +54,7 @@ export const COLLECTOR_SURFACES = [
   // are unreachable has not been examined in any sense a CISO cares about.
   { id: "dependency", name: "Dependencies / SBOM", status: "live", surface: "dependency" },
   { id: "tls", name: "TLS & cipher suites", status: "planned", surface: "tls" },
-  { id: "certificate", name: "Certificates (X.509)", status: "planned", surface: "certificate" },
+  { id: "certificate", name: "Certificates (X.509)", status: "live", surface: "certificate" },
   { id: "kms", name: "KMS & secret stores", status: "planned", surface: "kms" },
   { id: "config", name: "Protocol config", status: "planned", surface: "config" },
   { id: "data-at-rest", name: "Data-at-rest", status: "planned", surface: null },
