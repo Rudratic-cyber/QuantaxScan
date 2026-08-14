@@ -197,7 +197,9 @@ const ROUTE_BUDGETS: ReadonlyArray<{
   // token. The scarcest resource the server has.
   { method: "POST", path: /^\/github\/scan$/, limiter: githubRemoteLimiter },
   { method: "POST", path: /^\/github\/fetch$/, limiter: githubRemoteLimiter },
-  { method: "GET", path: /^\/github\/rate-limit$/, limiter: githubRemoteLimiter },
+  // Deliberately *not* on the GitHub budget: `GET /rate_limit` is the one
+  // GitHub endpoint that does not count against the core quota, so charging it
+  // to the scarce bucket would ration a call that costs nothing.
 
   // Local CPU only — no GitHub quota — so a looser budget than the above.
   { method: "POST", path: /^\/github\/scan-files$/, limiter: scanLimiter },
@@ -252,8 +254,12 @@ export function configureTrustProxy(app: {
 }): void {
   const raw = process.env["TRUST_PROXY"];
   if (raw === undefined || raw.trim() === "") {
-    logger.info(
-      "TRUST_PROXY is not set; rate limiting keys on the socket address. Behind a reverse proxy this makes every caller share one bucket — set it to the number of proxies in front of this server.",
+    // warn, not info: behind a proxy this is a self-inflicted outage on the one
+    // journey that still works without an API key (the public demo scan), and
+    // the symptom — everyone sharing one bucket — looks like a load problem
+    // rather than a configuration one.
+    logger.warn(
+      "TRUST_PROXY is not set; rate limiting keys on the socket address. Behind a reverse proxy every caller shares one bucket and the public routes rate-limit the world together — set it to the number of proxies in front of this server.",
     );
     return;
   }

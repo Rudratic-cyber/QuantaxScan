@@ -218,11 +218,15 @@ than doing the work in the request handler.
 > invalid or absent — no `WWW-Authenticate`, one message. `rate-limit-edge.test.ts` asserts that
 > directly.
 >
-> **`TRUST_PROXY` must be set on any deployment behind a reverse proxy.** Unset, `req.ip` is the
-> proxy's address for every request and every IP-keyed bucket collapses into one, which
-> rate-limits the world together. Set it to the *number* of proxies (`1` for a single load
-> balancer); a bare `true` is rejected at startup because it lets a client forge
-> `X-Forwarded-For` and mint a fresh bucket per request.
+> **`TRUST_PROXY` must be set on the deployment, and merging this does not do that.** Unset,
+> `req.ip` is the proxy's address for every request and every IP-keyed bucket collapses into one
+> — which rate-limits the world together, most visibly on `POST /demo/repos/:slug/scan`, the one
+> journey that still works without an API key until F1. Set it to the *number* of proxies (`1`
+> for a single load balancer); a bare `true` is rejected at startup because it lets a client
+> forge `X-Forwarded-For` and mint a fresh bucket per request. The server logs a warning when it
+> is unset. **Same shape as S1: the control is not correctly in force until the deployment sets
+> the variable.** It is listed in `README.md`, `.env.example` and `docker-compose.yml`; the live
+> environment is outside this repository.
 >
 > **Not closed, and the checklist stays unticked for all three reasons:**
 >
