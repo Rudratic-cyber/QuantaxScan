@@ -139,12 +139,76 @@ export function createMappingEngine(data: MappingData): MappingEngine {
     );
   }
 
-  function deadlineObligations(entry: AlgorithmEntry, asOf: Date, profile: CustomerProfile | undefined): Obligation[] {
+/**
+ * G-05 — resolving a stated parameter size to the security-strength band IR 8547 keys on.
+ *
+ * IR 8547's rules are keyed on security *strength*; a collector reports a parameter *size*.
+ * The bridge lives in `algorithms.json`'s `securityStrengthBands`, not here, so revising it
+ * stays a JSON pull request — the same rule `deadlineTypes` follows.
+ *
+ * When the key size is undetermined the register is explicit about what must happen: return
+ * BOTH candidate obligations, flagged as assumed rather than silently picking one. The band
+ * carrying `assumedWhenUndetermined` is the conservative one — the earlier deadline — so an
+ * undetermined key is never reported as having more runway than it might actually have.
+ */
+interface StrengthResolution {
+  /** The matched band's `securityStrength` string, or null when undetermined or unmappable. */
+  securityStrength: string | null;
+  /** True when no key size was supplied, so every strength-keyed deadline is returned. */
+  undetermined: boolean;
+  /** The band assumed for severity purposes when undetermined. */
+  assumedStrength: string | null;
+}
+
+function resolveStrength(
+  entry: AlgorithmEntry,
+  keySize: number | null | undefined,
+  bands: Array<{
+    securityStrength: string;
+    assumedWhenUndetermined: boolean;
+    modulusBits?: { min: number; max: number };
+    curveBits?: { min: number; max: number };
+  }>,
+): StrengthResolution {
+  const assumed = bands.find((b) => b.assumedWhenUndetermined)?.securityStrength ?? null;
+
+  // `keySizeKind` absent means the algorithm has no key size at all (a hash, a cipher mode),
+  // so strength filtering does not apply and every deadline stands as written.
+  const kind = entry.keySizeKind;
+  if (!kind) return { securityStrength: null, undetermined: false, assumedStrength: null };
+
+  if (typeof keySize !== "number") {
+    return { securityStrength: null, undetermined: true, assumedStrength: assumed };
+  }
+
+  const match = bands.find((b) => {
+    const range = kind === "modulus" ? b.modulusBits : b.curveBits;
+    return range ? keySize >= range.min && keySize <= range.max : false;
+  });
+
+  // A size that falls in no band is reported as undetermined rather than forced into one.
+  if (!match) return { securityStrength: null, undetermined: true, assumedStrength: assumed };
+  return { securityStrength: match.securityStrength, undetermined: false, assumedStrength: null };
+}
+
+  function deadlineObligations(
+    entry: AlgorithmEntry,
+    asOf: Date,
+    profile: CustomerProfile | undefined,
+    strength: StrengthResolution,
+  ): Obligation[] {
     const obligations: Obligation[] = [];
 
     for (const deadline of entry.deadlines) {
       const framework = frameworksById.get(deadline.framework);
       if (!frameworkApplies(framework, profile)) continue;
+
+      // A deadline that names no strength applies whatever the key size. One that does is
+      // filtered out when we know the key size and it belongs to a different band; when the
+      // key size is undetermined every candidate is kept and flagged (G-05).
+      if (deadline.securityStrength && !strength.undetermined && strength.securityStrength) {
+        if (deadline.securityStrength !== strength.securityStrength) continue;
+      }
 
       const semantics = deadlineSemantics(deadline.type);
       const inEffect = isInEffect(deadline, asOf);
@@ -171,6 +235,14 @@ export function createMappingEngine(data: MappingData): MappingEngine {
 
       const caveats = frameworkCaveats(framework);
       if (deadline.note) caveats.push(deadline.note);
+      if (deadline.securityStrength && strength.undetermined) {
+        caveats.push(
+          `Key size undetermined — assumed ${strength.assumedStrength ?? "the lowest band"}. ` +
+            `Both candidate obligations are shown because the collector could not establish the ` +
+            `key size, and this rule is keyed on security strength (${deadline.securityStrength}). ` +
+            `Confirm the key size before acting on either date.`,
+        );
+      }
       if (!semantics.known) {
         caveats.push(
           `Deadline type "${deadline.type}" is not defined in algorithms.json's deadlineTypes block; ` +
@@ -373,8 +445,14 @@ export function createMappingEngine(data: MappingData): MappingEngine {
       const asOf = toDate(options.asOf);
       const profile = options.profile;
 
+      const strength = resolveStrength(
+        entry,
+        input.keySize,
+        data.algorithms.securityStrengthBands?.bands ?? [],
+      );
+
       const obligations = [
-        ...deadlineObligations(entry, asOf, profile),
+        ...deadlineObligations(entry, asOf, profile, strength),
         ...replacementObligations(entry, profile),
         ...bestPracticeObligations(entry),
         ...frameworkObligations(entry, profile),

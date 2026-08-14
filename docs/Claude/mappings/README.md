@@ -71,6 +71,24 @@ document, which is fetchable.
 
 ---
 
+## Changes in 0.4.1 — the key-size → security-strength bridge (G-05)
+
+No standards claim changed and no `retrievedAt` moved. Added the structure the engine needs to
+apply IR 8547's rules correctly, which are keyed on security *strength* while collectors report a
+parameter *size*.
+
+| Added | Where | Why |
+|---|---|---|
+| `securityStrengthBands` | `algorithms.json` | Two bands (`112 bits`, `>= 128 bits`) with the modulus and curve ranges that land in each, sourced from IR 8547 Table 2 and Table 4. `assumedWhenUndetermined` marks the conservative band used when a collector could not establish a key size, so an undetermined key is never given more runway than it might have. |
+| `keySizeKind` on rsa/dsa/ecdsa/ecdh/eddsa | `algorithms.json` | Whether the entry's key size is a modulus or a curve. Mirrors `KEY_SIZE_SOURCE` in the collectors; here as data so the engine needs no algorithm-name list. |
+
+| Entry | Status |
+|---|---|
+| Band boundaries and their examples | ✅ `verified` (IR 8547 Table 2 / Table 4, same retrieval as the deadlines that use them) |
+| `keySizeKind` assignments | ✅ `verified` — a property of the algorithms, not a judgement |
+
+---
+
 ## Changes in 0.4.0 — machine-readable reporting semantics
 
 No standards claim changed and no `retrievedAt` moved: every citation in 0.4.0 is the same

@@ -61,6 +61,8 @@ const algorithmSchema = z.looseObject({
   canonicalName: z.string(),
   aliases: z.array(z.string()).default([]),
   family: z.string().optional(),
+  /** Which band range a stated key size is read against. Mirrors the collectors' KEY_SIZE_SOURCE. */
+  keySizeKind: z.enum(["modulus", "curve"]).optional(),
   purposes: z.array(z.string()).default([]),
   quantumVulnerable: z.boolean(),
   baseEffortHours: z.number().optional(),
@@ -83,11 +85,33 @@ const deadlineTypeSchema = z.looseObject({
   definition: z.string().optional(),
 });
 
+/**
+ * One security-strength band, and the parameter sizes that land in it.
+ *
+ * IR 8547 keys its transition rules on security strength; a collector reports a parameter size.
+ * This is the bridge, and it is data rather than TypeScript so that a revision stays a JSON
+ * pull request — the same rule as `deadlineTypes`.
+ */
+const strengthBandSchema = z.looseObject({
+  /** MUST match the `securityStrength` string used by the deadlines, because the engine joins on it. */
+  securityStrength: z.string(),
+  /** The band assumed when a collector could not determine a key size (G-05). Exactly one should set it. */
+  assumedWhenUndetermined: z.boolean().default(false),
+  modulusBits: z.looseObject({ min: z.number(), max: z.number() }).optional(),
+  curveBits: z.looseObject({ min: z.number(), max: z.number() }).optional(),
+  examples: z.array(z.string()).default([]),
+});
+
+const securityStrengthBandsSchema = z.looseObject({
+  bands: z.array(strengthBandSchema).default([]),
+});
+
 export const algorithmsDataSchema = z.looseObject({
   schemaVersion: z.string(),
   dataVersion: z.string(),
   criticalCaveat: z.string().optional(),
   deadlineTypes: z.record(z.string(), deadlineTypeSchema).default({}),
+  securityStrengthBands: securityStrengthBandsSchema.optional(),
   algorithms: z.array(algorithmSchema),
 });
 

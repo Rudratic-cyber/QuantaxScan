@@ -86,11 +86,26 @@ nothing resolves it yet.
 - ✅ Extract key size where the source makes it available same-line (`RSA.generate(2048)`,
   `secp256r1`, `P-384`) — done for the source collector. ⬜ Cert `notAfter`/SPKI parsing needs B4,
   not built.
-- ⬜ Where it is genuinely undeterminable, emit `keySize: null` and have the mapping engine
-  return **both** candidate obligations, flagged as "key size undetermined — assumed 112-bit" —
-  the model carries `null` through persistence and read-back (tested), and C1 returns both
-  candidate obligations — but neither is labelled as an assumption, and A4 does not consume them
-  yet.
+- ✅ **Done 2026-08-14.** Where it is genuinely undeterminable, the engine returns **both**
+  candidate obligations, each flagged *"Key size undetermined — assumed 112 bits … Confirm the
+  key size before acting on either date."* And where the key size **is** known it now narrows to
+  the band that actually applies: RSA-2048 gets the 2030 deprecation, RSA-4096 does not. That
+  narrowing is the "correct deadline reporting" this gap was always about — returning both rows
+  for a key we *can* size is as wrong as returning one for a key we cannot.
+
+> **How the band table is kept out of the code.** IR 8547 keys its rules on security *strength*;
+> a collector reports a parameter *size*. That bridge is `securityStrengthBands` in
+> `algorithms.json`, with `keySizeKind` on each algorithm entry saying whether its size is a
+> modulus or a curve — both data, following C1's rule. A test moves the band boundary in a cloned
+> copy and asserts the answer follows with no TypeScript edit.
+>
+> Three deliberate choices: the assumed band is the **conservative** one (the earlier deadline),
+> so an undetermined key is never reported as having more runway than it might; a size falling in
+> **no** band is treated as undetermined rather than forced into the nearest one; and an algorithm
+> with no `keySizeKind` — a hash, a cipher mode — is untouched by any of it.
+>
+> **What is still open is detection reach, not reporting:** the source collector still cannot
+> fold constants or read cross-line context, and certificate SPKI parsing needs B4.
 - ✅ Never silently pick one — the ingestion boundary converts `undefined` → `null` explicitly;
   there is no code path that defaults a missing `keySize` to a number.
 - ✅ **The export boundary now has the same rule, and states the gap rather than hiding it.**
