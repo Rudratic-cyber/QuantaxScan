@@ -18,19 +18,41 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary List all projects
  */
-export const ListProjectsResponseItem = zod.object({
-  id: zod.number(),
-  name: zod.string(),
-  description: zod.string().optional(),
-  language: zod.string(),
-  riskScore: zod.number().nullish(),
-  lastScanAt: zod.coerce.date().nullish(),
-  createdAt: zod.coerce.date(),
-  totalScans: zod.number(),
-  criticalCount: zod.number(),
-  alertCount: zod.number(),
-  cleanCount: zod.number(),
-});
+export const ListProjectsResponseItem = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod
+      .number()
+      .describe(
+        "The owning tenant (P1). Isolation is enforced by the row-level security policies, never by a where clause, so this is a fact about the row rather than a filter a caller may supply.",
+      ),
+    name: zod.string(),
+    description: zod.string().nullish(),
+    language: zod.string(),
+    riskScore: zod.number().nullish(),
+    lastScanAt: zod.coerce.date().nullish(),
+    createdAt: zod.coerce.date(),
+    totalScans: zod.number(),
+    criticalCount: zod.number(),
+    alertCount: zod.number(),
+    cleanCount: zod.number(),
+    dataClassification: zod
+      .enum(["public", "internal", "confidential", "regulated", "indefinite"])
+      .describe(
+        "A3's classification vocabulary, ordered least- to most-sensitive.",
+      )
+      .nullable()
+      .describe(
+        "A3 — the project-level classification every asset inherits unless it overrides it. \*\*Nullable with no default, and the null is load-bearing:\*\* it means the project sets no default, which is not the same statement as a human choosing `internal`. Only the first may be reported as an assumption, so a client must distinguish null from a value rather than substituting one.",
+      ),
+    secrecyLifetimeYears: zod
+      .number()
+      .nullable()
+      .describe(
+        "A3 — the project-level X (secrecy lifetime) in years, set independently of the label. Null for the same reason as `dataClassification`: nobody has said.",
+      ),
+  })
+  .describe("A `projects` row, exactly as the database holds it.");
 export const ListProjectsResponse = zod.array(ListProjectsResponseItem);
 
 /**
@@ -50,19 +72,41 @@ export const GetProjectParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const GetProjectResponse = zod.object({
-  id: zod.number(),
-  name: zod.string(),
-  description: zod.string().optional(),
-  language: zod.string(),
-  riskScore: zod.number().nullish(),
-  lastScanAt: zod.coerce.date().nullish(),
-  createdAt: zod.coerce.date(),
-  totalScans: zod.number(),
-  criticalCount: zod.number(),
-  alertCount: zod.number(),
-  cleanCount: zod.number(),
-});
+export const GetProjectResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod
+      .number()
+      .describe(
+        "The owning tenant (P1). Isolation is enforced by the row-level security policies, never by a where clause, so this is a fact about the row rather than a filter a caller may supply.",
+      ),
+    name: zod.string(),
+    description: zod.string().nullish(),
+    language: zod.string(),
+    riskScore: zod.number().nullish(),
+    lastScanAt: zod.coerce.date().nullish(),
+    createdAt: zod.coerce.date(),
+    totalScans: zod.number(),
+    criticalCount: zod.number(),
+    alertCount: zod.number(),
+    cleanCount: zod.number(),
+    dataClassification: zod
+      .enum(["public", "internal", "confidential", "regulated", "indefinite"])
+      .describe(
+        "A3's classification vocabulary, ordered least- to most-sensitive.",
+      )
+      .nullable()
+      .describe(
+        "A3 — the project-level classification every asset inherits unless it overrides it. \*\*Nullable with no default, and the null is load-bearing:\*\* it means the project sets no default, which is not the same statement as a human choosing `internal`. Only the first may be reported as an assumption, so a client must distinguish null from a value rather than substituting one.",
+      ),
+    secrecyLifetimeYears: zod
+      .number()
+      .nullable()
+      .describe(
+        "A3 — the project-level X (secrecy lifetime) in years, set independently of the label. Null for the same reason as `dataClassification`: nobody has said.",
+      ),
+  })
+  .describe("A `projects` row, exactly as the database holds it.");
 
 /**
  * @summary Delete a project
@@ -70,6 +114,268 @@ export const GetProjectResponse = zod.object({
 export const DeleteProjectParams = zod.object({
   id: zod.coerce.number(),
 });
+
+/**
+ * Returns an empty array — not a 404 — for a project that has no scans, or one that belongs to another organisation, because the row-level security policies filter the scans before this handler sees them.
+ * @summary Get every finding across every scan in a project
+ */
+export const GetProjectFindingsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectFindingsResponseItem = zod.object({
+  id: zod.number(),
+  organizationId: zod
+    .number()
+    .optional()
+    .describe(
+      "Present on findings read back from the database. Absent on the synthetic findings `POST \/scans` and the demo route echo straight back from the scanner, which are numbered in memory and never persisted with that shape.",
+    ),
+  scanId: zod.number(),
+  fileName: zod.string(),
+  lineNumber: zod.number(),
+  severity: zod.enum(["critical", "alert", "safe"]),
+  algorithm: zod.string(),
+  codeSnippet: zod.string(),
+  nistReplacement: zod.string().nullish(),
+  nistStandard: zod.string().nullish(),
+  effortHours: zod.number(),
+  explanation: zod.string().nullish(),
+  compliance: zod
+    .object({
+      algorithm: zod.string(),
+      algorithmId: zod.string(),
+      quantumVulnerable: zod.boolean(),
+      riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+      complianceStatus: zod.enum([
+        "immediate-failure",
+        "future-obligation",
+        "no-obligation",
+      ]),
+      bucket: zod.enum([
+        "immediate-compliance-failure",
+        "pqc-migration",
+        "classical-hygiene",
+        "best-practice",
+        "no-obligation",
+      ]),
+      bucketLabel: zod.string(),
+      bucketDescription: zod.string(),
+      countsTowardPostQuantumScore: zod
+        .boolean()
+        .describe(
+          "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+        ),
+      headline: zod.string(),
+      useDependent: zod
+        .boolean()
+        .describe(
+          "True when the standard's answer depends on how the algorithm is used.",
+        ),
+      useConditions: zod.array(
+        zod.object({
+          use: zod.string(),
+          status: zod.string(),
+          permitted: zod.boolean(),
+          framework: zod.string(),
+        }),
+      ),
+      obligations: zod.array(
+        zod.object({
+          framework: zod.string(),
+          frameworkName: zod.string().optional(),
+          requirement: zod.string(),
+          severity: zod.enum(["critical", "high", "medium", "informational"]),
+          replacement: zod
+            .object({
+              algorithm: zod.string(),
+              standard: zod.string(),
+              purpose: zod.string().optional(),
+              note: zod.string().optional(),
+            })
+            .optional(),
+          deadline: zod
+            .object({
+              type: zod
+                .string()
+                .describe(
+                  "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                ),
+              label: zod.string(),
+              effect: zod.enum(["prohibition", "caution", "permitted"]),
+              inEffect: zod
+                .boolean()
+                .describe("Whether the rule binds at the resolution date."),
+              after: zod.string().optional(),
+              in: zod.string().optional(),
+              since: zod.string().optional(),
+              appliesTo: zod
+                .string()
+                .optional()
+                .describe(
+                  "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                ),
+              securityStrength: zod.string().optional(),
+              source: zod.string().optional(),
+              note: zod.string().optional(),
+            })
+            .optional(),
+          citation: zod
+            .object({
+              document: zod.string(),
+              section: zod.string().optional(),
+              url: zod.string(),
+              retrievedAt: zod.string().optional(),
+              published: zod.string().optional(),
+            })
+            .describe(
+              "Provenance for a single regulatory claim. Required on every obligation.",
+            ),
+          confidence: zod
+            .string()
+            .describe(
+              "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+            ),
+          draftStatus: zod
+            .string()
+            .optional()
+            .describe(
+              "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+            ),
+          caveats: zod.array(zod.string()),
+          source: zod.enum([
+            "algorithm-deadline",
+            "algorithm-replacement",
+            "algorithm-best-practice",
+            "framework",
+          ]),
+        }),
+      ),
+      detection: zod.object({
+        multiplier: zod.number(),
+        adjustedConfidence: zod.number().optional(),
+        reviewRequired: zod.boolean(),
+        reason: zod.string().nullable(),
+      }),
+      reportingNote: zod.string().nullable(),
+      caveats: zod.array(zod.string()),
+      citation: zod
+        .object({
+          document: zod.string(),
+          section: zod.string().optional(),
+          url: zod.string(),
+          retrievedAt: zod.string().optional(),
+          published: zod.string().optional(),
+        })
+        .describe(
+          "Provenance for a single regulatory claim. Required on every obligation.",
+        ),
+      dataVersion: zod
+        .string()
+        .describe(
+          "Pin this with the report. A report is only reproducible against the data version that produced it.",
+        ),
+      asOf: zod
+        .string()
+        .describe("ISO date the deadlines were evaluated against."),
+    })
+    .describe(
+      "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+    )
+    .nullish()
+    .describe(
+      "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+    ),
+});
+export const GetProjectFindingsResponse = zod.array(
+  GetProjectFindingsResponseItem,
+);
+
+/**
+ * What has been examined, what has never been examined, and how sure the evidence is. A catalogue surface absent from `surfaces` has never been looked at — that absence is the machine-readable half of the answer, so callers must not treat the list as exhaustive of the estate. Not public: it describes an organisation's own estate.
+ * @summary Coverage and confidence meter for a project (D3)
+ */
+export const GetProjectCoverageParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectCoverageResponse = zod
+  .object({
+    projectId: zod.number(),
+    generatedAt: zod.coerce.date(),
+    examinedSurfaces: zod.number(),
+    totalSurfaces: zod.number(),
+    surfaces: zod
+      .array(
+        zod.object({
+          surface: zod
+            .string()
+            .describe(
+              "The `Surface` enum value, i.e. how the database records it.",
+            ),
+          surfaceId: zod
+            .string()
+            .nullable()
+            .describe(
+              "The collector catalogue id, so a caller can join presentation without re-deriving the mapping. Null for a surface with no catalogue entry.",
+            ),
+          state: zod
+            .enum(["examined", "examined-nothing-found", "never-examined"])
+            .describe(
+              "`examined-nothing-found` is its own state on purpose: a clean result and an absent one are different facts, and collapsing them loses the only one a reader cares about when the answer is zero.",
+            ),
+          completedRuns: zod.number(),
+          failedRuns: zod
+            .number()
+            .describe(
+              "A failed run is an attempt, not an examination. It is counted here and kept out of `completedRuns` so it can never make a surface look examined.",
+            ),
+          lastExaminedAt: zod.coerce.date().nullable(),
+          assets: zod.number(),
+          activeAssets: zod.number(),
+        }),
+      )
+      .describe(
+        "Every catalogue surface with any run or asset. A surface absent from this list has never been examined at all — that absence is the machine-readable half of the answer.",
+      ),
+    confidence: zod.object({
+      basis: zod
+        .enum(["latest observation per active asset"])
+        .describe(
+          "Stated in the payload so a report built from it can quote the basis rather than guess it. One point per asset, not per observation — weighting by scan frequency would describe our scheduling, not our evidence quality.",
+        ),
+      scored: zod.number(),
+      unscored: zod
+        .number()
+        .describe(
+          "Active assets with no observation at all. Non-zero means a data problem, and hiding it would be the wrong default.",
+        ),
+      excludedByAssetStatus: zod
+        .record(zod.string(), zod.number())
+        .describe(
+          "Assets deliberately left out of the distribution, keyed by asset status.",
+        ),
+      distinctValues: zod.number(),
+      min: zod.number().nullable(),
+      max: zod.number().nullable(),
+      mean: zod.number().nullable(),
+      buckets: zod.array(
+        zod
+          .object({
+            label: zod.string(),
+            lower: zod.number(),
+            upper: zod.number(),
+            count: zod.number(),
+          })
+          .describe(
+            "Half-open bucket, [lower, upper), except the last which includes 1.0.",
+          ),
+      ),
+    }),
+  })
+  .describe(
+    "D3 — what has been examined, and what has never been looked at. The denominator is surfaces, not assets: how much cryptography hides in a surface nobody examined is unknowable from this data, so `examinedSurfaces \/ totalSurfaces` must not be presented as a percentage of the estate.",
+  );
 
 /**
  * @summary Start a new scan
@@ -88,191 +394,388 @@ export const GetScanParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const GetScanResponse = zod.object({
-  id: zod.number(),
-  projectId: zod.number(),
-  mode: zod.enum(["scan-only", "interactive", "proactive", "community"]),
-  status: zod.enum(["pending", "running", "completed", "failed"]),
-  riskScore: zod.number().nullish(),
-  totalLines: zod.number(),
-  criticalCount: zod.number(),
-  alertCount: zod.number(),
-  cleanCount: zod.number(),
-  totalEffortHours: zod.number(),
-  estimatedCost: zod.number(),
-  executiveSummary: zod.string().nullish(),
-  findings: zod
-    .array(
-      zod.object({
-        id: zod.number(),
-        scanId: zod.number(),
-        fileName: zod.string(),
-        lineNumber: zod.number(),
-        severity: zod.enum(["critical", "alert", "safe"]),
-        algorithm: zod.string(),
-        codeSnippet: zod.string(),
-        nistReplacement: zod.string().nullish(),
-        nistStandard: zod.string().nullish(),
+export const GetScanResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    projectId: zod.number(),
+    mode: zod.enum(["scan-only", "interactive", "proactive", "community"]),
+    status: zod.enum(["pending", "running", "completed", "failed"]),
+    riskScore: zod.number().nullish(),
+    totalLines: zod.number(),
+    criticalCount: zod.number(),
+    alertCount: zod.number(),
+    cleanCount: zod.number(),
+    totalEffortHours: zod.number(),
+    estimatedCost: zod.number(),
+    executiveSummary: zod.string().nullish(),
+    code: zod
+      .string()
+      .nullish()
+      .describe(
+        "The submitted source, as persisted on the row. Null on rows written before it was captured.",
+      ),
+    language: zod.string().nullish(),
+    findings: zod
+      .array(
+        zod.object({
+          id: zod.number(),
+          organizationId: zod
+            .number()
+            .optional()
+            .describe(
+              "Present on findings read back from the database. Absent on the synthetic findings `POST \/scans` and the demo route echo straight back from the scanner, which are numbered in memory and never persisted with that shape.",
+            ),
+          scanId: zod.number(),
+          fileName: zod.string(),
+          lineNumber: zod.number(),
+          severity: zod.enum(["critical", "alert", "safe"]),
+          algorithm: zod.string(),
+          codeSnippet: zod.string(),
+          nistReplacement: zod.string().nullish(),
+          nistStandard: zod.string().nullish(),
+          effortHours: zod.number(),
+          explanation: zod.string().nullish(),
+          compliance: zod
+            .object({
+              algorithm: zod.string(),
+              algorithmId: zod.string(),
+              quantumVulnerable: zod.boolean(),
+              riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+              complianceStatus: zod.enum([
+                "immediate-failure",
+                "future-obligation",
+                "no-obligation",
+              ]),
+              bucket: zod.enum([
+                "immediate-compliance-failure",
+                "pqc-migration",
+                "classical-hygiene",
+                "best-practice",
+                "no-obligation",
+              ]),
+              bucketLabel: zod.string(),
+              bucketDescription: zod.string(),
+              countsTowardPostQuantumScore: zod
+                .boolean()
+                .describe(
+                  "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+                ),
+              headline: zod.string(),
+              useDependent: zod
+                .boolean()
+                .describe(
+                  "True when the standard's answer depends on how the algorithm is used.",
+                ),
+              useConditions: zod.array(
+                zod.object({
+                  use: zod.string(),
+                  status: zod.string(),
+                  permitted: zod.boolean(),
+                  framework: zod.string(),
+                }),
+              ),
+              obligations: zod.array(
+                zod.object({
+                  framework: zod.string(),
+                  frameworkName: zod.string().optional(),
+                  requirement: zod.string(),
+                  severity: zod.enum([
+                    "critical",
+                    "high",
+                    "medium",
+                    "informational",
+                  ]),
+                  replacement: zod
+                    .object({
+                      algorithm: zod.string(),
+                      standard: zod.string(),
+                      purpose: zod.string().optional(),
+                      note: zod.string().optional(),
+                    })
+                    .optional(),
+                  deadline: zod
+                    .object({
+                      type: zod
+                        .string()
+                        .describe(
+                          "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                        ),
+                      label: zod.string(),
+                      effect: zod.enum(["prohibition", "caution", "permitted"]),
+                      inEffect: zod
+                        .boolean()
+                        .describe(
+                          "Whether the rule binds at the resolution date.",
+                        ),
+                      after: zod.string().optional(),
+                      in: zod.string().optional(),
+                      since: zod.string().optional(),
+                      appliesTo: zod
+                        .string()
+                        .optional()
+                        .describe(
+                          "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                        ),
+                      securityStrength: zod.string().optional(),
+                      source: zod.string().optional(),
+                      note: zod.string().optional(),
+                    })
+                    .optional(),
+                  citation: zod
+                    .object({
+                      document: zod.string(),
+                      section: zod.string().optional(),
+                      url: zod.string(),
+                      retrievedAt: zod.string().optional(),
+                      published: zod.string().optional(),
+                    })
+                    .describe(
+                      "Provenance for a single regulatory claim. Required on every obligation.",
+                    ),
+                  confidence: zod
+                    .string()
+                    .describe(
+                      "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+                    ),
+                  draftStatus: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                    ),
+                  caveats: zod.array(zod.string()),
+                  source: zod.enum([
+                    "algorithm-deadline",
+                    "algorithm-replacement",
+                    "algorithm-best-practice",
+                    "framework",
+                  ]),
+                }),
+              ),
+              detection: zod.object({
+                multiplier: zod.number(),
+                adjustedConfidence: zod.number().optional(),
+                reviewRequired: zod.boolean(),
+                reason: zod.string().nullable(),
+              }),
+              reportingNote: zod.string().nullable(),
+              caveats: zod.array(zod.string()),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  section: zod.string().optional(),
+                  url: zod.string(),
+                  retrievedAt: zod.string().optional(),
+                  published: zod.string().optional(),
+                })
+                .describe(
+                  "Provenance for a single regulatory claim. Required on every obligation.",
+                ),
+              dataVersion: zod
+                .string()
+                .describe(
+                  "Pin this with the report. A report is only reproducible against the data version that produced it.",
+                ),
+              asOf: zod
+                .string()
+                .describe("ISO date the deadlines were evaluated against."),
+            })
+            .describe(
+              "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+            )
+            .nullish()
+            .describe(
+              "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+            ),
+        }),
+      )
+      .optional(),
+    pqc: zod
+      .object({
+        riskScore: zod
+          .number()
+          .describe(
+            "0-100, and \*\*zero whenever no quantum-vulnerable algorithm was detected\*\*, whatever else the scan found. Classical hygiene contributes nothing (G-10).",
+          ),
+        findingCount: zod.number(),
         effortHours: zod.number(),
-        explanation: zod.string().nullish(),
-        compliance: zod
+        estimatedCost: zod.number(),
+        byAlgorithm: zod.array(
+          zod
+            .object({
+              algorithm: zod.string(),
+              count: zod.number(),
+              effortHours: zod.number(),
+              reportingNote: zod
+                .string()
+                .nullable()
+                .describe(
+                  "The mapping data's own qualification of this algorithm. Print it verbatim — it is why the finding is being reported the way it is.",
+                ),
+              nistReplacement: zod.string().nullable(),
+              nistStandard: zod.string().nullable(),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  url: zod.string(),
+                })
+                .nullable(),
+            })
+            .describe(
+              "One algorithm's contribution to a risk track, aggregated across the findings.",
+            ),
+        ),
+        scoreComponents: zod
           .object({
-            algorithm: zod.string(),
-            algorithmId: zod.string(),
-            quantumVulnerable: zod.boolean(),
-            riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
-            complianceStatus: zod.enum([
-              "immediate-failure",
-              "future-obligation",
-              "no-obligation",
-            ]),
-            bucket: zod.enum([
-              "immediate-compliance-failure",
-              "pqc-migration",
-              "classical-hygiene",
-              "best-practice",
-              "no-obligation",
-            ]),
-            bucketLabel: zod.string(),
-            bucketDescription: zod.string(),
-            countsTowardPostQuantumScore: zod
-              .boolean()
+            detection: zod
+              .number()
               .describe(
-                "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+                "0-60. Quantum-vulnerable density against the lines actually examined.",
               ),
-            headline: zod.string(),
-            useDependent: zod
-              .boolean()
+            moscaBreach: zod
+              .number()
               .describe(
-                "True when the standard's answer depends on how the algorithm is used.",
+                "0-40. The share of Q-Day scenarios under which the inequality is breached.",
               ),
-            useConditions: zod.array(
-              zod.object({
-                use: zod.string(),
-                status: zod.string(),
-                permitted: zod.boolean(),
-                framework: zod.string(),
-              }),
-            ),
-            obligations: zod.array(
-              zod.object({
-                framework: zod.string(),
-                frameworkName: zod.string().optional(),
-                requirement: zod.string(),
-                severity: zod.enum([
-                  "critical",
-                  "high",
-                  "medium",
-                  "informational",
-                ]),
-                replacement: zod
-                  .object({
-                    algorithm: zod.string(),
-                    standard: zod.string(),
-                    purpose: zod.string().optional(),
-                    note: zod.string().optional(),
-                  })
-                  .optional(),
-                deadline: zod
-                  .object({
-                    type: zod
-                      .string()
-                      .describe(
-                        "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
-                      ),
-                    label: zod.string(),
-                    effect: zod.enum(["prohibition", "caution", "permitted"]),
-                    inEffect: zod
-                      .boolean()
-                      .describe(
-                        "Whether the rule binds at the resolution date.",
-                      ),
-                    after: zod.string().optional(),
-                    in: zod.string().optional(),
-                    since: zod.string().optional(),
-                    appliesTo: zod
-                      .string()
-                      .optional()
-                      .describe(
-                        "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
-                      ),
-                    securityStrength: zod.string().optional(),
-                    source: zod.string().optional(),
-                    note: zod.string().optional(),
-                  })
-                  .optional(),
-                citation: zod
-                  .object({
-                    document: zod.string(),
-                    section: zod.string().optional(),
-                    url: zod.string(),
-                    retrievedAt: zod.string().optional(),
-                    published: zod.string().optional(),
-                  })
-                  .describe(
-                    "Provenance for a single regulatory claim. Required on every obligation.",
-                  ),
-                confidence: zod
-                  .string()
-                  .describe(
-                    "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
-                  ),
-                draftStatus: zod
-                  .string()
-                  .optional()
-                  .describe(
-                    "Present when the citing document is a draft. Must be shown wherever the obligation is.",
-                  ),
-                caveats: zod.array(zod.string()),
-                source: zod.enum([
-                  "algorithm-deadline",
-                  "algorithm-replacement",
-                  "algorithm-best-practice",
-                  "framework",
-                ]),
-              }),
-            ),
-            detection: zod.object({
-              multiplier: zod.number(),
-              adjustedConfidence: zod.number().optional(),
-              reviewRequired: zod.boolean(),
-              reason: zod.string().nullable(),
-            }),
-            reportingNote: zod.string().nullable(),
-            caveats: zod.array(zod.string()),
-            citation: zod
-              .object({
-                document: zod.string(),
-                section: zod.string().optional(),
-                url: zod.string(),
-                retrievedAt: zod.string().optional(),
-                published: zod.string().optional(),
-              })
-              .describe(
-                "Provenance for a single regulatory claim. Required on every obligation.",
-              ),
-            dataVersion: zod
-              .string()
-              .describe(
-                "Pin this with the report. A report is only reproducible against the data version that produced it.",
-              ),
-            asOf: zod
-              .string()
-              .describe("ISO date the deadlines were evaluated against."),
           })
           .describe(
-            "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
-          )
-          .nullish()
-          .describe(
-            "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+            "The two halves of `riskScore`. A score that cannot be decomposed is what A4 exists to replace.",
           ),
-      }),
-    )
-    .optional(),
-  createdAt: zod.coerce.date(),
-  completedAt: zod.coerce.date().nullish(),
-});
+      })
+      .describe(
+        "A4 — the post-quantum half of the risk profile, with its score decomposed.",
+      ),
+    hygiene: zod
+      .object({
+        findingCount: zod.number(),
+        effortHours: zod.number(),
+        estimatedCost: zod.number(),
+        byAlgorithm: zod.array(
+          zod
+            .object({
+              algorithm: zod.string(),
+              count: zod.number(),
+              effortHours: zod.number(),
+              reportingNote: zod
+                .string()
+                .nullable()
+                .describe(
+                  "The mapping data's own qualification of this algorithm. Print it verbatim — it is why the finding is being reported the way it is.",
+                ),
+              nistReplacement: zod.string().nullable(),
+              nistStandard: zod.string().nullable(),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  url: zod.string(),
+                })
+                .nullable(),
+            })
+            .describe(
+              "One algorithm's contribution to a risk track, aggregated across the findings.",
+            ),
+        ),
+        countedTowardPqcRisk: zod
+          .boolean()
+          .describe(
+            "Always false. Structural rather than decorative: an assertion in the payload that these findings did not move the post-quantum number.",
+          ),
+        headline: zod.string(),
+      })
+      .describe(
+        "A4\/G-10 — classical cryptographic defects with no post-quantum content, scored separately and never folded into the PQC score.",
+      ),
+    mosca: zod
+      .object({
+        x: zod.number().describe("X as used, after defaulting."),
+        y: zod.number(),
+        secrecyLifetimeSource: zod
+          .enum(["provided", "assumed-default"])
+          .describe(
+            "Whether X was supplied or assumed. A report must say which: `assumed-default` means nobody classified the data and the product's fallback was used.",
+          ),
+        applicable: zod
+          .boolean()
+          .describe(
+            "False when no quantum-vulnerable cryptography was found; every verdict is then trivially not-breached.",
+          ),
+        evaluatedAt: zod.coerce.date(),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              x: zod
+                .number()
+                .describe(
+                  "Secrecy lifetime, years — how long the data must stay confidential.",
+                ),
+              y: zod.number().describe("Migration time, years."),
+              z: zod
+                .number()
+                .describe(
+                  "Years remaining until this scenario's Q-Day. Negative once the year has passed.",
+                ),
+              breached: zod.boolean(),
+              breachMarginYears: zod
+                .number()
+                .describe(
+                  "`(x + y) - z`. Negative is margin remaining; positive means already too late, by this many years.",
+                ),
+              narrative: zod.string(),
+              scenarioRationale: zod.string(),
+              scenarioConfidence: zod.enum(["verified", "needs-check"]),
+            })
+            .describe(
+              "`X + Y > Z` under one Q-Day scenario, with all three inputs exposed. A4's acceptance criterion is a verdict that shows its working, so none of x, y or z is optional.",
+            ),
+        ),
+        breachedScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        worstBreach: zod
+          .object({
+            scenario: zod.enum(["conservative", "central", "aggressive"]),
+            qDayYear: zod.number(),
+            x: zod
+              .number()
+              .describe(
+                "Secrecy lifetime, years — how long the data must stay confidential.",
+              ),
+            y: zod.number().describe("Migration time, years."),
+            z: zod
+              .number()
+              .describe(
+                "Years remaining until this scenario's Q-Day. Negative once the year has passed.",
+              ),
+            breached: zod.boolean(),
+            breachMarginYears: zod
+              .number()
+              .describe(
+                "`(x + y) - z`. Negative is margin remaining; positive means already too late, by this many years.",
+              ),
+            narrative: zod.string(),
+            scenarioRationale: zod.string(),
+            scenarioConfidence: zod.enum(["verified", "needs-check"]),
+          })
+          .describe(
+            "`X + Y > Z` under one Q-Day scenario, with all three inputs exposed. A4's acceptance criterion is a verdict that shows its working, so none of x, y or z is optional.",
+          )
+          .nullable()
+          .describe(
+            "The breached verdict with the largest margin. Null when nothing breaches.",
+          ),
+        framing: zod.string(),
+      })
+      .describe(
+        "One verdict per Q-Day scenario. The scenarios are regulatory deadlines drawn from draft guidance, not predictions about physics — `framing` carries the sentence that must accompany any customer-facing use of these years.",
+      ),
+    createdAt: zod.coerce.date(),
+    completedAt: zod.coerce.date().nullish(),
+  })
+  .describe(
+    "A `scans` row plus the three derived A4 blocks. `pqc`, `hygiene` and `mosca` are recomputed from the findings on every read and never stored, so a mappings-data or Q-Day-scenario change reaches historical scans without a backfill.",
+  );
 
 /**
  * @summary Get all findings for a scan
@@ -283,6 +786,12 @@ export const GetScanFindingsParams = zod.object({
 
 export const GetScanFindingsResponseItem = zod.object({
   id: zod.number(),
+  organizationId: zod
+    .number()
+    .optional()
+    .describe(
+      "Present on findings read back from the database. Absent on the synthetic findings `POST \/scans` and the demo route echo straight back from the scanner, which are numbered in memory and never persisted with that shape.",
+    ),
   scanId: zod.number(),
   fileName: zod.string(),
   lineNumber: zod.number(),
@@ -442,6 +951,105 @@ export const GetScanFindingsResponseItem = zod.object({
 export const GetScanFindingsResponse = zod.array(GetScanFindingsResponseItem);
 
 /**
+ * Creates a project, one scan row per file, and returns a project-level roll-up. The risk profile is computed over every finding in the submission — `worstFileRiskScore` is reported separately because the maximum of per-file scores cannot express a Mosca verdict over a whole body of data.
+ * @summary Scan several files as one new project
+ */
+
+export const CreateMultiScanBody = zod.object({
+  projectName: zod.string(),
+  language: zod.string(),
+  files: zod
+    .array(
+      zod.object({
+        filename: zod.string(),
+        content: zod.string(),
+      }),
+    )
+    .min(1),
+});
+
+/**
+ * `owner` is the GitHub repository owner, not a user. Responds 200, not 201. The created row is `visibility: public` and expires after `SHARE_LINK_TTL_DAYS` (default 365).
+ * @summary Create a share link for a report
+ */
+export const CreateSharedReportBody = zod.object({
+  owner: zod.string().describe("The GitHub repository owner, not a user."),
+  repo: zod.string(),
+  repoUrl: zod.string(),
+  data: zod
+    .unknown()
+    .describe("The report payload, stored verbatim as jsonb. Any JSON value."),
+});
+
+export const CreateSharedReportResponse = zod.object({
+  id: zod
+    .string()
+    .describe(
+      "128 bits of randomness, base64url. The only access control on the link.",
+    ),
+  shareUrl: zod.string(),
+});
+
+/**
+ * Public by link, which is why the id is a 128-bit random base64url string and **not** an integer. Revoked, expired and private rows are invisible to this route because the rule lives in the `shared_reports` policy rather than in a where clause — all three are indistinguishable from a link that never existed.
+ * @summary Read a shared report by its link id
+ */
+export const GetSharedReportParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetSharedReportResponse = zod
+  .object({
+    id: zod.string(),
+    organizationId: zod.number(),
+    owner: zod.string().describe("The GitHub repository owner, not a user."),
+    repo: zod.string(),
+    repoUrl: zod.string(),
+    data: zod
+      .unknown()
+      .describe("Whatever the creator stored. Any JSON value."),
+    createdByUserId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Null for rows created through the shared API key, which has no person behind it.",
+      ),
+    visibility: zod.enum(["private", "public"]),
+    expiresAt: zod.coerce.date(),
+    revokedAt: zod.coerce.date().nullable(),
+    lastAccessedAt: zod.coerce.date().nullable(),
+    accessCount: zod.number(),
+    createdAt: zod.coerce.date(),
+  })
+  .describe(
+    "A `shared_reports` row, returned in full on a public route. `organizationId` and the expiry\/revocation columns are visible to anyone holding the link — see the note in the PR that introduced this documentation.",
+  );
+
+/**
+ * Responds with `text/event-stream`, not JSON: a sequence of `data:` frames carrying `{"content":"..."}` and a final `{"done":true}`. An unconfigured or failing OpenAI integration still streams 200 with the error as a content frame, so a non-200 here means the request was rejected, not that the model failed.
+ * @summary Stream an AI answer about a scan
+ */
+
+export const CreateChatCompletionBody = zod.object({
+  messages: zod
+    .array(
+      zod.object({
+        role: zod.enum(["user", "assistant"]),
+        content: zod.string(),
+      }),
+    )
+    .min(1),
+  systemContext: zod
+    .string()
+    .optional()
+    .describe("Scan context pasted into the system prompt."),
+  briefMode: zod
+    .boolean()
+    .optional()
+    .describe("Caps the answer at two or three sentences of plain prose."),
+});
+
+/**
  * @summary List community posts
  */
 export const listCommunityPostsQueryLimitDefault = 20;
@@ -556,6 +1164,8 @@ export const ListDemoReposResponseItem = zod.object({
   description: zod.string(),
   language: zod.string(),
   stars: zod.number(),
+  repoUrl: zod.string(),
+  fileCount: zod.number(),
   riskScore: zod.number(),
   criticalCount: zod.number(),
   alertCount: zod.number(),
@@ -563,29 +1173,405 @@ export const ListDemoReposResponseItem = zod.object({
 export const ListDemoReposResponse = zod.array(ListDemoReposResponseItem);
 
 /**
+ * Hard-coded repositories, scanned in memory. Nothing is written to the database, so `id` and `projectId` are both `-1` and there is no scan row to fetch afterwards.
  * @summary Run a scan on a demo repository
  */
 export const RunDemoScanParams = zod.object({
   slug: zod.coerce.string(),
 });
 
-export const RunDemoScanResponse = zod.object({
-  id: zod.number(),
-  projectId: zod.number(),
-  mode: zod.enum(["scan-only", "interactive", "proactive", "community"]),
-  status: zod.enum(["pending", "running", "completed", "failed"]),
-  riskScore: zod.number().nullish(),
-  totalLines: zod.number(),
-  criticalCount: zod.number(),
-  alertCount: zod.number(),
-  cleanCount: zod.number(),
-  totalEffortHours: zod.number(),
-  estimatedCost: zod.number(),
-  executiveSummary: zod.string().nullish(),
-  findings: zod
-    .array(
+export const RunDemoScanResponse = zod
+  .object({
+    id: zod.number().describe("Always -1 — nothing was persisted."),
+    projectId: zod.number().describe("Always -1 — nothing was persisted."),
+    mode: zod.enum(["scan-only", "interactive", "proactive", "community"]),
+    status: zod.enum(["pending", "running", "completed", "failed"]),
+    name: zod.string(),
+    repoUrl: zod.string(),
+    language: zod.string(),
+    riskScore: zod.number(),
+    totalLines: zod.number(),
+    criticalCount: zod.number(),
+    alertCount: zod.number(),
+    cleanCount: zod.number(),
+    totalEffortHours: zod.number(),
+    estimatedCost: zod.number(),
+    executiveSummary: zod.string(),
+    pqc: zod
+      .object({
+        riskScore: zod
+          .number()
+          .describe(
+            "0-100, and \*\*zero whenever no quantum-vulnerable algorithm was detected\*\*, whatever else the scan found. Classical hygiene contributes nothing (G-10).",
+          ),
+        findingCount: zod.number(),
+        effortHours: zod.number(),
+        estimatedCost: zod.number(),
+        byAlgorithm: zod.array(
+          zod
+            .object({
+              algorithm: zod.string(),
+              count: zod.number(),
+              effortHours: zod.number(),
+              reportingNote: zod
+                .string()
+                .nullable()
+                .describe(
+                  "The mapping data's own qualification of this algorithm. Print it verbatim — it is why the finding is being reported the way it is.",
+                ),
+              nistReplacement: zod.string().nullable(),
+              nistStandard: zod.string().nullable(),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  url: zod.string(),
+                })
+                .nullable(),
+            })
+            .describe(
+              "One algorithm's contribution to a risk track, aggregated across the findings.",
+            ),
+        ),
+        scoreComponents: zod
+          .object({
+            detection: zod
+              .number()
+              .describe(
+                "0-60. Quantum-vulnerable density against the lines actually examined.",
+              ),
+            moscaBreach: zod
+              .number()
+              .describe(
+                "0-40. The share of Q-Day scenarios under which the inequality is breached.",
+              ),
+          })
+          .describe(
+            "The two halves of `riskScore`. A score that cannot be decomposed is what A4 exists to replace.",
+          ),
+      })
+      .describe(
+        "A4 — the post-quantum half of the risk profile, with its score decomposed.",
+      ),
+    hygiene: zod
+      .object({
+        findingCount: zod.number(),
+        effortHours: zod.number(),
+        estimatedCost: zod.number(),
+        byAlgorithm: zod.array(
+          zod
+            .object({
+              algorithm: zod.string(),
+              count: zod.number(),
+              effortHours: zod.number(),
+              reportingNote: zod
+                .string()
+                .nullable()
+                .describe(
+                  "The mapping data's own qualification of this algorithm. Print it verbatim — it is why the finding is being reported the way it is.",
+                ),
+              nistReplacement: zod.string().nullable(),
+              nistStandard: zod.string().nullable(),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  url: zod.string(),
+                })
+                .nullable(),
+            })
+            .describe(
+              "One algorithm's contribution to a risk track, aggregated across the findings.",
+            ),
+        ),
+        countedTowardPqcRisk: zod
+          .boolean()
+          .describe(
+            "Always false. Structural rather than decorative: an assertion in the payload that these findings did not move the post-quantum number.",
+          ),
+        headline: zod.string(),
+      })
+      .describe(
+        "A4\/G-10 — classical cryptographic defects with no post-quantum content, scored separately and never folded into the PQC score.",
+      ),
+    mosca: zod
+      .object({
+        x: zod.number().describe("X as used, after defaulting."),
+        y: zod.number(),
+        secrecyLifetimeSource: zod
+          .enum(["provided", "assumed-default"])
+          .describe(
+            "Whether X was supplied or assumed. A report must say which: `assumed-default` means nobody classified the data and the product's fallback was used.",
+          ),
+        applicable: zod
+          .boolean()
+          .describe(
+            "False when no quantum-vulnerable cryptography was found; every verdict is then trivially not-breached.",
+          ),
+        evaluatedAt: zod.coerce.date(),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              x: zod
+                .number()
+                .describe(
+                  "Secrecy lifetime, years — how long the data must stay confidential.",
+                ),
+              y: zod.number().describe("Migration time, years."),
+              z: zod
+                .number()
+                .describe(
+                  "Years remaining until this scenario's Q-Day. Negative once the year has passed.",
+                ),
+              breached: zod.boolean(),
+              breachMarginYears: zod
+                .number()
+                .describe(
+                  "`(x + y) - z`. Negative is margin remaining; positive means already too late, by this many years.",
+                ),
+              narrative: zod.string(),
+              scenarioRationale: zod.string(),
+              scenarioConfidence: zod.enum(["verified", "needs-check"]),
+            })
+            .describe(
+              "`X + Y > Z` under one Q-Day scenario, with all three inputs exposed. A4's acceptance criterion is a verdict that shows its working, so none of x, y or z is optional.",
+            ),
+        ),
+        breachedScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        worstBreach: zod
+          .object({
+            scenario: zod.enum(["conservative", "central", "aggressive"]),
+            qDayYear: zod.number(),
+            x: zod
+              .number()
+              .describe(
+                "Secrecy lifetime, years — how long the data must stay confidential.",
+              ),
+            y: zod.number().describe("Migration time, years."),
+            z: zod
+              .number()
+              .describe(
+                "Years remaining until this scenario's Q-Day. Negative once the year has passed.",
+              ),
+            breached: zod.boolean(),
+            breachMarginYears: zod
+              .number()
+              .describe(
+                "`(x + y) - z`. Negative is margin remaining; positive means already too late, by this many years.",
+              ),
+            narrative: zod.string(),
+            scenarioRationale: zod.string(),
+            scenarioConfidence: zod.enum(["verified", "needs-check"]),
+          })
+          .describe(
+            "`X + Y > Z` under one Q-Day scenario, with all three inputs exposed. A4's acceptance criterion is a verdict that shows its working, so none of x, y or z is optional.",
+          )
+          .nullable()
+          .describe(
+            "The breached verdict with the largest margin. Null when nothing breaches.",
+          ),
+        framing: zod.string(),
+      })
+      .describe(
+        "One verdict per Q-Day scenario. The scenarios are regulatory deadlines drawn from draft guidance, not predictions about physics — `framing` carries the sentence that must accompany any customer-facing use of these years.",
+      ),
+    files: zod.array(
+      zod.object({
+        path: zod.string(),
+        language: zod.string(),
+        content: zod.string(),
+        lines: zod.number(),
+        findings: zod.array(
+          zod.object({
+            id: zod.number(),
+            organizationId: zod
+              .number()
+              .optional()
+              .describe(
+                "Present on findings read back from the database. Absent on the synthetic findings `POST \/scans` and the demo route echo straight back from the scanner, which are numbered in memory and never persisted with that shape.",
+              ),
+            scanId: zod.number(),
+            fileName: zod.string(),
+            lineNumber: zod.number(),
+            severity: zod.enum(["critical", "alert", "safe"]),
+            algorithm: zod.string(),
+            codeSnippet: zod.string(),
+            nistReplacement: zod.string().nullish(),
+            nistStandard: zod.string().nullish(),
+            effortHours: zod.number(),
+            explanation: zod.string().nullish(),
+            compliance: zod
+              .object({
+                algorithm: zod.string(),
+                algorithmId: zod.string(),
+                quantumVulnerable: zod.boolean(),
+                riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+                complianceStatus: zod.enum([
+                  "immediate-failure",
+                  "future-obligation",
+                  "no-obligation",
+                ]),
+                bucket: zod.enum([
+                  "immediate-compliance-failure",
+                  "pqc-migration",
+                  "classical-hygiene",
+                  "best-practice",
+                  "no-obligation",
+                ]),
+                bucketLabel: zod.string(),
+                bucketDescription: zod.string(),
+                countsTowardPostQuantumScore: zod
+                  .boolean()
+                  .describe(
+                    "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+                  ),
+                headline: zod.string(),
+                useDependent: zod
+                  .boolean()
+                  .describe(
+                    "True when the standard's answer depends on how the algorithm is used.",
+                  ),
+                useConditions: zod.array(
+                  zod.object({
+                    use: zod.string(),
+                    status: zod.string(),
+                    permitted: zod.boolean(),
+                    framework: zod.string(),
+                  }),
+                ),
+                obligations: zod.array(
+                  zod.object({
+                    framework: zod.string(),
+                    frameworkName: zod.string().optional(),
+                    requirement: zod.string(),
+                    severity: zod.enum([
+                      "critical",
+                      "high",
+                      "medium",
+                      "informational",
+                    ]),
+                    replacement: zod
+                      .object({
+                        algorithm: zod.string(),
+                        standard: zod.string(),
+                        purpose: zod.string().optional(),
+                        note: zod.string().optional(),
+                      })
+                      .optional(),
+                    deadline: zod
+                      .object({
+                        type: zod
+                          .string()
+                          .describe(
+                            "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                          ),
+                        label: zod.string(),
+                        effect: zod.enum([
+                          "prohibition",
+                          "caution",
+                          "permitted",
+                        ]),
+                        inEffect: zod
+                          .boolean()
+                          .describe(
+                            "Whether the rule binds at the resolution date.",
+                          ),
+                        after: zod.string().optional(),
+                        in: zod.string().optional(),
+                        since: zod.string().optional(),
+                        appliesTo: zod
+                          .string()
+                          .optional()
+                          .describe(
+                            "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                          ),
+                        securityStrength: zod.string().optional(),
+                        source: zod.string().optional(),
+                        note: zod.string().optional(),
+                      })
+                      .optional(),
+                    citation: zod
+                      .object({
+                        document: zod.string(),
+                        section: zod.string().optional(),
+                        url: zod.string(),
+                        retrievedAt: zod.string().optional(),
+                        published: zod.string().optional(),
+                      })
+                      .describe(
+                        "Provenance for a single regulatory claim. Required on every obligation.",
+                      ),
+                    confidence: zod
+                      .string()
+                      .describe(
+                        "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+                      ),
+                    draftStatus: zod
+                      .string()
+                      .optional()
+                      .describe(
+                        "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                      ),
+                    caveats: zod.array(zod.string()),
+                    source: zod.enum([
+                      "algorithm-deadline",
+                      "algorithm-replacement",
+                      "algorithm-best-practice",
+                      "framework",
+                    ]),
+                  }),
+                ),
+                detection: zod.object({
+                  multiplier: zod.number(),
+                  adjustedConfidence: zod.number().optional(),
+                  reviewRequired: zod.boolean(),
+                  reason: zod.string().nullable(),
+                }),
+                reportingNote: zod.string().nullable(),
+                caveats: zod.array(zod.string()),
+                citation: zod
+                  .object({
+                    document: zod.string(),
+                    section: zod.string().optional(),
+                    url: zod.string(),
+                    retrievedAt: zod.string().optional(),
+                    published: zod.string().optional(),
+                  })
+                  .describe(
+                    "Provenance for a single regulatory claim. Required on every obligation.",
+                  ),
+                dataVersion: zod
+                  .string()
+                  .describe(
+                    "Pin this with the report. A report is only reproducible against the data version that produced it.",
+                  ),
+                asOf: zod
+                  .string()
+                  .describe("ISO date the deadlines were evaluated against."),
+              })
+              .describe(
+                "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+              )
+              .nullish()
+              .describe(
+                "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+              ),
+          }),
+        ),
+        criticalCount: zod.number(),
+        alertCount: zod.number(),
+      }),
+    ),
+    findings: zod.array(
       zod.object({
         id: zod.number(),
+        organizationId: zod
+          .number()
+          .optional()
+          .describe(
+            "Present on findings read back from the database. Absent on the synthetic findings `POST \/scans` and the demo route echo straight back from the scanner, which are numbered in memory and never persisted with that shape.",
+          ),
         scanId: zod.number(),
         fileName: zod.string(),
         lineNumber: zod.number(),
@@ -749,27 +1735,13 @@ export const RunDemoScanResponse = zod.object({
             "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
           ),
       }),
-    )
-    .optional(),
-  createdAt: zod.coerce.date(),
-  completedAt: zod.coerce.date().nullish(),
-});
-
-/**
- * @summary Get current authenticated user
- */
-export const GetCurrentAuthUserResponse = zod.object({
-  user: zod.union([
-    zod.object({
-      id: zod.string(),
-      email: zod.string().nullish(),
-      firstName: zod.string().nullish(),
-      lastName: zod.string().nullish(),
-      profileImageUrl: zod.string().nullish(),
-    }),
-    zod.null(),
-  ]),
-});
+    ),
+    createdAt: zod.coerce.date(),
+    completedAt: zod.coerce.date(),
+  })
+  .describe(
+    "Scan-shaped, but not a `scans` row: the demo route writes nothing, so `id` and `projectId` are `-1` and the repository's own identity travels in `name`\/`repoUrl`.",
+  );
 
 /**
  * @summary Scan a public GitHub repository for quantum vulnerabilities
@@ -786,6 +1758,12 @@ export const ScanGithubRepoResponse = zod.object({
   findings: zod.array(
     zod.object({
       id: zod.number(),
+      organizationId: zod
+        .number()
+        .optional()
+        .describe(
+          "Present on findings read back from the database. Absent on the synthetic findings `POST \/scans` and the demo route echo straight back from the scanner, which are numbered in memory and never persisted with that shape.",
+        ),
       scanId: zod.number(),
       fileName: zod.string(),
       lineNumber: zod.number(),
@@ -955,11 +1933,1025 @@ export const ScanGithubRepoResponse = zod.object({
   totalLines: zod.number(),
   totalEffortHours: zod.number().nullish(),
   executiveSummary: zod.string(),
+  pqc: zod
+    .object({
+      riskScore: zod
+        .number()
+        .describe(
+          "0-100, and \*\*zero whenever no quantum-vulnerable algorithm was detected\*\*, whatever else the scan found. Classical hygiene contributes nothing (G-10).",
+        ),
+      findingCount: zod.number(),
+      effortHours: zod.number(),
+      estimatedCost: zod.number(),
+      byAlgorithm: zod.array(
+        zod
+          .object({
+            algorithm: zod.string(),
+            count: zod.number(),
+            effortHours: zod.number(),
+            reportingNote: zod
+              .string()
+              .nullable()
+              .describe(
+                "The mapping data's own qualification of this algorithm. Print it verbatim — it is why the finding is being reported the way it is.",
+              ),
+            nistReplacement: zod.string().nullable(),
+            nistStandard: zod.string().nullable(),
+            citation: zod
+              .object({
+                document: zod.string(),
+                url: zod.string(),
+              })
+              .nullable(),
+          })
+          .describe(
+            "One algorithm's contribution to a risk track, aggregated across the findings.",
+          ),
+      ),
+      scoreComponents: zod
+        .object({
+          detection: zod
+            .number()
+            .describe(
+              "0-60. Quantum-vulnerable density against the lines actually examined.",
+            ),
+          moscaBreach: zod
+            .number()
+            .describe(
+              "0-40. The share of Q-Day scenarios under which the inequality is breached.",
+            ),
+        })
+        .describe(
+          "The two halves of `riskScore`. A score that cannot be decomposed is what A4 exists to replace.",
+        ),
+    })
+    .describe(
+      "A4 — the post-quantum half of the risk profile, with its score decomposed.",
+    )
+    .optional()
+    .describe(
+      "A4. Optional because the no-scannable-files early return answers 200 with the counters only and no risk profile at all.",
+    ),
+  hygiene: zod
+    .object({
+      findingCount: zod.number(),
+      effortHours: zod.number(),
+      estimatedCost: zod.number(),
+      byAlgorithm: zod.array(
+        zod
+          .object({
+            algorithm: zod.string(),
+            count: zod.number(),
+            effortHours: zod.number(),
+            reportingNote: zod
+              .string()
+              .nullable()
+              .describe(
+                "The mapping data's own qualification of this algorithm. Print it verbatim — it is why the finding is being reported the way it is.",
+              ),
+            nistReplacement: zod.string().nullable(),
+            nistStandard: zod.string().nullable(),
+            citation: zod
+              .object({
+                document: zod.string(),
+                url: zod.string(),
+              })
+              .nullable(),
+          })
+          .describe(
+            "One algorithm's contribution to a risk track, aggregated across the findings.",
+          ),
+      ),
+      countedTowardPqcRisk: zod
+        .boolean()
+        .describe(
+          "Always false. Structural rather than decorative: an assertion in the payload that these findings did not move the post-quantum number.",
+        ),
+      headline: zod.string(),
+    })
+    .describe(
+      "A4\/G-10 — classical cryptographic defects with no post-quantum content, scored separately and never folded into the PQC score.",
+    )
+    .optional()
+    .describe("Optional for the same reason as `pqc`."),
+  mosca: zod
+    .object({
+      x: zod.number().describe("X as used, after defaulting."),
+      y: zod.number(),
+      secrecyLifetimeSource: zod
+        .enum(["provided", "assumed-default"])
+        .describe(
+          "Whether X was supplied or assumed. A report must say which: `assumed-default` means nobody classified the data and the product's fallback was used.",
+        ),
+      applicable: zod
+        .boolean()
+        .describe(
+          "False when no quantum-vulnerable cryptography was found; every verdict is then trivially not-breached.",
+        ),
+      evaluatedAt: zod.coerce.date(),
+      verdicts: zod.array(
+        zod
+          .object({
+            scenario: zod.enum(["conservative", "central", "aggressive"]),
+            qDayYear: zod.number(),
+            x: zod
+              .number()
+              .describe(
+                "Secrecy lifetime, years — how long the data must stay confidential.",
+              ),
+            y: zod.number().describe("Migration time, years."),
+            z: zod
+              .number()
+              .describe(
+                "Years remaining until this scenario's Q-Day. Negative once the year has passed.",
+              ),
+            breached: zod.boolean(),
+            breachMarginYears: zod
+              .number()
+              .describe(
+                "`(x + y) - z`. Negative is margin remaining; positive means already too late, by this many years.",
+              ),
+            narrative: zod.string(),
+            scenarioRationale: zod.string(),
+            scenarioConfidence: zod.enum(["verified", "needs-check"]),
+          })
+          .describe(
+            "`X + Y > Z` under one Q-Day scenario, with all three inputs exposed. A4's acceptance criterion is a verdict that shows its working, so none of x, y or z is optional.",
+          ),
+      ),
+      breachedScenarioCount: zod.number(),
+      scenarioCount: zod.number(),
+      worstBreach: zod
+        .object({
+          scenario: zod.enum(["conservative", "central", "aggressive"]),
+          qDayYear: zod.number(),
+          x: zod
+            .number()
+            .describe(
+              "Secrecy lifetime, years — how long the data must stay confidential.",
+            ),
+          y: zod.number().describe("Migration time, years."),
+          z: zod
+            .number()
+            .describe(
+              "Years remaining until this scenario's Q-Day. Negative once the year has passed.",
+            ),
+          breached: zod.boolean(),
+          breachMarginYears: zod
+            .number()
+            .describe(
+              "`(x + y) - z`. Negative is margin remaining; positive means already too late, by this many years.",
+            ),
+          narrative: zod.string(),
+          scenarioRationale: zod.string(),
+          scenarioConfidence: zod.enum(["verified", "needs-check"]),
+        })
+        .describe(
+          "`X + Y > Z` under one Q-Day scenario, with all three inputs exposed. A4's acceptance criterion is a verdict that shows its working, so none of x, y or z is optional.",
+        )
+        .nullable()
+        .describe(
+          "The breached verdict with the largest margin. Null when nothing breaches.",
+        ),
+      framing: zod.string(),
+    })
+    .describe(
+      "One verdict per Q-Day scenario. The scenarios are regulatory deadlines drawn from draft guidance, not predictions about physics — `framing` carries the sentence that must accompany any customer-facing use of these years.",
+    )
+    .optional()
+    .describe("Optional for the same reason as `pqc`."),
   fileResults: zod.array(
     zod.object({
       path: zod.string(),
       language: zod.string(),
+      lines: zod
+        .number()
+        .describe(
+          "Lines in the whole file, which may exceed the lines present in `content`.",
+        ),
+      content: zod
+        .string()
+        .describe(
+          "Truncated to the first 300 lines, with a trailing comment naming how many were dropped.",
+        ),
+      findings: zod.array(
+        zod.object({
+          id: zod.number(),
+          organizationId: zod
+            .number()
+            .optional()
+            .describe(
+              "Present on findings read back from the database. Absent on the synthetic findings `POST \/scans` and the demo route echo straight back from the scanner, which are numbered in memory and never persisted with that shape.",
+            ),
+          scanId: zod.number(),
+          fileName: zod.string(),
+          lineNumber: zod.number(),
+          severity: zod.enum(["critical", "alert", "safe"]),
+          algorithm: zod.string(),
+          codeSnippet: zod.string(),
+          nistReplacement: zod.string().nullish(),
+          nistStandard: zod.string().nullish(),
+          effortHours: zod.number(),
+          explanation: zod.string().nullish(),
+          compliance: zod
+            .object({
+              algorithm: zod.string(),
+              algorithmId: zod.string(),
+              quantumVulnerable: zod.boolean(),
+              riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+              complianceStatus: zod.enum([
+                "immediate-failure",
+                "future-obligation",
+                "no-obligation",
+              ]),
+              bucket: zod.enum([
+                "immediate-compliance-failure",
+                "pqc-migration",
+                "classical-hygiene",
+                "best-practice",
+                "no-obligation",
+              ]),
+              bucketLabel: zod.string(),
+              bucketDescription: zod.string(),
+              countsTowardPostQuantumScore: zod
+                .boolean()
+                .describe(
+                  "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+                ),
+              headline: zod.string(),
+              useDependent: zod
+                .boolean()
+                .describe(
+                  "True when the standard's answer depends on how the algorithm is used.",
+                ),
+              useConditions: zod.array(
+                zod.object({
+                  use: zod.string(),
+                  status: zod.string(),
+                  permitted: zod.boolean(),
+                  framework: zod.string(),
+                }),
+              ),
+              obligations: zod.array(
+                zod.object({
+                  framework: zod.string(),
+                  frameworkName: zod.string().optional(),
+                  requirement: zod.string(),
+                  severity: zod.enum([
+                    "critical",
+                    "high",
+                    "medium",
+                    "informational",
+                  ]),
+                  replacement: zod
+                    .object({
+                      algorithm: zod.string(),
+                      standard: zod.string(),
+                      purpose: zod.string().optional(),
+                      note: zod.string().optional(),
+                    })
+                    .optional(),
+                  deadline: zod
+                    .object({
+                      type: zod
+                        .string()
+                        .describe(
+                          "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                        ),
+                      label: zod.string(),
+                      effect: zod.enum(["prohibition", "caution", "permitted"]),
+                      inEffect: zod
+                        .boolean()
+                        .describe(
+                          "Whether the rule binds at the resolution date.",
+                        ),
+                      after: zod.string().optional(),
+                      in: zod.string().optional(),
+                      since: zod.string().optional(),
+                      appliesTo: zod
+                        .string()
+                        .optional()
+                        .describe(
+                          "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                        ),
+                      securityStrength: zod.string().optional(),
+                      source: zod.string().optional(),
+                      note: zod.string().optional(),
+                    })
+                    .optional(),
+                  citation: zod
+                    .object({
+                      document: zod.string(),
+                      section: zod.string().optional(),
+                      url: zod.string(),
+                      retrievedAt: zod.string().optional(),
+                      published: zod.string().optional(),
+                    })
+                    .describe(
+                      "Provenance for a single regulatory claim. Required on every obligation.",
+                    ),
+                  confidence: zod
+                    .string()
+                    .describe(
+                      "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+                    ),
+                  draftStatus: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                    ),
+                  caveats: zod.array(zod.string()),
+                  source: zod.enum([
+                    "algorithm-deadline",
+                    "algorithm-replacement",
+                    "algorithm-best-practice",
+                    "framework",
+                  ]),
+                }),
+              ),
+              detection: zod.object({
+                multiplier: zod.number(),
+                adjustedConfidence: zod.number().optional(),
+                reviewRequired: zod.boolean(),
+                reason: zod.string().nullable(),
+              }),
+              reportingNote: zod.string().nullable(),
+              caveats: zod.array(zod.string()),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  section: zod.string().optional(),
+                  url: zod.string(),
+                  retrievedAt: zod.string().optional(),
+                  published: zod.string().optional(),
+                })
+                .describe(
+                  "Provenance for a single regulatory claim. Required on every obligation.",
+                ),
+              dataVersion: zod
+                .string()
+                .describe(
+                  "Pin this with the report. A report is only reproducible against the data version that produced it.",
+                ),
+              asOf: zod
+                .string()
+                .describe("ISO date the deadlines were evaluated against."),
+            })
+            .describe(
+              "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+            )
+            .nullish()
+            .describe(
+              "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+            ),
+        }),
+      ),
+      criticalCount: zod.number(),
+      alertCount: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary Remaining GitHub API quota
+ */
+export const GetGithubRateLimitResponse = zod.object({
+  authenticated: zod
+    .boolean()
+    .describe(
+      "Whether GITHUB_TOKEN is configured. Unauthenticated is 60 requests\/hour.",
+    ),
+  limit: zod.number(),
+  remaining: zod.number(),
+  resetAt: zod.coerce.date(),
+  resetsInMin: zod.number(),
+});
+
+/**
+ * Fetches without scanning, so a client can render the tree while the scan runs. `fetchedFiles` is capped at 25 files of at most 150 kB each and truncated to 300 lines, so it is a subset of `fullTree` by design.
+ * @summary Phase 1 — fetch a repository tree and the scannable file contents
+ */
+export const FetchGithubRepoBody = zod.object({
+  repoUrl: zod.string().describe("Public GitHub repository URL"),
+});
+
+export const FetchGithubRepoResponse = zod.object({
+  owner: zod.string(),
+  repo: zod.string(),
+  repoUrl: zod.string(),
+  branch: zod
+    .string()
+    .describe(
+      "Detected default branch. Falls back to `main` when detection is inconclusive.",
+    ),
+  totalNodes: zod
+    .number()
+    .describe(
+      "Count of blobs in the whole tree, before the display cap applied to `fullTree`.",
+    ),
+  truncated: zod
+    .boolean()
+    .describe(
+      "GitHub's own flag — true when the repository was too large for one tree response.",
+    ),
+  fullTree: zod.array(
+    zod.object({
+      path: zod.string(),
+      type: zod.enum(["blob", "tree"]),
+      size: zod
+        .number()
+        .optional()
+        .describe(
+          "Bytes. Absent for trees, and for blobs GitHub did not size.",
+        ),
+    }),
+  ),
+  fetchedFiles: zod.array(
+    zod.object({
+      path: zod.string(),
+      language: zod.string(),
+      content: zod.string(),
       lines: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * `repoUrl`, `owner` and `repo` are echoed straight back into the response without validation; only `files` is checked. They are required here so that a conforming client always receives them in the result.
+ * @summary Phase 2 — scan already-fetched files, with no GitHub API calls
+ */
+export const ScanGithubFilesBody = zod.object({
+  repoUrl: zod.string(),
+  owner: zod.string(),
+  repo: zod.string(),
+  files: zod.array(
+    zod.object({
+      path: zod.string(),
+      language: zod.string(),
+      content: zod.string(),
+      lines: zod.number(),
+    }),
+  ),
+});
+
+export const ScanGithubFilesResponse = zod.object({
+  repoUrl: zod.string(),
+  owner: zod.string(),
+  repo: zod.string(),
+  totalFiles: zod.number(),
+  findings: zod.array(
+    zod.object({
+      id: zod.number(),
+      organizationId: zod
+        .number()
+        .optional()
+        .describe(
+          "Present on findings read back from the database. Absent on the synthetic findings `POST \/scans` and the demo route echo straight back from the scanner, which are numbered in memory and never persisted with that shape.",
+        ),
+      scanId: zod.number(),
+      fileName: zod.string(),
+      lineNumber: zod.number(),
+      severity: zod.enum(["critical", "alert", "safe"]),
+      algorithm: zod.string(),
+      codeSnippet: zod.string(),
+      nistReplacement: zod.string().nullish(),
+      nistStandard: zod.string().nullish(),
+      effortHours: zod.number(),
+      explanation: zod.string().nullish(),
+      compliance: zod
+        .object({
+          algorithm: zod.string(),
+          algorithmId: zod.string(),
+          quantumVulnerable: zod.boolean(),
+          riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+          complianceStatus: zod.enum([
+            "immediate-failure",
+            "future-obligation",
+            "no-obligation",
+          ]),
+          bucket: zod.enum([
+            "immediate-compliance-failure",
+            "pqc-migration",
+            "classical-hygiene",
+            "best-practice",
+            "no-obligation",
+          ]),
+          bucketLabel: zod.string(),
+          bucketDescription: zod.string(),
+          countsTowardPostQuantumScore: zod
+            .boolean()
+            .describe(
+              "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+            ),
+          headline: zod.string(),
+          useDependent: zod
+            .boolean()
+            .describe(
+              "True when the standard's answer depends on how the algorithm is used.",
+            ),
+          useConditions: zod.array(
+            zod.object({
+              use: zod.string(),
+              status: zod.string(),
+              permitted: zod.boolean(),
+              framework: zod.string(),
+            }),
+          ),
+          obligations: zod.array(
+            zod.object({
+              framework: zod.string(),
+              frameworkName: zod.string().optional(),
+              requirement: zod.string(),
+              severity: zod.enum([
+                "critical",
+                "high",
+                "medium",
+                "informational",
+              ]),
+              replacement: zod
+                .object({
+                  algorithm: zod.string(),
+                  standard: zod.string(),
+                  purpose: zod.string().optional(),
+                  note: zod.string().optional(),
+                })
+                .optional(),
+              deadline: zod
+                .object({
+                  type: zod
+                    .string()
+                    .describe(
+                      "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                    ),
+                  label: zod.string(),
+                  effect: zod.enum(["prohibition", "caution", "permitted"]),
+                  inEffect: zod
+                    .boolean()
+                    .describe("Whether the rule binds at the resolution date."),
+                  after: zod.string().optional(),
+                  in: zod.string().optional(),
+                  since: zod.string().optional(),
+                  appliesTo: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                    ),
+                  securityStrength: zod.string().optional(),
+                  source: zod.string().optional(),
+                  note: zod.string().optional(),
+                })
+                .optional(),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  section: zod.string().optional(),
+                  url: zod.string(),
+                  retrievedAt: zod.string().optional(),
+                  published: zod.string().optional(),
+                })
+                .describe(
+                  "Provenance for a single regulatory claim. Required on every obligation.",
+                ),
+              confidence: zod
+                .string()
+                .describe(
+                  "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+                ),
+              draftStatus: zod
+                .string()
+                .optional()
+                .describe(
+                  "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                ),
+              caveats: zod.array(zod.string()),
+              source: zod.enum([
+                "algorithm-deadline",
+                "algorithm-replacement",
+                "algorithm-best-practice",
+                "framework",
+              ]),
+            }),
+          ),
+          detection: zod.object({
+            multiplier: zod.number(),
+            adjustedConfidence: zod.number().optional(),
+            reviewRequired: zod.boolean(),
+            reason: zod.string().nullable(),
+          }),
+          reportingNote: zod.string().nullable(),
+          caveats: zod.array(zod.string()),
+          citation: zod
+            .object({
+              document: zod.string(),
+              section: zod.string().optional(),
+              url: zod.string(),
+              retrievedAt: zod.string().optional(),
+              published: zod.string().optional(),
+            })
+            .describe(
+              "Provenance for a single regulatory claim. Required on every obligation.",
+            ),
+          dataVersion: zod
+            .string()
+            .describe(
+              "Pin this with the report. A report is only reproducible against the data version that produced it.",
+            ),
+          asOf: zod
+            .string()
+            .describe("ISO date the deadlines were evaluated against."),
+        })
+        .describe(
+          "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+        )
+        .nullish()
+        .describe(
+          "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+        ),
+    }),
+  ),
+  criticalCount: zod.number(),
+  alertCount: zod.number(),
+  cleanCount: zod.number(),
+  riskScore: zod.number(),
+  totalLines: zod.number(),
+  totalEffortHours: zod.number().nullish(),
+  executiveSummary: zod.string(),
+  pqc: zod
+    .object({
+      riskScore: zod
+        .number()
+        .describe(
+          "0-100, and \*\*zero whenever no quantum-vulnerable algorithm was detected\*\*, whatever else the scan found. Classical hygiene contributes nothing (G-10).",
+        ),
+      findingCount: zod.number(),
+      effortHours: zod.number(),
+      estimatedCost: zod.number(),
+      byAlgorithm: zod.array(
+        zod
+          .object({
+            algorithm: zod.string(),
+            count: zod.number(),
+            effortHours: zod.number(),
+            reportingNote: zod
+              .string()
+              .nullable()
+              .describe(
+                "The mapping data's own qualification of this algorithm. Print it verbatim — it is why the finding is being reported the way it is.",
+              ),
+            nistReplacement: zod.string().nullable(),
+            nistStandard: zod.string().nullable(),
+            citation: zod
+              .object({
+                document: zod.string(),
+                url: zod.string(),
+              })
+              .nullable(),
+          })
+          .describe(
+            "One algorithm's contribution to a risk track, aggregated across the findings.",
+          ),
+      ),
+      scoreComponents: zod
+        .object({
+          detection: zod
+            .number()
+            .describe(
+              "0-60. Quantum-vulnerable density against the lines actually examined.",
+            ),
+          moscaBreach: zod
+            .number()
+            .describe(
+              "0-40. The share of Q-Day scenarios under which the inequality is breached.",
+            ),
+        })
+        .describe(
+          "The two halves of `riskScore`. A score that cannot be decomposed is what A4 exists to replace.",
+        ),
+    })
+    .describe(
+      "A4 — the post-quantum half of the risk profile, with its score decomposed.",
+    )
+    .optional()
+    .describe(
+      "A4. Optional because the no-scannable-files early return answers 200 with the counters only and no risk profile at all.",
+    ),
+  hygiene: zod
+    .object({
+      findingCount: zod.number(),
+      effortHours: zod.number(),
+      estimatedCost: zod.number(),
+      byAlgorithm: zod.array(
+        zod
+          .object({
+            algorithm: zod.string(),
+            count: zod.number(),
+            effortHours: zod.number(),
+            reportingNote: zod
+              .string()
+              .nullable()
+              .describe(
+                "The mapping data's own qualification of this algorithm. Print it verbatim — it is why the finding is being reported the way it is.",
+              ),
+            nistReplacement: zod.string().nullable(),
+            nistStandard: zod.string().nullable(),
+            citation: zod
+              .object({
+                document: zod.string(),
+                url: zod.string(),
+              })
+              .nullable(),
+          })
+          .describe(
+            "One algorithm's contribution to a risk track, aggregated across the findings.",
+          ),
+      ),
+      countedTowardPqcRisk: zod
+        .boolean()
+        .describe(
+          "Always false. Structural rather than decorative: an assertion in the payload that these findings did not move the post-quantum number.",
+        ),
+      headline: zod.string(),
+    })
+    .describe(
+      "A4\/G-10 — classical cryptographic defects with no post-quantum content, scored separately and never folded into the PQC score.",
+    )
+    .optional()
+    .describe("Optional for the same reason as `pqc`."),
+  mosca: zod
+    .object({
+      x: zod.number().describe("X as used, after defaulting."),
+      y: zod.number(),
+      secrecyLifetimeSource: zod
+        .enum(["provided", "assumed-default"])
+        .describe(
+          "Whether X was supplied or assumed. A report must say which: `assumed-default` means nobody classified the data and the product's fallback was used.",
+        ),
+      applicable: zod
+        .boolean()
+        .describe(
+          "False when no quantum-vulnerable cryptography was found; every verdict is then trivially not-breached.",
+        ),
+      evaluatedAt: zod.coerce.date(),
+      verdicts: zod.array(
+        zod
+          .object({
+            scenario: zod.enum(["conservative", "central", "aggressive"]),
+            qDayYear: zod.number(),
+            x: zod
+              .number()
+              .describe(
+                "Secrecy lifetime, years — how long the data must stay confidential.",
+              ),
+            y: zod.number().describe("Migration time, years."),
+            z: zod
+              .number()
+              .describe(
+                "Years remaining until this scenario's Q-Day. Negative once the year has passed.",
+              ),
+            breached: zod.boolean(),
+            breachMarginYears: zod
+              .number()
+              .describe(
+                "`(x + y) - z`. Negative is margin remaining; positive means already too late, by this many years.",
+              ),
+            narrative: zod.string(),
+            scenarioRationale: zod.string(),
+            scenarioConfidence: zod.enum(["verified", "needs-check"]),
+          })
+          .describe(
+            "`X + Y > Z` under one Q-Day scenario, with all three inputs exposed. A4's acceptance criterion is a verdict that shows its working, so none of x, y or z is optional.",
+          ),
+      ),
+      breachedScenarioCount: zod.number(),
+      scenarioCount: zod.number(),
+      worstBreach: zod
+        .object({
+          scenario: zod.enum(["conservative", "central", "aggressive"]),
+          qDayYear: zod.number(),
+          x: zod
+            .number()
+            .describe(
+              "Secrecy lifetime, years — how long the data must stay confidential.",
+            ),
+          y: zod.number().describe("Migration time, years."),
+          z: zod
+            .number()
+            .describe(
+              "Years remaining until this scenario's Q-Day. Negative once the year has passed.",
+            ),
+          breached: zod.boolean(),
+          breachMarginYears: zod
+            .number()
+            .describe(
+              "`(x + y) - z`. Negative is margin remaining; positive means already too late, by this many years.",
+            ),
+          narrative: zod.string(),
+          scenarioRationale: zod.string(),
+          scenarioConfidence: zod.enum(["verified", "needs-check"]),
+        })
+        .describe(
+          "`X + Y > Z` under one Q-Day scenario, with all three inputs exposed. A4's acceptance criterion is a verdict that shows its working, so none of x, y or z is optional.",
+        )
+        .nullable()
+        .describe(
+          "The breached verdict with the largest margin. Null when nothing breaches.",
+        ),
+      framing: zod.string(),
+    })
+    .describe(
+      "One verdict per Q-Day scenario. The scenarios are regulatory deadlines drawn from draft guidance, not predictions about physics — `framing` carries the sentence that must accompany any customer-facing use of these years.",
+    )
+    .optional()
+    .describe("Optional for the same reason as `pqc`."),
+  fileResults: zod.array(
+    zod.object({
+      path: zod.string(),
+      language: zod.string(),
+      lines: zod
+        .number()
+        .describe(
+          "Lines in the whole file, which may exceed the lines present in `content`.",
+        ),
+      content: zod
+        .string()
+        .describe(
+          "Truncated to the first 300 lines, with a trailing comment naming how many were dropped.",
+        ),
+      findings: zod.array(
+        zod.object({
+          id: zod.number(),
+          organizationId: zod
+            .number()
+            .optional()
+            .describe(
+              "Present on findings read back from the database. Absent on the synthetic findings `POST \/scans` and the demo route echo straight back from the scanner, which are numbered in memory and never persisted with that shape.",
+            ),
+          scanId: zod.number(),
+          fileName: zod.string(),
+          lineNumber: zod.number(),
+          severity: zod.enum(["critical", "alert", "safe"]),
+          algorithm: zod.string(),
+          codeSnippet: zod.string(),
+          nistReplacement: zod.string().nullish(),
+          nistStandard: zod.string().nullish(),
+          effortHours: zod.number(),
+          explanation: zod.string().nullish(),
+          compliance: zod
+            .object({
+              algorithm: zod.string(),
+              algorithmId: zod.string(),
+              quantumVulnerable: zod.boolean(),
+              riskTrack: zod.enum(["post-quantum", "classical-hygiene"]),
+              complianceStatus: zod.enum([
+                "immediate-failure",
+                "future-obligation",
+                "no-obligation",
+              ]),
+              bucket: zod.enum([
+                "immediate-compliance-failure",
+                "pqc-migration",
+                "classical-hygiene",
+                "best-practice",
+                "no-obligation",
+              ]),
+              bucketLabel: zod.string(),
+              bucketDescription: zod.string(),
+              countsTowardPostQuantumScore: zod
+                .boolean()
+                .describe(
+                  "False for classical hygiene. The contract A4's risk engine consumes to keep MD5\/SHA-1\/ECB out of a post-quantum score.",
+                ),
+              headline: zod.string(),
+              useDependent: zod
+                .boolean()
+                .describe(
+                  "True when the standard's answer depends on how the algorithm is used.",
+                ),
+              useConditions: zod.array(
+                zod.object({
+                  use: zod.string(),
+                  status: zod.string(),
+                  permitted: zod.boolean(),
+                  framework: zod.string(),
+                }),
+              ),
+              obligations: zod.array(
+                zod.object({
+                  framework: zod.string(),
+                  frameworkName: zod.string().optional(),
+                  requirement: zod.string(),
+                  severity: zod.enum([
+                    "critical",
+                    "high",
+                    "medium",
+                    "informational",
+                  ]),
+                  replacement: zod
+                    .object({
+                      algorithm: zod.string(),
+                      standard: zod.string(),
+                      purpose: zod.string().optional(),
+                      note: zod.string().optional(),
+                    })
+                    .optional(),
+                  deadline: zod
+                    .object({
+                      type: zod
+                        .string()
+                        .describe(
+                          "Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.",
+                        ),
+                      label: zod.string(),
+                      effect: zod.enum(["prohibition", "caution", "permitted"]),
+                      inEffect: zod
+                        .boolean()
+                        .describe(
+                          "Whether the rule binds at the resolution date.",
+                        ),
+                      after: zod.string().optional(),
+                      in: zod.string().optional(),
+                      since: zod.string().optional(),
+                      appliesTo: zod
+                        .string()
+                        .optional()
+                        .describe(
+                          "Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.",
+                        ),
+                      securityStrength: zod.string().optional(),
+                      source: zod.string().optional(),
+                      note: zod.string().optional(),
+                    })
+                    .optional(),
+                  citation: zod
+                    .object({
+                      document: zod.string(),
+                      section: zod.string().optional(),
+                      url: zod.string(),
+                      retrievedAt: zod.string().optional(),
+                      published: zod.string().optional(),
+                    })
+                    .describe(
+                      "Provenance for a single regulatory claim. Required on every obligation.",
+                    ),
+                  confidence: zod
+                    .string()
+                    .describe(
+                      "verified or needs-check, straight from the mapping data. Never upgraded by the engine.",
+                    ),
+                  draftStatus: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                    ),
+                  caveats: zod.array(zod.string()),
+                  source: zod.enum([
+                    "algorithm-deadline",
+                    "algorithm-replacement",
+                    "algorithm-best-practice",
+                    "framework",
+                  ]),
+                }),
+              ),
+              detection: zod.object({
+                multiplier: zod.number(),
+                adjustedConfidence: zod.number().optional(),
+                reviewRequired: zod.boolean(),
+                reason: zod.string().nullable(),
+              }),
+              reportingNote: zod.string().nullable(),
+              caveats: zod.array(zod.string()),
+              citation: zod
+                .object({
+                  document: zod.string(),
+                  section: zod.string().optional(),
+                  url: zod.string(),
+                  retrievedAt: zod.string().optional(),
+                  published: zod.string().optional(),
+                })
+                .describe(
+                  "Provenance for a single regulatory claim. Required on every obligation.",
+                ),
+              dataVersion: zod
+                .string()
+                .describe(
+                  "Pin this with the report. A report is only reproducible against the data version that produced it.",
+                ),
+              asOf: zod
+                .string()
+                .describe("ISO date the deadlines were evaluated against."),
+            })
+            .describe(
+              "Output of the C1 dynamic mapping engine for one finding. Every value traces to docs\/Claude\/mappings\/\*.json at the stated dataVersion; nothing here is hardcoded.",
+            )
+            .nullish()
+            .describe(
+              "Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm.",
+            ),
+        }),
+      ),
       criticalCount: zod.number(),
       alertCount: zod.number(),
     }),

@@ -18,6 +18,7 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Tenant Isolation Suite** | Vitest | `lib/db/src/tenant-isolation.test.ts` | pglite with the real RLS policies, connected as `quantaxscan_app` |
 | **Cross-Tenant HTTP Suite** | Vitest + Supertest | `artifacts/api-server/src/cross-tenant.test.ts` | As above, through the real Express app |
 | **Scope-Discipline Guard** | Vitest | `artifacts/api-server/src/db-import.test.ts` | Static — reads `routes/*.ts` source |
+| **OpenAPI Drift Guard** | Vitest | `artifacts/api-server/src/openapi-drift.test.ts` | Express route table + `lib/api-spec/openapi.yaml`; the database is stubbed, no pglite |
 | **Coverage Summariser Suite** | Vitest | `artifacts/api-server/src/lib/coverage.test.ts` | Pure — no database, no HTTP |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
 | **Continuous Integration** | GitHub Actions | `.github/workflows/ci.yml` | Ubuntu runner (`ubuntu-latest`) |
@@ -64,13 +65,15 @@ What each covers:
 | `lib/db/src/tenant-isolation.test.ts` | The harness is subject to RLS · every scoped table has RLS enabled, FORCEd, and a policy with a real `USING` clause applying to the runtime role · `assertTenantIsolationInstalled()` rejects both a NULL-`USING` policy and a `NO FORCE` table · a query with no `where` clause returns only the scoped organisation · cross-tenant read/update/delete reach nothing · a wrong-organisation insert is rejected by `WITH CHECK` · scopes refuse to nest · the deliberate asymmetries (`activity` NULL rows, public share links, membership bootstrap) behave as designed |
 | `artifacts/api-server/src/cross-tenant.test.ts` | The same, end to end through Express, with the API key bound to organisation 2 and the fixtures in organisation 1 · a route manifest that fails if any route exists which it does not name · share links honouring visibility, revocation and expiry · `GET /api/inventory/cbom` exports our inventory and no trace of the other organisation's, asserted on the serialised document (assets are seeded on *both* sides, because the interesting failure is not "we see nothing" but "we see theirs") |
 | `artifacts/api-server/src/db-import.test.ts` | No route file imports `db`; every route touching the database opens a scope |
+| `artifacts/api-server/src/openapi-drift.test.ts` | `lib/api-spec/openapi.yaml` describes the server that exists: every mounted route is documented, no documented route is missing from Express, and `security: []` agrees with `PUBLIC_ROUTES` **in both directions** — documenting a protected route as public tells every consumer of the generated client that no key is needed. Reads the Express route table with the database stubbed, so it costs ~3 seconds rather than a pglite boot |
 | `artifacts/api-server/src/lib/coverage.test.ts` | D3's honesty rules, as arithmetic: a failed collection run is not coverage · examined-and-found-nothing is distinct from never-examined · the confidence distribution is one point per active asset, so a re-scan cannot reweight it · the denominator stays the ten-surface catalogue even when the data contains a surface it does not know |
 | `lib/collectors/src/surface-catalogue.test.ts` | The ten collector surfaces are a bijection onto `SURFACE_VALUES` plus exactly two the asset model cannot record — so an eleventh surface, or a ninth `Surface` value, fails the build rather than silently changing what "1 of 10" means |
 | `lib/mappings/src/engine.test.ts` | **The M2 exit criterion, as an executable check.** It clones the bundled standards data, moves RSA's disallowance from 2035 to 2040, adds an algorithm that did not exist when the file was written, and adds a new deadline-type term — then asserts the engine's output follows, with no TypeScript edit. Also: purity, `dataVersion` stamping, version-pin refusal, applicability filtering (CNSA 2.0 hidden without a matching profile), and the G-07/G-08/G-09 bucketing and copy rules |
 | `lib/risk/src/risk-profile.test.ts` + the A4 block in `artifacts/api-server/src/lib/scanner.test.ts` | A scan containing only MD5/SHA-1/AES-ECB scores **zero** post-quantum risk, and adding hygiene findings to a mixed scan does not move its score — [G-10](09-open-gaps.md#g-10--hygiene-findings-inflate-the-pqc-risk-score) as a regression, asserted both at the engine and at `computeScanResult()` where the bug lived. Every risk test injects `now`, because Z is "years remaining" and an un-pinned clock silently changes what the assertion means. |
 
-The manifest and the `db` guard are lint rules expressed as tests, because both are security
-properties and a security property belongs in the suite that has to stay green.
+The manifest, the `db` guard and the OpenAPI drift guard are lint rules expressed as tests,
+because each is a security property and a security property belongs in the suite that has to stay
+green.
 
 ### Coverage Summary
 1. **Health Check**:

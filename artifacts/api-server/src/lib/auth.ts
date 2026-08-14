@@ -26,8 +26,14 @@ const MIN_KEY_LENGTH = 24;
  * Nothing that reads or writes real project, scan, or finding data belongs in
  * this table. Demo routes serve hard-coded repositories; community posts are
  * user-submitted public content.
+ *
+ * Exported so `openapi-drift.test.ts` can assert that this table and the
+ * `security: []` overrides in `lib/api-spec/openapi.yaml` say the same thing.
+ * A spec that documents a protected route as public is a security-relevant
+ * error, not a cosmetic one — the generated client is what a consumer reads
+ * when deciding whether to send a key.
  */
-const PUBLIC_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
+export const PUBLIC_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "GET", path: /^\/healthz$/ },
   { method: "GET", path: /^\/demo\/repos$/ },
   { method: "POST", path: /^\/demo\/repos\/[^/]+\/scan$/ },
