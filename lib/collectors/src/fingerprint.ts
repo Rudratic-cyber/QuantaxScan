@@ -8,7 +8,7 @@ import type { RawObservation } from "./types";
  * docs/Claude/04-architecture.md §"Asset fingerprint":
  *   source:      repo + path + algorithm + normalised-symbol (NOT line number)
  *   dependency:  repo + ecosystem + package + algorithm  (see below)
- *   tls:         host + port + algorithm
+ *   tls:         repo + host + port + algorithm  (see below)
  *   certificate: repo + issuer + serial  (see below — same amendment as dependency)
  *   kms:         provider + key ARN/ID
  *
@@ -40,6 +40,18 @@ import type { RawObservation } from "./types";
  * split one row back into the two projects it stands for. Stability is
  * unaffected: `repo` is `project:<id>`, which does not change.
  *
+ * **`repo` was added to the `tls` variant** for the identical reason, when
+ * B3's ingest path was built: `POST /api/projects/:id/tls` is project-scoped
+ * exactly like `POST /api/projects/:id/dependencies`, and without `repo` in
+ * the identity, two different projects probing the same `host:port` would
+ * fingerprint to the *same* row. The second project's ingest would then hit
+ * the asset upsert's `ON CONFLICT (organizationId, fingerprint)` and silently
+ * overwrite the first project's `location`, reassigning the asset to the
+ * second project's `project:<id>:` prefix — the same bug the dependency
+ * comment above describes, reproduced exactly, because it is the same root
+ * cause: `assets.location` is one column and cannot carry two projects'
+ * prefixes.
+ *
  * **`repo` was added to the `certificate` variant for the identical reason,
  * when B4's ingest path was built.** The architecture table above still read
  * `issuer + serial` at the time; the same three mechanisms that motivated
@@ -56,7 +68,7 @@ import type { RawObservation } from "./types";
 export type FingerprintInput =
   | { surface: "source"; repo: string; path: string; algorithm: string; symbol: string }
   | { surface: "dependency"; repo: string; ecosystem: string; package: string; algorithm: string }
-  | { surface: "tls"; host: string; port: number; algorithm: string }
+  | { surface: "tls"; repo: string; host: string; port: number; algorithm: string }
   | { surface: "certificate"; repo: string; issuer: string; serial: string }
   | { surface: "kms"; provider: string; keyId: string }
   | {
@@ -82,7 +94,7 @@ function orderedFields(input: FingerprintInput): string[] {
     case "dependency":
       return [input.surface, input.repo, input.ecosystem, input.package, input.algorithm];
     case "tls":
-      return [input.surface, input.host, String(input.port), input.algorithm];
+      return [input.surface, input.repo, input.host, String(input.port), input.algorithm];
     case "certificate":
       return [input.surface, input.repo, input.issuer, input.serial];
     case "kms":
@@ -126,14 +138,32 @@ export function computeFingerprint(input: FingerprintInput): string {
  * already sets and which the database validates on the way in.
  *
  * Returns `undefined` rather than guessing when the observation carries no
- * profile this can turn into an identity (`network`, `binary`, or no
- * `locationDetail` at all). A caller must decide what to do with that; the
- * one thing it must not do is fall back to a surface, which is the bug above.
+ * profile this can turn into an identity (`binary`, or no `locationDetail` at
+ * all). A caller must decide what to do with that; the one thing it must not
+ * do is fall back to a surface, which is the bug above.
  *
  * `repo` is the caller's stable target identity (`project:<id>` today), not
  * anything the collector chose — it is the same value the collector was
  * handed as `CollectionTarget.repo`, passed here explicitly so an ingest
  * cannot fingerprint a run against a target other than the one it scanned.
+ *
+ * **The `network` case maps unconditionally to `tls`, and that is a known,
+ * temporary simplification — not a general disambiguation rule.**
+ * `enums.ts`'s `LOCATION_DETAIL_KIND_VALUES` comment documents that `network`
+ * is deliberately *shared* between the `tls` and `certificate` surfaces (both
+ * observe the same SP 1800-38B host/port/CPE data elements), so `kind ===
+ * "network"` alone cannot, in general, say which surface produced an
+ * observation. It is safe to resolve that ambiguity in favour of `tls` right
+ * now only because B3 (this collector) is the only thing that populates the
+ * `network` profile as of this change — B4, the certificate collector, does
+ * not exist yet. When it lands, this `case` needs an actual discriminator
+ * (the two variants' identities are not even shaped alike: `tls` is `host +
+ * port`, `certificate` is `issuer + serial`, which a `network` locationDetail
+ * carries neither of), not a bigger conditional here. Until then, the ingest
+ * path's existing `fingerprintInput.surface !== spec.surface` throw
+ * (`asset-ingest.ts`) is the backstop: a future certificate collector that
+ * reuses `network` without updating this function fails loudly on its first
+ * ingest rather than silently landing on the `tls` surface.
  */
 export function fingerprintForObservation(
   observation: RawObservation,
@@ -169,6 +199,22 @@ export function fingerprintForObservation(
         issuer: detail.certificate.issuer,
         serial: detail.certificate.serialNumber,
       };
+    case "network": {
+      const { hostname, destinationPort } = detail.network;
+      // Hard precondition of the `tls` variant, not a disambiguation
+      // heuristic: `host + port + algorithm` cannot be built without both.
+      // A future certificate observation that reuses `network` but omits a
+      // port (a certificate is not inherently tied to one) is correctly
+      // rejected here rather than mis-fingerprinted as `tls`.
+      if (hostname === undefined || destinationPort === undefined) return undefined;
+      return {
+        surface: "tls",
+        repo: context.repo,
+        host: hostname,
+        port: destinationPort,
+        algorithm: observation.algorithm,
+      };
+    }
     default:
       return undefined;
   }

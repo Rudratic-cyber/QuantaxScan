@@ -56,12 +56,21 @@ describe("computeFingerprint — other surfaces", () => {
     expect(one).not.toBe(two);
   });
 
-  it("tls: host + port + algorithm", () => {
-    const a = computeFingerprint({ surface: "tls", host: "example.com", port: 443, algorithm: "ECDSA" });
-    const b = computeFingerprint({ surface: "tls", host: "example.com", port: 8443, algorithm: "ECDSA" });
+  it("tls: repo + host + port + algorithm", () => {
+    const a = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDSA" });
+    const b = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 8443, algorithm: "ECDSA" });
     expect(a).not.toBe(b);
   });
 
+  it("tls: the same host:port in two projects is two assets — same reasoning as dependency above", () => {
+    const one = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDH/DH" });
+    const two = computeFingerprint({ surface: "tls", repo: "project:2", host: "example.com", port: 443, algorithm: "ECDH/DH" });
+    expect(one).not.toBe(two);
+  });
+
+  // B4 added `repo` to the certificate variant, so this keeps that shape —
+  // lane B's side of this conflict was simply the pre-B4 version of the same
+  // test, not a competing intent.
   it("certificate: repo + issuer + serial", () => {
     const a = computeFingerprint({ surface: "certificate", repo: "project:1", issuer: "DigiCert", serial: "01AB" });
     const b = computeFingerprint({ surface: "certificate", repo: "project:1", issuer: "DigiCert", serial: "01AB" });

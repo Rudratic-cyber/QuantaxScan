@@ -244,6 +244,10 @@ describe("route manifest — a new route cannot ship without being considered", 
     "GET /ot-fleets/:id": "org-scoped",
     "PATCH /ot-fleets/:id": "org-scoped",
     "DELETE /ot-fleets/:id": "org-scoped",
+    // Same reasoning as dependencies above: assets are attributed to a
+    // project only by the `project:<id>:` location prefix, never a foreign
+    // key, so the parent is confirmed visible inside the scope.
+    "POST /projects/:id/tls": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",
@@ -554,6 +558,33 @@ describe("addressing another organisation's row by id is indistinguishable from 
     expect(res.status).toBe(404);
 
     const after = await countTheirCertificateAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("POST /api/projects/:id/tls naming another organisation's project writes nothing", async () => {
+    // The submitted target is loopback, which the SSRF guard refuses before
+    // any socket is opened — deliberately, so this test needs no real TLS
+    // server and stays fast and deterministic. The point under test is the
+    // parent-visibility check, not the probe itself; `tls-ssrf-guard.test.ts`
+    // and the e2e spec cover the probe.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirTlsAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'tls'`,
+        ),
+      );
+    const before = await countTheirTlsAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/tls`).send({
+        targets: [{ host: "127.0.0.1", port: 1 }],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirTlsAssets();
     expect(after).toEqual(before);
   });
 

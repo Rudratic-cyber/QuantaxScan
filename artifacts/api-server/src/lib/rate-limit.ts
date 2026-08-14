@@ -93,6 +93,14 @@ export const BUDGETS = {
   githubRemote: { windowMs: 60 * MINUTE, max: budget("RATE_LIMIT_GITHUB_MAX", 12) },
   /** CPU-bound: regex over every line of up to a 10 MB body. No network cost. */
   scan: { windowMs: 5 * MINUTE, max: budget("RATE_LIMIT_SCAN_MAX", 30) },
+  /**
+   * B3's TLS prober: real outbound `node:tls` connections to caller-named
+   * hosts, up to `MAX_TLS_TARGETS_PER_SUBMISSION` per call. Egress this
+   * server does not control is closer in kind to `githubRemote` than to the
+   * local-CPU `scan` budget, so it gets its own, tighter allowance rather
+   * than sharing either.
+   */
+  tls: { windowMs: 5 * MINUTE, max: budget("RATE_LIMIT_TLS_MAX", 15) },
   /** Billed per token by a third party, and streams for as long as it runs. */
   chat: { windowMs: 60 * MINUTE, max: budget("RATE_LIMIT_CHAT_MAX", 30) },
 } as const;
@@ -180,6 +188,7 @@ const defaultLimiter = limiter(BUDGETS.default, principalKey);
 const githubRemoteLimiter = limiter(BUDGETS.githubRemote, principalKey);
 const scanLimiter = limiter(BUDGETS.scan, principalKey);
 const chatLimiter = limiter(BUDGETS.chat, principalKey);
+const tlsLimiter = limiter(BUDGETS.tls, principalKey);
 
 /**
  * Per-route budgets. Paths are **mount-relative** — the router is mounted at
@@ -205,6 +214,8 @@ const ROUTE_BUDGETS: ReadonlyArray<{
   { method: "POST", path: /^\/github\/scan-files$/, limiter: scanLimiter },
   { method: "POST", path: /^\/scans$/, limiter: scanLimiter },
   { method: "POST", path: /^\/scans\/multi$/, limiter: scanLimiter },
+  // Real outbound connections to caller-named hosts — see BUDGETS.tls.
+  { method: "POST", path: /^\/projects\/[^/]+\/tls$/, limiter: tlsLimiter },
   // Public: scans a hard-coded repository from memory, but still runs the full
   // regex pass, and no key is required so this is IP-keyed in practice.
   { method: "POST", path: /^\/demo\/repos\/[^/]+\/scan$/, limiter: scanLimiter },

@@ -79,6 +79,7 @@ describe("API Feature Test Suite", () => {
         { method: "get", path: "/api/projects/999/findings" },
         { method: "get", path: "/api/projects/999/coverage" },
         { method: "post", path: "/api/projects/999/dependencies", body: { files: [] } },
+        { method: "post", path: "/api/projects/999/tls", body: { targets: [] } },
         { method: "post", path: "/api/scans", body: {} },
         { method: "get", path: "/api/scans/999" },
         { method: "get", path: "/api/scans/999/findings" },

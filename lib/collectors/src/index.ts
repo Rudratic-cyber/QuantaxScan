@@ -11,3 +11,4 @@ export * from "./lockfiles";
 export * from "./crypto-packages";
 export * from "./dependency-collector";
 export * from "./certificate-collector";
+export * from "./tls-collector";

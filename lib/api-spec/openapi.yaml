@@ -979,6 +979,60 @@ paths:
           description: Invalid project ID
         "404":
           description: Not found
+
+  /projects/{id}/tls:
+    post:
+      operationId: submitProjectTls
+      tags: [projects]
+      summary: Probe a project's hosts for the TLS handshake they actually negotiate (B3)
+      description: >-
+        Opens a real TLS connection to each submitted `host`/`port` and records what was
+        *negotiated* — cipher suite, key-exchange group, protocol version, and the peer
+        certificate's public key type/size — not what a config file claims. Persists what it
+        finds as assets on the `tls` surface, which is what makes that surface count as
+        examined in `GET /projects/{id}/coverage`.
+
+
+        A caller-supplied host is refused before any connection is attempted if it resolves to
+        a loopback, private, link-local (including the cloud metadata service) or otherwise
+        non-routable address. The refusal reason is not detailed in the response — only
+        `refused`, distinguished from a target that was reachable in principle but did not
+        answer (`unreachable`) or one that completed a handshake (`probed`).
+
+
+        **If no target's handshake completes, no collection run is recorded** and
+        `targetsProbed` is 0 — the same honesty rule `POST /projects/{id}/dependencies` applies
+        for `lockfilesRecognised: 0`. It is a 200, not an error: every target may legitimately
+        be unreachable or filtered.
+
+
+        A host that no longer answers on a resubmission marks its assets `gone`, scoped to
+        exactly the targets that were actually probed in this submission — a target refused by
+        the guard or that timed out was not observed and does not affect any other target's
+        assets.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitProjectTlsBody"
+      responses:
+        "200":
+          description: Probe result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TlsProbeSummary"
+        "400":
+          description: Invalid project ID or body
+        "404":
+          description: Not found
 components:
   responses:
     RateLimited:
@@ -3755,3 +3809,100 @@ components:
         - projectId
         - generatedAt
         - certificates
+
+    SubmitProjectTlsBody:
+      type: object
+      properties:
+        targets:
+          type: array
+          description: >-
+            Hosts to open a real TLS connection to. A caller-named host that resolves to a
+            loopback/private/link-local/other non-routable address is refused before any
+            connection is attempted — see `TlsProbeSummary.targets[].outcome`.
+          maxItems: 20
+          items:
+            type: object
+            properties:
+              host:
+                type: string
+                description: Hostname or IP literal. Never a URL — no scheme, path or credentials.
+              port:
+                type: integer
+                minimum: 1
+                maximum: 65535
+            required:
+              - host
+              - port
+      required:
+        - targets
+
+    TlsProbeSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        targetsSubmitted:
+          type: integer
+        targetsProbed:
+          type: integer
+          description: >-
+            How many targets completed a handshake. Zero means no collection run was recorded
+            and the tls surface is still un-examined for this project.
+        targets:
+          type: array
+          description: The per-target outcome — a submission of five hosts where three are refused and one times out must not collapse into a single number.
+          items:
+            type: object
+            properties:
+              host:
+                type: string
+              port:
+                type: integer
+              outcome:
+                type: string
+                description: >-
+                  `refused` means the SSRF guard rejected the target before any connection was
+                  attempted; `unreachable` means the guard allowed it but the handshake did not
+                  complete (timeout, connection refused, TLS negotiation failure); `probed` means
+                  a handshake completed. The specific refusal reason is deliberately not exposed
+                  here — see `tls-ssrf-guard.ts` — the same posture `parseGithubUrl` takes with a
+                  bare rejection.
+                enum: [probed, refused, unreachable]
+            required:
+              - host
+              - port
+              - outcome
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: Null when no run was recorded (`targetsProbed` is 0).
+        assetsCreated:
+          type: integer
+        assetsUpdated:
+          type: integer
+        observationsCreated:
+          type: integer
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Assets at a host:port this submission actually probed and no longer found there.
+            Scoped to exactly the targets that completed a handshake in this submission.
+        evidenceCaveat:
+          type: string
+          description: >-
+            Stated in every response: this collector records the negotiated key-exchange
+            algorithm/group and the peer certificate's public key type/size only — no
+            certificate identity, chain or validity. It does not verify trust (certificates are
+            not validated against any CA), because the point is to observe what a host actually
+            negotiates, not whether a browser would accept it.
+      required:
+        - projectId
+        - targetsSubmitted
+        - targetsProbed
+        - targets
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - evidenceCaveat
