@@ -127,6 +127,7 @@ Identity must be stable across re-scans but sensitive to real change.
 | Certificate | `issuer + serial` |
 | Protocol config | `repo + path + directive + algorithm + token` — added 2026-08-14 when B6's collector landed; see below |
 | KMS | `provider + key ARN/ID` |
+| KMS | `repo + provider + key ARN/ID` — amended 2026-08-14 when B5's ingest landed, for the same reason as Dependency; see `fingerprint.ts` |
 | Binary (added — see below) | `target-or-repository + packageIdentity-or-componentName + artifactPath + binaryFormat + architecture + algorithm + evidenceDiscriminator` — **not** a content digest/sha256 |
 
 **Anti-requirement:** do not include line number or file hash in the source fingerprint.

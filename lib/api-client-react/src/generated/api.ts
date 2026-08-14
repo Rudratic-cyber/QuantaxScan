@@ -42,6 +42,7 @@ import type {
   GlobalStats,
   HealthStatus,
   InventoryAssetsSummary,
+  KmsIngestSummary,
   LeaderboardEntry,
   ListCommunityPostsParams,
   MultiScanBody,
@@ -51,6 +52,7 @@ import type {
   Project,
   ProjectCertificates,
   ProjectCoverage,
+  ProjectKmsKeys,
   ProtocolConfigIngestSummary,
   RateLimitedResponse,
   ReadinessSummary,
@@ -58,6 +60,7 @@ import type {
   SharedReport,
   SubmitProjectCertificatesBody,
   SubmitProjectDependenciesBody,
+  SubmitProjectKmsBody,
   SubmitProjectProtocolConfigBody,
   SubmitProjectTlsBody,
   TlsProbeSummary,
@@ -3855,3 +3858,189 @@ export const useDeleteVendorAssessment = <
 > => {
   return useMutation(getDeleteVendorAssessmentMutationOptions(options));
 };
+
+/**
+ * Classifies the keys a managed key store holds — HashiCorp Vault, AWS KMS, Azure Key Vault, GCP KMS — and persists what it finds as assets on the `kms` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+**This is a submission route, not a credentialed poller.** You send the key inventory your own tooling already produced; no credential for the key store ever reaches this product, and nothing here connects to a cloud provider. The corollary is stated in every response's `evidenceCaveat`: the export is taken at its word, and nothing proves it is complete, current, or from the key store you say it is.
+
+Each key's provider-native spec string is resolved against the cited table in `docs/Claude/mappings/kms-key-specs.json`. A spec whose primitive this product does not report on (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`) yields no asset and is returned with `outcome: no-algorithm` and the table's own reason — never the nearest similar algorithm.
+
+**A submission whose keys are all unclassified still records a collection run.** That is the one place this route's honesty rule differs from `POST /projects/{id}/dependencies`: a key store holding only symmetric keys was genuinely examined, and reporting it as un-examined would be the false statement. Only an empty `keys` array records no run.
+ * @summary Submit a managed key-store inventory for collection (B5)
+ */
+export const getSubmitProjectKmsUrl = (id: number) => {
+  return `/api/projects/${id}/kms`;
+};
+
+export const submitProjectKms = async (
+  id: number,
+  submitProjectKmsBody: SubmitProjectKmsBody,
+  options?: RequestInit,
+): Promise<KmsIngestSummary> => {
+  return customFetch<KmsIngestSummary>(getSubmitProjectKmsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(submitProjectKmsBody),
+  });
+};
+
+export const getSubmitProjectKmsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectKms>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectKmsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectKms>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectKmsBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectKms"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectKms>>,
+    { id: number; data: BodyType<SubmitProjectKmsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectKms(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectKmsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectKms>>
+>;
+export type SubmitProjectKmsMutationBody = BodyType<SubmitProjectKmsBody>;
+export type SubmitProjectKmsMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit a managed key-store inventory for collection (B5)
+ */
+export const useSubmitProjectKms = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectKms>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectKmsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectKms>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectKmsBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectKmsMutationOptions(options));
+};
+
+/**
+ * Every KMS key asset attributed to this project. This is the read that answers "what does the inventory say", as opposed to the POST response, which only reports what one submission found at the moment it was submitted.
+
+It exists as its own route rather than leaning on `GET /inventory/assets` because that endpoint does not return `locationDetail`, and everything specific to a key store — provider, key id, spec, rotation state, origin, key store — lives there. Includes assets of every lifecycle status, not only `active`.
+
+`rotationEnabled` is null when the submitted export did not state it. That is not the same fact as rotation being off, and the two are never collapsed.
+ * @summary The project's managed key inventory, including rotation posture (B5)
+ */
+export const getGetProjectKmsKeysUrl = (id: number) => {
+  return `/api/projects/${id}/kms`;
+};
+
+export const getProjectKmsKeys = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProjectKmsKeys> => {
+  return customFetch<ProjectKmsKeys>(getGetProjectKmsKeysUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectKmsKeysQueryKey = (id: number) => {
+  return [`/api/projects/${id}/kms`] as const;
+};
+
+export const getGetProjectKmsKeysQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectKmsKeys>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectKmsKeys>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProjectKmsKeysQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectKmsKeys>>
+  > = ({ signal }) => getProjectKmsKeys(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectKmsKeys>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectKmsKeysQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectKmsKeys>>
+>;
+export type GetProjectKmsKeysQueryError = ErrorType<void>;
+
+/**
+ * @summary The project's managed key inventory, including rotation posture (B5)
+ */
+
+export function useGetProjectKmsKeys<
+  TData = Awaited<ReturnType<typeof getProjectKmsKeys>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectKmsKeys>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectKmsKeysQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

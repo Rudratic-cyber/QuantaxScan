@@ -14,3 +14,5 @@ export * from "./certificate-collector";
 export * from "./tls-collector";
 export * from "./protocol-config";
 export * from "./protocol-config-collector";
+export * from "./kms-key-specs";
+export * from "./kms-collector";

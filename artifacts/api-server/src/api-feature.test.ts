@@ -764,4 +764,242 @@ key = RSA.generate(1024)
       expect(res.body).toEqual({ error: "Report not found" });
     });
   });
+
+  /**
+   * B5 — the KMS / secret-store collector, through the real routes and the
+   * real (pglite) database. The assertions worth reading are the ones about
+   * what is *not* claimed: a null key size that survives the round trip, a
+   * rotation state that stays null when the export was silent, and a
+   * submission of only-symmetric keys that records a run rather than
+   * pretending the key store was never examined.
+   */
+  describe("KMS / Secret Store Collector (B5)", () => {
+    let projectId: number;
+
+    it("sets up a project", async () => {
+      const res = await request
+        .post("/api/projects")
+        .set("X-API-Key", API_KEY)
+        .send({ name: "KMS Subject", language: "python", code: "" });
+      expect(res.status).toBe(201);
+      projectId = res.body.id;
+    });
+
+    it("classifies a mixed inventory, and says what it could not classify rather than guessing", async () => {
+      const res = await request
+        .post(`/api/projects/${projectId}/kms`)
+        .set("X-API-Key", API_KEY)
+        .send({
+          keys: [
+            { provider: "aws-kms", keyId: "arn:aws:kms:eu-west-2:1:key/rsa", keySpec: "RSA_4096", rotationEnabled: true },
+            { provider: "aws-kms", keyId: "arn:aws:kms:eu-west-2:1:key/sym", keySpec: "SYMMETRIC_DEFAULT" },
+            { provider: "aws-kms", keyId: "arn:aws:kms:eu-west-2:1:key/mac", keySpec: "HMAC_512" },
+            { provider: "aws-kms", keyId: "arn:aws:kms:eu-west-2:1:key/future", keySpec: "RSA_8192" },
+            { provider: "aws-kms", keyId: "arn:aws:kms:eu-west-2:1:key/listed" },
+            { provider: "azure-key-vault", keyId: "https://v.vault.azure.net/keys/sign/9f", keySpec: "RSA" },
+          ],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.keysSubmitted).toBe(6);
+      expect(res.body.keysObserved).toBe(3);
+      expect(res.body.keysUnclassified).toBe(3);
+      expect(res.body.collectionRunId).not.toBeNull();
+      expect(res.body.assetsCreated).toBe(3);
+      expect(res.body.evidenceCaveat).toContain("never what it protects");
+
+      const byId = Object.fromEntries(res.body.keys.map((k: { keyId: string }) => [k.keyId, k]));
+
+      // Documented in the guide, not derivable from the spec string — the
+      // row the citation actually earns its keep on.
+      expect(byId["arn:aws:kms:eu-west-2:1:key/sym"]).toMatchObject({
+        outcome: "observed",
+        algorithm: "AES",
+        keySize: 256,
+        keySizeSource: "key-spec",
+      });
+
+      // Known spec, uncatalogued primitive: examined, nothing to report, and
+      // NOT mapped to the nearest algorithm. Its stated size is still given.
+      expect(byId["arn:aws:kms:eu-west-2:1:key/mac"]).toMatchObject({
+        outcome: "no-algorithm",
+        algorithm: null,
+        keySize: 512,
+      });
+      expect(byId["arn:aws:kms:eu-west-2:1:key/mac"].reason).toEqual(expect.any(String));
+
+      // The three non-observed outcomes stay distinguishable: only one of
+      // them is fixed by a data update.
+      expect(byId["arn:aws:kms:eu-west-2:1:key/future"].outcome).toBe("unrecognised-spec");
+      expect(byId["arn:aws:kms:eu-west-2:1:key/listed"].outcome).toBe("no-spec");
+
+      // G-05 in the response: Azure's JsonWebKey has no key_size member, so
+      // this key genuinely has a known algorithm and no known size.
+      expect(byId["https://v.vault.azure.net/keys/sign/9f"]).toMatchObject({
+        outcome: "observed",
+        algorithm: "RSA",
+        keySize: null,
+        keySizeSource: "not-supplied",
+      });
+
+      // "Not stated" survives as null everywhere; only the key whose export
+      // said so reports a rotation state.
+      expect(byId["arn:aws:kms:eu-west-2:1:key/rsa"].rotationEnabled).toBe(true);
+      expect(byId["arn:aws:kms:eu-west-2:1:key/sym"].rotationEnabled).toBeNull();
+    });
+
+    it("persists the null key size and the null rotation state — the round trip is the point", async () => {
+      const res = await request.get(`/api/projects/${projectId}/kms`).set("X-API-Key", API_KEY);
+      expect(res.status).toBe(200);
+      expect(res.body.projectId).toBe(projectId);
+      expect(res.body.keys).toHaveLength(3);
+
+      const azure = res.body.keys.find((k: { provider: string }) => k.provider === "azure-key-vault");
+      expect(azure).toBeTruthy();
+      // A `NOT NULL DEFAULT` on assets.key_size would turn this into a number
+      // and nothing else in the suite would notice.
+      expect(azure.keySize).toBeNull();
+      expect(azure.algorithm).toBe("RSA");
+      expect(azure.rotationEnabled).toBeNull();
+      expect(azure.status).toBe("active");
+
+      const rotated = res.body.keys.find((k: { keyId: string }) => k.keyId.endsWith("key/rsa"));
+      expect(rotated.rotationEnabled).toBe(true);
+      expect(rotated.keySize).toBe(4096);
+    });
+
+    it("counts the kms surface as examined in the D3 meter", async () => {
+      const res = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
+      expect(res.status).toBe(200);
+      const kms = res.body.surfaces.find((s: { surface: string }) => s.surface === "kms");
+      expect(kms, "kms surface absent from coverage — the collector ran but coverage did not see it").toBeTruthy();
+      expect(kms).toMatchObject({ surfaceId: "kms", state: "examined", completedRuns: 1, failedRuns: 0 });
+    });
+
+    it("records a run for a key store holding nothing this product reports on — examined, not un-examined", async () => {
+      const create = await request
+        .post("/api/projects")
+        .set("X-API-Key", API_KEY)
+        .send({ name: "KMS Symmetric Only", language: "python", code: "" });
+      const symmetricProject = create.body.id;
+
+      const res = await request
+        .post(`/api/projects/${symmetricProject}/kms`)
+        .set("X-API-Key", API_KEY)
+        .send({
+          keys: [
+            { provider: "hashicorp-vault", keyId: "transit/keys/mac", keySpec: "hmac" },
+            { provider: "gcp-kms", keyId: "projects/p/.../1", keySpec: "HMAC_SHA256" },
+          ],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.keysObserved).toBe(0);
+      expect(res.body.keysUnclassified).toBe(2);
+      // The whole point of this test: a run IS recorded. Every key was
+      // classified; none of them is something this product reports on.
+      expect(res.body.collectionRunId).not.toBeNull();
+      expect(res.body.observationsCreated).toBe(0);
+
+      const coverage = await request.get(`/api/projects/${symmetricProject}/coverage`).set("X-API-Key", API_KEY);
+      const kms = coverage.body.surfaces.find((s: { surface: string }) => s.surface === "kms");
+      expect(kms.state).toBe("examined-nothing-found");
+    });
+
+    it("records no run at all for a submission carrying no keys", async () => {
+      const create = await request
+        .post("/api/projects")
+        .set("X-API-Key", API_KEY)
+        .send({ name: "KMS Empty", language: "python", code: "" });
+      const emptyProject = create.body.id;
+
+      const res = await request.post(`/api/projects/${emptyProject}/kms`).set("X-API-Key", API_KEY).send({ keys: [] });
+      expect(res.status).toBe(200);
+      expect(res.body.collectionRunId).toBeNull();
+
+      // Un-examined, not examined-and-empty — the distinction the previous
+      // test's `examined-nothing-found` is the other half of.
+      const coverage = await request.get(`/api/projects/${emptyProject}/coverage`).set("X-API-Key", API_KEY);
+      expect(coverage.body.surfaces.find((s: { surface: string }) => s.surface === "kms")).toBeUndefined();
+    });
+
+    it("updates a key in place when its spec changes, rather than minting a second asset", async () => {
+      const res = await request
+        .post(`/api/projects/${projectId}/kms`)
+        .set("X-API-Key", API_KEY)
+        .send({
+          keys: [{ provider: "aws-kms", keyId: "arn:aws:kms:eu-west-2:1:key/rsa", keySpec: "RSA_2048" }],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.assetsCreated).toBe(0);
+      expect(res.body.assetsUpdated).toBe(1);
+      // A partial export must never retire the keys it did not mention — one
+      // page of a paginated list-keys is the normal case.
+      expect(res.body.assetsMarkedGone).toBe(0);
+
+      const inventory = await request.get(`/api/projects/${projectId}/kms`).set("X-API-Key", API_KEY);
+      expect(inventory.body.keys).toHaveLength(3);
+      const rotated = inventory.body.keys.find((k: { keyId: string }) => k.keyId.endsWith("key/rsa"));
+      expect(rotated.keySize).toBe(2048);
+      expect(rotated.status).toBe("active");
+    });
+
+    it("404s for a project that does not exist, on both the write and the read", async () => {
+      const post = await request
+        .post("/api/projects/999999999/kms")
+        .set("X-API-Key", API_KEY)
+        .send({ keys: [{ provider: "aws-kms", keyId: "k", keySpec: "RSA_2048" }] });
+      expect(post.status).toBe(404);
+
+      const get = await request.get("/api/projects/999999999/kms").set("X-API-Key", API_KEY);
+      expect(get.status).toBe(404);
+    });
+
+    it("exports a KMS asset through the CBOM without breaking the document", async () => {
+      /**
+       * `GET /inventory/cbom` reads every asset in the organisation with no
+       * surface filter, and until this change nothing had ever put a `kms`
+       * asset in front of it: the CBOM block earlier in this file runs
+       * against the same pglite database *before* the KMS block, so it saw
+       * only source and dependency rows. `build-cbom.test.ts` covers the
+       * mapping in isolation; this covers the combination, including a null
+       * key size reaching the exporter and the `project:<id>:kms:...`
+       * location resolving through the `containedIn` prefix join.
+       */
+      const res = await request.get("/api/inventory/cbom").set("X-API-Key", API_KEY);
+      expect(res.status).toBe(200);
+
+      const bom = res.body as CycloneDxBom;
+      const validate: CbomValidator = createCbomValidator();
+      expect(validate(bom), `schema validation failed:\n${validate.explain()}`).toBe(true);
+
+      const kmsComponents = (bom.components ?? []).filter((component) =>
+        (component.properties ?? []).some((p) => p.name.endsWith(":asset:surface") && p.value === "kms"),
+      );
+      expect(kmsComponents.length).toBeGreaterThan(0);
+      // `kms` maps to `related-crypto-material`, not the `algorithm` fallback
+      // an unmapped surface would get.
+      for (const component of kmsComponents) {
+        expect(component.cryptoProperties?.assetType).toBe("related-crypto-material");
+      }
+
+      // G-05 survives the export: the Azure key has no size, so no numeric
+      // field is emitted and the absence is stated rather than implied.
+      const azure = kmsComponents.find((component) =>
+        (component.properties ?? []).some((p) => p.name === PROP_KEY_SIZE && p.value === KEY_SIZE_UNDETERMINED),
+      );
+      expect(azure, "the null-key-size KMS asset is missing from the CBOM").toBeTruthy();
+      expect(azure!.cryptoProperties?.relatedCryptoMaterialProperties?.size).toBeUndefined();
+
+      // The project attribution join works for a kms location, which is
+      // longer than the source locations it was written against.
+      expect(bom.dependencies ?? []).toEqual(expect.any(Array));
+    });
+
+    it("rejects a provider it has no curated data for, rather than accepting and silently dropping it", async () => {
+      const res = await request
+        .post(`/api/projects/${projectId}/kms`)
+        .set("X-API-Key", API_KEY)
+        .send({ keys: [{ provider: "some-other-kms", keyId: "k", keySpec: "RSA_2048" }] });
+      expect(res.status).toBe(400);
+    });
+  });
 });

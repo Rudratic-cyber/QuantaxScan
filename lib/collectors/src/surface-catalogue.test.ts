@@ -4,6 +4,7 @@ import {
   COLLECTOR_SURFACES,
   LIVE_COLLECTOR_SURFACES,
   catalogueEntryForSurface,
+  type CollectorSurfaceEntry,
 } from "./surface-catalogue";
 
 /**
@@ -42,23 +43,32 @@ describe("collector surface catalogue", () => {
     // catalogued before the schema can record it, and `surface: null` is still
     // the honest way to say so. What must not happen is an entry claiming a
     // `Surface` the enum does not have — the test above covers that.
-    const unrecordable = COLLECTOR_SURFACES.filter((entry) => entry.surface === null).map((e) => e.id);
+    //
+    // Read through `CollectorSurfaceEntry` rather than the `as const` literal
+    // type: with every entry's `surface` non-null today, the narrowed literal
+    // type makes the filtered array `never[]` and `e.id` a type error, so a
+    // test asserting the runtime state would not compile. Widening keeps the
+    // assertion about the data, which is the thing that can change.
+    const catalogue: readonly CollectorSurfaceEntry[] = COLLECTOR_SURFACES;
+    const unrecordable = catalogue.filter((entry) => entry.surface === null).map((e) => e.id);
     expect(unrecordable).toEqual([]);
   });
 
-  it("has exactly five live collectors: source, dependency, tls, certificate and config", () => {
+  it("has exactly six live collectors: source, dependency, tls, certificate, config and kms", () => {
     // `dependency` became live when B2's ingest path landed, `tls` when B3's
     // did (`POST /projects/:id/tls`), `certificate` when B4's did
-    // (`POST /projects/:id/certificates`), and `config` when B6's did
-    // (`POST /projects/:id/protocol-config`). A collector with nowhere to
-    // write is not a live surface — the whole point of this list is that it is
-    // the denominator of an honesty claim, so an entry earns `live` by being
-    // able to record a collection run, not by existing in the repo.
+    // (`POST /projects/:id/certificates`), `config` when B6's did
+    // (`POST /projects/:id/protocol-config`), and `kms` when B5's did
+    // (`POST /projects/:id/kms`). A collector with nowhere to write is not a
+    // live surface — the whole point of this list is that it is the
+    // denominator of an honesty claim, so an entry earns `live` by being able
+    // to record a collection run, not by existing in the repo.
     expect(LIVE_COLLECTOR_SURFACES.map((entry) => entry.id)).toEqual([
       "source",
       "dependency",
       "tls",
       "certificate",
+      "kms",
       "config",
     ]);
   });

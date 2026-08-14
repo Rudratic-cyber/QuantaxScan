@@ -1882,6 +1882,164 @@ export interface UpdateVendorAssessmentBody {
   notes?: string | null;
 }
 
+/**
+ * Which key store this key lives in.
+ */
+export type SubmitProjectKmsBodyKeysItemProvider =
+  (typeof SubmitProjectKmsBodyKeysItemProvider)[keyof typeof SubmitProjectKmsBodyKeysItemProvider];
+
+export const SubmitProjectKmsBodyKeysItemProvider = {
+  "aws-kms": "aws-kms",
+  "azure-key-vault": "azure-key-vault",
+  "gcp-kms": "gcp-kms",
+  "hashicorp-vault": "hashicorp-vault",
+} as const;
+
+export type SubmitProjectKmsBodyKeysItem = {
+  /** Which key store this key lives in. */
+  provider: SubmitProjectKmsBodyKeysItemProvider;
+  /** ARN, resource name, `kid` URL, or mount-qualified key name — whatever the provider calls the key's identity. Together with `provider` this is the asset's identity; an alias is deliberately not used, since an alias can be repointed at a different key. */
+  keyId: string;
+  /** The provider-native spec string: AWS `KeySpec`, GCP `CryptoKeyVersion.algorithm`, Azure `kty`, Vault `type`. Matched case-insensitively against `docs/Claude/mappings/kms-key-specs.json`. Omit it and the key is recorded as present and unclassified rather than guessed at. */
+  keySpec?: string;
+  /** Curve name where the provider states it separately from the spec — Azure's `crv`. Resolved through the shared named-curve table. */
+  curve?: string;
+  /** A key size your export has and the spec does not state (Azure's Create Key `key_size`). Used only when neither the key spec nor a curve supplies one, so it cannot override a size the provider's documentation states. */
+  keySize?: number;
+  alias?: string;
+  /** The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`), recorded verbatim and never mapped onto the asset's lifecycle status. */
+  keyState?: string;
+  rotationEnabled?: boolean;
+  /** @minimum 1 */
+  rotationPeriodDays?: number;
+  lastRotatedAt?: string;
+  origin?: string;
+  region?: string;
+  /** The containing vault, key ring or mount path. */
+  keyStore?: string;
+};
+
+export interface SubmitProjectKmsBody {
+  /**
+   * The key inventory your own key store already produced — the output of `aws kms describe-key`, `az keyvault key show`, `gcloud kms keys list` or `vault read transit/keys/<name>`, transcribed into these fields. No credential for the key store ever reaches this product.
+
+Every field beyond `provider` and `keyId` is optional because every field beyond those is optional in those exports: `aws kms list-keys` returns identifiers only, and Azure Key Vault's list operation returns `kid` and `attributes` with no key type at all. An omitted field means "the export did not state this" and is never substituted for — `rotationEnabled` in particular is left absent rather than sent as `false`, because "not stated" and "not rotated" are different claims.
+   * @maxItems 500
+   */
+  keys: SubmitProjectKmsBodyKeysItem[];
+}
+
+/**
+ * `observed` — the spec resolved to an algorithm this product reports on, and an asset was written. `no-algorithm` — the spec is known and its primitive is not one `algorithms.json` catalogues (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`); the key is real, counted and examined, and there is nothing to report about it. `unrecognised-spec` — the provider stated a spec the curated table does not have, which means our data is behind the provider and is the one outcome a data update fixes. `no-spec` — the entry named a key and stated nothing about it, the expected shape of a list-without-describe export.
+ */
+export type KmsKeyOutcomeOutcome =
+  (typeof KmsKeyOutcomeOutcome)[keyof typeof KmsKeyOutcomeOutcome];
+
+export const KmsKeyOutcomeOutcome = {
+  observed: "observed",
+  "no-algorithm": "no-algorithm",
+  "unrecognised-spec": "unrecognised-spec",
+  "no-spec": "no-spec",
+} as const;
+
+/**
+ * Which of four sources supplied `keySize`, so a reader never has to guess: the key spec's documented size, a named curve, a value you submitted, or none of them.
+ */
+export type KmsKeyOutcomeKeySizeSource =
+  | (typeof KmsKeyOutcomeKeySizeSource)[keyof typeof KmsKeyOutcomeKeySizeSource]
+  | null;
+
+export const KmsKeyOutcomeKeySizeSource = {
+  "key-spec": "key-spec",
+  curve: "curve",
+  submitted: "submitted",
+  "not-supplied": "not-supplied",
+} as const;
+
+/**
+ * What the collector concluded about one submitted key. The four `outcome` values are deliberately not collapsed into "classified / skipped": only one of the three non-observed values is actionable, and hiding which is which would hide it.
+ */
+export interface KmsKeyOutcome {
+  provider: string;
+  keyId: string;
+  keySpec: string | null;
+  alias: string | null;
+  keyState: string | null;
+  /** `observed` — the spec resolved to an algorithm this product reports on, and an asset was written. `no-algorithm` — the spec is known and its primitive is not one `algorithms.json` catalogues (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`); the key is real, counted and examined, and there is nothing to report about it. `unrecognised-spec` — the provider stated a spec the curated table does not have, which means our data is behind the provider and is the one outcome a data update fixes. `no-spec` — the entry named a key and stated nothing about it, the expected shape of a list-without-describe export. */
+  outcome: KmsKeyOutcomeOutcome;
+  /** Why no observation was produced, verbatim from the curated table where the table has an opinion. Null for `observed`. */
+  reason: string | null;
+  /** Null for every outcome except `observed`. */
+  algorithm: string | null;
+  /** The size the provider states for this key. **Null means the provider stated none** — an Azure JsonWebKey carries no `key_size` member at all — never a default. G-05. */
+  keySize: number | null;
+  /** Which of four sources supplied `keySize`, so a reader never has to guess: the key spec's documented size, a named curve, a value you submitted, or none of them. */
+  keySizeSource: KmsKeyOutcomeKeySizeSource;
+  /** Null when the submitted export did not state it. Not the same as `false`. */
+  rotationEnabled: boolean | null;
+  /** The asset locator this key was written under. Null when no asset was written. */
+  location: string | null;
+}
+
+export interface KmsIngestSummary {
+  projectId: number;
+  keysSubmitted: number;
+  /** How many submitted keys resolved to an algorithm this product reports on and became assets. */
+  keysObserved: number;
+  /** Submitted keys that produced no observation, for any of the three non-`observed` reasons. This being non-zero while `collectionRunId` is set is the normal and correct state for a key store holding symmetric or post-quantum keys — the surface was examined, and nothing reportable was in it. */
+  keysUnclassified: number;
+  keys: KmsKeyOutcome[];
+  /** Null only when the submission carried no key entries at all. A submission whose keys all came back unclassified DOES record a run — that is an examination that found nothing, not an absent examination, and the D3 meter must be able to tell them apart. */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Always 0 in practice today. A submitted export is never assumed to be a complete enumeration of a key store — one page of a paginated `list-keys`, one region or one Vault mount is the normal case — so a key absent from a later submission is not inferred to have been deleted. See the reobservation-scope note in `asset-ingest.ts`. */
+  assetsMarkedGone: number;
+  evidenceCaveat: string;
+}
+
+export type ProjectKmsKeyStatus =
+  (typeof ProjectKmsKeyStatus)[keyof typeof ProjectKmsKeyStatus];
+
+export const ProjectKmsKeyStatus = {
+  active: "active",
+  remediated: "remediated",
+  waived: "waived",
+  gone: "gone",
+} as const;
+
+/**
+ * A persisted KMS key asset, as the inventory read returns it.
+ */
+export interface ProjectKmsKey {
+  assetId: number;
+  provider: string;
+  keyId: string;
+  keySpec: string | null;
+  alias: string | null;
+  keyState: string | null;
+  algorithm: string;
+  /** Null when the provider stated no size. Never a default — G-05. */
+  keySize: number | null;
+  status: ProjectKmsKeyStatus;
+  /** Null when the submitted export did not state it, which is a different fact from rotation being off. */
+  rotationEnabled: boolean | null;
+  rotationPeriodDays: number | null;
+  lastRotatedAt: string | null;
+  origin: string | null;
+  region: string | null;
+  keyStore: string | null;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export interface ProjectKmsKeys {
+  projectId: number;
+  generatedAt: string;
+  keys: ProjectKmsKey[];
+}
+
 export type RateLimitedResponse = {
   error: string;
 };

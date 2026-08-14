@@ -10,7 +10,7 @@ import type { RawObservation } from "./types";
  *   dependency:  repo + ecosystem + package + algorithm  (see below)
  *   tls:         repo + host + port + algorithm  (see below)
  *   certificate: repo + issuer + serial  (see below — same amendment as dependency)
- *   kms:         provider + key ARN/ID
+ *   kms:         repo + provider + key ARN/ID  (see below — same amendment as dependency)
  *
  * qx-sp1800-38b investigation report §"Binary fingerprint rule":
  *   managed binary: target-or-repository + packageIdentity-or-componentName
@@ -95,6 +95,26 @@ import type { RawObservation } from "./types";
  * The token is *not* a content digest of the file (the anti-requirement
  * above): reformatting the file, moving the line, or changing an unrelated
  * directive leaves every fingerprint intact.
+ *
+ * **`repo` was added to the `kms` variant for the fourth time, when B5's
+ * ingest path was built.** The architecture table above reads `provider +
+ * key ARN/ID`, and is amended here for the reason the three paragraphs above
+ * establish. A KMS key genuinely *is* an organisation-wide object — one ARN
+ * names one key globally, so leaving `repo` out is superficially the more
+ * accurate model — but `assets.location` is a single `notNull` column
+ * carrying a `project:<id>:` prefix, and it cannot name two projects. Two
+ * projects that both depend on the same platform-team KMS key (the normal
+ * case, not an edge case: shared keys are what a central key store is *for*)
+ * would fingerprint identically, and the second submission's upsert would
+ * silently reassign the first project's asset to its own prefix — breaking
+ * `DELETE /projects/:id`, `GET /projects/:id/coverage` and the CBOM
+ * `containedIn` join exactly as the dependency paragraph describes.
+ *
+ * The trade is the same one and is worth naming, because it bites harder
+ * here: "which projects use this KMS key?" is now a `GROUP BY` over several
+ * asset rows rather than one row with several owners. That is the direction
+ * that stays recoverable — a query can aggregate rows, but no query can
+ * split one row back into the two projects it stood for.
  */
 export type FingerprintInput =
   | { surface: "source"; repo: string; path: string; algorithm: string; symbol: string }
@@ -102,7 +122,7 @@ export type FingerprintInput =
   | { surface: "tls"; repo: string; host: string; port: number; algorithm: string }
   | { surface: "certificate"; repo: string; issuer: string; serial: string }
   | { surface: "config"; repo: string; path: string; directive: string; algorithm: string; token: string }
-  | { surface: "kms"; provider: string; keyId: string }
+  | { surface: "kms"; repo: string; provider: string; keyId: string }
   | {
       surface: "binary";
       targetOrRepository: string;
@@ -132,7 +152,7 @@ function orderedFields(input: FingerprintInput): string[] {
     case "config":
       return [input.surface, input.repo, input.path, input.directive, input.algorithm, input.token];
     case "kms":
-      return [input.surface, input.provider, input.keyId];
+      return [input.surface, input.repo, input.provider, input.keyId];
     case "binary":
       return [
         input.surface,
@@ -246,6 +266,23 @@ export function fingerprintForObservation(
         // removed it and added a different one, and `locationDetail` already
         // carries the new condition on the next observation.
         token: detail.config.declaredValue,
+      };
+    case "kms":
+      // Unlike `network` below, this discriminator identifies exactly one
+      // surface, so no disambiguation is needed or possible: a KMS key's
+      // identity is the provider plus the id that provider gave it, and
+      // neither `algorithm` nor `keySize` is part of it. That is deliberate
+      // and is the KMS analogue of the dependency variant excluding the
+      // version — rotating a key to a larger modulus, or re-keying an alias,
+      // updates the asset in place rather than orphaning it and minting a
+      // new one, which is what makes "this key grew from RSA-2048 to
+      // RSA-4096" a visible change in one asset's history rather than a
+      // remediation followed by a regression.
+      return {
+        surface: "kms",
+        repo: context.repo,
+        provider: detail.kms.provider,
+        keyId: detail.kms.keyId,
       };
     case "network": {
       const { hostname, destinationPort } = detail.network;

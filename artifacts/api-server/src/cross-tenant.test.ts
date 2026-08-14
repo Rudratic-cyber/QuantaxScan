@@ -261,6 +261,12 @@ describe("route manifest — a new route cannot ship without being considered", 
     // B6 — same reasoning again: `config` assets are attributed to a project
     // only by the `project:<id>:config:` location prefix, never a foreign key.
     "POST /projects/:id/protocol-config": "org-scoped",
+    // B5 — same reasoning again: a submitted key inventory becomes assets
+    // attributed to a project only by the `project:<id>:` location prefix,
+    // never a foreign key, so the parent is confirmed visible inside the
+    // scope. The GET reads those assets with no where clause of its own.
+    "POST /projects/:id/kms": "org-scoped",
+    "GET /projects/:id/kms": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",
@@ -631,6 +637,40 @@ describe("addressing another organisation's row by id is indistinguishable from 
 
     const after = await countTheirConfigAssets();
     expect(after).toEqual(before);
+  });
+
+  it("POST /api/projects/:id/kms naming another organisation's project writes nothing", async () => {
+    // Same shape again, and the submitted key deliberately resolves — an
+    // `RSA_4096` AWS spec that `kms-key-specs.json` genuinely carries. A
+    // submission the collector could not classify would make this assertion
+    // true for the wrong reason (nothing was written because nothing was
+    // classifiable), rather than because the in-scope parent check refused it.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirKmsAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'kms'`,
+        ),
+      );
+    const before = await countTheirKmsAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/kms`).send({
+        keys: [{ provider: "aws-kms", keyId: "arn:aws:kms:eu-west-2:1:key/theirs", keySpec: "RSA_4096" }],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirKmsAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("GET /api/projects/:id/kms → 404 for another organisation's project, not their key inventory", async () => {
+    // A key inventory names every key a customer holds — as bad a thing to
+    // leak across a tenant boundary as the CBOM.
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/kms`));
+    expect(res.status).toBe(404);
   });
 });
 

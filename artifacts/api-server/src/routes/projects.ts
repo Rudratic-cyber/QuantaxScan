@@ -18,8 +18,16 @@ import {
   SubmitProjectCertificatesBody,
   SubmitProjectTlsBody,
   SubmitProjectProtocolConfigBody,
+  SubmitProjectKmsBody,
 } from "@workspace/api-zod";
-import { lockfilesIn, certificatesIn, protocolConfigsIn } from "@workspace/collectors";
+import {
+  lockfilesIn,
+  certificatesIn,
+  protocolConfigsIn,
+  KMS_KEY_SPECS_CRITICAL_CAVEAT,
+  type KmsKeyDescription,
+  type KmsKeyOutcome,
+} from "@workspace/collectors";
 import { scanCode, computeScanResult } from "../lib/scanner";
 import { summariseProjectCoverage } from "../lib/coverage";
 import { withComplianceAll } from "../lib/compliance";
@@ -28,6 +36,7 @@ import {
   ingestCertificateObservations,
   ingestTlsObservations,
   ingestProtocolConfigObservations,
+  ingestKmsObservations,
   type CertificateSummary,
 } from "../lib/asset-ingest";
 import { evaluateCertificateExpiryAgainstQDay } from "../lib/certificate-risk";
@@ -852,6 +861,286 @@ router.post("/projects/:id/protocol-config", async (req, res): Promise<void> => 
     assetsMarkedGone: result.assetsMarkedGone,
     declarations: result.declarations,
     evidenceCaveat: PROTOCOL_CONFIG_EVIDENCE_CAVEAT,
+  });
+});
+
+/**
+ * B5 — `POST /api/projects/:id/kms` and `GET /api/projects/:id/kms`.
+ * docs/Claude/03-features.md §B5.
+ *
+ * Structurally the dependency route, with the same organisation scope, the
+ * same in-scope parent check (a foreign key is not subject to RLS — `assets`
+ * has none to `projects` at all), and the same second route for the
+ * persisted-inventory read that B4 introduced. Two things differ, both
+ * deliberate.
+ *
+ * **It is submission-based, not credentialed.** The caller posts the key
+ * inventory their own `describe-key`/`keys list` already produced. Four
+ * live-credentialed pollers would mean four cloud SDKs, four auth flows, and
+ * long-lived read-only credentials into a customer's key store held in a
+ * product whose secret-handling controls (F4) do not exist yet — and none of
+ * that is needed to make the surface real. `kms-collector.ts`'s header has
+ * the full argument; the credentialed poller is strictly additive and
+ * produces the same `KmsKeyDescription` values.
+ *
+ * **The "examined nothing" branch is narrower than every other collector's.**
+ * B2/B3/B4 refuse a run when nothing readable was submitted. Here, a key
+ * store holding only HMAC and AES-wrapping keys *was* examined and every key
+ * *was* classified — there is simply nothing on this product's reportable
+ * list in it, which is `examined, nothing found` and is exactly what
+ * `collection_runs` exists to make sayable. So only an empty `keys` array
+ * skips the run. See `ingestKmsObservations` for the full reasoning.
+ *
+ * The GET is not redundant with `GET /inventory/assets`: that endpoint does
+ * not return `locationDetail`, and provider, key id, spec, rotation state,
+ * origin and key store all live there. Without this route a key's rotation
+ * posture would be write-only.
+ */
+
+/**
+ * There is deliberately **no** `MAX_KMS_KEYS_PER_SUBMISSION` constant here,
+ * unlike `MAX_LOCKFILES_PER_SUBMISSION` and
+ * `MAX_CERTIFICATES_PER_SUBMISSION` above. Those two count things that only
+ * exist after parsing — recognised lockfiles, parsed certificates — which no
+ * request schema can express, so the bound has to live in the handler. This
+ * one is a plain array length, so it lives in `SubmitProjectKmsBody`'s
+ * `maxItems` where clients generated from the spec can enforce it too. A
+ * second check here would be a branch the zod parse above makes unreachable.
+ */
+
+/**
+ * The curated table's own `criticalCaveat` is concatenated rather than
+ * paraphrased, the same way B2 surfaces `crypto-packages.json`'s. A caveat
+ * that lives only in the data file is a caveat no customer ever reads, and a
+ * paraphrase in TypeScript is a second copy that can drift from the claim it
+ * qualifies.
+ */
+const KMS_EVIDENCE_CAVEAT =
+  "This collector reads a key inventory you submitted; no credential for your key store ever reaches this " +
+  "product and nothing here connects to a provider. A key spec is resolved against a cited table of the " +
+  "providers' own documentation, so a spec that table does not carry is reported as unclassified rather " +
+  "than mapped to a similar one. " +
+  KMS_KEY_SPECS_CRITICAL_CAVEAT;
+
+/**
+ * Flattens one collector outcome into the response shape. Every non-`observed`
+ * outcome still appears: "we looked at 40 keys, classified 31, and here is
+ * what the other 9 were" is the answer a key inventory has to give, and a
+ * response that listed only the 31 would read as a complete inventory of 31
+ * keys.
+ */
+function toKmsKeyResponseEntry(outcome: KmsKeyOutcome) {
+  const { key } = outcome;
+  const base = {
+    provider: key.provider,
+    keyId: key.keyId,
+    keySpec: key.keySpec ?? null,
+    alias: key.alias ?? null,
+    keyState: key.keyState ?? null,
+    // Absent, not false — the export said nothing, and `false` would claim
+    // this key is not rotated.
+    rotationEnabled: key.rotationEnabled ?? null,
+  };
+
+  if (outcome.kind !== "observed") {
+    return {
+      ...base,
+      outcome: outcome.kind,
+      reason: outcome.reason,
+      algorithm: null,
+      // A `no-algorithm` spec can still state a size (HMAC_512 is 512 bits),
+      // and reporting it is free information about a key we cannot classify.
+      keySize: outcome.kind === "no-algorithm" ? outcome.entry.keySize : null,
+      keySizeSource: null,
+      location: null,
+    };
+  }
+
+  const { observation } = outcome;
+  return {
+    ...base,
+    outcome: outcome.kind,
+    reason: null,
+    algorithm: observation.algorithm,
+    keySize: observation.keySize ?? null,
+    keySizeSource: (observation.evidence["keySizeSource"] as string | undefined) ?? null,
+    location: observation.location,
+  };
+}
+
+router.post("/projects/:id/kms", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const body = SubmitProjectKmsBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+  // The generated body type lines up with `KmsKeyDescription` field for
+  // field, with one genuine conversion: the spec declares `lastRotatedAt` as
+  // `format: date-time`, so the generated schema parses it into a `Date`,
+  // while the collector's contract is an ISO string. That is not pedantry —
+  // `locationDetail` is written to `jsonb`, where a `Date` becomes a string
+  // on the way in and stays one on the way out (the same reason
+  // `CertificateLocationDetailSchema` holds strings), so converting here is
+  // what keeps the value that is stored equal to the value the type claims.
+  // Typed rather than cast, so a future spec change that widens the body
+  // fails at compile time instead of reaching the collector.
+  const keys: KmsKeyDescription[] = body.data.keys.map((key) => {
+    const { lastRotatedAt, ...rest } = key;
+    return lastRotatedAt === undefined ? rest : { ...rest, lastRotatedAt: lastRotatedAt.toISOString() };
+  });
+
+  const ctx = orgContextFor(req);
+  const outcome = await withOrg(ctx, async (tx) => {
+    // Same reasoning as every other route with a client-supplied parent id:
+    // `assets` has no foreign key to `projects`, only the `project:<id>:`
+    // location prefix this route is about to write, so the parent must be
+    // confirmed visible *inside* the scope.
+    const [parent] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!parent) return null;
+
+    // The only "we examined nothing" case here. Deliberately NOT "no key
+    // resolved to an algorithm" — see this route's header and
+    // `ingestKmsObservations`.
+    if (keys.length === 0) return { kind: "no-keys" as const };
+
+    return {
+      kind: "ingested" as const,
+      result: await ingestKmsObservations(tx, { repo, keys, organizationId: ctx.organizationId }),
+    };
+  });
+
+  if (outcome === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  if (outcome.kind === "no-keys") {
+    res.json({
+      projectId: id,
+      keysSubmitted: 0,
+      keysObserved: 0,
+      keysUnclassified: 0,
+      keys: [],
+      collectionRunId: null,
+      assetsCreated: 0,
+      assetsUpdated: 0,
+      observationsCreated: 0,
+      assetsMarkedGone: 0,
+      evidenceCaveat: KMS_EVIDENCE_CAVEAT,
+    });
+    return;
+  }
+
+  const { result } = outcome;
+  const observed = result.outcomes.filter((o) => o.kind === "observed").length;
+  logger.info(
+    {
+      projectId: id,
+      keysSubmitted: keys.length,
+      keysObserved: observed,
+      observations: result.observationsCreated,
+      route: "POST /projects/:id/kms",
+    },
+    "KMS collection complete",
+  );
+
+  res.json({
+    projectId: id,
+    keysSubmitted: keys.length,
+    keysObserved: observed,
+    keysUnclassified: result.outcomes.length - observed,
+    keys: result.outcomes.map(toKmsKeyResponseEntry),
+    collectionRunId: result.collectionRunId,
+    assetsCreated: result.assetsCreated,
+    assetsUpdated: result.assetsUpdated,
+    observationsCreated: result.observationsCreated,
+    assetsMarkedGone: result.assetsMarkedGone,
+    evidenceCaveat: KMS_EVIDENCE_CAVEAT,
+  });
+});
+
+router.get("/projects/:id/kms", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+
+  const keys = await withOrg(orgContextFor(req), async (tx) => {
+    const [project] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!project) return null;
+
+    return tx
+      .select({
+        id: assetsTable.id,
+        algorithm: assetsTable.algorithm,
+        keySize: assetsTable.keySize,
+        location: assetsTable.location,
+        locationDetail: assetsTable.locationDetail,
+        status: assetsTable.status,
+        firstSeen: assetsTable.firstSeen,
+        lastSeen: assetsTable.lastSeen,
+      })
+      .from(assetsTable)
+      .where(and(eq(assetsTable.surface, "kms"), like(assetsTable.location, `${repo}:%`)));
+  });
+
+  if (keys === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  res.json({
+    projectId: id,
+    generatedAt: new Date().toISOString(),
+    keys: keys.flatMap((asset) => {
+      const detail = asset.locationDetail;
+      // Defensive, not expected: every row on this surface was written by
+      // ingestKmsObservations, which always sets this. Skipping rather than
+      // throwing keeps one malformed historical row from taking the whole
+      // inventory read down — the same posture the certificate read takes.
+      if (detail?.kind !== "kms") {
+        logger.warn({ assetId: asset.id }, "kms asset has no kms locationDetail — skipped");
+        return [];
+      }
+      return [
+        {
+          assetId: asset.id,
+          provider: detail.kms.provider,
+          keyId: detail.kms.keyId,
+          keySpec: detail.kms.keySpec ?? null,
+          alias: detail.kms.alias ?? null,
+          keyState: detail.kms.keyState ?? null,
+          algorithm: asset.algorithm,
+          // Straight off the column, which is nullable with no default so
+          // that "the provider stated no size" survives the round trip.
+          keySize: asset.keySize,
+          status: asset.status,
+          // Null here is "the export did not say", which is why the column
+          // is read with `??` rather than `Boolean(...)`.
+          rotationEnabled: detail.kms.rotationEnabled ?? null,
+          rotationPeriodDays: detail.kms.rotationPeriodDays ?? null,
+          lastRotatedAt: detail.kms.lastRotatedAt ?? null,
+          origin: detail.kms.origin ?? null,
+          region: detail.kms.region ?? null,
+          keyStore: detail.kms.keyStore ?? null,
+          firstSeen: asset.firstSeen.toISOString(),
+          lastSeen: asset.lastSeen.toISOString(),
+        },
+      ];
+    }),
   });
 });
 
