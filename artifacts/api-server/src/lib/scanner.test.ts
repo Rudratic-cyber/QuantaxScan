@@ -64,6 +64,76 @@ describe("scanCode — behaviour preserved through the SourceRegexCollector refa
   });
 });
 
+describe("every finding carries the mapping engine's answer, resolved at read time (C1)", () => {
+  it("attaches obligations, a bucket and a data version to each finding", () => {
+    const [finding] = scanCode("key = RSA.generate(2048)", "a.py", "python");
+    expect(finding.compliance).not.toBeNull();
+    expect(finding.compliance!.bucket).toBe("pqc-migration");
+    expect(finding.compliance!.obligations.length).toBeGreaterThan(0);
+    expect(finding.compliance!.dataVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    // Every regulatory claim carries a citation — the whole point of the provenance rule.
+    for (const obligation of finding.compliance!.obligations) {
+      expect(obligation.citation.url).toBeTruthy();
+      expect(obligation.citation.document).toBeTruthy();
+    }
+  });
+
+  it("separates the buckets G-07/G-08/G-09 are about", () => {
+    const bucketOf = (code: string) => scanCode(code, "a.py", "python")[0].compliance!.bucket;
+    expect(bucketOf("signer = DSA.new(key)")).toBe("immediate-compliance-failure");
+    expect(bucketOf("key = RSA.generate(2048)")).toBe("pqc-migration");
+    expect(bucketOf('c = Cipher.getInstance("AES/ECB/PKCS5Padding")')).toBe("best-practice");
+  });
+
+  it("keeps hygiene findings out of the post-quantum score (G-10 contract for A4)", () => {
+    const findings = scanCode(["RSA.generate(2048)", "md5(x)", "sha1(x)"].join("\n"), "a.py", "python");
+    const pqc = findings.filter((f) => f.compliance?.countsTowardPostQuantumScore);
+    expect(pqc.map((f) => f.algorithm)).toEqual(["RSA"]);
+  });
+});
+
+describe("executive summary states what is true of each bucket (G-08, G-09)", () => {
+  it("does not recommend a PQC migration for a scan that has no quantum-vulnerable finding", () => {
+    const findings = scanCode(["h = hashlib.md5(x)", "s = hashlib.sha1(x)"].join("\n"), "a.py", "python");
+    const summary = generateExecutiveSummary(findings, 2, "python");
+    expect(summary).not.toMatch(/FIPS 20[345]/);
+    expect(summary).not.toMatch(/Migrate the quantum-vulnerable findings/);
+    expect(summary).toMatch(/classical hygiene — unrelated to quantum computing/i);
+  });
+
+  it("recommends the replacement standards the obligations actually name when PQC work exists", () => {
+    const findings = scanCode("key = RSA.generate(2048)", "a.py", "python");
+    const summary = generateExecutiveSummary(findings, 1, "python");
+    expect(summary).toMatch(/FIPS 203/);
+    expect(summary).toMatch(/quantum-vulnerable/i);
+  });
+
+  it("leads with the findings that have no runway, and flags the ones needing review", () => {
+    const findings = scanCode(["signer = DSA.new(key)", "key = RSA.generate(2048)"].join("\n"), "a.py", "python");
+    const summary = generateExecutiveSummary(findings, 2, "python");
+    expect(summary).toMatch(/non-compliant now, with no migration runway \(DSA\)/);
+    expect(summary.indexOf("no migration runway")).toBeLessThan(summary.indexOf("published transition deadline"));
+    expect(summary).toMatch(/confirm the call site/i);
+  });
+
+  it("never asserts that a hygiene finding is non-PQC-safe", () => {
+    const findings = scanCode('c = Cipher.getInstance("AES/ECB/PKCS5Padding")', "a.java", "java");
+    const summary = generateExecutiveSummary(findings, 1, "python");
+    expect(summary).not.toMatch(/non-PQC-safe|quantum-critical|Q-Day/i);
+    expect(summary).toMatch(/1 of them is a best-practice recommendation that violates no standard/);
+  });
+
+  it("pluralises correctly with more than one best-practice finding", () => {
+    const ecb = 'c = Cipher.getInstance("AES/ECB/PKCS5Padding")';
+    const findings = scanCode([ecb, ecb].join("\n"), "a.java", "java");
+    const summary = generateExecutiveSummary(findings, 2, "java");
+    expect(summary).toMatch(/2 findings .* are classical hygiene/);
+    expect(summary).toMatch(/2 of them are a best-practice recommendation that violates no standard/);
+    expect(summary).not.toMatch(/thems|findings is|finding are/);
+
+  });
+});
+
 describe("computeScanResult — A4 risk engine, split from detection (closes G-10)", () => {
   it("scores a hygiene-only file at zero post-quantum risk", () => {
     // docs/Claude/09-open-gaps.md G-10: MD5, SHA-1 and AES-ECB are not
@@ -117,23 +187,27 @@ describe("computeScanResult — A4 risk engine, split from detection (closes G-1
   });
 });
 
-describe("generateExecutiveSummary — stops claiming a PQC migration for hygiene findings", () => {
-  it("does not recommend PQC migration for a scan with no quantum-vulnerable findings", () => {
-    const findings = scanCode("h = hashlib.md5(data)", "a.py", "python");
-    const summary = generateExecutiveSummary(findings, 10, "python");
-
-    expect(summary).not.toMatch(/FIPS 203/);
-    expect(summary).toMatch(/post-quantum exposure score is zero/);
-    expect(summary).toMatch(/classical-hygiene finding/);
-  });
-
-  it("still recommends PQC migration, and names the Mosca verdict, when there is real exposure", () => {
+describe("executive summary carries the Mosca verdict alongside the bucket counts (A4 + C1)", () => {
+  it("states the breach, and still names the replacement standards, when there is real exposure", () => {
     const findings = scanCode("RSA.generate(2048)\nmd5(x)", "a.py", "python");
     const result = computeScanResult(findings, 10, { secrecyLifetimeYears: 25, now: NOW });
     const summary = generateExecutiveSummary(findings, 10, "python", result.mosca);
 
-    expect(summary).toMatch(/FIPS 203/);
     expect(summary).toMatch(/Mosca's inequality is breached under 3 of 3 Q-Day scenarios/);
-    expect(summary).toMatch(/excluded from the post-quantum score/);
+    expect(summary).toMatch(/FIPS 203/);
+    expect(summary).toMatch(/classical hygiene — unrelated to quantum computing/);
+  });
+
+  it("labels the secrecy lifetime as assumed when no classification was supplied", () => {
+    const findings = scanCode("RSA.generate(2048)", "a.py", "python");
+    const result = computeScanResult(findings, 10, { now: NOW });
+    const summary = generateExecutiveSummary(findings, 10, "python", result.mosca);
+
+    expect(summary).toMatch(/assumed — no data classification set/);
+  });
+
+  it("omits the Mosca sentence entirely when no assessment is passed", () => {
+    const findings = scanCode("RSA.generate(2048)", "a.py", "python");
+    expect(generateExecutiveSummary(findings, 10, "python")).not.toMatch(/Mosca/);
   });
 });

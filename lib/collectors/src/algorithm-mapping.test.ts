@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import algorithmsData from "../../../docs/Claude/mappings/algorithms.json" with { type: "json" };
 import { deriveAlgorithmMapping, MAPPINGS_DATA_VERSION } from "./algorithm-mapping";
 import { SOURCE_PATTERN_ALGORITHMS } from "./source-regex-collector";
 import { CRYPTO_PACKAGE_ALGORITHMS } from "./crypto-packages";
@@ -51,9 +52,11 @@ describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappi
   });
 
   it("is sourced from the current mappings dataVersion, not a frozen copy", () => {
-    // 0.3.1: B2 cleared eddsa's detectionGap flag and corrected its explanation.
-    expect(deriveAlgorithmMapping("RSA")?.dataVersion).toBe("0.3.1");
-    expect(MAPPINGS_DATA_VERSION).toBe("0.3.1");
+    // Compared against the file rather than a literal: a standards-data pull request
+    // bumps `dataVersion`, and that must not break a test in the detection layer.
+    expect(deriveAlgorithmMapping("RSA")?.dataVersion).toBe(algorithmsData.dataVersion);
+    expect(deriveAlgorithmMapping("RSA")?.dataVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(MAPPINGS_DATA_VERSION).toBe(algorithmsData.dataVersion);
   });
 
   it("surfaces quantumVulnerable verbatim, so the A4 risk split reads the data rather than a name list", () => {

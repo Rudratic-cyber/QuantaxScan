@@ -5,6 +5,7 @@ import type { ScopedTx } from "@workspace/db/org-scope";
 import { CreateScanBody, GetScanParams, GetScanFindingsParams } from "@workspace/api-zod";
 import { computeRiskProfile } from "@workspace/risk";
 import { scanCode, computeScanResult, generateExecutiveSummary } from "../lib/scanner";
+import { withComplianceAll } from "../lib/compliance";
 import { ingestSourceObservations } from "../lib/asset-ingest";
 import { orgContextFor } from "../lib/principal";
 import { logger } from "../lib/logger";
@@ -194,7 +195,10 @@ router.get("/scans/:id", async (req, res): Promise<void> => {
     const [scan] = await tx.select().from(scansTable).where(eq(scansTable.id, params.data.id));
     if (!scan) return null;
     const findings = await tx.select().from(findingsTable).where(eq(findingsTable.scanId, params.data.id));
-    return { ...scan, findings };
+    // Obligations are resolved on the way out, never read back off the row — a
+    // mappings-data update therefore reaches findings written before it. See
+    // lib/compliance.ts and docs/Claude/05-compliance-mapping.md.
+    return { ...scan, findings: withComplianceAll(findings) };
   });
 
   if (!found) {
@@ -233,7 +237,7 @@ router.get("/scans/:id/findings", async (req, res): Promise<void> => {
   const findings = await withOrg(orgContextFor(req), (tx) =>
     tx.select().from(findingsTable).where(eq(findingsTable.scanId, params.data.id)),
   );
-  res.json(findings);
+  res.json(withComplianceAll(findings));
 });
 
 // ── Multi-file scan: scan all files in one project ────────────────────────────
@@ -317,6 +321,7 @@ router.post("/scans/multi", async (req, res): Promise<void> => {
           lineNumber: f.lineNumber, severity: f.severity, algorithm: f.algorithm,
           codeSnippet: f.codeSnippet, nistReplacement: f.nistReplacement,
           nistStandard: f.nistStandard, effortHours: f.effortHours, explanation: f.explanation,
+          compliance: f.compliance,
         })),
       });
     }

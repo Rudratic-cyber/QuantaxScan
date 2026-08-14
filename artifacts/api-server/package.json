@@ -14,6 +14,7 @@
     "@workspace/api-zod": "workspace:*",
     "@workspace/collectors": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/mappings": "workspace:*",
     "@workspace/integrations-openai-ai-server": "workspace:*",
     "@workspace/risk": "workspace:*",
     "cors": "^2",

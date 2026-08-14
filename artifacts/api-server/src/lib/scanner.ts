@@ -1,7 +1,6 @@
 import { collectSourceObservations, deriveAlgorithmMapping, type RawObservation } from "@workspace/collectors";
 import {
   computeRiskProfile,
-  splitFindingsByTrack,
   CONSULTANT_HOURLY_RATE_USD,
   type HygieneSummary,
   type MoscaAssessment,
@@ -9,6 +8,8 @@ import {
   type QDayScenario,
 } from "@workspace/risk";
 import { logger } from "./logger";
+import { resolveCompliance, summariseBuckets, type FindingCompliance } from "./compliance";
+import type { ReportBucket } from "@workspace/mappings";
 
 export interface ScanFinding {
   fileName: string;
@@ -20,6 +21,18 @@ export interface ScanFinding {
   nistStandard: string | null;
   effortHours: number;
   explanation: string;
+  /**
+   * The C1 mapping engine's answer for this algorithm: which obligations bind, under
+   * which framework, by when, with what citation and confidence. `null` when the
+   * mapping data has no entry for the algorithm — the finding still reports, it just
+   * carries no obligations rather than an invented one.
+   *
+   * Deliberately NOT persisted. `findings` rows keep only the legacy
+   * `nistReplacement`/`nistStandard`/`explanation` columns; this block is derived on
+   * every read (see `lib/compliance.ts`) so a mappings-data update reaches historical
+   * findings too. That is failure #2 in docs/Claude/05-compliance-mapping.md.
+   */
+  compliance: FindingCompliance | null;
 }
 
 export interface ScanResult {
@@ -94,10 +107,13 @@ export function scanCode(code: string, fileName: string, _language: string): Sca
     files: [{ path: fileName, content: code, language: _language }],
   });
 
-  return observations.map((observation) => toScanFinding(fileName, observation));
+  // One resolution date for the whole scan: two findings in the same report must never
+  // land on opposite sides of a deadline because the clock ticked mid-loop.
+  const asOf = new Date();
+  return observations.map((observation) => toScanFinding(fileName, observation, asOf));
 }
 
-function toScanFinding(fileName: string, observation: RawObservation): ScanFinding {
+function toScanFinding(fileName: string, observation: RawObservation, asOf: Date): ScanFinding {
   const mapping = deriveAlgorithmMapping(observation.algorithm);
   if (!mapping) {
     // Every SOURCE_PATTERNS algorithm name is asserted to exist in
@@ -118,6 +134,7 @@ function toScanFinding(fileName: string, observation: RawObservation): ScanFindi
     nistStandard: mapping?.nistStandard ?? null,
     effortHours: mapping?.effortHours ?? 1,
     explanation: mapping?.explanation ?? "",
+    compliance: resolveCompliance(observation.algorithm, { asOf }),
   };
 }
 
@@ -175,21 +192,25 @@ export function computeScanResult(
   };
 }
 
+const plural = (n: number, singular: string, pluralForm = `${singular}s`) => (n === 1 ? singular : pluralForm);
+
+function distinctAlgorithms(findings: ScanFinding[]): string {
+  return [...new Set(findings.map((f) => f.algorithm))].join(", ");
+}
+
 /**
- * The board-facing paragraph. A4 changes what it is allowed to claim.
+ * The executive summary is the single most-quoted sentence the product emits, so it is
+ * the place a false compliance claim does the most damage.
  *
- * Before this change it described MD5/SHA-1/AES-ECB matches as "weaker-crypto
- * alerts (not directly quantum-broken but non-PQC-safe)" and then closed
- * every summary — including one over nothing but MD5 — with "immediate
- * migration to NIST PQC standards is recommended". Both are the G-10 category
- * error in prose: there is no PQC migration for a hash that was never
- * approved, and calling it "non-PQC-safe" implies one exists. The split is
- * now stated explicitly, and the PQC recommendation only appears when there
- * is post-quantum exposure to act on.
+ * It used to assert two things that are not true of every finding: that an alert was
+ * "not directly quantum-broken but non-PQC-safe" (wrong for SHA-1 and AES-ECB, which
+ * have nothing to do with PQC — G-08/G-09), and, unconditionally, that "immediate
+ * migration to NIST PQC standards is recommended" (asserted over MD5 and ECB findings
+ * too). It now speaks per bucket, and every standard it names is read back out of the
+ * obligations the mapping engine resolved rather than written here.
  *
- * `mosca` is optional so the three existing callers can adopt it
- * independently; when supplied, the summary leads with the verdict rather
- * than the finding count, which is the sentence
+ * `mosca` is optional so the callers can adopt it independently; when supplied, the
+ * summary states the verdict alongside the counts, which is the sentence
  * docs/Claude/01-strategy.md says a CISO actually puts in a board deck.
  */
 export function generateExecutiveSummary(
@@ -198,49 +219,77 @@ export function generateExecutiveSummary(
   language: string,
   mosca?: MoscaAssessment
 ): string {
-  const { pqc: pqcFindings, hygiene: hygieneFindings } = splitFindingsByTrack(findings);
-
-  const topAlgo = (subset: ScanFinding[]): [string, number] | undefined => {
-    const counts: Record<string, number> = {};
-    for (const f of subset) counts[f.algorithm] = (counts[f.algorithm] || 0) + 1;
-    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-  };
-
+  const scanned = `We scanned ${totalLines.toLocaleString()} lines of ${language} code`;
   if (findings.length === 0) {
-    return `We scanned ${totalLines.toLocaleString()} lines of ${language} code and found no quantum-vulnerable cryptographic patterns. Your codebase appears quantum-safe based on detected cryptographic usage.`;
+    return `${scanned} and found no cryptographic patterns requiring attention. Note this reflects detected usage only — see the coverage panel for what was not examined.`;
   }
 
-  const parts = [`We scanned ${totalLines.toLocaleString()} lines of ${language} code.`];
+  const buckets = summariseBuckets(findings);
+  const inBucket = (bucket: ReportBucket) => findings.filter((f) => f.compliance?.bucket === bucket);
+  const parts = [`${scanned}.`];
 
-  if (pqcFindings.length > 0) {
+  const immediate = inBucket("immediate-compliance-failure");
+  if (immediate.length > 0) {
     parts.push(
-      `Found ${pqcFindings.length} quantum-vulnerable finding${pqcFindings.length === 1 ? "" : "s"} that will break on Q-Day.`
-    );
-    const top = topAlgo(pqcFindings);
-    if (top) {
-      parts.push(`Your highest-exposure algorithm is ${top[0]} with ${top[1]} occurrence${top[1] === 1 ? "" : "s"}.`);
-    }
-  } else {
-    parts.push("Found no quantum-vulnerable cryptography, so the post-quantum exposure score is zero.");
-  }
-
-  if (hygieneFindings.length > 0) {
-    const top = topAlgo(hygieneFindings);
-    parts.push(
-      `Separately, ${hygieneFindings.length} classical-hygiene finding${hygieneFindings.length === 1 ? "" : "s"}${top ? ` (mostly ${top[0]})` : ""} — real cryptographic weaknesses, but not quantum vulnerabilities, and excluded from the post-quantum score.`
+      `${immediate.length} ${plural(immediate.length, "finding")} ${plural(immediate.length, "is", "are")} non-compliant now, with no migration runway (${distinctAlgorithms(immediate)}) — these rank ahead of the dated migration work.`
     );
   }
 
+  const migration = inBucket("pqc-migration");
+  if (migration.length > 0) {
+    parts.push(
+      `${migration.length} quantum-vulnerable ${plural(migration.length, "finding")} (${distinctAlgorithms(migration)}) ${plural(migration.length, "carries", "carry")} a published transition deadline.`
+    );
+  }
+
+  // Keyed on the risk track, not on the bucket: MD5 and SHA-1 are immediate compliance
+  // failures *and* classical hygiene, and a reader must not infer a quantum problem
+  // from a bucket that says "non-compliant now" (G-10).
+  const hygiene = findings.filter((f) => f.compliance && !f.compliance.countsTowardPostQuantumScore);
+  if (hygiene.length > 0) {
+    const bestPractice = buckets["best-practice"];
+    const bestPracticeClause = bestPractice > 0
+      ? ` ${bestPractice} of them ${plural(bestPractice, "is", "are")} a best-practice recommendation that violates no standard.`
+      : "";
+    parts.push(
+      `${hygiene.length} ${plural(hygiene.length, "finding")} (${distinctAlgorithms(hygiene)}) ${plural(hygiene.length, "is", "are")} classical hygiene — unrelated to quantum computing, and excluded from the post-quantum picture.${bestPracticeClause}`
+    );
+  }
+
+  const needsReview = findings.filter((f) => f.compliance?.detection.reviewRequired);
+  if (needsReview.length > 0) {
+    parts.push(
+      `${needsReview.length} ${plural(needsReview.length, "finding")} (${distinctAlgorithms(needsReview)}) ${plural(needsReview.length, "depends", "depend")} on how the algorithm is used, which a pattern match cannot see — confirm the call site before treating ${plural(needsReview.length, "it", "them")} as a failure.`
+    );
+  }
+
+  // A4's board-facing verdict. Stated alongside the bucket counts rather than instead of
+  // them: the counts say what was found, this says whether the timing is survivable.
   if (mosca && mosca.applicable) {
+    const assumed = mosca.secrecyLifetimeSource === "assumed-default";
     parts.push(
       mosca.breachedScenarioCount > 0
-        ? `Mosca's inequality is breached under ${mosca.breachedScenarioCount} of ${mosca.scenarioCount} Q-Day scenarios (secrecy lifetime ${mosca.x} years${mosca.secrecyLifetimeSource === "assumed-default" ? ", assumed — no data classification set" : ""}, migration ${mosca.y} years).`
-        : `Mosca's inequality holds under all ${mosca.scenarioCount} Q-Day scenarios at a secrecy lifetime of ${mosca.x} years${mosca.secrecyLifetimeSource === "assumed-default" ? " (assumed — no data classification set)" : ""}.`
+        ? `Mosca's inequality is breached under ${mosca.breachedScenarioCount} of ${mosca.scenarioCount} Q-Day scenarios (secrecy lifetime ${mosca.x} years${assumed ? ", assumed — no data classification set" : ""}, migration ${mosca.y} years).`
+        : `Mosca's inequality holds under all ${mosca.scenarioCount} Q-Day scenarios at a secrecy lifetime of ${mosca.x} years${assumed ? " (assumed — no data classification set)" : ""}.`
     );
   }
 
-  if (pqcFindings.length > 0) {
-    parts.push("Migration to NIST PQC standards (FIPS 203/204/205) is recommended for the quantum-vulnerable findings.");
+  // Only recommend a PQC migration when something actually needs one, and name the
+  // target standards the resolved obligations name — not a constant written here.
+  const replacementStandards = [
+    ...new Set(
+      migration
+        .flatMap((f) => f.compliance?.obligations ?? [])
+        .map((o) => o.replacement?.standard)
+        .filter((s): s is string => Boolean(s))
+    ),
+  ].sort();
+  if (replacementStandards.length > 0) {
+    parts.push(`Migrate the quantum-vulnerable findings to the approved post-quantum replacements (${replacementStandards.join(" / ")}).`);
+  }
+
+  if (findings.some((f) => f.compliance?.obligations.some((o) => o.draftStatus))) {
+    parts.push("Some transition dates quoted here come from draft guidance, labelled on each obligation.");
   }
 
   return parts.join(" ");

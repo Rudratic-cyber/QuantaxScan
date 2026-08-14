@@ -535,6 +535,14 @@ components:
         explanation:
           type: string
           nullable: true
+        compliance:
+          allOf:
+            - $ref: "#/components/schemas/FindingCompliance"
+          nullable: true
+          description: >-
+            Resolved by the C1 mapping engine on every read, never stored on the finding row,
+            so a standards-data update reaches historical findings too. Null when the mapping
+            data has no entry for the algorithm.
       required:
         - id
         - scanId
@@ -544,6 +552,223 @@ components:
         - algorithm
         - codeSnippet
         - effortHours
+
+    Citation:
+      type: object
+      description: Provenance for a single regulatory claim. Required on every obligation.
+      properties:
+        document:
+          type: string
+        section:
+          type: string
+        url:
+          type: string
+        retrievedAt:
+          type: string
+        published:
+          type: string
+      required:
+        - document
+        - url
+
+    ObligationDeadline:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design.
+        label:
+          type: string
+        effect:
+          type: string
+          enum: [prohibition, caution, permitted]
+        inEffect:
+          type: boolean
+          description: Whether the rule binds at the resolution date.
+        after:
+          type: string
+        in:
+          type: string
+        since:
+          type: string
+        appliesTo:
+          type: string
+          description: Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA.
+        securityStrength:
+          type: string
+        source:
+          type: string
+        note:
+          type: string
+      required:
+        - type
+        - label
+        - effect
+        - inEffect
+
+    Obligation:
+      type: object
+      properties:
+        framework:
+          type: string
+        frameworkName:
+          type: string
+        requirement:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, informational]
+        replacement:
+          type: object
+          properties:
+            algorithm:
+              type: string
+            standard:
+              type: string
+            purpose:
+              type: string
+            note:
+              type: string
+          required:
+            - algorithm
+            - standard
+        deadline:
+          $ref: "#/components/schemas/ObligationDeadline"
+        citation:
+          $ref: "#/components/schemas/Citation"
+        confidence:
+          type: string
+          description: verified or needs-check, straight from the mapping data. Never upgraded by the engine.
+        draftStatus:
+          type: string
+          description: Present when the citing document is a draft. Must be shown wherever the obligation is.
+        caveats:
+          type: array
+          items:
+            type: string
+        source:
+          type: string
+          enum: [algorithm-deadline, algorithm-replacement, algorithm-best-practice, framework]
+      required:
+        - framework
+        - requirement
+        - severity
+        - citation
+        - confidence
+        - caveats
+        - source
+
+    FindingCompliance:
+      type: object
+      description: >-
+        Output of the C1 dynamic mapping engine for one finding. Every value traces to
+        docs/Claude/mappings/*.json at the stated dataVersion; nothing here is hardcoded.
+      properties:
+        algorithm:
+          type: string
+        algorithmId:
+          type: string
+        quantumVulnerable:
+          type: boolean
+        riskTrack:
+          type: string
+          enum: [post-quantum, classical-hygiene]
+        complianceStatus:
+          type: string
+          enum: [immediate-failure, future-obligation, no-obligation]
+        bucket:
+          type: string
+          enum:
+            - immediate-compliance-failure
+            - pqc-migration
+            - classical-hygiene
+            - best-practice
+            - no-obligation
+        bucketLabel:
+          type: string
+        bucketDescription:
+          type: string
+        countsTowardPostQuantumScore:
+          type: boolean
+          description: False for classical hygiene. The contract A4's risk engine consumes to keep MD5/SHA-1/ECB out of a post-quantum score.
+        headline:
+          type: string
+        useDependent:
+          type: boolean
+          description: True when the standard's answer depends on how the algorithm is used.
+        useConditions:
+          type: array
+          items:
+            type: object
+            properties:
+              use:
+                type: string
+              status:
+                type: string
+              permitted:
+                type: boolean
+              framework:
+                type: string
+            required:
+              - use
+              - status
+              - permitted
+              - framework
+        obligations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Obligation"
+        detection:
+          type: object
+          properties:
+            multiplier:
+              type: number
+            adjustedConfidence:
+              type: number
+            reviewRequired:
+              type: boolean
+            reason:
+              type: string
+              nullable: true
+          required:
+            - multiplier
+            - reviewRequired
+            - reason
+        reportingNote:
+          type: string
+          nullable: true
+        caveats:
+          type: array
+          items:
+            type: string
+        citation:
+          $ref: "#/components/schemas/Citation"
+        dataVersion:
+          type: string
+          description: Pin this with the report. A report is only reproducible against the data version that produced it.
+        asOf:
+          type: string
+          description: ISO date the deadlines were evaluated against.
+      required:
+        - algorithm
+        - algorithmId
+        - quantumVulnerable
+        - riskTrack
+        - complianceStatus
+        - bucket
+        - bucketLabel
+        - bucketDescription
+        - countsTowardPostQuantumScore
+        - headline
+        - useDependent
+        - useConditions
+        - obligations
+        - detection
+        - reportingNote
+        - caveats
+        - citation
+        - dataVersion
+        - asOf
 
     CommunityPost:
       type: object

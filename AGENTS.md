@@ -6,8 +6,8 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 ## Testing
 
-Root `pnpm run test` runs three suites in sequence — `test:libs` (vitest in `lib/collectors` and
-`lib/db`), `test:api` (vitest + supertest in `artifacts/api-server`), `test:ui` (Playwright specs
+Root `pnpm run test` runs three suites in sequence — `test:libs` (vitest in `lib/collectors`,
+`lib/db` and `lib/mappings`), `test:api` (vitest + supertest in `artifacts/api-server`), `test:ui` (Playwright specs
 in `tests/ui/`). Run one package's vitest suite directly with `pnpm --filter <pkg> run test`.
 **`test:ui` is not free to run:** it needs the Playwright browsers installed and it boots its own
 Vite dev server on `UI_TEST_PORT` (default `5833`) with `strictPort`, so it fails loudly if that
@@ -119,6 +119,17 @@ The rules that matter day to day:
   A table with no grant is unreachable by the runtime, which is the fail-closed default.
 
 ## Package boundaries
+
+**Standards data never gets written to a row.** `@workspace/mappings` (`lib/mappings/`) resolves a
+finding's obligations, deadlines and citations from `docs/Claude/mappings/*.json`, and
+`artifacts/api-server/src/lib/compliance.ts` applies it on the way *out* of every route that
+returns findings. Persisting a resolved obligation would reintroduce the failure C1 exists to fix
+(a 2026 row disagreeing with a 2028 read) — the legacy
+`findings.nist_replacement`/`nist_standard`/`explanation` columns are exactly that mistake, kept
+only until the `observations` read cutover. Nothing in `lib/mappings`'s TypeScript may name an
+algorithm, a date or a citation: even the deadline vocabulary lives in the JSON's `deadlineTypes`
+block. `lib/mappings/src/engine.test.ts` enforces this by mutating cloned data and asserting the
+output follows — if that test needs a code edit to pass, the M2 exit criterion has been broken.
 
 `@workspace/collectors` (`lib/collectors/`) has **no dependency on `@workspace/db`**, deliberately
 — it's meant to be able to run as a standalone on-prem agent later. `lib/db` depends on

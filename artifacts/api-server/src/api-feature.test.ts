@@ -140,6 +140,20 @@ describe("API Feature Test Suite", () => {
       expect(rsaFinding).toBeDefined();
       expect(rsaFinding.nistReplacement).toBeDefined();
       expect(rsaFinding.nistReplacement).not.toBeNull();
+
+      // C1: every finding carries the mapping engine's resolved position, with a
+      // pinned data version and a citation on every regulatory claim.
+      expect(rsaFinding.compliance).toBeTruthy();
+      expect(rsaFinding.compliance.bucket).toBe("pqc-migration");
+      expect(rsaFinding.compliance.dataVersion).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(rsaFinding.compliance.obligations.length).toBeGreaterThan(0);
+      for (const o of rsaFinding.compliance.obligations) expect(o.citation.url).toBeTruthy();
+
+      // G-08: SHA-1 reports which uses are disallowed, at reduced confidence — never a blanket ban.
+      const sha1Finding = res.body.findings.find((f: { algorithm: string }) => f.algorithm === "SHA-1");
+      expect(sha1Finding.compliance.useDependent).toBe(true);
+      expect(sha1Finding.compliance.detection.reviewRequired).toBe(true);
+      expect(sha1Finding.compliance.countsTowardPostQuantumScore).toBe(false);
     });
 
     it("returns 404 for unknown demo repo slug", async () => {
@@ -304,6 +318,15 @@ key = RSA.generate(1024)
         .set("X-API-Key", API_KEY);
       expect(findingsRes.status).toBe(200);
       expect(Array.isArray(findingsRes.body)).toBe(true);
+
+      // Obligations are derived on read, not stored on the row, so a persisted
+      // finding carries the same compliance block a fresh scan does.
+      for (const persisted of findingsRes.body) {
+        expect(persisted.compliance).toBeTruthy();
+        expect(persisted.compliance.obligations.length).toBeGreaterThan(0);
+        expect(persisted.compliance.dataVersion).toMatch(/^\d+\.\d+\.\d+$/);
+      }
+      expect(scanRes.body.findings[0]).toHaveProperty("compliance");
     });
 
     it("executes a multi-file scan across multiple files", async () => {
