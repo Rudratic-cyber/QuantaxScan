@@ -7,6 +7,7 @@ import {
   DeleteProjectParams,
 } from "@workspace/api-zod";
 import { scanCode, computeScanResult } from "../lib/scanner";
+import { withComplianceAll } from "../lib/compliance";
 import { orgContextFor } from "../lib/principal";
 
 const router: IRouter = Router();
@@ -130,7 +131,8 @@ router.get("/projects/:id/findings", async (req, res): Promise<void> => {
     return tx.select().from(findingsTable).where(inArray(findingsTable.scanId, scanIds));
   });
 
-  res.json(findings);
+  // Obligations are derived on read, not read off the row — see lib/compliance.ts.
+  res.json(withComplianceAll(findings));
 });
 
 export default router;

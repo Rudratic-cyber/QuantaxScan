@@ -30,3 +30,10 @@ export const { withOrg, withPublicShare, withoutOrgScope } = createOrgScope(db, 
 export * from "./schema";
 export * from "./org-scope";
 export * from "./tenant-isolation";
+/**
+ * Re-exported for convenience. A4 and anything else that only needs the A3
+ * contract should import `@workspace/db/classification` instead — that subpath
+ * pulls in no drizzle, no `pg`, and does not require `DATABASE_URL`, which this
+ * module does at import time (line 8).
+ */
+export * from "./classification";

@@ -84,7 +84,7 @@ paid extension
 | A1 | Asset/observation data model | `built`* | **C** | The schema is the foundation everything reads; forking it would fragment the ecosystem |
 | A2 | Collector interface | `built`* | **C** | The contract third parties write collectors against. Must be open or nobody writes one |
 | A3 | Data classification | `next` | **C→E** | Field and presets open; estate-wide classification management and inheritance Enterprise |
-| A4 | Mosca risk engine | `next` | **C→E** | Inequality open; scenario management + portfolio rollup Enterprise |
+| A4 | Mosca risk engine | `built`* | **C→E** | Inequality open (`lib/risk`, and scenarios are a parameter at every entry point); scenario management + portfolio rollup Enterprise |
 | A5 | CBOM export (CycloneDX 1.7) | `built` | **C** | Interoperability is the whole point. Paywalling export makes us the silo we criticise |
 | A6 | CBOM import | `planned` | **C** | Same |
 
@@ -96,7 +96,7 @@ is not the moat, and community contribution is highest-leverage here.
 | # | Collector | Status | Edition | Note |
 |---|---|---|---|---|
 | B1 | Source code (regex) | `built` | **C** | Already exists |
-| B2 | Dependency / SBOM | `next` | **C** | |
+| B2 | Dependency / SBOM | `built`* | **C** | Collector only — nothing submits lockfiles or persists what it finds yet |
 | B3 | TLS / cipher suite prober | `planned` | **C** | |
 | B4 | Certificate / X.509 | `planned` | **C** | |
 | B5 | KMS / secret stores | `planned` | **C→E** | Collector open; **managed credential handling** Enterprise — customer secrets need audited storage |
@@ -106,15 +106,15 @@ is not the moat, and community contribution is highest-leverage here.
 | B9 | Vendor / third-party | `planned` | **E** | Vendor questionnaire tracking is workflow, not detection |
 | B10 | Binaries / firmware | `deferred` | **C** | See [G-16](09-open-gaps.md) — NIST treats this as core discovery, so it belongs open |
 
-\* A1/A2: schema, fingerprint, backfill, and `SourceRegexCollector` are built; read cutover and a
-second collector are not. See [03-features.md](03-features.md#a-inventory-core) for the exact
+\* A1/A2: schema, fingerprint, backfill, `SourceRegexCollector` and `DependencyCollector` (B2)
+are built; the read cutover and dependency-asset persistence are not. See [03-features.md](03-features.md#a-inventory-core) for the exact
 built/not-built split — this table mirrors its status column, not a separate assessment.
 
 ### C. Compliance and mapping
 
 | # | Feature | Status | Edition | Rationale |
 |---|---|---|---|---|
-| C1 | Dynamic mapping engine | `next` | **C** | The engine is a pure function over open data |
+| C1 | Dynamic mapping engine | `built` | **C** | The engine is a pure function over open data |
 | C2 | Versioned `mappings/` data | `next` | **C** | **CC BY 4.0** — see below. The authority play |
 | C3 | FIPS 203/204/205 mapping | `built` | **C** | |
 | C4 | IR 8547 timeline mapping | `planned` | **C** | |

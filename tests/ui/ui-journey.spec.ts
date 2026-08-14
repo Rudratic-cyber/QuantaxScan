@@ -283,4 +283,103 @@ test.describe("UI Journey Tests", () => {
     await expect(page.getByText(/Report not found/i).first()).toBeVisible({ timeout: 10000 });
     await expect(page.locator("body")).toBeVisible();
   });
+
+  // The fixture above deliberately has no `compliance` block — that is a report shared
+  // before C1, and it must still render. This one covers the current shape: findings
+  // grouped by compliance bucket, with the use table and the citation an auditor checks.
+  test("a report with mapping-engine output groups by compliance bucket and cites its sources", async ({ page }) => {
+    const citation = {
+      document: "NIST SP 800-131A Revision 2",
+      section: "SP 800-131A Rev 2 §9",
+      url: "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf",
+      retrievedAt: "2026-08-01",
+    };
+    await page.route("**/api/reports/compliance-report-1", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "compliance-report-1",
+          owner: "acme-corp",
+          repo: "legacy-signing",
+          repoUrl: "https://github.com/acme-corp/legacy-signing",
+          data: {
+            owner: "acme-corp",
+            repo: "legacy-signing",
+            repoUrl: "https://github.com/acme-corp/legacy-signing",
+            totalFiles: 1,
+            totalLines: 40,
+            criticalCount: 0,
+            alertCount: 1,
+            cleanCount: 39,
+            riskScore: 30,
+            executiveSummary: "1 finding is non-compliant now, with no migration runway (SHA-1).",
+            findings: [
+              {
+                fileName: "sign.py",
+                lineNumber: 7,
+                severity: "alert",
+                algorithm: "SHA-1",
+                codeSnippet: "digest = hashlib.sha1(payload).digest()",
+                nistReplacement: "SHA-256 or SHA3-256",
+                nistStandard: "FIPS 180-4 / FIPS 202",
+                explanation: "SHA-1 is classically broken for collision resistance.",
+                effortHours: 0.5,
+                compliance: {
+                  algorithm: "SHA-1",
+                  algorithmId: "sha1",
+                  quantumVulnerable: false,
+                  riskTrack: "classical-hygiene",
+                  complianceStatus: "immediate-failure",
+                  bucket: "immediate-compliance-failure",
+                  bucketLabel: "Immediate compliance failure",
+                  bucketDescription: "A prohibition that is already in force covers this use.",
+                  countsTowardPostQuantumScore: false,
+                  headline: "SHA-1 is disallowed for digital signature GENERATION under NIST SP 800-131A Revision 2.",
+                  useDependent: true,
+                  useConditions: [
+                    { use: "digital signature GENERATION", status: "Disallowed", permitted: false, framework: "NIST SP 800-131A Revision 2" },
+                    { use: "non-digital-signature applications that do not require collision resistance", status: "Acceptable", permitted: true, framework: "NIST SP 800-131A Revision 2" },
+                  ],
+                  obligations: [
+                    {
+                      framework: "SP 800-131A Rev 2",
+                      frameworkName: "Transitioning the Use of Cryptographic Algorithms and Key Lengths",
+                      requirement: "SHA-1 is disallowed for digital signature GENERATION under NIST SP 800-131A Revision 2.",
+                      severity: "critical",
+                      deadline: { type: "disallowed", label: "Disallowed", effect: "prohibition", inEffect: true, appliesTo: "digital signature GENERATION" },
+                      citation,
+                      confidence: "verified",
+                      caveats: [],
+                      source: "algorithm-deadline",
+                    },
+                  ],
+                  detection: { multiplier: 0.5, reviewRequired: true, reason: "SP 800-131A Rev 2 §9 gives three different answers depending on how SHA-1 is used." },
+                  reportingNote: "Classical hygiene finding. Track separately from PQC risk.",
+                  caveats: [],
+                  dataVersion: "0.4.0",
+                  asOf: "2026-08-13",
+                },
+              },
+            ],
+            fileResults: [],
+          },
+          createdAt: "2026-08-13T12:00:00Z",
+        }),
+      })
+    );
+
+    await page.goto("/report/compliance-report-1");
+    await expect(page.getByText(/Immediate compliance failure \(1\)/i).first()).toBeVisible({ timeout: 10000 });
+    // Grouping is by bucket, not by severity, once the mapping engine has answered.
+    await expect(page.getByText(/Alert Findings/i)).toHaveCount(0);
+    await expect(page.getByText(/NEEDS REVIEW/i).first()).toBeVisible();
+
+    // The card header is a button; the executive summary also mentions SHA-1.
+    await page.locator("button", { hasText: "SHA-1" }).first().click();
+    // Which uses are disallowed — not a blanket ban on the algorithm (G-08).
+    await expect(page.getByText(/Acceptable/).first()).toBeVisible();
+    await expect(page.getByText(/NIST SP 800-131A Revision 2/).first()).toBeVisible();
+    await expect(page.getByText(/mappings 0\.4\.0/).first()).toBeVisible();
+  });
 });

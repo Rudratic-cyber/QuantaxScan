@@ -104,8 +104,9 @@ export const observationsTable = pgTable("observations", {
 
 Note what is **absent** from `assets`: `nistReplacement`, `nistStandard`, `explanation`,
 `severity`. Those are all *derived* at read time from `docs/Claude/mappings/algorithms.json`
-(`lib/collectors/src/algorithm-mapping.ts`) rather than a full mapping engine (C1 is separate,
-out of scope here). That is the whole point.
+(`lib/collectors/src/algorithm-mapping.ts`), and — since C1 — obligations, deadlines and
+citations are resolved on read by `@workspace/mappings` in
+`artifacts/api-server/src/lib/compliance.ts`. That is the whole point.
 
 **Divergence from the original sketch above:** `algorithm`/`keySize`/`location`/`locationDetail`
 live on `assets` only, not duplicated onto `observations` — an observation's own facts (including
@@ -266,19 +267,25 @@ line, first pattern wins" order), with `nistReplacement` / `nistStandard` / `exp
 `severity` **removed** from its pattern table because those now come from
 `docs/Claude/mappings/algorithms.json` via `lib/collectors/src/algorithm-mapping.ts` — a small,
 deliberately non-dynamic lookup (canonical name → severity/replacement/standard/
-explanation/effort), not the C1 mapping engine (deadline resolution, crosswalks — still out of
-scope). Note where that lookup runs: the shim resolves it when it builds each `ScanFinding`, and
-`routes/scans.ts` still writes the resolved strings into `findings` rows, so a mappings edit
-changes *future* scans, not existing rows. `observations` deliberately stores none of it, so the
+explanation/effort), distinct from the C1 mapping engine (`lib/mappings`, built 2026-08-13),
+which resolves deadlines, frameworks and citations. Note where each runs: the shim resolves the
+lookup when it builds each `ScanFinding` and `routes/scans.ts` still writes those resolved strings
+into `findings` rows, so a mappings edit changes *future* scans for those four columns only. C1's
+output is never written — it is resolved on every read, so a mappings edit changes existing rows'
+obligations too. `observations` deliberately stores none of it, so the
 lookup only becomes a true read-time derivation once reads cut over (step 4 of the migration
 path above). `artifacts/api-server/src/lib/scanner.ts`'s `scanCode()` is now a thin back-compat shim
 over the collector, kept because four existing routes call it synchronously; see the file for
 why its copy text can now legitimately differ from the pre-refactor hardcoded strings.
 
 **Acceptance for this seam:** adding the dependency collector requires zero edits to
-`scanner.ts` and zero edits to the API routes. **Not yet demonstrated** — B2 is out of scope for
-this change, so this acceptance criterion is architecturally true (nothing in `Collector`/
-`RawObservation` assumes a source-only collector) but unverified by an actual second collector.
+`scanner.ts` and zero edits to the API routes. **Demonstrated** — B2's `DependencyCollector`
+(`lib/collectors/src/dependency-collector.ts`) implements the same `Collector` contract over the
+same `CollectionTarget` and touches neither file. It reads the lockfiles out of the submitted
+`files` array by basename, so no new target variant was needed either. What the seam does *not*
+yet cover is persistence: `asset-ingest.ts` computes a `surface: "source"` fingerprint from
+`repo`/`path`, so ingesting dependency observations needs a `surface: "dependency"` path
+(`ecosystem + package + algorithm`) and a route that submits lockfiles — a separate change.
 
 ### NIST reached the same conclusion — align with it
 
@@ -469,6 +476,24 @@ report generation.
 disproportionately longer than its raw hour count suggests, because the change touches many
 places and carries more regression risk.
 
+**As built (2026-08-14, A4).** `@workspace/risk` implements the sketch above with three
+deliberate differences, all recorded in the code:
+
+- `assessMoscaRisk()` takes `now` as an injected parameter. Z is *years remaining*, so a
+  function that reads the clock itself has no reproducible tests and quietly changes meaning
+  every January.
+- `MoscaInput` carries `hasQuantumVulnerableCrypto`. Without it, an asset holding a 50-year
+  secret and nothing but MD5 reports a Mosca breach — [G-10](09-open-gaps.md#g-10--hygiene-findings-inflate-the-pqc-risk-score)'s
+  error relocated from the score into the verdict.
+- `RiskInput` takes findings plus a line count rather than an `Asset`. Reads have not cut over
+  to the asset model (see "Migration path"), so the engine deliberately does not depend on it;
+  its input type is the structural minimum (`{ algorithm, effortHours }`), which an `Asset`
+  will also satisfy.
+
+`score` is decomposed into `detection` (0-60, density of quantum-vulnerable findings) and
+`moscaBreach` (0-40, proportion of scenarios breached) and both are returned, because a score a
+CISO cannot take apart in front of a board is the thing A4 exists to replace.
+
 ---
 
 ## Package layout
@@ -479,9 +504,13 @@ lib/
   collectors/    ✅ NEW — Collector interface + SourceRegexCollector (built).
                     algorithm-mapping.ts is a small read-time lookup over
                     docs/Claude/mappings/algorithms.json — NOT the C1
-                    loader/validator package below, which remains unbuilt.
-  mappings/      NEW, unbuilt — loader + validator for docs/Claude/mappings/*.json (C1/C2)
-  risk/          NEW, unbuilt — Mosca engine, agility scoring (A4)
+                    engine below.
+  mappings/      ✅ NEW — C1 engine: boot-validated loader over
+                    docs/Claude/mappings/*.json + obligation resolution (C1/C2)
+  risk/          ✅ NEW — Mosca engine + the PQC/classical-hygiene track split (A4,
+                    closes G-10). Depends on @workspace/collectors for the
+                    algorithms.json lookup, never the reverse. Agility scoring
+                    (D5) is still unbuilt; Y uses a neutral agility of 1.
   cbom/          ✅ NEW — CycloneDX 1.7 export (A5). Pure builder + the official
                     schema vendored under schema/ for the acceptance test.
                     Import (A6) remains unbuilt.

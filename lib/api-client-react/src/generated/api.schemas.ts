@@ -57,6 +57,157 @@ export const FindingSeverity = {
   safe: "safe",
 } as const;
 
+export type FindingComplianceRiskTrack =
+  (typeof FindingComplianceRiskTrack)[keyof typeof FindingComplianceRiskTrack];
+
+export const FindingComplianceRiskTrack = {
+  "post-quantum": "post-quantum",
+  "classical-hygiene": "classical-hygiene",
+} as const;
+
+export type FindingComplianceComplianceStatus =
+  (typeof FindingComplianceComplianceStatus)[keyof typeof FindingComplianceComplianceStatus];
+
+export const FindingComplianceComplianceStatus = {
+  "immediate-failure": "immediate-failure",
+  "future-obligation": "future-obligation",
+  "no-obligation": "no-obligation",
+} as const;
+
+export type FindingComplianceBucket =
+  (typeof FindingComplianceBucket)[keyof typeof FindingComplianceBucket];
+
+export const FindingComplianceBucket = {
+  "immediate-compliance-failure": "immediate-compliance-failure",
+  "pqc-migration": "pqc-migration",
+  "classical-hygiene": "classical-hygiene",
+  "best-practice": "best-practice",
+  "no-obligation": "no-obligation",
+} as const;
+
+export type ObligationSeverity =
+  (typeof ObligationSeverity)[keyof typeof ObligationSeverity];
+
+export const ObligationSeverity = {
+  critical: "critical",
+  high: "high",
+  medium: "medium",
+  informational: "informational",
+} as const;
+
+export type ObligationDeadlineEffect =
+  (typeof ObligationDeadlineEffect)[keyof typeof ObligationDeadlineEffect];
+
+export const ObligationDeadlineEffect = {
+  prohibition: "prohibition",
+  caution: "caution",
+  permitted: "permitted",
+} as const;
+
+export interface ObligationDeadline {
+  /** Vocabulary term from algorithms.json's deadlineTypes block. Open-ended by design. */
+  type: string;
+  label: string;
+  effect: ObligationDeadlineEffect;
+  /** Whether the rule binds at the resolution date. */
+  inEffect: boolean;
+  after?: string;
+  in?: string;
+  since?: string;
+  /** Which use of the algorithm the rule covers. Load-bearing for SHA-1 and DSA. */
+  appliesTo?: string;
+  securityStrength?: string;
+  source?: string;
+  note?: string;
+}
+
+/**
+ * Provenance for a single regulatory claim. Required on every obligation.
+ */
+export interface Citation {
+  document: string;
+  section?: string;
+  url: string;
+  retrievedAt?: string;
+  published?: string;
+}
+
+export type ObligationSource =
+  (typeof ObligationSource)[keyof typeof ObligationSource];
+
+export const ObligationSource = {
+  "algorithm-deadline": "algorithm-deadline",
+  "algorithm-replacement": "algorithm-replacement",
+  "algorithm-best-practice": "algorithm-best-practice",
+  framework: "framework",
+} as const;
+
+export type ObligationReplacement = {
+  algorithm: string;
+  standard: string;
+  purpose?: string;
+  note?: string;
+};
+
+export interface Obligation {
+  framework: string;
+  frameworkName?: string;
+  requirement: string;
+  severity: ObligationSeverity;
+  replacement?: ObligationReplacement;
+  deadline?: ObligationDeadline;
+  citation: Citation;
+  /** verified or needs-check, straight from the mapping data. Never upgraded by the engine. */
+  confidence: string;
+  /** Present when the citing document is a draft. Must be shown wherever the obligation is. */
+  draftStatus?: string;
+  caveats: string[];
+  source: ObligationSource;
+}
+
+export type FindingComplianceUseConditionsItem = {
+  use: string;
+  status: string;
+  permitted: boolean;
+  framework: string;
+};
+
+export type FindingComplianceDetection = {
+  multiplier: number;
+  adjustedConfidence?: number;
+  reviewRequired: boolean;
+  reason: string | null;
+};
+
+/**
+ * Output of the C1 dynamic mapping engine for one finding. Every value traces to docs/Claude/mappings/*.json at the stated dataVersion; nothing here is hardcoded.
+ */
+export interface FindingCompliance {
+  algorithm: string;
+  algorithmId: string;
+  quantumVulnerable: boolean;
+  riskTrack: FindingComplianceRiskTrack;
+  complianceStatus: FindingComplianceComplianceStatus;
+  bucket: FindingComplianceBucket;
+  bucketLabel: string;
+  bucketDescription: string;
+  /** False for classical hygiene. The contract A4's risk engine consumes to keep MD5/SHA-1/ECB out of a post-quantum score. */
+  countsTowardPostQuantumScore: boolean;
+  headline: string;
+  /** True when the standard's answer depends on how the algorithm is used. */
+  useDependent: boolean;
+  useConditions: FindingComplianceUseConditionsItem[];
+  obligations: Obligation[];
+  detection: FindingComplianceDetection;
+  reportingNote: string | null;
+  caveats: string[];
+  citation: Citation;
+  /** Pin this with the report. A report is only reproducible against the data version that produced it. */
+  dataVersion: string;
+  /** ISO date the deadlines were evaluated against. */
+  asOf: string;
+}
+
 export interface Finding {
   id: number;
   scanId: number;
@@ -69,6 +220,8 @@ export interface Finding {
   nistStandard?: string | null;
   effortHours: number;
   explanation?: string | null;
+  /** Resolved by the C1 mapping engine on every read, never stored on the finding row, so a standards-data update reaches historical findings too. Null when the mapping data has no entry for the algorithm. */
+  compliance?: FindingCompliance | null;
 }
 
 export interface Scan {

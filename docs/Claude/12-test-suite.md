@@ -10,7 +10,9 @@ The test architecture bridges the gap between unit-level pattern matching and en
 
 | Suite | Runner / Tool | Target / Location | Environment |
 |---|---|---|---|
-| **Library Unit Suites** | Vitest | `lib/collectors`, `lib/db`, `lib/cbom` | Node + in-memory `@electric-sql/pglite` Postgres |
+| **Library Unit Suites** | Vitest | `lib/collectors`, `lib/db`, `lib/mappings`, `lib/risk`, `lib/cbom` | Node + in-memory `@electric-sql/pglite` Postgres (`lib/mappings`, `lib/risk` and `lib/cbom` are pure — no database, no `createTestDb()`) |
+| **Mapping Engine Suite** | Vitest | `lib/mappings/src/engine.test.ts` | Pure — no database, no clock dependence (fixed `asOf`) |
+| **Risk Engine Suite** | Vitest | `lib/risk/src/risk-profile.test.ts` | Pure — `now` injected, because Z is "years remaining" |
 | **CBOM Conformance Suite** | Vitest + ajv | `lib/cbom/src/build-cbom.test.ts` | Node, against the official CycloneDX 1.7 schema vendored in `lib/cbom/schema/` |
 | **API Feature Suite** | Vitest + Supertest | `artifacts/api-server/src/api-feature.test.ts` | In-memory `@electric-sql/pglite` Postgres + Express `app` |
 | **Tenant Isolation Suite** | Vitest | `lib/db/src/tenant-isolation.test.ts` | pglite with the real RLS policies, connected as `quantaxscan_app` |
@@ -61,6 +63,8 @@ What each covers:
 | `lib/db/src/tenant-isolation.test.ts` | The harness is subject to RLS · every scoped table has RLS enabled, FORCEd, and a policy with a real `USING` clause applying to the runtime role · `assertTenantIsolationInstalled()` rejects both a NULL-`USING` policy and a `NO FORCE` table · a query with no `where` clause returns only the scoped organisation · cross-tenant read/update/delete reach nothing · a wrong-organisation insert is rejected by `WITH CHECK` · scopes refuse to nest · the deliberate asymmetries (`activity` NULL rows, public share links, membership bootstrap) behave as designed |
 | `artifacts/api-server/src/cross-tenant.test.ts` | The same, end to end through Express, with the API key bound to organisation 2 and the fixtures in organisation 1 · a route manifest that fails if any route exists which it does not name · share links honouring visibility, revocation and expiry · `GET /api/inventory/cbom` exports our inventory and no trace of the other organisation's, asserted on the serialised document (assets are seeded on *both* sides, because the interesting failure is not "we see nothing" but "we see theirs") |
 | `artifacts/api-server/src/db-import.test.ts` | No route file imports `db`; every route touching the database opens a scope |
+| `lib/mappings/src/engine.test.ts` | **The M2 exit criterion, as an executable check.** It clones the bundled standards data, moves RSA's disallowance from 2035 to 2040, adds an algorithm that did not exist when the file was written, and adds a new deadline-type term — then asserts the engine's output follows, with no TypeScript edit. Also: purity, `dataVersion` stamping, version-pin refusal, applicability filtering (CNSA 2.0 hidden without a matching profile), and the G-07/G-08/G-09 bucketing and copy rules |
+| `lib/risk/src/risk-profile.test.ts` + the A4 block in `artifacts/api-server/src/lib/scanner.test.ts` | A scan containing only MD5/SHA-1/AES-ECB scores **zero** post-quantum risk, and adding hygiene findings to a mixed scan does not move its score — [G-10](09-open-gaps.md#g-10--hygiene-findings-inflate-the-pqc-risk-score) as a regression, asserted both at the engine and at `computeScanResult()` where the bug lived. Every risk test injects `now`, because Z is "years remaining" and an un-pinned clock silently changes what the assertion means. |
 
 The manifest and the `db` guard are lint rules expressed as tests, because both are security
 properties and a security property belongs in the suite that has to stay green.

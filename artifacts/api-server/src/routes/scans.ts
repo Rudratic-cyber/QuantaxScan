@@ -3,7 +3,9 @@ import { eq } from "drizzle-orm";
 import { withOrg, scansTable, findingsTable, projectsTable, activityTable, projectRepoId } from "@workspace/db";
 import type { ScopedTx } from "@workspace/db/org-scope";
 import { CreateScanBody, GetScanParams, GetScanFindingsParams } from "@workspace/api-zod";
+import { computeRiskProfile } from "@workspace/risk";
 import { scanCode, computeScanResult, generateExecutiveSummary } from "../lib/scanner";
+import { withComplianceAll } from "../lib/compliance";
 import { ingestSourceObservations } from "../lib/asset-ingest";
 import { orgContextFor } from "../lib/principal";
 import { logger } from "../lib/logger";
@@ -52,8 +54,12 @@ router.post("/scans", async (req, res): Promise<void> => {
   const fileName = `code.${language === "python" ? "py" : language === "javascript" ? "js" : language === "typescript" ? "ts" : language === "go" ? "go" : language === "java" ? "java" : "txt"}`;
   const findings = scanCode(code, fileName, language);
   const totalLines = code.split("\n").length;
+  // TODO(A3): `secrecyLifetimeYears` (X) is not passed because data
+  // classification does not exist yet — the risk engine falls back to its
+  // documented default and flags the verdict as an assumption. When A3 lands,
+  // read the project's classification here and pass it through.
   const result = computeScanResult(findings, totalLines);
-  const summary = generateExecutiveSummary(findings, totalLines, language);
+  const summary = generateExecutiveSummary(findings, totalLines, language, result.mosca);
 
   const scan = await withOrg(ctx, async (tx) => {
     // A foreign key is NOT subject to row-level security: PostgreSQL checks
@@ -161,9 +167,17 @@ router.post("/scans", async (req, res): Promise<void> => {
     return;
   }
 
+  // `pqc`, `hygiene` and `mosca` are derived, not stored. They are additive
+  // to the persisted scan row, which keeps A4 out of the schema entirely —
+  // and because they are recomputed from the findings on every read, a
+  // mappings-data or scenario change is reflected without a backfill, the
+  // same read-time-derivation principle as `algorithm-mapping.ts`.
   const scanWithFindings = {
     ...scan,
     findings: findings.map((f, i) => ({ id: i + 1, scanId: scan.id, ...f })),
+    pqc: result.pqc,
+    hygiene: result.hygiene,
+    mosca: result.mosca,
   };
 
   res.status(201).json(scanWithFindings);
@@ -181,7 +195,10 @@ router.get("/scans/:id", async (req, res): Promise<void> => {
     const [scan] = await tx.select().from(scansTable).where(eq(scansTable.id, params.data.id));
     if (!scan) return null;
     const findings = await tx.select().from(findingsTable).where(eq(findingsTable.scanId, params.data.id));
-    return { ...scan, findings };
+    // Obligations are resolved on the way out, never read back off the row — a
+    // mappings-data update therefore reaches findings written before it. See
+    // lib/compliance.ts and docs/Claude/05-compliance-mapping.md.
+    return { ...scan, findings: withComplianceAll(findings) };
   });
 
   if (!found) {
@@ -189,7 +206,24 @@ router.get("/scans/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json(found);
+  // Recomputed from the persisted findings rather than read back from a
+  // column: the risk profile is a derivation over the mappings data and the
+  // Q-Day scenarios, both of which change independently of a historical scan.
+  // Storing the verdict would freeze a number that is supposed to move.
+  const profile = computeRiskProfile(found.findings, { totalLines: found.totalLines ?? 0 });
+
+  // `riskScore` is overridden with the recomputed value rather than served
+  // from the column. Returning both would put two different numbers under
+  // two keys in one payload: the stored one is frozen at write time and Z
+  // shrinks every day, so they diverge. The column is kept as the historical
+  // record and for list views that do not recompute.
+  res.json({
+    ...found,
+    riskScore: profile.pqc.riskScore,
+    pqc: profile.pqc,
+    hygiene: profile.hygiene,
+    mosca: profile.mosca,
+  });
 });
 
 router.get("/scans/:id/findings", async (req, res): Promise<void> => {
@@ -203,7 +237,7 @@ router.get("/scans/:id/findings", async (req, res): Promise<void> => {
   const findings = await withOrg(orgContextFor(req), (tx) =>
     tx.select().from(findingsTable).where(eq(findingsTable.scanId, params.data.id)),
   );
-  res.json(findings);
+  res.json(withComplianceAll(findings));
 });
 
 // ── Multi-file scan: scan all files in one project ────────────────────────────
@@ -239,6 +273,7 @@ router.post("/scans/multi", async (req, res): Promise<void> => {
       .returning();
 
     let totalCritical = 0, totalAlert = 0, totalSafe = 0, totalLines = 0, worstRisk = 0;
+    const allFindings: { algorithm: string; effortHours: number }[] = [];
     const allFindingRows: {
       organizationId: number; scanId: number; fileName: string; lineNumber: number;
       severity: "critical" | "alert" | "safe"; algorithm: string;
@@ -256,6 +291,7 @@ router.post("/scans/multi", async (req, res): Promise<void> => {
       totalSafe     += result.cleanCount;
       totalLines    += fileLines;
       worstRisk      = Math.max(worstRisk, result.riskScore);
+      allFindings.push(...findings);
 
       const [scan] = await tx
         .insert(scansTable)
@@ -285,11 +321,20 @@ router.post("/scans/multi", async (req, res): Promise<void> => {
           lineNumber: f.lineNumber, severity: f.severity, algorithm: f.algorithm,
           codeSnippet: f.codeSnippet, nistReplacement: f.nistReplacement,
           nistStandard: f.nistStandard, effortHours: f.effortHours, explanation: f.explanation,
+          compliance: f.compliance,
         })),
       });
     }
 
     if (allFindingRows.length > 0) await tx.insert(findingsTable).values(allFindingRows);
+
+    // A4: the project-level risk profile is computed over every finding in
+    // the submission, not taken as the worst per-file score. `worstRisk` is
+    // still reported per file (and remains the value stored on each scan
+    // row), but a Mosca verdict is a statement about a body of data and its
+    // total migration effort — the maximum of per-file scores cannot express
+    // one. TODO(A3): pass the project's classification as X once it exists.
+    const projectProfile = computeRiskProfile(allFindings, { totalLines });
 
     // One collection run for the whole multi-file submission, not one per file.
     await dualWriteObservations(
@@ -300,7 +345,7 @@ router.post("/scans/multi", async (req, res): Promise<void> => {
     );
 
     await tx.update(projectsTable)
-      .set({ riskScore: worstRisk, criticalCount: totalCritical, alertCount: totalAlert, cleanCount: totalSafe, lastScanAt: new Date() })
+      .set({ riskScore: projectProfile.pqc.riskScore, criticalCount: totalCritical, alertCount: totalAlert, cleanCount: totalSafe, lastScanAt: new Date() })
       .where(eq(projectsTable.id, project.id));
 
     if (totalCritical > 0) {
@@ -319,9 +364,11 @@ router.post("/scans/multi", async (req, res): Promise<void> => {
 
     return {
       projectId: project.id, projectName: project.name,
-      riskScore: worstRisk, criticalCount: totalCritical,
+      riskScore: projectProfile.pqc.riskScore, worstFileRiskScore: worstRisk,
+      criticalCount: totalCritical,
       alertCount: totalAlert, cleanCount: totalSafe,
       totalLines, findingsCount: allFindingRows.length, filesScanned: files.length,
+      pqc: projectProfile.pqc, hygiene: projectProfile.hygiene, mosca: projectProfile.mosca,
     };
   });
 

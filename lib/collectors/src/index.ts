@@ -4,4 +4,8 @@ export * from "./location-detail";
 export * from "./fingerprint";
 export * from "./types";
 export * from "./algorithm-mapping";
+export * from "./named-curves";
 export * from "./source-regex-collector";
+export * from "./lockfiles";
+export * from "./crypto-packages";
+export * from "./dependency-collector";

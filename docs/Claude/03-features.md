@@ -52,9 +52,11 @@ Generalise `scanner.ts`'s `VULNERABILITY_PATTERNS` array into a pluggable collec
 Regex-over-source becomes one implementation.
 
 **Acceptance:** a new collector can be added without modifying `scanner.ts` or the API routes.
-Architecturally true — nothing in `Collector`/`RawObservation` assumes a source-only collector —
-but **unverified**: `SourceRegexCollector` is still the only implementation, so this acceptance
-criterion has not actually been exercised by a second collector.
+**Verified** by B2's `DependencyCollector` (the second implementation), which adds a whole new
+surface with zero edits to `scanner.ts` and zero edits to any route. Nothing in
+`Collector`/`RawObservation` assumes a source-only collector, and no new `CollectionTarget`
+variant was needed: a lockfile arrives as an ordinary submitted file and the collector selects
+what it understands by basename.
 
 \* `@workspace/collectors` (new package): `Collector`/`RawObservation` contract, `SourceRegexCollector`,
 CPE 2.3 parser, discriminated `locationDetail`, deterministic fingerprint, and a small lookup
@@ -62,11 +64,12 @@ over `docs/Claude/mappings/algorithms.json` for severity/replacement/standard/ex
 the C1 dynamic mapping engine (see [05](05-compliance-mapping.md)), and resolved as each finding
 is built, so those strings are still frozen into the `findings` row until reads cut over (see
 [04-architecture.md](04-architecture.md)). Key size extraction (G-05) works for same-line
-literals and named curves in source only; B2–B10 remain unbuilt.
+literals and named curves in source, and for dependency packages that pin exactly one curve;
+B2 is now built as a collector (see below), B3–B10 remain unbuilt.
 
 ---
 
-### A3. Data classification `next` **P0**
+### A3. Data classification `built`* **P0**
 
 `secrecyLifetimeYears` plus a classification label per asset/project. Sensible presets:
 
@@ -79,16 +82,78 @@ literals and named curves in source only; B2–B10 remain unbuilt.
 | Indefinite | 50 | State secrets, genomic data, identity roots |
 
 **Acceptance:** every asset has an X value, defaulting to a project-level setting, overridable
-per asset, with the default clearly marked as an assumption in reports.
+per asset, with the default clearly marked as an assumption in reports. The first two clauses are
+met by `resolveSecrecyLifetime()`, which always returns a number. The third is met **in the data
+rather than in report copy**: the resolved record carries `source` (`asset` | `project` |
+`default`) and `assumed`, so a report states the provenance instead of a caption asserting it.
+
+\* **Built:** the classification vocabulary and its preset X values, the `data_classification` +
+`secrecy_lifetime_years` pair on both `projects` (the default) and `assets` (the override) with
+`CHECK` constraints, and the pure resolver — all in `lib/db/src/classification.ts`, exported as
+`@workspace/db/classification` (a subpath with no drizzle/`pg`/`DATABASE_URL` dependency, so A4
+can import the contract on its own). `SecrecyLifetime` is A4's `X` input.
+
+All four columns are **nullable with no database default**, and that is what makes the third
+acceptance clause satisfiable: `NOT NULL DEFAULT 3` would destroy the difference between "a human
+chose Internal" and "nobody said anything" on the way into the database. Same reasoning as
+`assets.key_size` (G-05). Provenance is therefore *derived* by the resolver rather than stored — a
+persisted `classification_source` column would go stale the moment a project's default changed.
+
+**Not built:** no write path. There is no API route or UI control for setting either level yet,
+and `CreateProjectBody` is unchanged — A1's reads were never cut over to `assets`, so there is no
+asset API surface to hang an override on (see the route manifest in `cross-tenant.test.ts`).
+Nothing calls `resolveSecrecyLifetime()` in production code yet; A4 is its first consumer. Values
+can only be set by direct SQL today.
 
 ---
 
-### A4. Mosca risk engine `next` **P0**
+### A4. Mosca risk engine `built`* **P0**
 
 Split risk from detection. Input `(asset, X, Y, Z-scenario)` → verdict + score.
 
+X comes from A3: `resolveSecrecyLifetime()` in `@workspace/db/classification` returns a
+`SecrecyLifetime` — `{ years, source, assumed, classification, classificationSource, basis }`.
+Take `years` as X and carry `assumed`/`basis` into the verdict, so "why" can distinguish a
+customer-supplied lifetime from a defaulted one.
+
 **Acceptance:** returns a verdict per Q-Day scenario, and the UI shows *why* — the three input
-values, not just a number.
+values, not just a number. **Engine half met, UI half not** — see the asterisk.
+
+\* `@workspace/risk` (`lib/risk/`, new package): `assessMoscaRisk()` returns one `MoscaVerdict`
+per Q-Day scenario (conservative 2030 / central 2035 / aggressive 2040, from
+[01-strategy.md](01-strategy.md)), each carrying `x`, `y`, `z`, `breached`, `breachMarginYears`
+and a narrative sentence naming all three inputs — the module exports no way to obtain a score
+without them. `computeRiskProfile()` is the scan-level entry point: it returns a **post-quantum
+exposure score** and a **separate classical-hygiene panel**, which is what closes
+[G-10](09-open-gaps.md#g-10--hygiene-findings-inflate-the-pqc-risk-score). The track split is
+derived from `algorithms.json`'s own `quantumVulnerable` flag and each entry's `reportingNote`,
+never from a list of algorithm names in code. `computeScanResult()` now reports the PQC score as
+`riskScore` and returns `pqc`/`hygiene`/`mosca` alongside it; the scan, multi-scan, demo and
+GitHub routes pass those through. Nothing about A4 is persisted — the profile is recomputed at
+read time, so a mappings or scenario change moves the verdict without a backfill.
+
+**Not built, deliberately:**
+
+- **The UI.** `pqc`, `hygiene` and `mosca` are the panel's data contract; no page renders them
+  yet, and `lib/api-spec/openapi.yaml` and the generated Orval client are not updated, so the
+  typed frontend client cannot see the new fields. That is D2 (Mosca exposure view) and the
+  hygiene panel's presentation, not A4's engine.
+- **X per asset.** A3 supplies it. Until then every verdict uses
+  `DEFAULT_SECRECY_LIFETIME_YEARS` (3 — A3's "Internal" preset) and reports
+  `mosca.secrecyLifetimeSource: "assumed-default"` so a report can mark it as an assumption.
+- **Agility in Y.** Y is `effortHours ÷ agilityScore ÷ hours-per-calendar-year` with
+  `agilityScore` fixed at 1 pending D5, and the hours-per-year constant is a stated guess with
+  no source in these documents. It is the least defensible number in the engine.
+- **Portfolio rollup and scenario management** — the Enterprise half per
+  [10-editions.md](10-editions.md). Scenarios are a parameter everywhere, which is the hook.
+
+**Know this before reading a score.** `riskScore` is `detection` (0-60) + `moscaBreach` (0-40).
+At the assumed default X of 3 years the conservative scenario (2030) is still further away than
+that, so nothing breaches and **the score cannot exceed 60 until A3 supplies a real secrecy
+lifetime** — or until 2027, when the conservative Q-Day comes inside three years. That is
+intended: the top 40% of the scale is reserved for an actual Mosca breach and must be earned,
+not asserted by detection volume. It does mean the headline number's range is narrower than it
+was before A4, which is the honest reading of a scan with no data classification behind it.
 
 ---
 
@@ -144,8 +209,8 @@ another silo.
 
 | # | Collector | Status | Pri | Notes |
 |---|---|---|---|---|
-| B1 | Source code (regex) | `built` | — | Now `SourceRegexCollector` behind A2 (`lib/collectors/`). **Key size (G-05): partially closed** — extracts a same-line literal modulus or named-curve size, undetermined (not defaulted) otherwise; no cross-line/AST resolution. **Confidence (G-11): closed** for this collector — `0.7`, persisted. **EdDSA (G-06): still open** — out of scope for this change, no new pattern added — see [09](09-open-gaps.md) |
-| B2 | Dependency / SBOM | `next` | **P0** | Biggest coverage jump. Parse lockfiles → map to known crypto libs + versions |
+| B1 | Source code (regex) | `built` | — | Now `SourceRegexCollector` behind A2 (`lib/collectors/`). **Key size (G-05): partially closed** — extracts a same-line literal modulus or named-curve size, undetermined (not defaulted) otherwise; no cross-line/AST resolution. **Confidence (G-11): closed** for this collector — `0.7`, persisted. **EdDSA (G-06): closed** — eighth pattern added, Ed25519/Ed448 resolve their curve bit sizes; one finding per line still means a line naming both `ssh-rsa` and `ssh-ed25519` reports only RSA |
+| B2 | Dependency / SBOM | `built`* | **P0** | Biggest coverage jump. `DependencyCollector` (`lib/collectors/src/dependency-collector.ts`) parses pnpm/npm/yarn lockfiles and `requirements.txt` → curated crypto-package table → observations at `0.8` (single-purpose library) or `0.5` (general-purpose library) confidence |
 | B3 | TLS / cipher suite prober | `planned` | **P1** | Active handshake against hosts. Records *negotiated* KEX, not configured |
 | B4 | Certificate / X.509 | `planned` | **P1** | Key type, size, expiry. Expiry-vs-Q-Day is the killer chart |
 | B5 | KMS / secret stores | `planned` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS. Read-only creds |
@@ -154,6 +219,20 @@ another silo.
 | B8 | Manual OT/embedded register | `planned` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first |
 | B9 | Vendor / third-party | `planned` | **P3** | Questionnaire + contractual PQC clause tracking |
 | B10 | Binaries / firmware | `deferred` | **P3** | Hard. Defer until coverage elsewhere is complete |
+
+\* B2's **collector** is built and tested (`lib/collectors/src/{dependency-collector,lockfiles,crypto-packages}.ts`).
+**Not built:** nothing submits lockfiles to it yet and nothing persists what it finds — the
+ingest path (`artifacts/api-server/src/lib/asset-ingest.ts`) computes a `surface: "source"`
+fingerprint only, so a `surface: "dependency"` ingest (`ecosystem + package + algorithm`, per
+`fingerprint.ts`) plus a route that accepts lockfiles is the follow-up. Ecosystems covered: npm
+(pnpm-lock.yaml, package-lock.json, yarn.lock — both yarn dialects) and PyPI
+(`requirements.txt` only; `poetry.lock`/`Pipfile.lock` are not read). No version-range
+reasoning: the pinned version is recorded, but "vulnerable before x.y.z" is advisory data with
+its own provenance requirements and is deliberately absent. **The package → algorithm table
+(`crypto-packages.ts`) is hand-curated and uncited** — it carries none of the
+`verified`/`needs-check` discipline [`mappings/`](mappings/README.md) imposes on standards data,
+which makes auditing it (or moving it into `mappings/` with citations) the first follow-up
+before a dependency finding reaches a customer.
 
 ### On B2 — say this out loud
 
@@ -167,8 +246,8 @@ product. Prioritise accordingly.
 
 | # | Feature | Status | Pri |
 |---|---|---|---|
-| C1 | Dynamic mapping engine (data-driven) | `next` | **P0** |
-| C2 | Versioned `mappings/` data + provenance | `next` | **P0** |
+| C1 | Dynamic mapping engine (data-driven) | `built` | **P0** |
+| C2 | Versioned `mappings/` data + provenance | `built`† | **P0** |
 | C3 | NIST FIPS 203/204/205 algorithm mapping | `built`* | **P0** |
 | C4 | NIST IR 8547 deprecation timeline mapping | `planned` | **P1** |
 | C5 | CNSA 2.0 timeline mapping | `planned` | **P1** |
@@ -179,8 +258,24 @@ product. Prioritise accordingly.
 
 \* C3 exists as a static by-name lookup over `mappings/algorithms.json`
 (`lib/collectors/src/algorithm-mapping.ts`, added by A2 — it replaced the hardcoded copies in
-`scanner.ts`'s pattern table). C1/C2 are the real work: deadline resolution, security-strength
-keying and crosswalks, none of which that lookup does.
+`scanner.ts`'s pattern table). It still backs `severity`/`effortHours` on a `ScanFinding`; the
+obligations, deadlines and citations come from C1.
+
+**C1 is `@workspace/mappings` (`lib/mappings/`).** `resolve(input, { asOf, version, profile })` is
+pure and returns obligations with framework, requirement, deadline, replacement, citation,
+confidence and draft status, plus a report bucket and a use-condition table. Nothing in its
+TypeScript names an algorithm, a date or a citation — even the deadline-type vocabulary is a data
+block. Obligations resolve on every findings *read* (`api-server/src/lib/compliance.ts`), so a
+mappings update reaches historical findings without a migration.
+
+**Acceptance (M2 exit): met.** `lib/mappings/src/engine.test.ts` changes a date, adds an algorithm
+and adds a deadline type in cloned data and asserts the output follows with no code change.
+**Not closed by C1:** security-strength keying still returns both IR 8547 rows because key size is
+usually undetermined (G-05), and `controls.json` crosswalks are untouched (C9/G-04).
+
+† C2: the data files, provenance fields and boot-time schema validation are in place. The CI check
+that blocks a `needs-check` entry from reaching a customer-facing template is **not built** — the
+`confidence` field travels with each obligation so the renderer can label it, which is weaker.
 
 Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 

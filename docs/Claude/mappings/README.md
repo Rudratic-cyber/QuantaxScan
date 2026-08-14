@@ -11,12 +11,26 @@ change; nothing in `src/` should have to change when they do.
 
 See [../05-compliance-mapping.md](../05-compliance-mapping.md) for the engine design.
 
-**Sharp edge — `algorithms.json` is a build input, not a runtime file.**
-`lib/collectors/src/algorithm-mapping.ts` imports it as a JSON module (`with { type: "json" }`)
-so esbuild inlines it into the API bundle; there is no runtime read of this path, and nothing
-schema-validates it at boot. Editing the JSON therefore has no effect until the API is rebuilt
-and redeployed, and a malformed entry surfaces as a build error or a missing lookup at scan time
-rather than a startup failure. `frameworks.json` and `controls.json` have no consumer yet.
+**Sharp edge — these are build inputs, not runtime files.** `lib/mappings/src/data.ts` (and
+`lib/collectors/src/algorithm-mapping.ts`) import them as JSON modules (`with { type: "json" }`)
+so esbuild inlines them into the API bundle; there is no runtime read of these paths. Editing the
+JSON therefore has no effect until the API is rebuilt and redeployed. That is a *deploy* step, not
+a code change, which is why the M2 exit criterion still holds.
+
+Since C1, `algorithms.json` and `frameworks.json` **are** schema-validated — `parseMappingData()`
+runs at module initialisation, i.e. at API boot, so a malformed file fails startup loudly instead
+of becoming a missing obligation halfway through a report. The schema is deliberately lenient
+(unknown keys pass; the deadline-type vocabulary is open) so a data pull request is never blocked
+by the code not recognising a new field. `controls.json` still has no consumer.
+
+**Three blocks exist so the engine never hardcodes a rule.** Change any of them and behaviour
+changes with no TypeScript edit:
+
+| Block | File | What it drives |
+|---|---|---|
+| `deadlineTypes` | `algorithms.json` | The whole deadline vocabulary — label, `effect` (`prohibition`/`caution`/`permitted`) and severity per term. Adding a term here teaches the engine a new kind of rule. |
+| `detectionConfidence` | `algorithms.json`, per entry | Confidence multiplier, `reviewRequired` and the customer-facing reason for algorithms whose answer depends on call-site context (`dsa`, `sha1`). |
+| `findingObligations` | `frameworks.json`, per framework | Framework-level requirements matched to an algorithm entry by `quantumVulnerable` / `algorithmIds` / `families` / `purposes`. How CISA-QR and CNSA 2.0 attach to a finding. |
 
 ---
 
@@ -57,6 +71,42 @@ document, which is fetchable.
 
 ---
 
+## Changes in 0.4.0 — machine-readable reporting semantics
+
+No standards claim changed and no `retrievedAt` moved: every citation in 0.4.0 is the same
+primary source, read on the same date, as in 0.3.0. What was added is the structure the C1
+mapping engine needs so that the corrections recorded in 0.3.0 actually reach a report.
+
+| Added | Where | Why |
+|---|---|---|
+| `deadlineTypes` vocabulary block | `algorithms.json` | Six terms (`deprecated`, `disallowed`, `not-approved`, `never-approved`, `legacy-use`, `acceptable`), each with a label, an `effect` and a severity. Previously the engine would have had to switch on these strings in TypeScript. Verified against the same sources as the deadlines that use them. |
+| `detectionConfidence` on `dsa` and `sha1` | `algorithms.json` | Closes the confidence half of G-07 and G-08. A regex cannot tell DSA signing from verification, or SHA-1 signing from HMAC, so those findings carry a multiplier and a review flag. |
+| `bestPractice` on `aes-ecb` | `algorithms.json` | Closes G-09. Gives the finding a requirement and an SP 800-38A citation *without* a deadline, so it cannot render as a compliance failure. |
+| Framework entries for `FIPS 186-5`, `SP 800-131A Rev 2`, `FIPS 180-4`, `SP 800-38A` | `frameworks.json` | The ids match the `framework` strings the algorithm deadlines already used, so obligations resolve a real framework name and applicability instead of a bare document string. |
+| `findingObligations` on `CISA-QR` and `CNSA-2.0` | `frameworks.json` | Lets a framework attach an obligation to a finding by matching on the algorithm entry. CNSA 2.0's keeps its `needs-check` confidence and its per-category caveat. |
+
+| Entry | Status |
+|---|---|
+| `deadlineTypes` — semantics of each term | ✅ `verified` (derived from the definitions already in this file and from IR 8547 §4) |
+| `detectionConfidence` — multipliers | ⚠️ engineering judgement, not a standards claim. The *reason* text is verified; the numbers are ours. |
+| `bestPractice` on AES-ECB — SP 800-38A citation | ✅ `verified` |
+| New framework entries — titles, publishers, dates, URLs | ✅ `verified` |
+| `findingObligations` — CISA-QR | ✅ `verified` (quotes the factsheet's inventory section) |
+| `findingObligations` — CNSA-2.0 | ⚠️ `needs-check` — inherits G-01, still HTTP 403 |
+
+---
+
+## Changes in 0.3.1
+
+No standards claim changed. `eddsa`'s `detectionGap: true` flag was **cleared**, because the
+gap it recorded is closed: `SourceRegexCollector` now has an EdDSA pattern and the dependency
+collector maps Ed25519 libraries (09-open-gaps.md G-06). Its `explanation` no longer says "the
+current scanner does not detect it" — that sentence was customer-facing copy that stopped being
+true. Set the flag again if a future entry is in the same position; it is how an
+identified-but-undetected algorithm is tracked.
+
+---
+
 ## Corrections made in 0.3.0
 
 Verified against FIPS 186-5, SP 800-131A Rev 2, SP 800-38A and SP 800-38D by downloading each
@@ -94,8 +144,8 @@ Two substantive additions:
 
 - **≥128-bit classical algorithms are also disallowed after 2035**, not just 112-bit ones. The
   seed only recorded the 112-bit row. Bigger keys do not buy time.
-- **EdDSA** appears in IR 8547 Table 2 and the current scanner does not detect it — flagged as
-  `detectionGap: true`.
+- **EdDSA** appears in IR 8547 Table 2 and the scanner did not detect it — flagged as
+  `detectionGap: true` (flag cleared in 0.3.1; see above).
 
 ---
 
@@ -109,10 +159,12 @@ Standards data changes by **pull request against these JSON files** — never a 
 4. Attach `citation.url` and `citation.section`
 5. Set `confidence` to `verified` **only if you personally opened the source document**
 
-*Intended, not yet built:* CI validating against the JSON schema and blocking any `needs-check`
-entry referenced by a customer-facing report template. The repo's CI
-(`.github/workflows/ci.yml`) only builds and runs the test suites, and the sharp edge above is
-why that matters — nothing checks these files but a rebuild.
+*Partly built:* the JSON **is** schema-validated, at API boot (see the sharp edge above), and
+`lib/mappings/src/engine.test.ts` runs on every CI test job. What is still *not* built is the
+check that blocks a `needs-check` entry from reaching a customer-facing report template. The
+mitigation today is weaker: `confidence` travels with every obligation, so a renderer can label it
+"indicative, unverified" — and the shared report page does — but nothing stops a template that
+ignores the field.
 
 ### The draft-status rule
 

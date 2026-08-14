@@ -1,3 +1,4 @@
+import { NAMED_CURVE_BIT_SIZES } from "./named-curves";
 import type { Collector, CollectorContext, CollectionTarget, RawObservation } from "./types";
 
 /**
@@ -31,6 +32,24 @@ const SOURCE_PATTERNS: SourcePattern[] = [
     pattern: /\b(ECDSA|secp256k1|prime256v1|elliptic\.P256|EC\.sign|createSign\s*\(\s*['"]sha256WithRSAEncryption['"])/i,
   },
   {
+    /**
+     * G-06. Ed25519/Ed448 are quantum-vulnerable (Shor), named explicitly in
+     * NIST IR 8547 Table 2, and approved by FIPS 186-5 — so unlike DSA they
+     * are in active *new* deployment, which is what makes the blind spot
+     * expensive. The pattern requires the `Ed`/`EdDSA` token: a bare `25519`
+     * would also match `X25519`/`Curve25519`, which are Diffie-Hellman
+     * key agreement and belong to the `ECDH/DH` entry, not here.
+     * Placed after ECDSA and before ECDH/DH: no earlier pattern can match an
+     * `ed25519`/`ed448` token, so this changes no existing detection —
+     * verified by the parity tests in source-regex-collector.test.ts.
+     * No *trailing* `\b`, deliberately and in line with the other entries:
+     * the identifiers this has to catch are compounds
+     * (`Ed25519PrivateKey`, `ed25519.GenerateKey`, `Ed448Goldilocks`).
+     */
+    algorithm: "EdDSA",
+    pattern: /\b(EdDSA|Ed25519|Ed448)/i,
+  },
+  {
     algorithm: "ECDH/DH",
     pattern: /\b(ECDH|createECDH|DH\b|DHParameterSpec|getDiffieHellman)/i,
   },
@@ -52,32 +71,8 @@ const SOURCE_PATTERNS: SourcePattern[] = [
   },
 ];
 
-/**
- * Named-curve bit sizes for algorithms whose "key size" is a curve, not a
- * modulus. Key size here is the stated parameter size (P-384 → 384), not a
- * derived NIST security-strength category (see types.ts `RawObservation.keySize`).
- */
-const NAMED_CURVE_BIT_SIZES: Record<string, number> = {
-  secp256r1: 256,
-  prime256v1: 256,
-  "p-256": 256,
-  p256: 256,
-  nistp256: 256,
-  secp256k1: 256,
-  secp384r1: 384,
-  "p-384": 384,
-  p384: 384,
-  nistp384: 384,
-  secp521r1: 521,
-  "p-521": 521,
-  p521: 521,
-  nistp521: 521,
-  x25519: 256,
-  curve25519: 256,
-  ed25519: 256,
-  x448: 448,
-  ed448: 448,
-};
+/** The canonical algorithm names this collector can emit. Every one must resolve in `algorithms.json` — asserted in algorithm-mapping.test.ts. */
+export const SOURCE_PATTERN_ALGORITHMS: readonly string[] = SOURCE_PATTERNS.map((p) => p.algorithm);
 
 /** Modulus sizes an RSA/DSA key is actually generated at, in practice. Used to reject an incidental same-line number (a year, an RFC number, a port) that is not a key size. */
 const PLAUSIBLE_MODULUS_BIT_SIZES = new Set([512, 1024, 2048, 3072, 4096, 7680, 8192, 15360]);
