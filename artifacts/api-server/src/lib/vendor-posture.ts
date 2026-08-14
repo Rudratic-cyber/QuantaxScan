@@ -65,6 +65,24 @@ export const VENDOR_NO_ATTESTATION_CAVEAT =
   "not a low-confidence claim, and certainly not a clean result. The vendor's cryptography is unexamined and " +
   "unattested.";
 
+/**
+ * The same absence of evidence, arrived at differently: a response *was*
+ * recorded (`respondedAt` is set) and it disclosed nothing.
+ *
+ * `responseState` deliberately stays `awaiting_response` for both — from the
+ * point of view of what is known about this vendor's cryptography they are the
+ * same state, and splitting the enum would imply the product does something
+ * different with them. But the caveat is customer-facing prose, and telling a
+ * reader that a vendor "has not answered" when the register records that they
+ * did is simply false. A vendor who replied and declined to say anything is a
+ * procurement fact worth seeing, and `respondedAt` is in the payload so a
+ * client can tell the two apart without a new enum member.
+ */
+export const VENDOR_UNINFORMATIVE_RESPONSE_CAVEAT =
+  "This vendor responded and disclosed nothing — no roadmap status, no readiness date, no description of the " +
+  "cryptography they use. No claim has been recorded, so there is nothing here to be confident about: a refusal " +
+  "to answer is not a clean result. Their cryptography remains unexamined and unattested.";
+
 export interface VendorAttestation {
   /** Always `manual_attestation` — SP 1800-38B §4.1.4 plus this project's two extensions. See `@workspace/collectors`'s enums. */
   discoveryModality: "manual_attestation";
@@ -249,7 +267,12 @@ export function assessVendorPosture(input: AssessVendorPostureInput): VendorPost
     attestation: {
       discoveryModality: "manual_attestation",
       confidence: responseState === "awaiting_response" ? null : VENDOR_ATTESTATION_CONFIDENCE,
-      caveat: responseState === "awaiting_response" ? VENDOR_NO_ATTESTATION_CAVEAT : VENDOR_ATTESTATION_CAVEAT,
+      caveat:
+        responseState !== "awaiting_response"
+          ? VENDOR_ATTESTATION_CAVEAT
+          : input.respondedAt === null
+            ? VENDOR_NO_ATTESTATION_CAVEAT
+            : VENDOR_UNINFORMATIVE_RESPONSE_CAVEAT,
     },
     verdicts,
     exposedScenarioCount: verdicts.filter((v) => v.state === "exposed").length,

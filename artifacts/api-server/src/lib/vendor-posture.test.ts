@@ -59,6 +59,25 @@ describe("assessVendorPosture — a claim is not an observation", () => {
     expect(result.clause.state).toBe("present");
   });
 
+  it("does not tell the reader a vendor never answered when the register says they replied", () => {
+    // Replied, disclosed nothing. Same absence of evidence as silence — so the
+    // state and the null confidence are identical — but the customer-facing
+    // caveat must not assert something the register itself contradicts, and a
+    // refusal to disclose is a procurement fact worth reading.
+    const refused = assessVendorPosture(unanswered({ respondedAt: new Date("2026-02-01T00:00:00Z") }));
+
+    expect(refused.responseState).toBe("awaiting_response");
+    expect(refused.attestation.confidence).toBeNull();
+    expect(refused.respondedAt).toBe("2026-02-01T00:00:00.000Z");
+    expect(refused.attestation.caveat).toMatch(/responded and disclosed nothing/i);
+    expect(refused.attestation.caveat).not.toMatch(/has not answered/i);
+    // And a refusal is still not a clean result.
+    expect(refused.attestation.caveat).not.toMatch(/\bcompliant\b/i);
+
+    // Silence keeps the other wording.
+    expect(assessVendorPosture(unanswered()).attestation.caveat).toMatch(/has not answered/i);
+  });
+
   it("reports partial when the vendor answered some questions and not others", () => {
     const result = assessVendorPosture(unanswered({ pqcRoadmapStatus: "assessing" }));
 
