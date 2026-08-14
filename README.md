@@ -275,12 +275,16 @@ reads `findings`. See [docs/Claude/03-features.md](docs/Claude/03-features.md) (
 
 ## Project status
 
-**This is an early-stage project.** The scanner works and is deployed, but it covers one surface
-of many.
+**This is an early-stage project.** The scanner works and is deployed, but it covers **two of the
+ten surfaces** a cryptographic inventory needs, and both of them reach your cryptography through
+the repository. Connections (TLS, certificates, protocol config) and storage (data-at-rest, KMS)
+have no collector at all — see [the coverage page](https://quantaxscan.swotpam.com/coverage),
+which reports that honestly rather than implying completeness.
 
-**Works today:** regex detection across 7 algorithm families, single-file / ZIP / GitHub
-scanning, NIST replacement mapping, risk and effort scoring, dashboard, community hub, shareable
-reports.
+**Works today:** regex detection across 7 algorithm families over source; dependency detection
+from lockfiles (pnpm/npm/yarn, `requirements.txt`) against a cited package table; single-file /
+ZIP / GitHub scanning, NIST replacement mapping, risk and effort scoring, coverage and confidence
+reporting, dashboard, community hub, shareable reports.
 
 **Known limitations, honestly:**
 
@@ -291,19 +295,30 @@ reports.
   (never guessed), and the value is recorded on the new `assets`/`observations` tables, not on the
   findings the API returns. NIST's rules are keyed on security strength (112-bit vs ≥128-bit), so
   deadline mapping is still approximate. This remains the largest known gap.
-- **Dependencies are invisible *to a scan*.** Most real cryptography lives in OpenSSL,
-  BouncyCastle and your TLS stack — not application source. The dependency collector that reads
-  lockfiles (pnpm/npm/yarn, `requirements.txt`) is built and tested in `lib/collectors`, but no
-  route submits a lockfile to it and no dependency asset is persisted yet, so nothing you scan
-  today reports one.
+- **Dependencies are read from lockfiles, and a lockfile is not first-party use.** Submit them to
+  `POST /api/projects/:id/dependencies` and matched packages persist as `dependency` assets. Two
+  limits worth stating before a customer sees a finding: a lockfile records the fully *resolved*
+  graph, so a match may be a transitive dependency of the build toolchain rather than a library
+  your own code calls (G-20 — the caveat ships on every response, the detection does not); and the
+  package table applies one claim to every version of a package, though capabilities move under a
+  version bump (G-21 — paramiko removed DSA in 4.0.0). Ecosystems: npm and PyPI
+  (`requirements.txt` only — `poetry.lock` and `Pipfile.lock` are not read). No version-range or
+  advisory reasoning.
+- **Most cryptography still is not visible to any of this.** OpenSSL, BouncyCastle, your TLS
+  termination, your KMS and your database's encryption-at-rest are where the real estate lives,
+  and each needs a collector that does not exist yet (B3–B7).
 - **One finding per line.** EdDSA (Ed25519/Ed448) is detected now and resolves its curve size,
   but a line naming two algorithms — an SSH key list with both `ssh-rsa` and `ssh-ed25519` — is
   reported as the first pattern that matches it, and the second algorithm is silently lost.
-- **Authentication is a single shared API key**, not per-user accounts — so there is no
-  organisation scoping and no tenant isolation. See below.
+- **Authentication is a single shared API key**, not per-user accounts. Organisation scoping *is*
+  built — every scoped table carries `organization_id` under a row-level-security policy, the
+  runtime connects as a role without `BYPASSRLS`, and a cross-tenant suite proves it with a
+  negative control. What is missing is the other half: no per-user identity, so no action can be
+  attributed to a person, and **only one organisation can exist** — the shared key is bound to it.
+  You cannot host two customers on one instance today. See below.
 - Findings are per-scan, so there is no drift detection or remediation tracking yet.
 
-The full plan for addressing these — and a 19-item gap register — is in
+The full plan for addressing these — and the open-gap register — is in
 **[`docs/Claude/`](docs/Claude/)**. Start with [the index](docs/Claude/README.md), or
 [09-open-gaps.md](docs/Claude/09-open-gaps.md) for what is broken and why.
 
@@ -322,8 +337,11 @@ now generated with `crypto.randomBytes`, and CORS uses an explicit origin allowl
 
 What that does **not** give you:
 
-- **No per-user identity and no organisation scoping.** One key grants access to everything.
-  There is no tenant isolation, and access cannot be attributed to a person in the logs.
+- **No per-user identity.** One key grants access to everything the organisation it is bound to
+  can see, and access cannot be attributed to a person in the logs. Organisation scoping and
+  tenant isolation *are* enforced in the database (see
+  [13-auth-and-tenancy.md](docs/Claude/13-auth-and-tenancy.md)), but there is no way to create a
+  second organisation, so the isolation has nothing to isolate from yet.
 - **No key rotation story**, and shared report links still have no expiry or revocation.
 - **Submitted source is still stored in full** in the database (`scans.code`).
 
