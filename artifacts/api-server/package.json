@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",
+    "@workspace/cbom": "workspace:*",
     "@workspace/collectors": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/mappings": "workspace:*",

@@ -511,7 +511,9 @@ lib/
                     closes G-10). Depends on @workspace/collectors for the
                     algorithms.json lookup, never the reverse. Agility scoring
                     (D5) is still unbuilt; Y uses a neutral agility of 1.
-  cbom/          NEW, unbuilt — CycloneDX 1.7 import/export (A5)
+  cbom/          ✅ NEW — CycloneDX 1.7 export (A5). Pure builder + the official
+                    schema vendored under schema/ for the acceptance test.
+                    Import (A6) remains unbuilt.
   api-spec/      existing — extend OpenAPI, regenerate (not done here)
 artifacts/
   api-server/    routes/scans.ts dual-writes via lib/asset-ingest.ts; other routes unchanged
@@ -528,9 +530,10 @@ on-prem agent — which matters a great deal if the SaaS-source-code risk in
 
 ## API surface changes
 
-**None of this table is built yet.** `POST /api/scans` and `POST /api/scans/multi` now
+**One row of this table is built.** `POST /api/scans` and `POST /api/scans/multi` now
 dual-write (see "Migration path" above) but their request/response shape is unchanged; every row
-below remains a planned change, not a status update.
+below except `GET /api/inventory/cbom` (A5, landed 2026-08-13) remains a planned change, not a
+status update.
 
 | Existing | Change |
 |---|---|
@@ -539,7 +542,7 @@ below remains a planned change, not a status update.
 | `GET /api/projects/:id/findings` | Deprecate → `GET /api/inventory/assets` |
 | — | `GET /api/inventory/assets` — filter by surface, algorithm, status, risk |
 | — | `GET /api/inventory/assets/:id/observations` — evidence trail |
-| — | `GET /api/inventory/cbom` — CycloneDX 1.7 export |
+| ✅ **built** | `GET /api/inventory/cbom` — CycloneDX 1.7 export (A5). Org-scoped, not public |
 | — | `POST /api/inventory/cbom` — import |
 | — | `GET /api/inventory/coverage` — what we have *not* looked at (feeds D3) |
 | — | `GET /api/compliance/obligations` — mapped obligations per asset |
