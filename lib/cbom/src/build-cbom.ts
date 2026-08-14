@@ -55,6 +55,12 @@ export const SURFACE_ASSET_TYPE: Readonly<Record<string, CycloneDxCryptoProperti
   config: "protocol",
   certificate: "certificate",
   kms: "related-crypto-material",
+  // B7. Both halves of a store — the bulk cipher and the algorithm wrapping its
+  // data key — are algorithms observed in a storage context, not keys: the
+  // asset is "AES is in use here", never the key material itself, which this
+  // product never sees. Mapped explicitly rather than left to the fallback
+  // below so the decision is recorded, not defaulted into.
+  "data-at-rest": "algorithm",
 };
 
 /** Unmapped surfaces export as algorithms rather than being dropped. */

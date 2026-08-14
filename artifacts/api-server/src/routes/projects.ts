@@ -815,14 +815,25 @@ function toStoreResponse(result: DataAtRestStoreResult) {
   return {
     storeId: result.storeId,
     engine: result.engine,
-    recorded: result.observations.map((observation) => ({
-      role: observation.locationDetail?.kind === "data-at-rest" ? observation.locationDetail.dataAtRest.role : "data-encryption",
-      algorithm: observation.algorithm,
-      keySize: observation.keySize ?? null,
-      reportedAlgorithm:
-        observation.locationDetail?.kind === "data-at-rest" ? observation.locationDetail.dataAtRest.reportedAlgorithm : observation.algorithm,
-      location: observation.location,
-    })),
+    recorded: result.observations.map((observation) => {
+      const detail = observation.locationDetail;
+      if (detail?.kind !== "data-at-rest") {
+        // Cannot happen: every observation here came from
+        // `collectDataAtRestObservations`, which always sets this. Thrown
+        // rather than defaulted, the same call `toCertificateSummary` makes —
+        // a defaulted `role` would quietly label a key-protection fact as the
+        // bulk cipher, which is the one confusion this surface exists to
+        // prevent.
+        throw new Error(`data-at-rest observation at ${observation.location} carries no data-at-rest locationDetail`);
+      }
+      return {
+        role: detail.dataAtRest.role,
+        algorithm: observation.algorithm,
+        keySize: observation.keySize ?? null,
+        reportedAlgorithm: detail.dataAtRest.reportedAlgorithm,
+        location: observation.location,
+      };
+    }),
     gaps: result.gaps.map((gap) => ({ role: gap.role, reason: gap.reason, reported: gap.reported ?? null })),
   };
 }
@@ -1060,7 +1071,15 @@ router.get("/projects/:id/data-at-rest", async (req, res): Promise<void> => {
         description: group.description,
         dataClassification: group.assetClassification,
         secrecyLifetimeYears: group.assetSecrecyLifetimeYears,
-        classificationSource: lifetime.source,
+        // `classificationSource`, not `source`. They differ for a store that
+        // supplied `secrecyLifetimeYears` without a label ("Confidential, but
+        // this contract has to last 10 years") — and `GET /api/inventory/assets`
+        // already ships this field name meaning the *label's* provenance, so
+        // using `source` here would give one enum two meanings across two
+        // routes and one generated client type. The X's own provenance is not
+        // lost: `xAssumed` is exactly `source !== "asset"`, and
+        // `secrecyLifetimeBasis` states both in prose.
+        classificationSource: lifetime.classificationSource,
         xAssumed: lifetime.assumed,
         secrecyLifetimeBasis: lifetime.basis,
         components: group.assets.map((asset) => {

@@ -1818,7 +1818,7 @@ export interface DataAtRestComponent {
 }
 
 /**
- * Where the X below actually came from. Never re-derived by the client.
+ * Where the classification *label* came from — the same meaning this field carries on `GET /inventory/assets`. Never re-derived by the client. It is not always the provenance of X: a store may supply `secrecyLifetimeYears` without a label, in which case the years are asset-supplied while the label is still inherited. Read `xAssumed` for X's own provenance.
  */
 export type ProjectDataAtRestStoreClassificationSource =
   (typeof ProjectDataAtRestStoreClassificationSource)[keyof typeof ProjectDataAtRestStoreClassificationSource];
@@ -1838,9 +1838,9 @@ export interface ProjectDataAtRestStore {
   /** What was supplied for this store. Null means nobody classified it — see `classificationSource`. */
   dataClassification: string | null;
   secrecyLifetimeYears: number | null;
-  /** Where the X below actually came from. Never re-derived by the client. */
+  /** Where the classification *label* came from — the same meaning this field carries on `GET /inventory/assets`. Never re-derived by the client. It is not always the provenance of X: a store may supply `secrecyLifetimeYears` without a label, in which case the years are asset-supplied while the label is still inherited. Read `xAssumed` for X's own provenance. */
   classificationSource: ProjectDataAtRestStoreClassificationSource;
-  /** True whenever X was not supplied for this store. Reports must say so. */
+  /** True whenever X was not supplied for this store, whatever the label's provenance. Reports must say so. */
   xAssumed: boolean;
   /** One report-ready sentence stating the provenance of X in plain English. */
   secrecyLifetimeBasis: string;

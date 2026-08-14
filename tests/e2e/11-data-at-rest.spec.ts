@@ -184,6 +184,69 @@ test.describe("the data-at-rest collector (B7)", () => {
     expect(asset!.mosca.breachedScenarios.length).toBeGreaterThan(0);
   });
 
+  test("every estate-wide reader survives a data-at-rest asset it has never seen before", async ({ api }) => {
+    // Four routes select every asset in the organisation with no surface
+    // filter. Adding a `Surface` value they have never encountered is exactly
+    // the change that breaks one of them in a way no unit test sees — the CBOM
+    // export in particular maps surface to a CycloneDX `assetType`.
+    const projectId = await createProject(api, "B7 estate-wide readers");
+    await submit(api, projectId, [{ ...REGULATED_ARCHIVE, storeId: "estate-wide-archive" }]);
+
+    for (const path of ["/api/inventory/cbom", "/api/inventory/readiness", "/api/inventory/timeline", "/api/inventory/assets"]) {
+      const res = await api.get(path);
+      expect(res.status(), path).toBe(200);
+    }
+
+    const cbom = await api.get("/api/inventory/cbom");
+    const body = (await cbom.json()) as {
+      components: Array<{ properties?: Array<{ name: string; value: string }>; cryptoProperties?: { assetType: string } }>;
+    };
+    const exported = body.components.filter((c) =>
+      c.properties?.some((p) => p.name.endsWith("asset:surface") && p.value === "data-at-rest"),
+    );
+    expect(exported.length, "a data-at-rest asset must reach the CBOM, not be dropped from it").toBeGreaterThan(0);
+    expect(exported.every((c) => c.cryptoProperties?.assetType === "algorithm")).toBe(true);
+  });
+
+  test("a store that states X without a label keeps the two provenances straight", async ({ api }) => {
+    // "Confidential, but this particular contract has to stay secret for 10
+    // years" — the case `classification.ts` names explicitly, and the only one
+    // where the label's provenance and X's provenance disagree. It is also the
+    // case that would expose `classificationSource` meaning two different
+    // things on this route and on `/inventory/assets`.
+    const projectId = await createProject(api, "B7 years without a label");
+    await submit(api, projectId, [
+      {
+        storeId: "contract-vault",
+        engine: "s3",
+        storeKind: "object-store",
+        encryptionState: "encrypted",
+        keyProtection: { algorithm: "RSA-3072", source: "aws-kms" },
+        secrecyLifetimeYears: 10,
+      },
+    ]);
+
+    const store = (await inventory(api, projectId)).stores.find((s) => s.storeId === "contract-vault")!;
+    expect(store.secrecyLifetimeYears).toBe(10);
+    expect(store.components[0].mosca.x).toBe(10);
+    // X was supplied for this store, so it is NOT assumed...
+    expect(store.xAssumed).toBe(false);
+    // ...while the label was never given and falls through to the default.
+    expect(store.dataClassification).toBeNull();
+    expect(store.classificationSource).toBe("default");
+    expect(store.secrecyLifetimeBasis).toMatch(/Supplied for this asset: 10 years/);
+
+    // And the estate-wide route reports the same field with the same meaning.
+    const res = await api.get("/api/inventory/assets");
+    const body = (await res.json()) as {
+      assets: Array<{ location: string; classificationSource: string; mosca: { x: number; xAssumed: boolean } }>;
+    };
+    const asset = body.assets.find((a) => a.location.includes("contract-vault"))!;
+    expect(asset.classificationSource).toBe(store.classificationSource);
+    expect(asset.mosca.x).toBe(10);
+    expect(asset.mosca.xAssumed).toBe(false);
+  });
+
   test("a store nobody classified is reported with an assumed X, not a quietly presented one", async ({ api }) => {
     const projectId = await createProject(api, "B7 unclassified store");
     await submit(api, projectId, [

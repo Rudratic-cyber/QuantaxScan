@@ -4304,12 +4304,12 @@ export const GetProjectDataAtRestResponse = zod.object({
       classificationSource: zod
         .enum(["asset", "project", "default"])
         .describe(
-          "Where the X below actually came from. Never re-derived by the client.",
+          "Where the classification \*label\* came from — the same meaning this field carries on `GET \/inventory\/assets`. Never re-derived by the client. It is not always the provenance of X: a store may supply `secrecyLifetimeYears` without a label, in which case the years are asset-supplied while the label is still inherited. Read `xAssumed` for X's own provenance.",
         ),
       xAssumed: zod
         .boolean()
         .describe(
-          "True whenever X was not supplied for this store. Reports must say so.",
+          "True whenever X was not supplied for this store, whatever the label's provenance. Reports must say so.",
         ),
       secrecyLifetimeBasis: zod
         .string()

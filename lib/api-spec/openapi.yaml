@@ -4313,10 +4313,17 @@ components:
         classificationSource:
           type: string
           enum: [asset, project, default]
-          description: Where the X below actually came from. Never re-derived by the client.
+          description: >-
+            Where the classification *label* came from — the same meaning this field carries on
+            `GET /inventory/assets`. Never re-derived by the client. It is not always the
+            provenance of X: a store may supply `secrecyLifetimeYears` without a label, in which
+            case the years are asset-supplied while the label is still inherited. Read `xAssumed`
+            for X's own provenance.
         xAssumed:
           type: boolean
-          description: True whenever X was not supplied for this store. Reports must say so.
+          description: >-
+            True whenever X was not supplied for this store, whatever the label's provenance.
+            Reports must say so.
         secrecyLifetimeBasis:
           type: string
           description: One report-ready sentence stating the provenance of X in plain English.
