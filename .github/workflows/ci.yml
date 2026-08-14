@@ -46,6 +46,15 @@ jobs:
 
       - name: Run API Feature Test Suite
         run: pnpm run test:api
+
+      - name: Run Scripts Test Suite
+        run: pnpm run test:scripts
+
+      # G-14 — the standards re-verification trigger. Offline date comparison, not a network
+      # fetch: several primary sources return HTTP 403 to automated requests (G-01), so a
+      # network check would fail for reasons unrelated to staleness and be muted within a week.
+      - name: Check standards data freshness
+        run: pnpm run check:standards
         env:
           QUANTAXSCAN_API_KEYS: "test-api-key-1234567890-super-secret-key-32bytes"
           DATABASE_URL: "postgres://dummy:dummy@localhost:5432/dummy"

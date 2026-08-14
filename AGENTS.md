@@ -175,6 +175,12 @@ pnpm run hooks:install   # gate every push on it automatically
 Typecheck is blocking in local CI. A green run is the standard for "ready to merge", not a green
 check on the PR.
 
+One stage is worth knowing about before it surprises you: **`standards`** runs
+`pnpm run check:standards`, which fails when any `retrievedAt` under `docs/Claude/mappings/` is
+older than 180 days (G-14). If it fires, the fix is to re-read the primary source and then update
+the date — not to update the date. Bumping `retrievedAt` without reopening the source is the one
+failure this check cannot see, and it turns the register into a lie.
+
 ## Merging across a directory rename
 
 `main`'s `q-vuln` → `quantaxscan` rename (`26da89e`) is a real rename as far as git is concerned —
