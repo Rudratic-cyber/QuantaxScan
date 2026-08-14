@@ -165,6 +165,10 @@ describe("route manifest — a new route cannot ship without being considered", 
     "DELETE /projects/:id": "org-scoped",
     "GET /projects/:id/findings": "org-scoped",
     "GET /projects/:id/coverage": "org-scoped",
+    // Writes assets stamped with the caller's organisation and attributed to a
+    // project by location prefix, so it confirms the parent inside the scope
+    // for the same reason POST /scans does.
+    "POST /projects/:id/dependencies": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",
@@ -376,6 +380,34 @@ describe("addressing another organisation's row by id is indistinguishable from 
     expect(res.status).toBe(404);
 
     const after = await countTheirScans();
+    expect(after).toEqual(before);
+  });
+
+  it("POST /api/projects/:id/dependencies naming another organisation's project writes nothing", async () => {
+    // `assets` has no foreign key to `projects` at all — the association is
+    // the `project:<id>:` prefix this route writes into `location`. So there
+    // is no database-level check to fall back on: without the in-scope parent
+    // lookup, this request would create real, RLS-stamped assets attributed
+    // to a project the caller cannot see, and the D3 meter for that project
+    // would then count a surface examined by a stranger.
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirDependencyAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'dependency'`,
+        ),
+      );
+    const before = await countTheirDependencyAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/dependencies`).send({
+        files: [{ path: "pnpm-lock.yaml", content: "packages:\n\n  node-rsa@1.1.1:\n    resolution: {integrity: sha512-x==}\n" }],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirDependencyAssets();
     expect(after).toEqual(before);
   });
 });

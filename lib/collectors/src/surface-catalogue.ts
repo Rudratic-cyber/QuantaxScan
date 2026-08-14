@@ -48,7 +48,11 @@ export interface CollectorSurfaceEntry {
 
 export const COLLECTOR_SURFACES = [
   { id: "source", name: "Source code", status: "live", surface: "source" },
-  { id: "dependency", name: "Dependencies / SBOM", status: "planned", surface: "dependency" },
+  // `live` since B2's ingest path landed. The collector alone was not enough
+  // to earn it: until `POST /projects/:id/dependencies` persisted what it
+  // found, no run of it could ever be recorded, and a surface whose results
+  // are unreachable has not been examined in any sense a CISO cares about.
+  { id: "dependency", name: "Dependencies / SBOM", status: "live", surface: "dependency" },
   { id: "tls", name: "TLS & cipher suites", status: "planned", surface: "tls" },
   { id: "certificate", name: "Certificates (X.509)", status: "planned", surface: "certificate" },
   { id: "kms", name: "KMS & secret stores", status: "planned", surface: "kms" },

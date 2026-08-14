@@ -27,6 +27,7 @@ import type {
   CreateSharedReportResponse,
   DemoRepo,
   DemoScanResult,
+  DependencyIngestSummary,
   Finding,
   GetLeaderboardParams,
   GithubFetchResult,
@@ -45,6 +46,7 @@ import type {
   ProjectCoverage,
   Scan,
   SharedReport,
+  SubmitProjectDependenciesBody,
   VoteBody,
 } from "./api.schemas";
 
@@ -640,6 +642,104 @@ export function useGetProjectCoverage<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Runs the dependency collector over the submitted files and persists what it finds as assets on the `dependency` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+Files are selected by basename, not by extension: `pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock` and `requirements*.txt`. Anything else in `files` is ignored rather than rejected, so a caller may submit a whole tree.
+
+**If no submitted file is a recognised lockfile, no collection run is recorded** and `lockfilesRecognised` is 0. That is deliberate: writing a run would make the meter report the dependency surface as examined-and-empty, when the truth is that nothing readable was submitted. It is a 200, not an error — a repository legitimately may have no lockfile.
+
+A package that leaves a resubmitted lockfile marks its asset `gone`, scoped to the ecosystems this submission actually carried a lockfile for. Submitting only `requirements.txt` therefore never touches the project's npm assets.
+ * @summary Submit a project's lockfiles for dependency/SBOM collection (B2)
+ */
+export const getSubmitProjectDependenciesUrl = (id: number) => {
+  return `/api/projects/${id}/dependencies`;
+};
+
+export const submitProjectDependencies = async (
+  id: number,
+  submitProjectDependenciesBody: SubmitProjectDependenciesBody,
+  options?: RequestInit,
+): Promise<DependencyIngestSummary> => {
+  return customFetch<DependencyIngestSummary>(
+    getSubmitProjectDependenciesUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(submitProjectDependenciesBody),
+    },
+  );
+};
+
+export const getSubmitProjectDependenciesMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectDependencies>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectDependenciesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectDependencies>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectDependenciesBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectDependencies"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectDependencies>>,
+    { id: number; data: BodyType<SubmitProjectDependenciesBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectDependencies(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectDependenciesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectDependencies>>
+>;
+export type SubmitProjectDependenciesMutationBody =
+  BodyType<SubmitProjectDependenciesBody>;
+export type SubmitProjectDependenciesMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit a project's lockfiles for dependency/SBOM collection (B2)
+ */
+export const useSubmitProjectDependencies = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectDependencies>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectDependenciesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectDependencies>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectDependenciesBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectDependenciesMutationOptions(options));
+};
 
 /**
  * Observed history from real collection instants, plus a projected horizon and the obligation deadlines that fall in it. Observed points come only from instants at which a collection actually happened — the series is never resampled onto a regular grid, because that would draw a smooth trend on an estate that never changed. When fewer than two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.

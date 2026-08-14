@@ -7,14 +7,14 @@ import {
 } from "./surface-catalogue";
 
 /**
- * The catalogue is the denominator of D3's honesty claim ("1 of 10 examined"),
+ * The catalogue is the denominator of D3's honesty claim ("2 of 10 examined"),
  * so these assertions are about the *numbers on the page*, not about tidiness.
  * Each one fails loudly for a specific real change:
  *
  *  - an eleventh surface added to the roadmap but not to the UI, or vice versa
  *  - a ninth `Surface` enum value added with no catalogue entry to record it
  *    under, which would let observations land somewhere the meter never counts
- *  - a second collector going live without the coverage copy being revisited
+ *  - a collector going live without the coverage copy being revisited
  */
 describe("collector surface catalogue", () => {
   it("has ten surfaces — the number docs/Claude/03-features.md §B and the coverage page both state", () => {
@@ -40,8 +40,12 @@ describe("collector surface catalogue", () => {
     expect(unrecordable).toEqual(["data-at-rest", "vendor"]);
   });
 
-  it("has exactly one live collector, and it is the source scanner", () => {
-    expect(LIVE_COLLECTOR_SURFACES.map((entry) => entry.id)).toEqual(["source"]);
+  it("has exactly two live collectors: the source scanner and the dependency collector", () => {
+    // `dependency` became live when B2's ingest path landed. A collector with
+    // nowhere to write is not a live surface — the whole point of this list is
+    // that it is the denominator of an honesty claim, so an entry earns `live`
+    // by being able to record a collection run, not by existing in the repo.
+    expect(LIVE_COLLECTOR_SURFACES.map((entry) => entry.id)).toEqual(["source", "dependency"]);
   });
 
   it("gives every live surface somewhere to store what it finds", () => {

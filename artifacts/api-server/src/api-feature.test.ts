@@ -78,6 +78,7 @@ describe("API Feature Test Suite", () => {
         { method: "delete", path: "/api/projects/999" },
         { method: "get", path: "/api/projects/999/findings" },
         { method: "get", path: "/api/projects/999/coverage" },
+        { method: "post", path: "/api/projects/999/dependencies", body: { files: [] } },
         { method: "post", path: "/api/scans", body: {} },
         { method: "get", path: "/api/scans/999" },
         { method: "get", path: "/api/scans/999/findings" },
@@ -327,8 +328,134 @@ describe("API Feature Test Suite", () => {
       expect(confidence.buckets[4]).toMatchObject({ label: "0.8–1.0", count: 0 });
     });
 
+    /**
+     * B2 — the coverage meter has to actually move. Everything above this
+     * point was true while `DependencyCollector` sat in the repository
+     * unreachable: the collector was built and tested, and the honest answer
+     * was still "1 of 10", because nothing submitted a lockfile and nothing
+     * persisted what it found.
+     */
+    const PNPM_LOCK = `lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      node-rsa:
+        specifier: ^1.1.0
+        version: 1.1.1
+
+packages:
+
+  node-rsa@1.1.1:
+    resolution: {integrity: sha512-fake==}
+
+  elliptic@6.5.4:
+    resolution: {integrity: sha512-fake==}
+`;
+
+    it("records no collection run when the submission carries no readable lockfile", async () => {
+      const res = await request
+        .post(`/api/projects/${projectId}/dependencies`)
+        .set("X-API-Key", API_KEY)
+        .send({ files: [{ path: "src/app.py", content: "import paramiko\n" }] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.lockfilesRecognised).toBe(0);
+      // Null, not an id: writing a run would make the meter report the
+      // dependency surface as "examined — nothing found", which is a
+      // different and false statement from "nothing readable was submitted".
+      expect(res.body.collectionRunId).toBeNull();
+      expect(res.body.assetsCreated).toBe(0);
+
+      const coverage = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
+      expect(coverage.body.examinedSurfaces).toBe(1);
+      expect(coverage.body.surfaces.map((s: { surface: string }) => s.surface)).toEqual(["source"]);
+    });
+
+    it("reports two of ten surfaces examined once a lockfile has actually been collected", async () => {
+      const submitted = await request
+        .post(`/api/projects/${projectId}/dependencies`)
+        .set("X-API-Key", API_KEY)
+        .send({ files: [{ path: "pnpm-lock.yaml", content: PNPM_LOCK }] });
+
+      expect(submitted.status).toBe(200);
+      expect(submitted.body.lockfilesRecognised).toBe(1);
+      expect(submitted.body.lockfiles).toEqual([{ path: "pnpm-lock.yaml", kind: "pnpm-lock" }]);
+      expect(submitted.body.collectionRunId).toEqual(expect.any(Number));
+      // node-rsa → RSA; elliptic → ECDSA, EdDSA, ECDH/DH.
+      expect(submitted.body.assetsCreated).toBe(4);
+      expect(submitted.body.observationsCreated).toBe(4);
+      // The transitive-dependency caveat travels with every response rather
+      // than being left for a client to remember — G-20.
+      expect(submitted.body.evidenceCaveat).toContain("transitive");
+
+      const res = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
+      expect(res.status).toBe(200);
+      expect(res.body.examinedSurfaces).toBe(2);
+      expect(res.body.totalSurfaces).toBe(10);
+
+      // The count alone is not the claim: a bare `collection_runs` row with no
+      // assets would also make it 2, while stating that we looked at the
+      // dependencies and found nothing. Assert the surface's own state.
+      const dependency = res.body.surfaces.find((s: { surface: string }) => s.surface === "dependency");
+      expect(dependency).toMatchObject({ surfaceId: "dependency", state: "examined", completedRuns: 1, failedRuns: 0 });
+      expect(dependency.activeAssets).toBe(4);
+      expect(dependency.lastExaminedAt).toEqual(expect.any(String));
+
+      // Source coverage is untouched by a dependency run.
+      const source = res.body.surfaces.find((s: { surface: string }) => s.surface === "source");
+      expect(source).toMatchObject({ state: "examined", completedRuns: 1 });
+      expect(source.activeAssets).toBeGreaterThan(0);
+
+      // Both dependency confidence tiers reach the meter: 0.8 for a
+      // single-purpose library (node-rsa), 0.5 for a general-purpose one
+      // (elliptic) — G-11.
+      expect(res.body.confidence.max).toBeCloseTo(0.8, 5);
+      expect(res.body.confidence.min).toBeCloseTo(0.5, 5);
+    });
+
+    it("marks a package gone when it leaves the lockfile, and does not touch the source assets", async () => {
+      const before = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
+      const sourceActiveBefore = before.body.surfaces.find((s: { surface: string }) => s.surface === "source").activeAssets;
+
+      const resubmitted = await request
+        .post(`/api/projects/${projectId}/dependencies`)
+        .set("X-API-Key", API_KEY)
+        .send({
+          files: [
+            {
+              path: "pnpm-lock.yaml",
+              content: "lockfileVersion: '9.0'\n\npackages:\n\n  left-pad@1.3.0:\n    resolution: {integrity: sha512-fake==}\n",
+            },
+          ],
+        });
+      expect(resubmitted.status).toBe(200);
+      expect(resubmitted.body.assetsMarkedGone).toBe(4);
+
+      const after = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
+      const dependency = after.body.surfaces.find((s: { surface: string }) => s.surface === "dependency");
+      expect(dependency.activeAssets).toBe(0);
+      // Examined, not never-examined: the rows stay in history.
+      expect(dependency).toMatchObject({ state: "examined", completedRuns: 2 });
+
+      // The reconciliation is scoped by surface. A dependency run that reached
+      // source assets would report a mass false remediation, and this is the
+      // assertion that would catch it.
+      const source = after.body.surfaces.find((s: { surface: string }) => s.surface === "source");
+      expect(source.activeAssets).toBe(sourceActiveBefore);
+    });
+
     it("returns 404 for a project that does not exist, not an empty coverage payload", async () => {
       const res = await request.get("/api/projects/999999/coverage").set("X-API-Key", API_KEY);
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 when lockfiles are submitted for a project that does not exist", async () => {
+      const res = await request
+        .post("/api/projects/999999/dependencies")
+        .set("X-API-Key", API_KEY)
+        .send({ files: [{ path: "pnpm-lock.yaml", content: PNPM_LOCK }] });
       expect(res.status).toBe(404);
     });
 

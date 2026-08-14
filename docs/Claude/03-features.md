@@ -210,7 +210,7 @@ another silo.
 | # | Collector | Status | Pri | Notes |
 |---|---|---|---|---|
 | B1 | Source code (regex) | `built` | — | Now `SourceRegexCollector` behind A2 (`lib/collectors/`). **Key size (G-05): partially closed** — extracts a same-line literal modulus or named-curve size, undetermined (not defaulted) otherwise; no cross-line/AST resolution. **Confidence (G-11): closed** for this collector — `0.7`, persisted. **EdDSA (G-06): closed** — eighth pattern added, Ed25519/Ed448 resolve their curve bit sizes; one finding per line still means a line naming both `ssh-rsa` and `ssh-ed25519` reports only RSA |
-| B2 | Dependency / SBOM | `built`* | **P0** | Biggest coverage jump. `DependencyCollector` (`lib/collectors/src/dependency-collector.ts`) parses pnpm/npm/yarn lockfiles and `requirements.txt` → curated crypto-package table → observations at `0.8` (single-purpose library) or `0.5` (general-purpose library) confidence |
+| B2 | Dependency / SBOM | `built` | **P0** | Biggest coverage jump, and now wired end to end. `DependencyCollector` (`lib/collectors/src/dependency-collector.ts`) parses pnpm/npm/yarn lockfiles and `requirements.txt` → the cited package table in [`mappings/crypto-packages.json`](mappings/crypto-packages.json) → observations at `0.8` (single-purpose library) or `0.5` (general-purpose library) confidence, persisted as `surface: "dependency"` assets by `POST /api/projects/:id/dependencies`. **`dependency` is the second `live` surface**, so the D3 meter reads 2 of 10 for a project with a scanned lockfile |
 | B3 | TLS / cipher suite prober | `planned` | **P1** | Active handshake against hosts. Records *negotiated* KEX, not configured |
 | B4 | Certificate / X.509 | `planned` | **P1** | Key type, size, expiry. Expiry-vs-Q-Day is the killer chart |
 | B5 | KMS / secret stores | `planned` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS. Read-only creds |
@@ -220,19 +220,33 @@ another silo.
 | B9 | Vendor / third-party | `planned` | **P3** | Questionnaire + contractual PQC clause tracking |
 | B10 | Binaries / firmware | `deferred` | **P3** | Hard. Defer until coverage elsewhere is complete |
 
-\* B2's **collector** is built and tested (`lib/collectors/src/{dependency-collector,lockfiles,crypto-packages}.ts`).
-**Not built:** nothing submits lockfiles to it yet and nothing persists what it finds — the
-ingest path (`artifacts/api-server/src/lib/asset-ingest.ts`) computes a `surface: "source"`
-fingerprint only, so a `surface: "dependency"` ingest (`ecosystem + package + algorithm`, per
-`fingerprint.ts`) plus a route that accepts lockfiles is the follow-up. Ecosystems covered: npm
-(pnpm-lock.yaml, package-lock.json, yarn.lock — both yarn dialects) and PyPI
-(`requirements.txt` only; `poetry.lock`/`Pipfile.lock` are not read). No version-range
-reasoning: the pinned version is recorded, but "vulnerable before x.y.z" is advisory data with
-its own provenance requirements and is deliberately absent. **The package → algorithm table
-(`crypto-packages.ts`) is hand-curated and uncited** — it carries none of the
-`verified`/`needs-check` discipline [`mappings/`](mappings/README.md) imposes on standards data,
-which makes auditing it (or moving it into `mappings/` with citations) the first follow-up
-before a dependency finding reaches a customer.
+**B2, as shipped 2026-08-14.** Ecosystems covered: npm (pnpm-lock.yaml, package-lock.json,
+yarn.lock — both yarn dialects) and PyPI (`requirements.txt` only; `poetry.lock`/`Pipfile.lock`
+are not read). Submission is `POST /api/projects/:id/dependencies`, org-scoped like every other
+persisting route; files are selected by basename, so a caller may submit a whole tree.
+`POST /api/github/scan-files` was considered and rejected as the host: no lockfile reaches it
+(`SCANNABLE_EXTENSIONS` lists source extensions only, so `/github/fetch` filters them out before
+a client sees them) and it persists nothing at all — no project, no organisation scope, no row.
+
+Three things it deliberately does **not** do:
+
+- **No version-range reasoning.** The pinned version is recorded; "vulnerable before x.y.z" is
+  advisory data with its own provenance requirements. A consequence surfaced by the audit below:
+  a *capability* can also be version-dependent (paramiko removed `ssh-dss` in 4.0.0), which is
+  tracked as G-21 rather than papered over.
+- **No direct/transitive distinction.** A lockfile records the resolved graph, so a match may be
+  a toolchain dependency rather than something the project's own code calls. Every response and
+  every observation carries that caveat explicitly — G-20.
+- **No collection run when nothing readable was submitted.** "We examined the dependencies and
+  found nothing" and "you sent us nothing we can read" are different statements, and the meter
+  must not collapse them.
+
+**The package → algorithm table is now cited data**, at
+[`mappings/crypto-packages.json`](mappings/crypto-packages.json) rather than in TypeScript: every
+claim carries a `verified`/`needs-check` status and, when verified, a verbatim quote from the
+package's own documentation with a retrieval date that `pnpm run check:standards` will age out
+after 180 days. The audit that moved it corrected three customer-facing claims — see
+[09-open-gaps.md](09-open-gaps.md) §"B2 provenance audit".
 
 ### On B2 — say this out loud
 
