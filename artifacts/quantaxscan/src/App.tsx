@@ -18,7 +18,39 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { motion } from "framer-motion";
 import { useState } from "react";
 
-const queryClient = new QueryClient();
+/**
+ * Do not retry a client error.
+ *
+ * The default is three retries with exponential backoff, which is right for a network blip and
+ * wrong for a 401. Today every dashboard request is refused — the browser bundle carries no API
+ * key (S1) — so the default spent about ten seconds re-asking a question already answered before
+ * showing "Projects could not be loaded". Ten seconds of "Loading projects…" for a deterministic
+ * refusal is the honest-state work undone by a default: the copy exists precisely so a refusal is
+ * never mistaken for an empty inventory, and a long spinner is a third state that says neither.
+ *
+ * 408 and 429 are excluded because they *are* worth retrying — a timeout and a rate limit both
+ * clear on their own, and S6 is about to start returning 429 with a Retry-After.
+ */
+const RETRYABLE_CLIENT_ERRORS = new Set([408, 429]);
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        const status = (error as { status?: unknown } | null)?.status;
+        if (
+          typeof status === "number" &&
+          status >= 400 &&
+          status < 500 &&
+          !RETRYABLE_CLIENT_ERRORS.has(status)
+        ) {
+          return false;
+        }
+        return failureCount < 3;
+      },
+    },
+  },
+});
 
 // Intro plays once per page-load (module variable resets on every hard refresh).
 // SPA navigation back to "/" within the same tab won't replay it.
