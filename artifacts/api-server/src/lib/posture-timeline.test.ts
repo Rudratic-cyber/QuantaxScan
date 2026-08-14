@@ -65,6 +65,27 @@ describe("summarisePostureTimeline — the honest-empty states", () => {
     expect(result.observed.reason).toMatch(/empty inventory, not a clean one/i);
   });
 
+  it("does not call an estate with assets but no completed run an empty inventory", () => {
+    // Every run failed. There is nothing to plot, but "empty inventory" would
+    // be a false description of an estate holding three assets — the honest
+    // statement is that the provenance is missing, not the crypto.
+    const result = summarise({
+      runs: [run({ id: 1, completedAt: null, status: "failed" })],
+      assets: [
+        asset({ id: 1, firstSeen: t("2026-04-01T10:00:00Z") }),
+        asset({ id: 2, firstSeen: t("2026-04-01T10:00:00Z") }),
+        asset({ id: 3, firstSeen: t("2026-04-01T10:00:00Z") }),
+      ],
+    });
+
+    expect(result.observed.distinctCollectionInstants).toBe(0);
+    expect(result.observed.reason).not.toMatch(/empty inventory/i);
+    expect(result.observed.reason).toMatch(/3 assets are in the inventory/i);
+    expect(result.observed.reason).toMatch(/no history to reconstruct/i);
+    // ...and the current posture is still reported, because it is real.
+    expect(result.estate.presentAssets).toBe(3);
+  });
+
   it("says plainly that one collection run is not a history", () => {
     const result = summarise({
       runs: [run({ id: 1, completedAt: t("2026-08-01T10:00:00Z") })],

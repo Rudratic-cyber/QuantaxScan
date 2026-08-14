@@ -493,11 +493,21 @@ export function summarisePostureTimeline(input: PostureTimelineInput): PostureTi
     instants.length < 2 ? null : Math.round(((instants[instants.length - 1] - instants[0]) / MS_PER_DAY) * 10) / 10;
 
   const sufficientForTrend = instants.length >= 2;
+
+  // The zero-instant case has two genuinely different readings, and they must
+  // not share a sentence. An estate with assets but no completed run is not an
+  // empty inventory — it is an inventory whose provenance is missing, which is
+  // a data problem worth naming rather than a state worth reassuring about.
+  const noInstantReason =
+    scored.length === 0
+      ? "Nothing has been collected yet, so there is no history and no posture to plot. This is an empty inventory, not a clean one."
+      : `${scored.length} assets are in the inventory, but no completed collection run is recorded against this organisation — so there is no instant to plot them at and no history to reconstruct. Their current posture is still counted below; how it got there is not something we hold.`;
+
   const reason = sufficientForTrend
     ? `${instants.length} collection instants span ${spanDays} days. Each point is one examination of the estate; the line steps between them because nothing was measured in between.`
     : instants.length === 1
       ? "One collection run. There is no history to draw — a line needs two measurements, and drawing one through a single point would assert a trend nobody has observed. Scan again to establish a second."
-      : "Nothing has been collected yet, so there is no history and no posture to plot. This is an empty inventory, not a clean one.";
+      : noInstantReason;
 
   const observed: ObservedHistory = {
     sufficientForTrend,

@@ -398,6 +398,13 @@ test.describe("D7 — the estate posture timeline", () => {
     // ── scrub backwards to an earlier measurement ──
     const scrub = page.getByRole("slider");
     await expect(scrub).toBeVisible();
+    // The handle's position is a frame index, which announces as a meaningless
+    // number. `aria-valuetext` is what a screen-reader user actually hears, so
+    // it has to carry the instant and the per-scenario counts, not "15 of 17".
+    await expect(scrub).toHaveAttribute(
+      "aria-valuetext",
+      /^Observed 11 Aug 2026: 6 assets, 2 breaching under conservative, .* under aggressive$/,
+    );
     await scrub.focus();
     await page.keyboard.press("Home");
     await expect(frame.getByText("10 Feb 2026")).toBeVisible();
