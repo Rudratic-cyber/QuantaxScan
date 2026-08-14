@@ -75,10 +75,12 @@ not a Postgres `ENUM` type — narrowing an `ENUM` requires recreating the type;
 from the same tuple is a one-line diff. Don't introduce a second definition of one of these enums
 anywhere else.
 
-**Two recorded exceptions**, both in `lib/db` rather than `@workspace/collectors`: auth and
+**Three recorded exceptions**, all in `lib/db` rather than `@workspace/collectors`: auth and
 tenancy enums (`ORG_ROLE_VALUES`, `IDENTITY_PROVIDER_VALUES`, `REPORT_VISIBILITY_VALUES`) in
-`lib/db/src/schema/auth-enums.ts`, and A3's `DATA_CLASSIFICATION_VALUES` in
-`lib/db/src/classification.ts`. The rule above exists because those enums are part of the
+`lib/db/src/schema/auth-enums.ts`, A3's `DATA_CLASSIFICATION_VALUES` in
+`lib/db/src/classification.ts`, and B9's `VENDOR_PQC_ROADMAP_STATUS_VALUES` /
+`VENDOR_CONTRACT_CLAUSE_VALUES`, which live in `lib/db/src/schema/vendor_assessments.ts` itself
+because exactly one table uses them. The rule above exists because those enums are part of the
 *collector* contract and `lib/collectors` is deliberately dependency-free so it can ship as a
 standalone on-prem agent — an on-prem collector has no concept of an organisation role, an
 identity provider, or whether the data behind a key is Regulated. The rule's mechanism (one const

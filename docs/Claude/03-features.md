@@ -217,7 +217,7 @@ another silo.
 | B6 | Protocol config | `planned` | **P2** | SSH, IPsec, JWT `alg`, SAML/OIDC signing |
 | B7 | Data-at-rest | `planned` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets |
 | B8 | Manual OT/embedded register | `built` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first |
-| B9 | Vendor / third-party | `planned` | **P3** | Questionnaire + contractual PQC clause tracking |
+| B9 | Vendor / third-party | `built` | **P3** | A *form*, not a scanner — the only route to crypto the customer does not operate. Org-scoped `vendor_assessments` table, CRUD at `/api/vendor-assessments`, register page at `/vendor-register`. Every answer is stamped `manual_attestation` at confidence 0.3 (below every collector's) and `null` when the vendor has answered nothing. The `vendor` surface stays `planned`: nothing here was examined |
 | B10 | Binaries / firmware | `deferred` | **P3** | Hard. Defer until coverage elsewhere is complete |
 
 **B2, as shipped 2026-08-14.** Ecosystems covered: npm (pnpm-lock.yaml, package-lock.json,
@@ -271,6 +271,50 @@ Q-Day is `"exposed"` under that scenario by definition — no replacement is sch
 deadline. A fleet with no recorded date reads `"unknown"` under every scenario, never `"clear"`;
 collapsing the two would be the guessed-default failure CLAUDE.md's "null means not supplied"
 rule exists to prevent, applied to a date instead of a key size.
+
+**B9, as shipped 2026-08-14.** Org-scoped `vendor_assessments` table, CRUD routes at
+`/api/vendor-assessments`, and a form + list page at `/vendor-register`. It exists because a
+vendor's cryptography is invisible to every other collector in this product — B1 through B8 all
+read something the customer owns — and the only instrument that reaches it is asking.
+
+**A claim is not an observation, and this is the surface where that distinction is load-bearing.**
+Everything in this register is a self-report by the party with the strongest incentive to
+overstate. `assessVendorPosture()` (`artifacts/api-server/src/lib/vendor-posture.ts`) enforces
+that on the way out: every response carries `attestation.discoveryModality:
+"manual_attestation"` and a confidence of `0.3` — below the anchors documented on
+`RawObservation.confidence` (regex 0.7, a completed TLS handshake 1.0) and below every live
+collector — with the number stated as *chosen, not measured*. A vendor who has answered nothing
+gets `confidence: null`, not a floor value: no claim exists, so there is nothing to be confident
+about, and a low number would read as weak evidence where there is none. Every narrative is
+written in the vendor's voice ("the vendor states"), never the product's, so a board deck built
+from these sentences cannot launder a claim into a finding.
+
+Q-Day readiness is checked against the date the vendor *claims*, using `DEFAULT_QDAY_SCENARIOS`
+from `@workspace/risk` (never hardcoded), on B8's model: after a scenario's Q-Day is `exposed`,
+before it is `clear` (rendered "Claimed in time"), and no date at all is `unknown` under every
+scenario — never `clear`. A `pqcRoadmapStatus` of `none` does **not** synthesise a verdict: a
+status is not a date, and inferring one would manufacture the vendor's commitment on their behalf.
+
+**The second honesty rule, specific to this lane: `absent` and `null` on `contractPqcClause`
+point in opposite directions and both are wrong to guess.** `absent` means somebody read the
+contract and there is no PQC migration clause — a finding, and an actionable one. `null` means
+nobody has read it. Rendering the second as the first invents an obligation the customer never
+established; rendering the first as neutral hides one. So the stored column is deliberately
+three-valued-plus-null, the derived `clause.state` promotes null to a fourth `unknown` value with
+its own narrative and its own colour, and `noLeverScheduled` (no clause *and* no scheduled
+renewal) is true only when the contract was actually read. `tests/e2e/12-vendor.spec.ts` asserts
+both directions.
+
+**Deliberately not an `assets` row on the `vendor` surface.** Same reasoning as B8's `ot_fleets`,
+plus one specific to this lane: `assets` records what a collector observed, and a questionnaire
+answer is not an observation of anything. Persisting it beside a TLS handshake — same table, same
+lifecycle, same `confidence` column read by the same meters — would put an interested party's
+assertion and a completed handshake on one footing. The consequence, stated rather than hidden:
+`vendor` stays `planned` in `COLLECTOR_SURFACES`, so the D3 meter keeps reporting the vendor
+surface as never examined even when this register is full. That is the honest reading — nothing
+was examined; somebody was asked. It is the same unresolved inconsistency B8 left on `ot`, and
+resolving it properly means teaching the coverage meter that "a manual register exists" is a
+third state alongside `live` and `planned`, which is D3's work rather than a collector lane's.
 
 ---
 

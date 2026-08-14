@@ -27,6 +27,7 @@ import type {
   CreateScanBody,
   CreateSharedReportBody,
   CreateSharedReportResponse,
+  CreateVendorAssessmentBody,
   DemoRepo,
   DemoScanResult,
   DependencyIngestSummary,
@@ -59,6 +60,8 @@ import type {
   SubmitProjectTlsBody,
   TlsProbeSummary,
   UpdateOtFleetBody,
+  UpdateVendorAssessmentBody,
+  VendorAssessment,
   VoteBody,
 } from "./api.schemas";
 
@@ -3321,4 +3324,432 @@ export const useSubmitProjectTls = <
   TContext
 > => {
   return useMutation(getSubmitProjectTlsMutationOptions(options));
+};
+
+/**
+ * The vendor register — every supplier a customer has recorded, newest first. Each entry carries `posture`, computed fresh on every read: the `manual_attestation` stamp and its confidence, the Q-Day verdicts against the date the vendor *claims* it will be post-quantum ready, and the contract-clause reading. Nothing here was observed by a collector.
+ * @summary List this organisation's vendor / third-party assessments (B9)
+ */
+export const getListVendorAssessmentsUrl = () => {
+  return `/api/vendor-assessments`;
+};
+
+export const listVendorAssessments = async (
+  options?: RequestInit,
+): Promise<VendorAssessment[]> => {
+  return customFetch<VendorAssessment[]>(getListVendorAssessmentsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListVendorAssessmentsQueryKey = () => {
+  return [`/api/vendor-assessments`] as const;
+};
+
+export const getListVendorAssessmentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listVendorAssessments>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listVendorAssessments>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListVendorAssessmentsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listVendorAssessments>>
+  > = ({ signal }) => listVendorAssessments({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listVendorAssessments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListVendorAssessmentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listVendorAssessments>>
+>;
+export type ListVendorAssessmentsQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary List this organisation's vendor / third-party assessments (B9)
+ */
+
+export function useListVendorAssessments<
+  TData = Awaited<ReturnType<typeof listVendorAssessments>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listVendorAssessments>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListVendorAssessmentsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * A form submission, not a collector run: every field but `vendorName` is optional, and an omitted field is stored as `null` — "not supplied" — rather than a guessed default. A vendor recorded with nothing else reads as awaiting a response, never as compliant.
+ * @summary Record a vendor assessment (B9)
+ */
+export const getCreateVendorAssessmentUrl = () => {
+  return `/api/vendor-assessments`;
+};
+
+export const createVendorAssessment = async (
+  createVendorAssessmentBody: CreateVendorAssessmentBody,
+  options?: RequestInit,
+): Promise<VendorAssessment> => {
+  return customFetch<VendorAssessment>(getCreateVendorAssessmentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createVendorAssessmentBody),
+  });
+};
+
+export const getCreateVendorAssessmentMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createVendorAssessment>>,
+    TError,
+    { data: BodyType<CreateVendorAssessmentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createVendorAssessment>>,
+  TError,
+  { data: BodyType<CreateVendorAssessmentBody> },
+  TContext
+> => {
+  const mutationKey = ["createVendorAssessment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createVendorAssessment>>,
+    { data: BodyType<CreateVendorAssessmentBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createVendorAssessment(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateVendorAssessmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createVendorAssessment>>
+>;
+export type CreateVendorAssessmentMutationBody =
+  BodyType<CreateVendorAssessmentBody>;
+export type CreateVendorAssessmentMutationError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Record a vendor assessment (B9)
+ */
+export const useCreateVendorAssessment = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createVendorAssessment>>,
+    TError,
+    { data: BodyType<CreateVendorAssessmentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createVendorAssessment>>,
+  TError,
+  { data: BodyType<CreateVendorAssessmentBody> },
+  TContext
+> => {
+  return useMutation(getCreateVendorAssessmentMutationOptions(options));
+};
+
+/**
+ * @summary Get one vendor assessment by id (B9)
+ */
+export const getGetVendorAssessmentUrl = (id: number) => {
+  return `/api/vendor-assessments/${id}`;
+};
+
+export const getVendorAssessment = async (
+  id: number,
+  options?: RequestInit,
+): Promise<VendorAssessment> => {
+  return customFetch<VendorAssessment>(getGetVendorAssessmentUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetVendorAssessmentQueryKey = (id: number) => {
+  return [`/api/vendor-assessments/${id}`] as const;
+};
+
+export const getGetVendorAssessmentQueryOptions = <
+  TData = Awaited<ReturnType<typeof getVendorAssessment>>,
+  TError = ErrorType<void | RateLimitedResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getVendorAssessment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetVendorAssessmentQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getVendorAssessment>>
+  > = ({ signal }) => getVendorAssessment(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getVendorAssessment>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetVendorAssessmentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getVendorAssessment>>
+>;
+export type GetVendorAssessmentQueryError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Get one vendor assessment by id (B9)
+ */
+
+export function useGetVendorAssessment<
+  TData = Awaited<ReturnType<typeof getVendorAssessment>>,
+  TError = ErrorType<void | RateLimitedResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getVendorAssessment>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetVendorAssessmentQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Every field is optional and only the fields present in the body are changed — omitting a field leaves the stored value (including `null`) exactly as it was, it does not clear it. Sending an explicit `null` does clear it, which is how a `contractPqcClause` of `absent` that turned out to be a misreading is withdrawn back to "nobody has checked" rather than to the opposite finding.
+ * @summary Update fields as a questionnaire comes back or a contract is read (B9)
+ */
+export const getUpdateVendorAssessmentUrl = (id: number) => {
+  return `/api/vendor-assessments/${id}`;
+};
+
+export const updateVendorAssessment = async (
+  id: number,
+  updateVendorAssessmentBody: UpdateVendorAssessmentBody,
+  options?: RequestInit,
+): Promise<VendorAssessment> => {
+  return customFetch<VendorAssessment>(getUpdateVendorAssessmentUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateVendorAssessmentBody),
+  });
+};
+
+export const getUpdateVendorAssessmentMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateVendorAssessment>>,
+    TError,
+    { id: number; data: BodyType<UpdateVendorAssessmentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateVendorAssessment>>,
+  TError,
+  { id: number; data: BodyType<UpdateVendorAssessmentBody> },
+  TContext
+> => {
+  const mutationKey = ["updateVendorAssessment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateVendorAssessment>>,
+    { id: number; data: BodyType<UpdateVendorAssessmentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateVendorAssessment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateVendorAssessmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateVendorAssessment>>
+>;
+export type UpdateVendorAssessmentMutationBody =
+  BodyType<UpdateVendorAssessmentBody>;
+export type UpdateVendorAssessmentMutationError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Update fields as a questionnaire comes back or a contract is read (B9)
+ */
+export const useUpdateVendorAssessment = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateVendorAssessment>>,
+    TError,
+    { id: number; data: BodyType<UpdateVendorAssessmentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateVendorAssessment>>,
+  TError,
+  { id: number; data: BodyType<UpdateVendorAssessmentBody> },
+  TContext
+> => {
+  return useMutation(getUpdateVendorAssessmentMutationOptions(options));
+};
+
+/**
+ * @summary Remove a vendor from the register (B9)
+ */
+export const getDeleteVendorAssessmentUrl = (id: number) => {
+  return `/api/vendor-assessments/${id}`;
+};
+
+export const deleteVendorAssessment = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteVendorAssessmentUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteVendorAssessmentMutationOptions = <
+  TError = ErrorType<RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteVendorAssessment>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteVendorAssessment>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteVendorAssessment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteVendorAssessment>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteVendorAssessment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteVendorAssessmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteVendorAssessment>>
+>;
+
+export type DeleteVendorAssessmentMutationError =
+  ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Remove a vendor from the register (B9)
+ */
+export const useDeleteVendorAssessment = <
+  TError = ErrorType<RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteVendorAssessment>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteVendorAssessment>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteVendorAssessmentMutationOptions(options));
 };

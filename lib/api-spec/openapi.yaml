@@ -32,6 +32,8 @@ tags:
     description: AI assistant
   - name: ot-fleets
     description: Manual OT/embedded device fleet register (B8)
+  - name: vendor-assessments
+    description: Vendor / third-party questionnaire and contractual PQC clause register (B9)
 
 # Interim shared-key authentication (S1 / G-12). Applies to every operation
 # unless overridden with `security: []`. This carries no per-user identity and
@@ -1033,6 +1035,129 @@ paths:
           description: Invalid project ID or body
         "404":
           description: Not found
+
+  /vendor-assessments:
+    get:
+      operationId: listVendorAssessments
+      tags: [vendor-assessments]
+      summary: List this organisation's vendor / third-party assessments (B9)
+      description: >-
+        The vendor register — every supplier a customer has recorded, newest first. Each entry
+        carries `posture`, computed fresh on every read: the `manual_attestation` stamp and its
+        confidence, the Q-Day verdicts against the date the vendor *claims* it will be
+        post-quantum ready, and the contract-clause reading. Nothing here was observed by a
+        collector.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Vendor assessments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VendorAssessment"
+    post:
+      operationId: createVendorAssessment
+      tags: [vendor-assessments]
+      summary: Record a vendor assessment (B9)
+      description: >-
+        A form submission, not a collector run: every field but `vendorName` is optional, and an
+        omitted field is stored as `null` — "not supplied" — rather than a guessed default. A
+        vendor recorded with nothing else reads as awaiting a response, never as compliant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVendorAssessmentBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "400":
+          description: Invalid body
+        "201":
+          description: Created vendor assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorAssessment"
+
+  /vendor-assessments/{id}:
+    get:
+      operationId: getVendorAssessment
+      tags: [vendor-assessments]
+      summary: Get one vendor assessment by id (B9)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Vendor assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorAssessment"
+        "400":
+          description: Invalid vendor assessment ID
+        "404":
+          description: Not found
+    patch:
+      operationId: updateVendorAssessment
+      tags: [vendor-assessments]
+      summary: Update fields as a questionnaire comes back or a contract is read (B9)
+      description: >-
+        Every field is optional and only the fields present in the body are changed — omitting a
+        field leaves the stored value (including `null`) exactly as it was, it does not clear it.
+        Sending an explicit `null` does clear it, which is how a `contractPqcClause` of `absent`
+        that turned out to be a misreading is withdrawn back to "nobody has checked" rather than
+        to the opposite finding.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVendorAssessmentBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Updated vendor assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorAssessment"
+        "400":
+          description: Invalid vendor assessment ID or body
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteVendorAssessment
+      tags: [vendor-assessments]
+      summary: Remove a vendor from the register (B9)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "204":
+          description: Deleted
 components:
   responses:
     RateLimited:
@@ -3906,3 +4031,345 @@ components:
         - observationsCreated
         - assetsMarkedGone
         - evidenceCaveat
+
+    VendorPqcRoadmapStatus:
+      type: string
+      description: >-
+        How the vendor answered "do you have a post-quantum migration plan?". `none` is an
+        answer — the vendor told us it has no plan. Not the same as `null`, which means the
+        vendor has told us nothing.
+      enum: [none, assessing, roadmap_published, migration_underway, pqc_available]
+
+    VendorContractClause:
+      type: string
+      description: >-
+        Whether the contract in force with this vendor obliges them to migrate. There is
+        deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has
+        read the contract. `absent` means somebody read it and there is no clause — a finding.
+      enum: [present, absent, in_negotiation]
+
+    VendorClauseState:
+      type: string
+      description: >-
+        The four-state read of `contractPqcClause`. `unknown` is the null case promoted to a
+        first-class value so a client cannot render "nobody has read the contract" as "there is
+        no clause" — the two point in opposite directions and both are wrong to guess.
+      enum: [present, absent, in_negotiation, unknown]
+
+    VendorResponseState:
+      type: string
+      description: >-
+        How much of the questionnaire the vendor has actually answered, derived from the answers
+        themselves rather than from `respondedAt`, so a row cannot claim a response it does not
+        contain. Only the vendor's own three answers count — the customer's contract filing does
+        not make an unresponsive vendor look like it replied.
+      enum: [awaiting_response, partial, answered]
+
+    VendorReadinessState:
+      type: string
+      description: >-
+        Exposure under one Q-Day scenario, against the date the vendor *claims*. `unknown` when
+        no date was given — never `clear`.
+      enum: [exposed, clear, unknown]
+
+    VendorAttestation:
+      type: object
+      description: The provenance stamp that keeps a vendor's claim from being read as an observation (B9).
+      properties:
+        discoveryModality:
+          type: string
+          enum: [manual_attestation]
+          description: >-
+            Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for
+            exactly this case. Nothing on this surface is observed.
+        confidence:
+          type: number
+          nullable: true
+          description: >-
+            Below every collector's, and `null` rather than a floor value when the vendor has
+            answered nothing at all: no claim exists, so there is nothing to be confident about.
+            The scale's anchors are documented on `RawObservation.confidence` — regex is about
+            0.7, a completed TLS handshake about 1.0.
+        caveat:
+          type: string
+          description: The sentence a report must carry alongside any use of this vendor's answers.
+      required:
+        - discoveryModality
+        - confidence
+        - caveat
+
+    VendorReadinessVerdict:
+      type: object
+      description: One Q-Day scenario's verdict against the date the vendor claims it will be post-quantum ready.
+      properties:
+        scenario:
+          type: string
+          enum: [conservative, central, aggressive]
+        qDayYear:
+          type: integer
+        state:
+          $ref: "#/components/schemas/VendorReadinessState"
+        narrative:
+          type: string
+          description: >-
+            Written in the vendor's voice ("the vendor states"), never the product's, so a board
+            deck built from these sentences cannot launder a claim into a finding.
+      required:
+        - scenario
+        - qDayYear
+        - state
+        - narrative
+
+    VendorClauseAssessment:
+      type: object
+      description: >-
+        The contractual lever — the only instrument a customer actually has over a vendor that is
+        not moving.
+      properties:
+        state:
+          $ref: "#/components/schemas/VendorClauseState"
+        contractRenewalDate:
+          type: string
+          format: date-time
+          nullable: true
+        noLeverScheduled:
+          type: boolean
+          description: >-
+            True only when a clause is known to be *missing* and no renewal is scheduled — no
+            obligation, and no scheduled moment at which one could be created. False when the
+            contract has merely not been read, because that is not a claim about the contract.
+        narrative:
+          type: string
+      required:
+        - state
+        - contractRenewalDate
+        - noLeverScheduled
+        - narrative
+
+    VendorPostureAssessment:
+      type: object
+      description: >-
+        B9's payoff, computed fresh on every read so a corrected date or a revised Q-Day scenario
+        needs no backfill. A vendor that has answered nothing is `awaiting_response` with a
+        `null` confidence and an `unknown` verdict under every scenario — never `clear`.
+      properties:
+        responseState:
+          $ref: "#/components/schemas/VendorResponseState"
+        answeredQuestionCount:
+          type: integer
+        questionCount:
+          type: integer
+        respondedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pqcRoadmapStatus:
+          allOf:
+            - $ref: "#/components/schemas/VendorPqcRoadmapStatus"
+          nullable: true
+        statedPqcReadyDate:
+          type: string
+          format: date-time
+          nullable: true
+        attestation:
+          $ref: "#/components/schemas/VendorAttestation"
+        verdicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/VendorReadinessVerdict"
+        exposedScenarioCount:
+          type: integer
+        unknownScenarioCount:
+          type: integer
+        scenarioCount:
+          type: integer
+        clause:
+          $ref: "#/components/schemas/VendorClauseAssessment"
+        framing:
+          type: string
+          description: Mandatory framing for any customer-facing use of the scenario years.
+      required:
+        - responseState
+        - answeredQuestionCount
+        - questionCount
+        - respondedAt
+        - pqcRoadmapStatus
+        - statedPqcReadyDate
+        - attestation
+        - verdicts
+        - exposedScenarioCount
+        - unknownScenarioCount
+        - scenarioCount
+        - clause
+        - framing
+
+    VendorAssessment:
+      type: object
+      description: >-
+        A `vendor_assessments` row plus its computed posture — B9, the vendor/third-party
+        register. docs/Claude/03-features.md §B9. Not an `Asset`: nothing here was collected, and
+        a questionnaire answer is a claim by an interested party rather than an observation, so
+        it carries no `fingerprint`/`surface`/observation lifecycle and does not count towards
+        the D3 coverage meter.
+      properties:
+        id:
+          type: integer
+        organizationId:
+          type: integer
+        vendorName:
+          type: string
+        productOrService:
+          type: string
+          nullable: true
+        internalOwner:
+          type: string
+          nullable: true
+          description: Free text — the internal team or person who owns the relationship, not necessarily an app user.
+        questionnaireSentAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null means the questionnaire has not been sent — a different state from sent and ignored.
+        respondedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pqcRoadmapStatus:
+          allOf:
+            - $ref: "#/components/schemas/VendorPqcRoadmapStatus"
+          nullable: true
+        statedPqcReadyDate:
+          type: string
+          format: date-time
+          nullable: true
+          description: The date the vendor *states* it will be post-quantum ready. A quote, not a verified commitment.
+        cryptoDisclosed:
+          type: string
+          nullable: true
+          description: Free-form, vendor-asserted description of the cryptography they use.
+        contractPqcClause:
+          allOf:
+            - $ref: "#/components/schemas/VendorContractClause"
+          nullable: true
+          description: >-
+            `absent` = the contract was read and has no PQC clause. `null` = nobody has read it.
+            Rendering the second as the first invents a finding.
+        contractRenewalDate:
+          type: string
+          format: date-time
+          nullable: true
+        attestationEvidence:
+          type: string
+          nullable: true
+          description: Where the answers are recorded — a document reference, ticket or URL. Not fetched or validated.
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        posture:
+          $ref: "#/components/schemas/VendorPostureAssessment"
+      required:
+        - id
+        - organizationId
+        - vendorName
+        - productOrService
+        - internalOwner
+        - questionnaireSentAt
+        - respondedAt
+        - pqcRoadmapStatus
+        - statedPqcReadyDate
+        - cryptoDisclosed
+        - contractPqcClause
+        - contractRenewalDate
+        - attestationEvidence
+        - notes
+        - createdAt
+        - updatedAt
+        - posture
+
+    CreateVendorAssessmentBody:
+      type: object
+      properties:
+        vendorName:
+          type: string
+        productOrService:
+          type: string
+        internalOwner:
+          type: string
+        questionnaireSentAt:
+          type: string
+          format: date-time
+        respondedAt:
+          type: string
+          format: date-time
+        pqcRoadmapStatus:
+          $ref: "#/components/schemas/VendorPqcRoadmapStatus"
+        statedPqcReadyDate:
+          type: string
+          format: date-time
+        cryptoDisclosed:
+          type: string
+        contractPqcClause:
+          $ref: "#/components/schemas/VendorContractClause"
+        contractRenewalDate:
+          type: string
+          format: date-time
+        attestationEvidence:
+          type: string
+        notes:
+          type: string
+      required:
+        - vendorName
+
+    UpdateVendorAssessmentBody:
+      type: object
+      description: >-
+        Every field optional; only fields present in the body are changed. An explicit null
+        clears a field back to "not supplied".
+      properties:
+        vendorName:
+          type: string
+        productOrService:
+          type: string
+          nullable: true
+        internalOwner:
+          type: string
+          nullable: true
+        questionnaireSentAt:
+          type: string
+          format: date-time
+          nullable: true
+        respondedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pqcRoadmapStatus:
+          allOf:
+            - $ref: "#/components/schemas/VendorPqcRoadmapStatus"
+          nullable: true
+        statedPqcReadyDate:
+          type: string
+          format: date-time
+          nullable: true
+        cryptoDisclosed:
+          type: string
+          nullable: true
+        contractPqcClause:
+          allOf:
+            - $ref: "#/components/schemas/VendorContractClause"
+          nullable: true
+        contractRenewalDate:
+          type: string
+          format: date-time
+          nullable: true
+        attestationEvidence:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true

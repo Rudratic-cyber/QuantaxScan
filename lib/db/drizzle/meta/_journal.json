@@ -43,6 +43,13 @@
       "when": 1786741829612,
       "tag": "0005_faulty_terrax",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786742447789,
+      "tag": "0006_mute_hobgoblin",
+      "breakpoints": true
     }
   ]
 }
