@@ -13,7 +13,9 @@
     "test:ui": "playwright test",
     "test": "pnpm run test:libs && pnpm run test:api && pnpm run test:ui",
     "ci": "bash scripts/ci-local.sh",
-    "hooks:install": "git config core.hooksPath .githooks && echo 'pre-push hook active — pnpm run ci --skip-ui will gate every push'"
+    "hooks:install": "git config core.hooksPath .githooks && echo 'pre-push hook active \u2014 pnpm run ci --skip-ui will gate every push'",
+    "check:standards": "pnpm --filter @workspace/scripts run check-standards-freshness",
+    "test:scripts": "pnpm --filter @workspace/scripts run test"
   },
   "private": true,
   "devDependencies": {

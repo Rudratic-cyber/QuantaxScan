@@ -29,7 +29,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-11 | No confidence score on findings | Medium, mostly closed | Design | A2 + D3 — carried on `observations`, now read and shown; no *filtering* yet |
 | G-12 | Security findings S1–S8 | High | Interim auth + org scoping shipped; needs deploy | See [08](08-security.md), [13](13-auth-and-tenancy.md) |
 | ~~G-13~~ | ~~`.env` tracked in git~~ | **Closed** | Done 2026-08-03 | — |
-| G-14 | No re-verification trigger for standards data | Medium | Process | Calendar + CI |
+| ~~G-14~~ | ~~No re-verification trigger for standards data~~ | **Closed (CI half); calendar half open** | Done 2026-08-14 | — |
 | G-15 | Observation model not aligned to SP 1800-38B data elements | Medium, partially closed | Design | A2 — profile + modality landed; no network collector populates it |
 | G-16 | Binary scanning deferred; NIST treats it as core | Medium | Roadmap call | Re-scope B10 |
 | G-17 | Competitive framing understates the field | High | Wrong assumption | Marketing rewrite |
@@ -435,7 +435,7 @@ passwords are meant to live locally.
 
 ---
 
-## G-14 — No re-verification trigger `Medium`
+## G-14 — No re-verification trigger — **CI HALF CLOSED 2026-08-14**
 
 Standards data decays and nothing currently prompts a re-check. IR 8547 is a **draft** that will
 presumably be finalised, at which point every date in the system needs revisiting and the
@@ -443,11 +443,30 @@ presumably be finalised, at which point every date in the system needs revisitin
 
 **What closes it:**
 
-- Quarterly re-verification task in the content calendar *(already added for marketing —
+- ~~CI check failing when any `retrievedAt` is older than 180 days~~ ✅ **Done 2026-08-14** —
+  `pnpm run check:standards` (`scripts/src/check-standards-freshness.ts`), wired into both
+  `scripts/ci-local.sh` and the workflow. It walks every JSON under `docs/Claude/mappings/`,
+  reports the dotted path of each stale entry so it can be found without grepping, and sorts
+  oldest first. Currently: 31 dated entries across 3 files, all fresh.
+- ⬜ Quarterly re-verification task in the content calendar *(already added for marketing —
   extend to `mappings/`)*
-- CI check failing when any `retrievedAt` is older than 180 days
-- Immediate trigger on: IR 8547 going final, a new FIPS publication, a CycloneDX release, a
+- ⬜ Immediate trigger on: IR 8547 going final, a new FIPS publication, a CycloneDX release, a
   CNSA 2.0 revision
+
+> **Two deliberate limits, so the check is not mistaken for more than it is.**
+>
+> It is a **date comparison, not a network fetch.** Re-fetching each source and diffing it
+> would be a different and much less reliable tool: several primary sources return HTTP 403 to
+> automated requests — that is G-01's entire problem — so a network check would fail for
+> reasons unrelated to staleness and be muted within a week. A date comparison cannot be wrong
+> about what it measures.
+>
+> It **cannot detect the failure that matters most**: bumping `retrievedAt` without reopening
+> the source. Nothing automated can. The check buys a prompt, not assurance, and the honest
+> place to record that is here rather than in a green tick.
+>
+> An **unparseable date is treated as infinitely stale** rather than skipped — otherwise a typo
+> creates an entry that never expires, which is strictly worse than one that is merely old.
 
 ---
 
@@ -601,7 +620,8 @@ individually reviewed — deleting was cheaper, which is what this entry recomme
 8. **G-12, G-19** — before any pilot, and hard gates on open-sourcing. G-12's interim auth and
    organisation scoping are shipped; per-user identity (F1) and the remaining S-findings are the
    pilot blockers
-9. **G-14** — process, set up once
+9. ~~**G-14**~~ — the CI half is set up (2026-08-14); the calendar half and the event triggers
+   are still owed
 10. **G-02, G-03** — when the relevant customer segment is actually in play
 11. **G-04** — with C9
 
