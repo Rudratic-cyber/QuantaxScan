@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
 import { ne } from "drizzle-orm";
-import { withOrg, assetsTable, projectsTable, projectRepoId } from "@workspace/db";
+import { withOrg, assetsTable, projectsTable, collectionRunsTable, projectRepoId } from "@workspace/db";
 import { buildCbom, type CryptoAssetInput, type SoftwareComponentInput } from "@workspace/cbom";
 import { orgContextFor } from "../lib/principal";
+import { summarisePostureTimeline } from "../lib/posture-timeline";
 
 const router: IRouter = Router();
 
@@ -83,6 +84,83 @@ router.get("/inventory/cbom", async (req, res): Promise<void> => {
   );
 
   res.type(CBOM_MEDIA_TYPE).json(document);
+});
+
+/**
+ * D7 — `GET /api/inventory/timeline`, the estate posture timeline.
+ * docs/Claude/03-features.md §D7, docs/Claude/06-cisa-dashboard.md §"Row 5".
+ *
+ * Estate-wide by design, and therefore unlike D3's per-project coverage meter:
+ * D3's own note says the estate-wide roll-up "belongs with D1, which needs an
+ * asset model that spans projects". `assets` is that model — it is organisation-
+ * scoped with no foreign key to a project — so this route reads the whole
+ * organisation and attributes assets to projects through the `project:<id>:`
+ * location prefix, the same convention `DELETE /projects/:id` reconciles on.
+ *
+ * Three notes on the reads below:
+ *
+ *  - **Every asset, including `gone` ones.** The CBOM export above filters
+ *    `gone` out because it is a statement about the present. This is a
+ *    statement about the past, and an inventory that forgets what it removed
+ *    cannot show that anything was ever fixed.
+ *  - **Every collection run, whatever its status.** The summariser needs the
+ *    failed ones in order to say how many attempts are *not* being counted as
+ *    examinations — the same rule `coverage.ts` applies.
+ *  - **No `where organization_id`**, here as everywhere: the row-level-security
+ *    policies supply it. Note that `collection_runs.target` and the
+ *    `assets.location` prefix are attacker-controllable strings shared across
+ *    tenants, so the policy — not a where clause — is what keeps another
+ *    organisation's `project:7` out of this organisation's timeline.
+ */
+router.get("/inventory/timeline", async (req, res): Promise<void> => {
+  // One clock read for the whole response. Two would let the observed half and
+  // the projected half disagree about where "now" is, which is precisely the
+  // boundary this payload exists to make unambiguous.
+  const now = new Date();
+
+  const timeline = await withOrg(orgContextFor(req), async (tx) => {
+    const [assets, projects, runs] = await Promise.all([
+      tx
+        .select({
+          id: assetsTable.id,
+          surface: assetsTable.surface,
+          algorithm: assetsTable.algorithm,
+          location: assetsTable.location,
+          status: assetsTable.status,
+          firstSeen: assetsTable.firstSeen,
+          lastSeen: assetsTable.lastSeen,
+          dataClassification: assetsTable.dataClassification,
+          secrecyLifetimeYears: assetsTable.secrecyLifetimeYears,
+          effortHours: assetsTable.effortHours,
+        })
+        .from(assetsTable)
+        .orderBy(assetsTable.firstSeen),
+      tx
+        .select({
+          id: projectsTable.id,
+          name: projectsTable.name,
+          dataClassification: projectsTable.dataClassification,
+          secrecyLifetimeYears: projectsTable.secrecyLifetimeYears,
+        })
+        .from(projectsTable),
+      tx
+        .select({
+          id: collectionRunsTable.id,
+          surface: collectionRunsTable.surface,
+          status: collectionRunsTable.status,
+          target: collectionRunsTable.target,
+          startedAt: collectionRunsTable.startedAt,
+          completedAt: collectionRunsTable.completedAt,
+        })
+        .from(collectionRunsTable),
+    ]);
+
+    // The aggregation itself is pure and lives in `lib/posture-timeline.ts`,
+    // where every honesty rule in it is unit-tested without a database.
+    return summarisePostureTimeline({ runs, assets, projects, now });
+  });
+
+  res.json(timeline);
 });
 
 export default router;

@@ -545,6 +545,7 @@ status update.
 | ✅ **built** | `GET /api/inventory/cbom` — CycloneDX 1.7 export (A5). Org-scoped, not public |
 | — | `POST /api/inventory/cbom` — import |
 | — | `GET /api/inventory/coverage` — what we have *not* looked at (feeds D3) |
+| ✅ **built** | `GET /api/inventory/timeline` — estate posture over time (D7). Org-scoped |
 | — | `GET /api/compliance/obligations` — mapped obligations per asset |
 | — | `POST /api/waivers` — exception register |
 | — | `GET /api/drift` — new/changed/resolved since a timestamp |

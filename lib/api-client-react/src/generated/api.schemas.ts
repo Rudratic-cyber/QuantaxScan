@@ -990,6 +990,159 @@ export interface CycloneDxDependency {
   provides?: string[];
 }
 
+/**
+ * Assets breaching Mosca at this instant, one count per Q-Day scenario.
+ */
+export interface TimelineScenarioCounts {
+  [key: string]: number;
+}
+
+export interface TimelinePointBase {
+  /** For an observed point this is a real collection_runs timestamp, not a grid tick. */
+  at: string;
+  assetsKnown: number;
+  /** Assets present and not yet gone at this instant. The number the verdicts are over. */
+  assetsPresent: number;
+  pqcAssets: number;
+  hygieneAssets: number;
+  unmappedAssets: number;
+  breachedByScenario: TimelineScenarioCounts;
+}
+
+export type ObservedPointKind =
+  (typeof ObservedPointKind)[keyof typeof ObservedPointKind];
+
+export const ObservedPointKind = {
+  observed: "observed",
+} as const;
+
+export type ObservedPoint = TimelinePointBase & {
+  kind: ObservedPointKind;
+  collectionRunIds: number[];
+  surfaces: string[];
+  assetsAdded: number;
+};
+
+export type ProjectedPointKind =
+  (typeof ProjectedPointKind)[keyof typeof ProjectedPointKind];
+
+export const ProjectedPointKind = {
+  projected: "projected",
+} as const;
+
+export type ProjectedPoint = TimelinePointBase & {
+  kind: ProjectedPointKind;
+  year: number;
+};
+
+export interface ObservedHistory {
+  /** False when fewer than two distinct collection instants exist. The client must draw no line. */
+  sufficientForTrend: boolean;
+  reason: string;
+  distinctCollectionInstants: number;
+  observedSpanDays: number | null;
+  firstObservedAt: string | null;
+  lastObservedAt: string | null;
+  completedRuns: number;
+  /** A failed run places no point on the axis; it is reported here instead. */
+  failedRuns: number;
+  points: ObservedPoint[];
+}
+
+export interface ProjectedHorizon {
+  /** What is held constant. Projections move because Z shrinks, not because the estate changed. */
+  assumption: string;
+  basisAt: string;
+  points: ProjectedPoint[];
+}
+
+export interface DeadlineMarker {
+  /** Keyed on framework + type + effective date + appliesTo + securityStrength. */
+  id: string;
+  type: string;
+  label: string;
+  effect: string;
+  effectiveFrom: string;
+  year: number;
+  inEffect: boolean;
+  appliesTo: string | null;
+  securityStrength: string | null;
+  framework: string;
+  frameworkName: string | null;
+  requirement: string;
+  citation: Citation;
+  confidence: string;
+  draftStatus: string | null;
+  algorithms: string[];
+  assets: number;
+  caveats: string[];
+}
+
+export type EstateRollupProjectsItem = {
+  id: number;
+  name: string;
+  assets: number;
+  presentAssets: number;
+};
+
+export interface EstateRollup {
+  projects: EstateRollupProjectsItem[];
+  /** Assets whose location carries no project prefix. Surfaces such as tls/certificate have no project. */
+  unassociatedAssets: number;
+  totalAssets: number;
+  presentAssets: number;
+}
+
+export type PostureTimelineInputsSecrecyLifetimeBySource = {
+  [key: string]: number;
+};
+
+export type PostureTimelineInputsSecrecyLifetime = {
+  bySource: PostureTimelineInputsSecrecyLifetimeBySource;
+  assumedForAssets: number;
+  bases: string[];
+};
+
+export type PostureTimelineInputsMigrationYears = {
+  defaultValue: number;
+  assetsWithRecordedEffort: number;
+  /** States plainly that Y is not measured yet, so a reader knows X vs Z decided the verdict. */
+  basis: string;
+};
+
+export interface PostureTimelineInputs {
+  secrecyLifetime: PostureTimelineInputsSecrecyLifetime;
+  migrationYears: PostureTimelineInputsMigrationYears;
+}
+
+export type PostureTimelineScenariosItem = {
+  name: string;
+  qDayYear: number;
+  rationale: string;
+  confidence: string;
+};
+
+export type PostureTimelineNotCollectedItem = {
+  id: string;
+  label: string;
+  reason: string;
+};
+
+export interface PostureTimeline {
+  generatedAt: string;
+  now: string;
+  /** Mandatory wherever a scenario year is shown — a Q-Day year is a scenario, not a forecast. */
+  framing: string;
+  scenarios: PostureTimelineScenariosItem[];
+  estate: EstateRollup;
+  observed: ObservedHistory;
+  projected: ProjectedHorizon;
+  deadlines: DeadlineMarker[];
+  inputs: PostureTimelineInputs;
+  /** Facts a reader expects on a time-pressure panel that this product cannot produce, stated rather than omitted. */
+  notCollected: PostureTimelineNotCollectedItem[];
+}
+
 export type CbomDocumentBomFormat =
   (typeof CbomDocumentBomFormat)[keyof typeof CbomDocumentBomFormat];
 

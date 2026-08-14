@@ -378,6 +378,197 @@ export const GetProjectCoverageResponse = zod
   );
 
 /**
+ * Observed history from real collection instants, plus a projected horizon and the obligation deadlines that fall in it. Observed points come only from instants at which a collection actually happened — the series is never resampled onto a regular grid, because that would draw a smooth trend on an estate that never changed. When fewer than two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
+
+ * @summary Estate cryptographic posture over time (D7)
+ */
+export const GetInventoryTimelineResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  now: zod.coerce.date(),
+  framing: zod
+    .string()
+    .describe(
+      "Mandatory wherever a scenario year is shown — a Q-Day year is a scenario, not a forecast.",
+    ),
+  scenarios: zod.array(
+    zod.object({
+      name: zod.string(),
+      qDayYear: zod.number(),
+      rationale: zod.string(),
+      confidence: zod.string(),
+    }),
+  ),
+  estate: zod.object({
+    projects: zod.array(
+      zod.object({
+        id: zod.number(),
+        name: zod.string(),
+        assets: zod.number(),
+        presentAssets: zod.number(),
+      }),
+    ),
+    unassociatedAssets: zod
+      .number()
+      .describe(
+        "Assets whose location carries no project prefix. Surfaces such as tls\/certificate have no project.",
+      ),
+    totalAssets: zod.number(),
+    presentAssets: zod.number(),
+  }),
+  observed: zod.object({
+    sufficientForTrend: zod
+      .boolean()
+      .describe(
+        "False when fewer than two distinct collection instants exist. The client must draw no line.",
+      ),
+    reason: zod.string(),
+    distinctCollectionInstants: zod.number(),
+    observedSpanDays: zod.number().nullable(),
+    firstObservedAt: zod.coerce.date().nullable(),
+    lastObservedAt: zod.coerce.date().nullable(),
+    completedRuns: zod.number(),
+    failedRuns: zod
+      .number()
+      .describe(
+        "A failed run places no point on the axis; it is reported here instead.",
+      ),
+    points: zod.array(
+      zod
+        .object({
+          at: zod.coerce
+            .date()
+            .describe(
+              "For an observed point this is a real collection_runs timestamp, not a grid tick.",
+            ),
+          assetsKnown: zod.number(),
+          assetsPresent: zod
+            .number()
+            .describe(
+              "Assets present and not yet gone at this instant. The number the verdicts are over.",
+            ),
+          pqcAssets: zod.number(),
+          hygieneAssets: zod.number(),
+          unmappedAssets: zod.number(),
+          breachedByScenario: zod
+            .record(zod.string(), zod.number())
+            .describe(
+              "Assets breaching Mosca at this instant, one count per Q-Day scenario.",
+            ),
+        })
+        .and(
+          zod.object({
+            kind: zod.enum(["observed"]),
+            collectionRunIds: zod.array(zod.number()),
+            surfaces: zod.array(zod.string()),
+            assetsAdded: zod.number(),
+          }),
+        ),
+    ),
+  }),
+  projected: zod.object({
+    assumption: zod
+      .string()
+      .describe(
+        "What is held constant. Projections move because Z shrinks, not because the estate changed.",
+      ),
+    basisAt: zod.coerce.date(),
+    points: zod.array(
+      zod
+        .object({
+          at: zod.coerce
+            .date()
+            .describe(
+              "For an observed point this is a real collection_runs timestamp, not a grid tick.",
+            ),
+          assetsKnown: zod.number(),
+          assetsPresent: zod
+            .number()
+            .describe(
+              "Assets present and not yet gone at this instant. The number the verdicts are over.",
+            ),
+          pqcAssets: zod.number(),
+          hygieneAssets: zod.number(),
+          unmappedAssets: zod.number(),
+          breachedByScenario: zod
+            .record(zod.string(), zod.number())
+            .describe(
+              "Assets breaching Mosca at this instant, one count per Q-Day scenario.",
+            ),
+        })
+        .and(
+          zod.object({
+            kind: zod.enum(["projected"]),
+            year: zod.number(),
+          }),
+        ),
+    ),
+  }),
+  deadlines: zod.array(
+    zod.object({
+      id: zod
+        .string()
+        .describe(
+          "Keyed on framework + type + effective date + appliesTo + securityStrength.",
+        ),
+      type: zod.string(),
+      label: zod.string(),
+      effect: zod.string(),
+      effectiveFrom: zod.string(),
+      year: zod.number(),
+      inEffect: zod.boolean(),
+      appliesTo: zod.string().nullable(),
+      securityStrength: zod.string().nullable(),
+      framework: zod.string(),
+      frameworkName: zod.string().nullable(),
+      requirement: zod.string(),
+      citation: zod
+        .object({
+          document: zod.string(),
+          section: zod.string().optional(),
+          url: zod.string(),
+          retrievedAt: zod.string().optional(),
+          published: zod.string().optional(),
+        })
+        .describe(
+          "Provenance for a single regulatory claim. Required on every obligation.",
+        ),
+      confidence: zod.string(),
+      draftStatus: zod.string().nullable(),
+      algorithms: zod.array(zod.string()),
+      assets: zod.number(),
+      caveats: zod.array(zod.string()),
+    }),
+  ),
+  inputs: zod.object({
+    secrecyLifetime: zod.object({
+      bySource: zod.record(zod.string(), zod.number()),
+      assumedForAssets: zod.number(),
+      bases: zod.array(zod.string()),
+    }),
+    migrationYears: zod.object({
+      defaultValue: zod.number(),
+      assetsWithRecordedEffort: zod.number(),
+      basis: zod
+        .string()
+        .describe(
+          "States plainly that Y is not measured yet, so a reader knows X vs Z decided the verdict.",
+        ),
+    }),
+  }),
+  notCollected: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        label: zod.string(),
+        reason: zod.string(),
+      }),
+    )
+    .describe(
+      "Facts a reader expects on a time-pressure panel that this product cannot produce, stated rather than omitted.",
+    ),
+});
+
+/**
  * @summary Start a new scan
  */
 export const CreateScanBody = zod.object({

@@ -174,6 +174,10 @@ describe("route manifest — a new route cannot ship without being considered", 
     // A CBOM is the whole inventory in one response — the single worst thing
     // to leak across a tenant boundary, and the reason it is not public.
     "GET /inventory/cbom": "org-scoped",
+    // The estate posture timeline reads every asset, project and collection run
+    // in the organisation with no where clause at all — the same shape as
+    // `GET /projects`, and for the same reason.
+    "GET /inventory/timeline": "org-scoped",
     // These touch no database at all: chat proxies to OpenAI and persists
     // nothing, and the github routes fetch from GitHub and hand the result
     // straight back. They still require an API key. When any of them starts
@@ -246,6 +250,36 @@ describe("list routes return this organisation's rows and only this organisation
 
     const crypto = res.body.components.filter((c: { type: string }) => c.type === "cryptographic-asset");
     expect(crypto).toHaveLength(1);
+  });
+
+  it("GET /api/inventory/timeline plots none of another organisation's history", async () => {
+    // The adversarial coverage fixture is exactly the attack this route is
+    // exposed to, and more so: it seeds a *completed collection run* in the
+    // OTHER organisation whose `target` is OUR project id, plus an asset at
+    // OUR project's location prefix. This handler filters on neither — it reads
+    // the whole organisation — so if the policy leaks, that run becomes a point
+    // on our timeline and their asset becomes a breach in our count.
+    const res = await auth(request.get("/api/inventory/timeline"));
+    expect(res.status).toBe(200);
+
+    // Their run must not become our history. Zero instants is the honest answer
+    // for an organisation nothing has ever been collected from.
+    expect(res.body.observed.distinctCollectionInstants).toBe(0);
+    expect(res.body.observed.sufficientForTrend).toBe(false);
+    expect(res.body.observed.points).toEqual([]);
+
+    // One asset, ours, at our project. Not theirs, and not the one they planted
+    // at our project's location prefix.
+    expect(res.body.estate.totalAssets).toBe(1);
+    expect(res.body.estate.projects).toEqual([
+      { id: ours.projectId, name: "our project", assets: 1, presentAssets: 1 },
+    ]);
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain("their confidential project");
+    // Ours is MD5; theirs is the only RSA in the fixture. An RSA deadline
+    // marker here would mean their asset was scored into our estate.
+    expect(res.body.deadlines.every((d: { algorithms: string[] }) => !d.algorithms.includes("RSA"))).toBe(true);
   });
 
   it("GET /api/projects/:id/findings returns nothing for another organisation's project", async () => {
