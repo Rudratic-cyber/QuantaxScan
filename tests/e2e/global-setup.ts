@@ -97,6 +97,24 @@ export default async function globalSetup(): Promise<void> {
       // the browser's requests legal. Character-for-character: `localhost` and
       // `127.0.0.1` are different origins.
       CORS_ALLOWED_ORIGINS: UI_URL,
+      // S6/S7's budgets are per five minutes and per client address. The whole
+      // suite runs against one stack from one address, and with thirteen specs
+      // it now makes several hundred requests inside a single window — so the
+      // limiter starts answering 429 partway through and specs fail for a
+      // reason that has nothing to do with what they test. Each spec stayed
+      // under the budget when it was the only one running, which is why this
+      // only appeared once the collector lanes landed together.
+      //
+      // Raised rather than disabled, and no coverage is lost: no e2e spec
+      // asserts 429, and the limiter's real behaviour — the budgets, the
+      // window, the `Retry-After` header, the per-route buckets — is proven in
+      // `rate-limit.test.ts` and `rate-limit-edge.test.ts` against the real
+      // middleware. Leaving it on at a raised budget still exercises the code
+      // path on every request rather than stubbing it out.
+      RATE_LIMIT_EDGE_MAX: "100000",
+      RATE_LIMIT_DEFAULT_MAX: "100000",
+      RATE_LIMIT_SCAN_MAX: "100000",
+      RATE_LIMIT_TLS_MAX: "100000",
       NODE_ENV: "production",
       LOG_LEVEL: "warn",
     });
