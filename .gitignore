@@ -52,6 +52,12 @@ Thumbs.db
 test-results/
 playwright-report/
 
+# e2e stack runtime state. `.e2e-stack.json` carries the API key global setup
+# minted for the run — a real credential for as long as the stack is up, and
+# never a thing to commit. `.e2e-logs/` is the stack's stdout/stderr.
+.e2e-stack.json
+.e2e-logs/
+
 
 # Local environment. Real secrets (QUANTAXSCAN_API_KEYS, SESSION_SECRET,
 # DATABASE_URL) must never be committed — see docs/Claude/08-security.md S5.
