@@ -33,8 +33,8 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-15 | Observation model not aligned to SP 1800-38B data elements | Medium, partially closed | Design | A2 — profile + modality landed; no network collector populates it |
 | G-16 | Binary scanning deferred; NIST treats it as core | Medium | Roadmap call | Re-scope B10 |
 | G-17 | Competitive framing understates the field | High | Wrong assumption | Marketing rewrite |
-| G-18 | `package.json` says MIT, no LICENSE file exists | High | Two-line fix | Before any publication |
-| G-19 | `attached_assets/` unaudited, 4 MB of Replit scraps | Medium | Nobody has looked | Delete or audit |
+| ~~G-18~~ | ~~`package.json` says MIT, no LICENSE file exists~~ | **Closed** | Done 2026-08-14 | — |
+| ~~G-19~~ | ~~`attached_assets/` unaudited, 4 MB of Replit scraps~~ | **Closed in the tree; history caveat stands** | Done 2026-08-14 | Gate 2 |
 
 ---
 
@@ -526,7 +526,7 @@ buyer evaluation rubric. Treat it as an acceptance-test suite for our collectors
 
 ---
 
-## G-18 — Licensing conflict `High`
+## G-18 — Licensing conflict — **CLOSED 2026-08-14**
 
 `package.json` declares `"license": "MIT"`. There is **no LICENSE file** in the repository.
 
@@ -537,11 +537,25 @@ anything intended to ship as Enterprise. MIT permits unrestricted commercial red
 **What closes it:** set the root manifest to the intended licence, add LICENSE files per tier,
 add `mappings/LICENSE` for CC BY 4.0. See [10-editions.md](10-editions.md#licensing--three-separate-decisions).
 
-**Do it now** — it is two lines while the repo is private and a genuine mess afterwards.
+> **Closed 2026-08-14**, to the three decisions [10-editions.md](10-editions.md#licensing--three-separate-decisions)
+> had already made rather than to a new one:
+>
+> - `LICENSE` at the root — **Apache 2.0**, the canonical text fetched from apache.org rather than
+>   retyped, with the appendix placeholder filled in.
+> - `docs/Claude/mappings/LICENSE` — **CC BY 4.0**, because that directory is data, not code. It
+>   also states the two conditions that matter for a dataset with provenance: attribute by
+>   `dataVersion`, and do not strip the `verified`/`needs-check` status when redistributing, since
+>   the status is part of the data.
+> - `package.json` — `"license": "Apache-2.0"`. This was the load-bearing line: it, not the absent
+>   file, is what would have governed on publication.
+>
+> **Still outstanding:** the Enterprise tier has no separate `ee/` directory or licence header.
+> 10-editions.md says to decide that *before the first Enterprise line of code*, and none exists
+> yet, so nothing is mis-licensed today — but the decision is still open.
 
 ---
 
-## G-19 — `attached_assets/` unaudited `Medium`
+## G-19 — `attached_assets/` unaudited — **CLOSED 2026-08-14 (with a caveat)**
 
 Roughly 4 MB of Replit screenshots and pasted-text scraps in the repo root. **Nobody has
 reviewed them** for credentials, internal URLs, customer data, or third-party copyrighted
@@ -549,16 +563,28 @@ content.
 
 Invisible while the repo is private; permanent and indexable once it is not.
 
-**What closes it:** delete the directory. It is development detritus with no ongoing value, and
-deleting is cheaper than auditing 20+ images. Note this does **not** remove it from git history
-— see Gate 2 in [10-editions.md](10-editions.md#publication-gates--hard-blockers).
+**What closed it:** the directory is deleted (2.6 MB, 21 files), along with the now-dangling
+`@assets` alias in `artifacts/quantaxscan/vite.config.ts` — the alias was defined and never
+imported anywhere, so nothing referenced the directory.
+
+The six text files **were** read before deletion: they are pasted component-library snippets
+(shadcn/motion install instructions, a bash tokeniser) plus a `Q-VULN` draft. No credentials, no
+tokens, no customer data, and the only external URL is `w3.org`. The fifteen images were **not**
+individually reviewed — deleting was cheaper, which is what this entry recommended.
+
+> **The caveat is why this entry is not simply "Closed".** Deletion removes the files from the
+> working tree, **not from git history**, and they were committed. Anyone with the repository can
+> still recover them. That makes this sufficient for tidiness and *insufficient* on its own as a
+> publication control: Gate 2 in [10-editions.md](10-editions.md#publication-gates--hard-blockers)
+> still applies, and if the repo is ever made public the images need either a history rewrite or a
+> decision that they are harmless — which nobody has yet made, because nobody has looked at them.
 
 ---
 
 ## Suggested order
 
-1. ~~**G-13**~~ (closed 2026-08-03), **G-18** — minutes each, and free only while the repo is
-   private
+1. ~~**G-13**~~ (closed 2026-08-03), ~~**G-18**~~ (closed 2026-08-14) — minutes each, and free
+   only while the repo is private
 2. **G-17** — the positioning is wrong *now*, and it is a document edit
 3. ~~**G-06**~~ (closed 2026-08-13, alongside B2) — one pattern, closed a real detection hole
 4. **G-01** — 30 minutes, unblocks a whole customer segment
