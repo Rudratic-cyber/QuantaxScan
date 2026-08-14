@@ -32,7 +32,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | ~~G-14~~ | ~~No re-verification trigger for standards data~~ | **Closed (CI half); calendar half open** | Done 2026-08-14 | — |
 | G-15 | Observation model not aligned to SP 1800-38B data elements | Medium, partially closed | Design | A2 — profile + modality landed; no network collector populates it |
 | G-16 | Binary scanning deferred; NIST treats it as core | Medium | Roadmap call | Re-scope B10 |
-| G-17 | Competitive framing understates the field | High | Wrong assumption | Marketing rewrite |
+| ~~G-17~~ | ~~Competitive framing understates the field~~ | **Closed** | Done 2026-08-14 | — |
 | ~~G-18~~ | ~~`package.json` says MIT, no LICENSE file exists~~ | **Closed** | Done 2026-08-14 | — |
 | ~~G-19~~ | ~~`attached_assets/` unaudited, 4 MB of Replit scraps~~ | **Closed in the tree; history caveat stands** | Done 2026-08-14 | Gate 2 |
 
@@ -520,7 +520,7 @@ silence is not.
 
 ---
 
-## G-17 — Competitive framing understates the field `High`
+## G-17 — Competitive framing understates the field — **CLOSED 2026-08-14**
 
 [marketing/01-positioning.md](marketing/01-positioning.md) says *"The incumbent is a
 spreadsheet"* and frames competitors as consultancies, SAST vendors and certificate managers.
@@ -542,6 +542,21 @@ this."
 
 **Also worth noting:** Appendix C's eight-use-case functional demonstration plan is a plausible
 buyer evaluation rubric. Treat it as an acceptance-test suite for our collectors.
+
+> **Closed 2026-08-14.** `marketing/01-positioning.md` had already been corrected on 2026-08-01;
+> what remained open — and was the more consequential half — was
+> [01-strategy.md](01-strategy.md#against-the-alternatives), which still instructed the reader to
+> *"price and position against [the spreadsheet], not against tools."* That is the sentence that
+> would have sent someone into a room unprepared, and it is now corrected in place with the
+> SP 1800-38B §5.1 vendor list alongside it.
+>
+> Independent competitive research (2026-08-13) added Fortanix, the PQCA's open-source CBOMkit
+> and several consultancy platforms to the list, and surfaced a finding that is really about us
+> rather than about them: **the market is overwhelmingly agentless-first**, reaching cryptography
+> through read-only credentials to KMS, HSMs, KMIP, the CA database and Active Directory. Source
+> code — our only live collector — is the slowest surface to onboard and among the narrowest.
+> That is recorded in both documents, because it should influence which collector is built next
+> (B5/PKI over more source languages) rather than sitting in a research note nobody re-reads.
 
 ---
 
@@ -604,7 +619,7 @@ individually reviewed — deleting was cheaper, which is what this entry recomme
 
 1. ~~**G-13**~~ (closed 2026-08-03), ~~**G-18**~~ (closed 2026-08-14) — minutes each, and free
    only while the repo is private
-2. **G-17** — the positioning is wrong *now*, and it is a document edit
+2. ~~**G-17**~~ — closed 2026-08-14 (positioning 2026-08-01, strategy 2026-08-14)
 3. ~~**G-06**~~ (closed 2026-08-13, alongside B2) — one pattern, closed a real detection hole
 4. **G-01** — 30 minutes, unblocks a whole customer segment
 5. **G-16** — a roadmap decision to make before committing to A2's surface priorities
