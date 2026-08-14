@@ -1684,6 +1684,204 @@ export interface ProtocolConfigIngestSummary {
   evidenceCaveat: string;
 }
 
+/**
+ * How the vendor answered "do you have a post-quantum migration plan?". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.
+ */
+export type VendorPqcRoadmapStatus =
+  (typeof VendorPqcRoadmapStatus)[keyof typeof VendorPqcRoadmapStatus];
+
+export const VendorPqcRoadmapStatus = {
+  none: "none",
+  assessing: "assessing",
+  roadmap_published: "roadmap_published",
+  migration_underway: "migration_underway",
+  pqc_available: "pqc_available",
+} as const;
+
+/**
+ * Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.
+ */
+export type VendorContractClause =
+  (typeof VendorContractClause)[keyof typeof VendorContractClause];
+
+export const VendorContractClause = {
+  present: "present",
+  absent: "absent",
+  in_negotiation: "in_negotiation",
+} as const;
+
+/**
+ * The four-state read of `contractPqcClause`. `unknown` is the null case promoted to a first-class value so a client cannot render "nobody has read the contract" as "there is no clause" — the two point in opposite directions and both are wrong to guess.
+ */
+export type VendorClauseState =
+  (typeof VendorClauseState)[keyof typeof VendorClauseState];
+
+export const VendorClauseState = {
+  present: "present",
+  absent: "absent",
+  in_negotiation: "in_negotiation",
+  unknown: "unknown",
+} as const;
+
+/**
+ * How much of the questionnaire the vendor has actually answered, derived from the answers themselves rather than from `respondedAt`, so a row cannot claim a response it does not contain. Only the vendor's own three answers count — the customer's contract filing does not make an unresponsive vendor look like it replied.
+ */
+export type VendorResponseState =
+  (typeof VendorResponseState)[keyof typeof VendorResponseState];
+
+export const VendorResponseState = {
+  awaiting_response: "awaiting_response",
+  partial: "partial",
+  answered: "answered",
+} as const;
+
+/**
+ * Exposure under one Q-Day scenario, against the date the vendor *claims*. `unknown` when no date was given — never `clear`.
+ */
+export type VendorReadinessState =
+  (typeof VendorReadinessState)[keyof typeof VendorReadinessState];
+
+export const VendorReadinessState = {
+  exposed: "exposed",
+  clear: "clear",
+  unknown: "unknown",
+} as const;
+
+/**
+ * Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for exactly this case. Nothing on this surface is observed.
+ */
+export type VendorAttestationDiscoveryModality =
+  (typeof VendorAttestationDiscoveryModality)[keyof typeof VendorAttestationDiscoveryModality];
+
+export const VendorAttestationDiscoveryModality = {
+  manual_attestation: "manual_attestation",
+} as const;
+
+/**
+ * The provenance stamp that keeps a vendor's claim from being read as an observation (B9).
+ */
+export interface VendorAttestation {
+  /** Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for exactly this case. Nothing on this surface is observed. */
+  discoveryModality: VendorAttestationDiscoveryModality;
+  /** Below every collector's, and `null` rather than a floor value when the vendor has answered nothing at all: no claim exists, so there is nothing to be confident about. The scale's anchors are documented on `RawObservation.confidence` — regex is about 0.7, a completed TLS handshake about 1.0. */
+  confidence: number | null;
+  /** The sentence a report must carry alongside any use of this vendor's answers. */
+  caveat: string;
+}
+
+export type VendorReadinessVerdictScenario =
+  (typeof VendorReadinessVerdictScenario)[keyof typeof VendorReadinessVerdictScenario];
+
+export const VendorReadinessVerdictScenario = {
+  conservative: "conservative",
+  central: "central",
+  aggressive: "aggressive",
+} as const;
+
+/**
+ * One Q-Day scenario's verdict against the date the vendor claims it will be post-quantum ready.
+ */
+export interface VendorReadinessVerdict {
+  scenario: VendorReadinessVerdictScenario;
+  qDayYear: number;
+  state: VendorReadinessState;
+  /** Written in the vendor's voice ("the vendor states"), never the product's, so a board deck built from these sentences cannot launder a claim into a finding. */
+  narrative: string;
+}
+
+/**
+ * The contractual lever — the only instrument a customer actually has over a vendor that is not moving.
+ */
+export interface VendorClauseAssessment {
+  state: VendorClauseState;
+  contractRenewalDate: string | null;
+  /** True only when a clause is known to be *missing* and no renewal is scheduled — no obligation, and no scheduled moment at which one could be created. False when the contract has merely not been read, because that is not a claim about the contract. */
+  noLeverScheduled: boolean;
+  narrative: string;
+}
+
+/**
+ * B9's payoff, computed fresh on every read so a corrected date or a revised Q-Day scenario needs no backfill. A vendor that has answered nothing is `awaiting_response` with a `null` confidence and an `unknown` verdict under every scenario — never `clear`.
+ */
+export interface VendorPostureAssessment {
+  responseState: VendorResponseState;
+  answeredQuestionCount: number;
+  questionCount: number;
+  respondedAt: string | null;
+  pqcRoadmapStatus: VendorPqcRoadmapStatus | null;
+  statedPqcReadyDate: string | null;
+  attestation: VendorAttestation;
+  verdicts: VendorReadinessVerdict[];
+  exposedScenarioCount: number;
+  unknownScenarioCount: number;
+  scenarioCount: number;
+  clause: VendorClauseAssessment;
+  /** Mandatory framing for any customer-facing use of the scenario years. */
+  framing: string;
+}
+
+/**
+ * A `vendor_assessments` row plus its computed posture — B9, the vendor/third-party register. docs/Claude/03-features.md §B9. Not an `Asset`: nothing here was collected, and a questionnaire answer is a claim by an interested party rather than an observation, so it carries no `fingerprint`/`surface`/observation lifecycle and does not count towards the D3 coverage meter.
+ */
+export interface VendorAssessment {
+  id: number;
+  organizationId: number;
+  vendorName: string;
+  productOrService: string | null;
+  /** Free text — the internal team or person who owns the relationship, not necessarily an app user. */
+  internalOwner: string | null;
+  /** Null means the questionnaire has not been sent — a different state from sent and ignored. */
+  questionnaireSentAt: string | null;
+  respondedAt: string | null;
+  pqcRoadmapStatus: VendorPqcRoadmapStatus | null;
+  /** The date the vendor *states* it will be post-quantum ready. A quote, not a verified commitment. */
+  statedPqcReadyDate: string | null;
+  /** Free-form, vendor-asserted description of the cryptography they use. */
+  cryptoDisclosed: string | null;
+  /** `absent` = the contract was read and has no PQC clause. `null` = nobody has read it. Rendering the second as the first invents a finding. */
+  contractPqcClause: VendorContractClause | null;
+  contractRenewalDate: string | null;
+  /** Where the answers are recorded — a document reference, ticket or URL. Not fetched or validated. */
+  attestationEvidence: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  posture: VendorPostureAssessment;
+}
+
+export interface CreateVendorAssessmentBody {
+  vendorName: string;
+  productOrService?: string;
+  internalOwner?: string;
+  questionnaireSentAt?: string;
+  respondedAt?: string;
+  pqcRoadmapStatus?: VendorPqcRoadmapStatus;
+  statedPqcReadyDate?: string;
+  cryptoDisclosed?: string;
+  contractPqcClause?: VendorContractClause;
+  contractRenewalDate?: string;
+  attestationEvidence?: string;
+  notes?: string;
+}
+
+/**
+ * Every field optional; only fields present in the body are changed. An explicit null clears a field back to "not supplied".
+ */
+export interface UpdateVendorAssessmentBody {
+  vendorName?: string;
+  productOrService?: string | null;
+  internalOwner?: string | null;
+  questionnaireSentAt?: string | null;
+  respondedAt?: string | null;
+  pqcRoadmapStatus?: VendorPqcRoadmapStatus | null;
+  statedPqcReadyDate?: string | null;
+  cryptoDisclosed?: string | null;
+  contractPqcClause?: VendorContractClause | null;
+  contractRenewalDate?: string | null;
+  attestationEvidence?: string | null;
+  notes?: string | null;
+}
+
 export type RateLimitedResponse = {
   error: string;
 };

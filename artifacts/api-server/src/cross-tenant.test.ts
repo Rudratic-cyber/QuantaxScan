@@ -244,6 +244,16 @@ describe("route manifest — a new route cannot ship without being considered", 
     "GET /ot-fleets/:id": "org-scoped",
     "PATCH /ot-fleets/:id": "org-scoped",
     "DELETE /ot-fleets/:id": "org-scoped",
+    // B9 — the vendor/third-party register. Same reasoning as the OT register
+    // above: no parent id is ever accepted, so there is no
+    // foreign-key-under-RLS check to make. Which suppliers a company assesses,
+    // and what those suppliers admitted about their cryptography, is as
+    // tenant-private as a scan result.
+    "GET /vendor-assessments": "org-scoped",
+    "POST /vendor-assessments": "org-scoped",
+    "GET /vendor-assessments/:id": "org-scoped",
+    "PATCH /vendor-assessments/:id": "org-scoped",
+    "DELETE /vendor-assessments/:id": "org-scoped",
     // Same reasoning as dependencies above: assets are attributed to a
     // project only by the `project:<id>:` location prefix, never a foreign
     // key, so the parent is confirmed visible inside the scope.
@@ -800,5 +810,45 @@ describe("multiple API keys bind to multiple organisations (F1)", () => {
       .get("/api/projects")
       .set("X-API-Key", "not-one-of-the-configured-keys-at-all-000000000");
     expect(res.status).toBe(401);
+  });
+});
+
+describe("the vendor register is tenant-private (B9)", () => {
+  /**
+   * Written entirely against the two keys already configured above rather than
+   * against the shared fixture, so it seeds nothing another test can see.
+   *
+   * The stake is specific to this register: a vendor assessment names a real
+   * supplier relationship and records what that supplier admitted about its own
+   * cryptography. Leaking one across a tenant boundary discloses both a
+   * commercial relationship and a third party's weakness to a company that has
+   * no business knowing either.
+   */
+  it("an assessment one key creates is invisible to the other key, by list and by id", async () => {
+    const created = await auth(
+      request.post("/api/vendor-assessments").send({
+        vendorName: "Acme Payments — our supplier, nobody else's",
+        cryptoDisclosed: "RSA-2048 signing keys",
+      }),
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.organizationId).toBe(OUR_ORG);
+
+    const theirList = await auth2(request.get("/api/vendor-assessments"));
+    expect(theirList.status).toBe(200);
+    expect(JSON.stringify(theirList.body)).not.toContain("Acme Payments");
+    // The disclosed cryptography specifically — the third party's weakness.
+    expect(JSON.stringify(theirList.body)).not.toContain("RSA-2048 signing keys");
+
+    // 404, not 403: a 403 would confirm the row is real and therefore that the
+    // relationship exists, which is itself the disclosure.
+    const byId = await auth2(request.get(`/api/vendor-assessments/${created.body.id}`));
+    expect(byId.status).toBe(404);
+
+    // Nor can the other key edit or delete it out from under us.
+    expect((await auth2(request.patch(`/api/vendor-assessments/${created.body.id}`).send({ notes: "x" }))).status).toBe(404);
+    await auth2(request.delete(`/api/vendor-assessments/${created.body.id}`));
+    const stillOurs = await auth(request.get(`/api/vendor-assessments/${created.body.id}`));
+    expect(stillOurs.status).toBe(200);
   });
 });

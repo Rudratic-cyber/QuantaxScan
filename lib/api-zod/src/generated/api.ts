@@ -4188,3 +4188,588 @@ export const SubmitProjectProtocolConfigResponse = zod.object({
       "Stated on every response: this collector reads what a configuration file declares, not what an endpoint negotiates; `Include` directives are not followed; the absence of a directive is not read as the compiled-in default; and an unrecognised token, including hybrid post-quantum key exchange, contributes nothing rather than a guess.",
     ),
 });
+
+/**
+ * The vendor register — every supplier a customer has recorded, newest first. Each entry carries `posture`, computed fresh on every read: the `manual_attestation` stamp and its confidence, the Q-Day verdicts against the date the vendor *claims* it will be post-quantum ready, and the contract-clause reading. Nothing here was observed by a collector.
+ * @summary List this organisation's vendor / third-party assessments (B9)
+ */
+export const ListVendorAssessmentsResponseItem = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    vendorName: zod.string(),
+    productOrService: zod.string().nullable(),
+    internalOwner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — the internal team or person who owns the relationship, not necessarily an app user.",
+      ),
+    questionnaireSentAt: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "Null means the questionnaire has not been sent — a different state from sent and ignored.",
+      ),
+    respondedAt: zod.coerce.date().nullable(),
+    pqcRoadmapStatus: zod
+      .enum([
+        "none",
+        "assessing",
+        "roadmap_published",
+        "migration_underway",
+        "pqc_available",
+      ])
+      .describe(
+        'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+      )
+      .nullable(),
+    statedPqcReadyDate: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "The date the vendor \*states\* it will be post-quantum ready. A quote, not a verified commitment.",
+      ),
+    cryptoDisclosed: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, vendor-asserted description of the cryptography they use.",
+      ),
+    contractPqcClause: zod
+      .enum(["present", "absent", "in_negotiation"])
+      .describe(
+        "Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.",
+      )
+      .nullable()
+      .describe(
+        "`absent` = the contract was read and has no PQC clause. `null` = nobody has read it. Rendering the second as the first invents a finding.",
+      ),
+    contractRenewalDate: zod.coerce.date().nullable(),
+    attestationEvidence: zod
+      .string()
+      .nullable()
+      .describe(
+        "Where the answers are recorded — a document reference, ticket or URL. Not fetched or validated.",
+      ),
+    notes: zod.string().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    posture: zod
+      .object({
+        responseState: zod
+          .enum(["awaiting_response", "partial", "answered"])
+          .describe(
+            "How much of the questionnaire the vendor has actually answered, derived from the answers themselves rather than from `respondedAt`, so a row cannot claim a response it does not contain. Only the vendor's own three answers count — the customer's contract filing does not make an unresponsive vendor look like it replied.",
+          ),
+        answeredQuestionCount: zod.number(),
+        questionCount: zod.number(),
+        respondedAt: zod.coerce.date().nullable(),
+        pqcRoadmapStatus: zod
+          .enum([
+            "none",
+            "assessing",
+            "roadmap_published",
+            "migration_underway",
+            "pqc_available",
+          ])
+          .describe(
+            'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+          )
+          .nullable(),
+        statedPqcReadyDate: zod.coerce.date().nullable(),
+        attestation: zod
+          .object({
+            discoveryModality: zod
+              .enum(["manual_attestation"])
+              .describe(
+                "Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for exactly this case. Nothing on this surface is observed.",
+              ),
+            confidence: zod
+              .number()
+              .nullable()
+              .describe(
+                "Below every collector's, and `null` rather than a floor value when the vendor has answered nothing at all: no claim exists, so there is nothing to be confident about. The scale's anchors are documented on `RawObservation.confidence` — regex is about 0.7, a completed TLS handshake about 1.0.",
+              ),
+            caveat: zod
+              .string()
+              .describe(
+                "The sentence a report must carry alongside any use of this vendor's answers.",
+              ),
+          })
+          .describe(
+            "The provenance stamp that keeps a vendor's claim from being read as an observation (B9).",
+          ),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "Exposure under one Q-Day scenario, against the date the vendor \*claims\*. `unknown` when no date was given — never `clear`.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "Written in the vendor's voice (\"the vendor states\"), never the product's, so a board deck built from these sentences cannot launder a claim into a finding.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's verdict against the date the vendor claims it will be post-quantum ready.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        clause: zod
+          .object({
+            state: zod
+              .enum(["present", "absent", "in_negotiation", "unknown"])
+              .describe(
+                'The four-state read of `contractPqcClause`. `unknown` is the null case promoted to a first-class value so a client cannot render \"nobody has read the contract\" as \"there is no clause\" — the two point in opposite directions and both are wrong to guess.',
+              ),
+            contractRenewalDate: zod.coerce.date().nullable(),
+            noLeverScheduled: zod
+              .boolean()
+              .describe(
+                "True only when a clause is known to be \*missing\* and no renewal is scheduled — no obligation, and no scheduled moment at which one could be created. False when the contract has merely not been read, because that is not a claim about the contract.",
+              ),
+            narrative: zod.string(),
+          })
+          .describe(
+            "The contractual lever — the only instrument a customer actually has over a vendor that is not moving.",
+          ),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B9's payoff, computed fresh on every read so a corrected date or a revised Q-Day scenario needs no backfill. A vendor that has answered nothing is `awaiting_response` with a `null` confidence and an `unknown` verdict under every scenario — never `clear`.",
+      ),
+  })
+  .describe(
+    "A `vendor_assessments` row plus its computed posture — B9, the vendor\/third-party register. docs\/Claude\/03-features.md §B9. Not an `Asset`: nothing here was collected, and a questionnaire answer is a claim by an interested party rather than an observation, so it carries no `fingerprint`\/`surface`\/observation lifecycle and does not count towards the D3 coverage meter.",
+  );
+export const ListVendorAssessmentsResponse = zod.array(
+  ListVendorAssessmentsResponseItem,
+);
+
+/**
+ * A form submission, not a collector run: every field but `vendorName` is optional, and an omitted field is stored as `null` — "not supplied" — rather than a guessed default. A vendor recorded with nothing else reads as awaiting a response, never as compliant.
+ * @summary Record a vendor assessment (B9)
+ */
+export const CreateVendorAssessmentBody = zod.object({
+  vendorName: zod.string(),
+  productOrService: zod.string().optional(),
+  internalOwner: zod.string().optional(),
+  questionnaireSentAt: zod.coerce.date().optional(),
+  respondedAt: zod.coerce.date().optional(),
+  pqcRoadmapStatus: zod
+    .enum([
+      "none",
+      "assessing",
+      "roadmap_published",
+      "migration_underway",
+      "pqc_available",
+    ])
+    .optional()
+    .describe(
+      'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+    ),
+  statedPqcReadyDate: zod.coerce.date().optional(),
+  cryptoDisclosed: zod.string().optional(),
+  contractPqcClause: zod
+    .enum(["present", "absent", "in_negotiation"])
+    .optional()
+    .describe(
+      "Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.",
+    ),
+  contractRenewalDate: zod.coerce.date().optional(),
+  attestationEvidence: zod.string().optional(),
+  notes: zod.string().optional(),
+});
+
+/**
+ * @summary Get one vendor assessment by id (B9)
+ */
+export const GetVendorAssessmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetVendorAssessmentResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    vendorName: zod.string(),
+    productOrService: zod.string().nullable(),
+    internalOwner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — the internal team or person who owns the relationship, not necessarily an app user.",
+      ),
+    questionnaireSentAt: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "Null means the questionnaire has not been sent — a different state from sent and ignored.",
+      ),
+    respondedAt: zod.coerce.date().nullable(),
+    pqcRoadmapStatus: zod
+      .enum([
+        "none",
+        "assessing",
+        "roadmap_published",
+        "migration_underway",
+        "pqc_available",
+      ])
+      .describe(
+        'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+      )
+      .nullable(),
+    statedPqcReadyDate: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "The date the vendor \*states\* it will be post-quantum ready. A quote, not a verified commitment.",
+      ),
+    cryptoDisclosed: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, vendor-asserted description of the cryptography they use.",
+      ),
+    contractPqcClause: zod
+      .enum(["present", "absent", "in_negotiation"])
+      .describe(
+        "Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.",
+      )
+      .nullable()
+      .describe(
+        "`absent` = the contract was read and has no PQC clause. `null` = nobody has read it. Rendering the second as the first invents a finding.",
+      ),
+    contractRenewalDate: zod.coerce.date().nullable(),
+    attestationEvidence: zod
+      .string()
+      .nullable()
+      .describe(
+        "Where the answers are recorded — a document reference, ticket or URL. Not fetched or validated.",
+      ),
+    notes: zod.string().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    posture: zod
+      .object({
+        responseState: zod
+          .enum(["awaiting_response", "partial", "answered"])
+          .describe(
+            "How much of the questionnaire the vendor has actually answered, derived from the answers themselves rather than from `respondedAt`, so a row cannot claim a response it does not contain. Only the vendor's own three answers count — the customer's contract filing does not make an unresponsive vendor look like it replied.",
+          ),
+        answeredQuestionCount: zod.number(),
+        questionCount: zod.number(),
+        respondedAt: zod.coerce.date().nullable(),
+        pqcRoadmapStatus: zod
+          .enum([
+            "none",
+            "assessing",
+            "roadmap_published",
+            "migration_underway",
+            "pqc_available",
+          ])
+          .describe(
+            'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+          )
+          .nullable(),
+        statedPqcReadyDate: zod.coerce.date().nullable(),
+        attestation: zod
+          .object({
+            discoveryModality: zod
+              .enum(["manual_attestation"])
+              .describe(
+                "Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for exactly this case. Nothing on this surface is observed.",
+              ),
+            confidence: zod
+              .number()
+              .nullable()
+              .describe(
+                "Below every collector's, and `null` rather than a floor value when the vendor has answered nothing at all: no claim exists, so there is nothing to be confident about. The scale's anchors are documented on `RawObservation.confidence` — regex is about 0.7, a completed TLS handshake about 1.0.",
+              ),
+            caveat: zod
+              .string()
+              .describe(
+                "The sentence a report must carry alongside any use of this vendor's answers.",
+              ),
+          })
+          .describe(
+            "The provenance stamp that keeps a vendor's claim from being read as an observation (B9).",
+          ),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "Exposure under one Q-Day scenario, against the date the vendor \*claims\*. `unknown` when no date was given — never `clear`.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "Written in the vendor's voice (\"the vendor states\"), never the product's, so a board deck built from these sentences cannot launder a claim into a finding.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's verdict against the date the vendor claims it will be post-quantum ready.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        clause: zod
+          .object({
+            state: zod
+              .enum(["present", "absent", "in_negotiation", "unknown"])
+              .describe(
+                'The four-state read of `contractPqcClause`. `unknown` is the null case promoted to a first-class value so a client cannot render \"nobody has read the contract\" as \"there is no clause\" — the two point in opposite directions and both are wrong to guess.',
+              ),
+            contractRenewalDate: zod.coerce.date().nullable(),
+            noLeverScheduled: zod
+              .boolean()
+              .describe(
+                "True only when a clause is known to be \*missing\* and no renewal is scheduled — no obligation, and no scheduled moment at which one could be created. False when the contract has merely not been read, because that is not a claim about the contract.",
+              ),
+            narrative: zod.string(),
+          })
+          .describe(
+            "The contractual lever — the only instrument a customer actually has over a vendor that is not moving.",
+          ),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B9's payoff, computed fresh on every read so a corrected date or a revised Q-Day scenario needs no backfill. A vendor that has answered nothing is `awaiting_response` with a `null` confidence and an `unknown` verdict under every scenario — never `clear`.",
+      ),
+  })
+  .describe(
+    "A `vendor_assessments` row plus its computed posture — B9, the vendor\/third-party register. docs\/Claude\/03-features.md §B9. Not an `Asset`: nothing here was collected, and a questionnaire answer is a claim by an interested party rather than an observation, so it carries no `fingerprint`\/`surface`\/observation lifecycle and does not count towards the D3 coverage meter.",
+  );
+
+/**
+ * Every field is optional and only the fields present in the body are changed — omitting a field leaves the stored value (including `null`) exactly as it was, it does not clear it. Sending an explicit `null` does clear it, which is how a `contractPqcClause` of `absent` that turned out to be a misreading is withdrawn back to "nobody has checked" rather than to the opposite finding.
+ * @summary Update fields as a questionnaire comes back or a contract is read (B9)
+ */
+export const UpdateVendorAssessmentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateVendorAssessmentBody = zod
+  .object({
+    vendorName: zod.string().optional(),
+    productOrService: zod.string().nullish(),
+    internalOwner: zod.string().nullish(),
+    questionnaireSentAt: zod.coerce.date().nullish(),
+    respondedAt: zod.coerce.date().nullish(),
+    pqcRoadmapStatus: zod
+      .enum([
+        "none",
+        "assessing",
+        "roadmap_published",
+        "migration_underway",
+        "pqc_available",
+      ])
+      .describe(
+        'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+      )
+      .nullish(),
+    statedPqcReadyDate: zod.coerce.date().nullish(),
+    cryptoDisclosed: zod.string().nullish(),
+    contractPqcClause: zod
+      .enum(["present", "absent", "in_negotiation"])
+      .describe(
+        "Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.",
+      )
+      .nullish(),
+    contractRenewalDate: zod.coerce.date().nullish(),
+    attestationEvidence: zod.string().nullish(),
+    notes: zod.string().nullish(),
+  })
+  .describe(
+    'Every field optional; only fields present in the body are changed. An explicit null clears a field back to \"not supplied\".',
+  );
+
+export const UpdateVendorAssessmentResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    vendorName: zod.string(),
+    productOrService: zod.string().nullable(),
+    internalOwner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — the internal team or person who owns the relationship, not necessarily an app user.",
+      ),
+    questionnaireSentAt: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "Null means the questionnaire has not been sent — a different state from sent and ignored.",
+      ),
+    respondedAt: zod.coerce.date().nullable(),
+    pqcRoadmapStatus: zod
+      .enum([
+        "none",
+        "assessing",
+        "roadmap_published",
+        "migration_underway",
+        "pqc_available",
+      ])
+      .describe(
+        'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+      )
+      .nullable(),
+    statedPqcReadyDate: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        "The date the vendor \*states\* it will be post-quantum ready. A quote, not a verified commitment.",
+      ),
+    cryptoDisclosed: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, vendor-asserted description of the cryptography they use.",
+      ),
+    contractPqcClause: zod
+      .enum(["present", "absent", "in_negotiation"])
+      .describe(
+        "Whether the contract in force with this vendor obliges them to migrate. There is deliberately no `unknown` member: unknown is `null` on the stored column, i.e. nobody has read the contract. `absent` means somebody read it and there is no clause — a finding.",
+      )
+      .nullable()
+      .describe(
+        "`absent` = the contract was read and has no PQC clause. `null` = nobody has read it. Rendering the second as the first invents a finding.",
+      ),
+    contractRenewalDate: zod.coerce.date().nullable(),
+    attestationEvidence: zod
+      .string()
+      .nullable()
+      .describe(
+        "Where the answers are recorded — a document reference, ticket or URL. Not fetched or validated.",
+      ),
+    notes: zod.string().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    posture: zod
+      .object({
+        responseState: zod
+          .enum(["awaiting_response", "partial", "answered"])
+          .describe(
+            "How much of the questionnaire the vendor has actually answered, derived from the answers themselves rather than from `respondedAt`, so a row cannot claim a response it does not contain. Only the vendor's own three answers count — the customer's contract filing does not make an unresponsive vendor look like it replied.",
+          ),
+        answeredQuestionCount: zod.number(),
+        questionCount: zod.number(),
+        respondedAt: zod.coerce.date().nullable(),
+        pqcRoadmapStatus: zod
+          .enum([
+            "none",
+            "assessing",
+            "roadmap_published",
+            "migration_underway",
+            "pqc_available",
+          ])
+          .describe(
+            'How the vendor answered \"do you have a post-quantum migration plan?\". `none` is an answer — the vendor told us it has no plan. Not the same as `null`, which means the vendor has told us nothing.',
+          )
+          .nullable(),
+        statedPqcReadyDate: zod.coerce.date().nullable(),
+        attestation: zod
+          .object({
+            discoveryModality: zod
+              .enum(["manual_attestation"])
+              .describe(
+                "Always `manual_attestation` — the SP 1800-38B §4.1.4 extension this project added for exactly this case. Nothing on this surface is observed.",
+              ),
+            confidence: zod
+              .number()
+              .nullable()
+              .describe(
+                "Below every collector's, and `null` rather than a floor value when the vendor has answered nothing at all: no claim exists, so there is nothing to be confident about. The scale's anchors are documented on `RawObservation.confidence` — regex is about 0.7, a completed TLS handshake about 1.0.",
+              ),
+            caveat: zod
+              .string()
+              .describe(
+                "The sentence a report must carry alongside any use of this vendor's answers.",
+              ),
+          })
+          .describe(
+            "The provenance stamp that keeps a vendor's claim from being read as an observation (B9).",
+          ),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "Exposure under one Q-Day scenario, against the date the vendor \*claims\*. `unknown` when no date was given — never `clear`.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "Written in the vendor's voice (\"the vendor states\"), never the product's, so a board deck built from these sentences cannot launder a claim into a finding.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's verdict against the date the vendor claims it will be post-quantum ready.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        clause: zod
+          .object({
+            state: zod
+              .enum(["present", "absent", "in_negotiation", "unknown"])
+              .describe(
+                'The four-state read of `contractPqcClause`. `unknown` is the null case promoted to a first-class value so a client cannot render \"nobody has read the contract\" as \"there is no clause\" — the two point in opposite directions and both are wrong to guess.',
+              ),
+            contractRenewalDate: zod.coerce.date().nullable(),
+            noLeverScheduled: zod
+              .boolean()
+              .describe(
+                "True only when a clause is known to be \*missing\* and no renewal is scheduled — no obligation, and no scheduled moment at which one could be created. False when the contract has merely not been read, because that is not a claim about the contract.",
+              ),
+            narrative: zod.string(),
+          })
+          .describe(
+            "The contractual lever — the only instrument a customer actually has over a vendor that is not moving.",
+          ),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B9's payoff, computed fresh on every read so a corrected date or a revised Q-Day scenario needs no backfill. A vendor that has answered nothing is `awaiting_response` with a `null` confidence and an `unknown` verdict under every scenario — never `clear`.",
+      ),
+  })
+  .describe(
+    "A `vendor_assessments` row plus its computed posture — B9, the vendor\/third-party register. docs\/Claude\/03-features.md §B9. Not an `Asset`: nothing here was collected, and a questionnaire answer is a claim by an interested party rather than an observation, so it carries no `fingerprint`\/`surface`\/observation lifecycle and does not count towards the D3 coverage meter.",
+  );
+
+/**
+ * @summary Remove a vendor from the register (B9)
+ */
+export const DeleteVendorAssessmentParams = zod.object({
+  id: zod.coerce.number(),
+});
