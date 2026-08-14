@@ -444,6 +444,84 @@ export const SubmitProjectDependenciesResponse = zod.object({
 });
 
 /**
+ * Opens a real TLS connection to each submitted `host`/`port` and records what was *negotiated* — cipher suite, key-exchange group, protocol version, and the peer certificate's public key type/size — not what a config file claims. Persists what it finds as assets on the `tls` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+A caller-supplied host is refused before any connection is attempted if it resolves to a loopback, private, link-local (including the cloud metadata service) or otherwise non-routable address. The refusal reason is not detailed in the response — only `refused`, distinguished from a target that was reachable in principle but did not answer (`unreachable`) or one that completed a handshake (`probed`).
+
+**If no target's handshake completes, no collection run is recorded** and `targetsProbed` is 0 — the same honesty rule `POST /projects/{id}/dependencies` applies for `lockfilesRecognised: 0`. It is a 200, not an error: every target may legitimately be unreachable or filtered.
+
+A host that no longer answers on a resubmission marks its assets `gone`, scoped to exactly the targets that were actually probed in this submission — a target refused by the guard or that timed out was not observed and does not affect any other target's assets.
+ * @summary Probe a project's hosts for the TLS handshake they actually negotiate (B3)
+ */
+export const SubmitProjectTlsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const submitProjectTlsBodyTargetsItemPortMax = 65535;
+
+export const submitProjectTlsBodyTargetsMax = 20;
+
+export const SubmitProjectTlsBody = zod.object({
+  targets: zod
+    .array(
+      zod.object({
+        host: zod
+          .string()
+          .describe(
+            "Hostname or IP literal. Never a URL — no scheme, path or credentials.",
+          ),
+        port: zod.number().min(1).max(submitProjectTlsBodyTargetsItemPortMax),
+      }),
+    )
+    .max(submitProjectTlsBodyTargetsMax)
+    .describe(
+      "Hosts to open a real TLS connection to. A caller-named host that resolves to a loopback\/private\/link-local\/other non-routable address is refused before any connection is attempted — see `TlsProbeSummary.targets[].outcome`.",
+    ),
+});
+
+export const SubmitProjectTlsResponse = zod.object({
+  projectId: zod.number(),
+  targetsSubmitted: zod.number(),
+  targetsProbed: zod
+    .number()
+    .describe(
+      "How many targets completed a handshake. Zero means no collection run was recorded and the tls surface is still un-examined for this project.",
+    ),
+  targets: zod
+    .array(
+      zod.object({
+        host: zod.string(),
+        port: zod.number(),
+        outcome: zod
+          .enum(["probed", "refused", "unreachable"])
+          .describe(
+            "`refused` means the SSRF guard rejected the target before any connection was attempted; `unreachable` means the guard allowed it but the handshake did not complete (timeout, connection refused, TLS negotiation failure); `probed` means a handshake completed. The specific refusal reason is deliberately not exposed here — see `tls-ssrf-guard.ts` — the same posture `parseGithubUrl` takes with a bare rejection.",
+          ),
+      }),
+    )
+    .describe(
+      "The per-target outcome — a submission of five hosts where three are refused and one times out must not collapse into a single number.",
+    ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe("Null when no run was recorded (`targetsProbed` is 0)."),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Assets at a host:port this submission actually probed and no longer found there. Scoped to exactly the targets that completed a handshake in this submission.",
+    ),
+  evidenceCaveat: zod
+    .string()
+    .describe(
+      "Stated in every response: this collector records the negotiated key-exchange algorithm\/group and the peer certificate's public key type\/size only — no certificate identity, chain or validity. It does not verify trust (certificates are not validated against any CA), because the point is to observe what a host actually negotiates, not whether a browser would accept it.",
+    ),
+});
+
+/**
  * Observed history from real collection instants, plus a projected horizon and the obligation deadlines that fall in it. Observed points come only from instants at which a collection actually happened — the series is never resampled onto a regular grid, because that would draw a smooth trend on an estate that never changed. When fewer than two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
 
  * @summary Estate cryptographic posture over time (D7)

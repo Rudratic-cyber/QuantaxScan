@@ -15,12 +15,14 @@ import {
   GetProjectParams,
   DeleteProjectParams,
   SubmitProjectDependenciesBody,
+  SubmitProjectTlsBody,
 } from "@workspace/api-zod";
 import { lockfilesIn } from "@workspace/collectors";
 import { scanCode, computeScanResult } from "../lib/scanner";
 import { summariseProjectCoverage } from "../lib/coverage";
 import { withComplianceAll } from "../lib/compliance";
-import { ingestDependencyObservations } from "../lib/asset-ingest";
+import { ingestDependencyObservations, ingestTlsObservations } from "../lib/asset-ingest";
+import { probeTlsTargets } from "../lib/tls-probe";
 import { orgContextFor } from "../lib/principal";
 import { logger } from "../lib/logger";
 
@@ -368,6 +370,127 @@ router.post("/projects/:id/dependencies", async (req, res): Promise<void> => {
     observationsCreated: result.observationsCreated,
     assetsMarkedGone: result.assetsMarkedGone,
     evidenceCaveat: EVIDENCE_CAVEAT,
+  });
+});
+
+/**
+ * B3 — `POST /api/projects/:id/tls`. docs/Claude/03-features.md §B3.
+ *
+ * Same shape as the dependency route above — org-scoped, parent confirmed
+ * inside the scope, a run recorded only when something was actually
+ * examined — with one deliberate structural difference: **the probe runs
+ * before `withOrg` is opened.** `withOrg` holds a real database transaction
+ * for its whole callback, and this route's expensive step is outbound
+ * `node:tls` connections to caller-named hosts — up to
+ * `MAX_TLS_TARGETS_PER_SUBMISSION` of them, each up to `TLS_PROBE_TIMEOUT_MS`
+ * — which has nothing to do with the database and must not hold a pooled
+ * connection idle for however long that takes. The cost: an unrecognised or
+ * another organisation's project id still triggers the probe before the 404
+ * is returned, which is wasted egress, not a data leak — nothing about the
+ * probe is persisted or returned until the parent is confirmed visible
+ * inside the scope, exactly like the dependency route.
+ *
+ * Every target the guard refuses or that never completes a handshake is
+ * still named in the response (`targets[].outcome`), so a caller submitting
+ * five hosts where three are refused and one times out sees that shape
+ * rather than a single opaque count.
+ */
+const TLS_EVIDENCE_CAVEAT =
+  "Records the negotiated key-exchange algorithm/group and the peer certificate's public key type/size only " +
+  "— no certificate identity, chain or validity (see B4). Certificates are not validated against any CA: this " +
+  "collector observes what a host negotiates, not whether a browser would trust it.";
+
+router.post("/projects/:id/tls", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const body = SubmitProjectTlsBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+  const targets = body.data.targets;
+
+  // Every target is resolved, SSRF-checked and (if allowed) connected to
+  // here — see the doc comment above for why this runs ahead of `withOrg`.
+  const outcomes = await probeTlsTargets(targets);
+  const probed = outcomes.filter(
+    (o): o is Extract<(typeof outcomes)[number], { outcome: "probed" }> => o.outcome === "probed",
+  );
+
+  const ctx = orgContextFor(req);
+  const outcome = await withOrg(ctx, async (tx) => {
+    // Same reasoning as every other route with a client-supplied parent id:
+    // a foreign key is not subject to RLS, and `assets` has no foreign key
+    // to `projects` at all — the association is the `project:<id>:`
+    // location prefix this route is about to write. The parent must be
+    // confirmed visible *inside* the scope.
+    const [parent] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!parent) return null;
+
+    // No completed handshake means we examined nothing. Writing a
+    // collection run here would make GET /projects/:id/coverage report the
+    // tls surface as "examined — nothing found," which is a different and
+    // false statement. Not an error either: every target may legitimately
+    // be refused or unreachable in one submission.
+    if (probed.length === 0) return { kind: "no-handshakes" as const };
+
+    return {
+      kind: "ingested" as const,
+      result: await ingestTlsObservations(tx, {
+        repo,
+        probed: probed.map((p) => ({ host: p.host, port: p.port, handshake: p.handshake })),
+        organizationId: ctx.organizationId,
+      }),
+    };
+  });
+
+  if (outcome === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  const targetsSummary = outcomes.map((o) => ({ host: o.host, port: o.port, outcome: o.outcome }));
+
+  if (outcome.kind === "no-handshakes") {
+    res.json({
+      projectId: id,
+      targetsSubmitted: targets.length,
+      targetsProbed: 0,
+      targets: targetsSummary,
+      collectionRunId: null,
+      assetsCreated: 0,
+      assetsUpdated: 0,
+      observationsCreated: 0,
+      assetsMarkedGone: 0,
+      evidenceCaveat: TLS_EVIDENCE_CAVEAT,
+    });
+    return;
+  }
+
+  const { result } = outcome;
+  logger.info(
+    { projectId: id, targetsProbed: probed.length, observations: result.observationsCreated, route: "POST /projects/:id/tls" },
+    "TLS collection complete",
+  );
+
+  res.json({
+    projectId: id,
+    targetsSubmitted: targets.length,
+    targetsProbed: probed.length,
+    targets: targetsSummary,
+    collectionRunId: result.collectionRunId,
+    assetsCreated: result.assetsCreated,
+    assetsUpdated: result.assetsUpdated,
+    observationsCreated: result.observationsCreated,
+    assetsMarkedGone: result.assetsMarkedGone,
+    evidenceCaveat: TLS_EVIDENCE_CAVEAT,
   });
 });
 

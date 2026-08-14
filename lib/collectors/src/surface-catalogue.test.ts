@@ -40,12 +40,13 @@ describe("collector surface catalogue", () => {
     expect(unrecordable).toEqual(["data-at-rest", "vendor"]);
   });
 
-  it("has exactly two live collectors: the source scanner and the dependency collector", () => {
-    // `dependency` became live when B2's ingest path landed. A collector with
-    // nowhere to write is not a live surface — the whole point of this list is
-    // that it is the denominator of an honesty claim, so an entry earns `live`
-    // by being able to record a collection run, not by existing in the repo.
-    expect(LIVE_COLLECTOR_SURFACES.map((entry) => entry.id)).toEqual(["source", "dependency"]);
+  it("has exactly three live collectors: source, dependency and tls", () => {
+    // `dependency` became live when B2's ingest path landed; `tls` when B3's
+    // did (`POST /projects/:id/tls`). A collector with nowhere to write is
+    // not a live surface — the whole point of this list is that it is the
+    // denominator of an honesty claim, so an entry earns `live` by being able
+    // to record a collection run, not by existing in the repo.
+    expect(LIVE_COLLECTOR_SURFACES.map((entry) => entry.id)).toEqual(["source", "dependency", "tls"]);
   });
 
   it("gives every live surface somewhere to store what it finds", () => {

@@ -48,6 +48,8 @@ import type {
   Scan,
   SharedReport,
   SubmitProjectDependenciesBody,
+  SubmitProjectTlsBody,
+  TlsProbeSummary,
   VoteBody,
 } from "./api.schemas";
 
@@ -742,6 +744,100 @@ export const useSubmitProjectDependencies = <
   TContext
 > => {
   return useMutation(getSubmitProjectDependenciesMutationOptions(options));
+};
+
+/**
+ * Opens a real TLS connection to each submitted `host`/`port` and records what was *negotiated* — cipher suite, key-exchange group, protocol version, and the peer certificate's public key type/size — not what a config file claims. Persists what it finds as assets on the `tls` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+A caller-supplied host is refused before any connection is attempted if it resolves to a loopback, private, link-local (including the cloud metadata service) or otherwise non-routable address. The refusal reason is not detailed in the response — only `refused`, distinguished from a target that was reachable in principle but did not answer (`unreachable`) or one that completed a handshake (`probed`).
+
+**If no target's handshake completes, no collection run is recorded** and `targetsProbed` is 0 — the same honesty rule `POST /projects/{id}/dependencies` applies for `lockfilesRecognised: 0`. It is a 200, not an error: every target may legitimately be unreachable or filtered.
+
+A host that no longer answers on a resubmission marks its assets `gone`, scoped to exactly the targets that were actually probed in this submission — a target refused by the guard or that timed out was not observed and does not affect any other target's assets.
+ * @summary Probe a project's hosts for the TLS handshake they actually negotiate (B3)
+ */
+export const getSubmitProjectTlsUrl = (id: number) => {
+  return `/api/projects/${id}/tls`;
+};
+
+export const submitProjectTls = async (
+  id: number,
+  submitProjectTlsBody: SubmitProjectTlsBody,
+  options?: RequestInit,
+): Promise<TlsProbeSummary> => {
+  return customFetch<TlsProbeSummary>(getSubmitProjectTlsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(submitProjectTlsBody),
+  });
+};
+
+export const getSubmitProjectTlsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectTls>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectTlsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectTls>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectTlsBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectTls"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectTls>>,
+    { id: number; data: BodyType<SubmitProjectTlsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectTls(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectTlsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectTls>>
+>;
+export type SubmitProjectTlsMutationBody = BodyType<SubmitProjectTlsBody>;
+export type SubmitProjectTlsMutationError = ErrorType<void>;
+
+/**
+ * @summary Probe a project's hosts for the TLS handshake they actually negotiate (B3)
+ */
+export const useSubmitProjectTls = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectTls>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectTlsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectTls>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectTlsBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectTlsMutationOptions(options));
 };
 
 /**

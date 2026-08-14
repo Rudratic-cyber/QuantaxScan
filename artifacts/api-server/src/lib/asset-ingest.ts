@@ -8,8 +8,10 @@ import {
   ecosystemsIn,
   fingerprintForObservation,
   lockfilesIn,
+  observationsFromTlsHandshake,
   type RawObservation,
   type Surface,
+  type TlsHandshakeResult,
 } from "@workspace/collectors";
 import { and, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
 
@@ -337,4 +339,54 @@ export async function ingestDependencyObservations(
   });
 
   return { ...result, lockfiles };
+}
+
+/**
+ * B3 — persist a TLS/cipher-suite collection (docs/Claude/03-features.md
+ * §B3). `POST /projects/:id/tls` is the caller: it does the actual `node:tls`
+ * connection and the SSRF-guarded resolve-then-pin (`tls-probe.ts`,
+ * `tls-ssrf-guard.ts`), then hands this function only the handshakes that
+ * *completed*.
+ *
+ * Mirrors B2's rule exactly, and for the identical reason: callers must not
+ * invoke this when `params.probed` is empty. A submission where every target
+ * was refused by the SSRF guard or simply did not answer has examined
+ * nothing, so recording a `completed` collection run would make the D3 meter
+ * report the `tls` surface as "examined, nothing found" — the same false
+ * statement B2's assertion below guards against, now guarding a second
+ * collector against it.
+ *
+ * `reobserved` is scoped to exactly the targets in `params.probed` — not
+ * every target the caller submitted. A target the guard refused or that timed
+ * out was not observed, so it must not be eligible to have its prior assets
+ * marked `gone`; the caller (`routes/projects.ts`) must filter to
+ * `outcome === "probed"` before calling this, the same discipline
+ * `ingestSourceObservations` applies per scanned file.
+ */
+export async function ingestTlsObservations(
+  tx: ScopedTx,
+  params: {
+    repo: string;
+    probed: Array<{ host: string; port: number; handshake: TlsHandshakeResult }>;
+    organizationId: number;
+  },
+): Promise<IngestResult> {
+  if (params.probed.length === 0) {
+    throw new Error("TLS ingest was given no completed handshake — a run must not be recorded");
+  }
+
+  const observations = params.probed.flatMap((p) => observationsFromTlsHandshake(params.repo, p.handshake));
+
+  return ingestObservations(tx, {
+    organizationId: params.organizationId,
+    repo: params.repo,
+    collector: "tls-handshake",
+    collectorVersion: "1.0.0",
+    surface: "tls",
+    observations,
+    reobserved: {
+      kind: "locations",
+      locations: [...new Set(params.probed.map((p) => `${params.repo}:${p.host}:${p.port}`))],
+    },
+  });
 }

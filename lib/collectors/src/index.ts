@@ -10,3 +10,4 @@ export * from "./source-regex-collector";
 export * from "./lockfiles";
 export * from "./crypto-packages";
 export * from "./dependency-collector";
+export * from "./tls-collector";

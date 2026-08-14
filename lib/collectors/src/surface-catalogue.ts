@@ -53,7 +53,10 @@ export const COLLECTOR_SURFACES = [
   // found, no run of it could ever be recorded, and a surface whose results
   // are unreachable has not been examined in any sense a CISO cares about.
   { id: "dependency", name: "Dependencies / SBOM", status: "live", surface: "dependency" },
-  { id: "tls", name: "TLS & cipher suites", status: "planned", surface: "tls" },
+  // `live` since B3's ingest path landed (`POST /projects/:id/tls`), same
+  // bar as `dependency` above: a collector alone does not earn `live`, a
+  // route that persists what it finds does.
+  { id: "tls", name: "TLS & cipher suites", status: "live", surface: "tls" },
   { id: "certificate", name: "Certificates (X.509)", status: "planned", surface: "certificate" },
   { id: "kms", name: "KMS & secret stores", status: "planned", surface: "kms" },
   { id: "config", name: "Protocol config", status: "planned", surface: "config" },

@@ -56,10 +56,16 @@ describe("computeFingerprint — other surfaces", () => {
     expect(one).not.toBe(two);
   });
 
-  it("tls: host + port + algorithm", () => {
-    const a = computeFingerprint({ surface: "tls", host: "example.com", port: 443, algorithm: "ECDSA" });
-    const b = computeFingerprint({ surface: "tls", host: "example.com", port: 8443, algorithm: "ECDSA" });
+  it("tls: repo + host + port + algorithm", () => {
+    const a = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDSA" });
+    const b = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 8443, algorithm: "ECDSA" });
     expect(a).not.toBe(b);
+  });
+
+  it("tls: the same host:port in two projects is two assets — same reasoning as dependency above", () => {
+    const one = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDH/DH" });
+    const two = computeFingerprint({ surface: "tls", repo: "project:2", host: "example.com", port: 443, algorithm: "ECDH/DH" });
+    expect(one).not.toBe(two);
   });
 
   it("certificate: issuer + serial", () => {

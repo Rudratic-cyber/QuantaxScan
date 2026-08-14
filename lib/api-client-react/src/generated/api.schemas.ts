@@ -443,6 +443,61 @@ export interface DependencyIngestSummary {
   evidenceCaveat: string;
 }
 
+export type SubmitProjectTlsBodyTargetsItem = {
+  /** Hostname or IP literal. Never a URL — no scheme, path or credentials. */
+  host: string;
+  /**
+   * @minimum 1
+   * @maximum 65535
+   */
+  port: number;
+};
+
+export interface SubmitProjectTlsBody {
+  /**
+   * Hosts to open a real TLS connection to. A caller-named host that resolves to a loopback/private/link-local/other non-routable address is refused before any connection is attempted — see `TlsProbeSummary.targets[].outcome`.
+   * @maxItems 20
+   */
+  targets: SubmitProjectTlsBodyTargetsItem[];
+}
+
+/**
+ * `refused` means the SSRF guard rejected the target before any connection was attempted; `unreachable` means the guard allowed it but the handshake did not complete (timeout, connection refused, TLS negotiation failure); `probed` means a handshake completed. The specific refusal reason is deliberately not exposed here — see `tls-ssrf-guard.ts` — the same posture `parseGithubUrl` takes with a bare rejection.
+ */
+export type TlsProbeSummaryTargetsItemOutcome =
+  (typeof TlsProbeSummaryTargetsItemOutcome)[keyof typeof TlsProbeSummaryTargetsItemOutcome];
+
+export const TlsProbeSummaryTargetsItemOutcome = {
+  probed: "probed",
+  refused: "refused",
+  unreachable: "unreachable",
+} as const;
+
+export type TlsProbeSummaryTargetsItem = {
+  host: string;
+  port: number;
+  /** `refused` means the SSRF guard rejected the target before any connection was attempted; `unreachable` means the guard allowed it but the handshake did not complete (timeout, connection refused, TLS negotiation failure); `probed` means a handshake completed. The specific refusal reason is deliberately not exposed here — see `tls-ssrf-guard.ts` — the same posture `parseGithubUrl` takes with a bare rejection. */
+  outcome: TlsProbeSummaryTargetsItemOutcome;
+};
+
+export interface TlsProbeSummary {
+  projectId: number;
+  targetsSubmitted: number;
+  /** How many targets completed a handshake. Zero means no collection run was recorded and the tls surface is still un-examined for this project. */
+  targetsProbed: number;
+  /** The per-target outcome — a submission of five hosts where three are refused and one times out must not collapse into a single number. */
+  targets: TlsProbeSummaryTargetsItem[];
+  /** Null when no run was recorded (`targetsProbed` is 0). */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Assets at a host:port this submission actually probed and no longer found there. Scoped to exactly the targets that completed a handshake in this submission. */
+  assetsMarkedGone: number;
+  /** Stated in every response: this collector records the negotiated key-exchange algorithm/group and the peer certificate's public key type/size only — no certificate identity, chain or validity. It does not verify trust (certificates are not validated against any CA), because the point is to observe what a host actually negotiates, not whether a browser would accept it. */
+  evidenceCaveat: string;
+}
+
 export type CreateScanBodyMode =
   (typeof CreateScanBodyMode)[keyof typeof CreateScanBodyMode];
 
