@@ -30,6 +30,8 @@ tags:
     description: Estate-wide inventory exports and posture
   - name: chat
     description: AI assistant
+  - name: ot-fleets
+    description: Manual OT/embedded device fleet register (B8)
 
 # Interim shared-key authentication (S1 / G-12). Applies to every operation
 # unless overridden with `security: []`. This carries no per-user identity and
@@ -243,6 +245,123 @@ paths:
           description: Invalid project ID or body
         "404":
           description: Not found
+
+  /ot-fleets:
+    get:
+      operationId: listOtFleets
+      tags: [ot-fleets]
+      summary: List this organisation's OT/embedded device fleets (B8)
+      description: >-
+        The manual register — every fleet a customer has recorded by hand, newest first. Each
+        entry carries `exposure`, computed fresh on every read against the current Q-Day
+        scenarios, so a scenario or date change is reflected without a backfill.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: OT fleets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OtFleet"
+    post:
+      operationId: createOtFleet
+      tags: [ot-fleets]
+      summary: Record a new device fleet (B8)
+      description: >-
+        A form submission, not a collector run: every field but `name` is optional, and an
+        omitted field is stored as `null` — "not supplied" — rather than a guessed default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOtFleetBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "400":
+          description: Invalid body
+        "201":
+          description: Created fleet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtFleet"
+
+  /ot-fleets/{id}:
+    get:
+      operationId: getOtFleet
+      tags: [ot-fleets]
+      summary: Get one OT fleet by id (B8)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: OT fleet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtFleet"
+        "400":
+          description: Invalid fleet ID
+        "404":
+          description: Not found
+    patch:
+      operationId: updateOtFleet
+      tags: [ot-fleets]
+      summary: Update fields the customer has learned since the fleet was recorded (B8)
+      description: >-
+        Every field is optional and only the fields present in the body are changed — omitting a
+        field leaves the stored value (including `null`) exactly as it was, it does not clear it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOtFleetBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Updated fleet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtFleet"
+        "400":
+          description: Invalid fleet ID or body
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteOtFleet
+      tags: [ot-fleets]
+      summary: Remove a fleet from the register (B8)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "204":
+          description: Deleted
 
   /inventory/timeline:
     get:
@@ -1022,6 +1141,192 @@ components:
         - observationsCreated
         - assetsMarkedGone
         - evidenceCaveat
+
+    OtExposureState:
+      type: string
+      description: >-
+        `unknown` is distinct from `clear` — no recorded procurement date means nobody has
+        asserted a replacement is coming, which must never be read as safe.
+      enum: [exposed, clear, unknown]
+
+    OtExposureVerdict:
+      type: object
+      description: One Q-Day scenario's exposure verdict for a fleet's next procurement date.
+      properties:
+        scenario:
+          type: string
+          enum: [conservative, central, aggressive]
+        qDayYear:
+          type: integer
+        state:
+          $ref: "#/components/schemas/OtExposureState"
+        narrative:
+          type: string
+          description: The board-deck sentence — names the date and the scenario, not just the verdict.
+      required:
+        - scenario
+        - qDayYear
+        - state
+        - narrative
+
+    OtExposureAssessment:
+      type: object
+      description: >-
+        B8's payoff: whether this fleet's next procurement decision falls after each Q-Day
+        scenario's year, computed fresh on every read so a scenario change never needs a
+        backfill. A fleet with no recorded procurement date is `unknown` under every scenario,
+        never `clear`.
+      properties:
+        nextProcurementDate:
+          type: string
+          format: date-time
+          nullable: true
+        verdicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/OtExposureVerdict"
+        exposedScenarioCount:
+          type: integer
+        unknownScenarioCount:
+          type: integer
+        scenarioCount:
+          type: integer
+        framing:
+          type: string
+          description: Mandatory framing for any customer-facing use of the scenario years.
+      required:
+        - nextProcurementDate
+        - verdicts
+        - exposedScenarioCount
+        - unknownScenarioCount
+        - scenarioCount
+        - framing
+
+    OtFleet:
+      type: object
+      description: >-
+        An `ot_fleets` row plus its computed exposure — B8, the manual OT/embedded register.
+        docs/Claude/03-features.md §B8. Not an `Asset`: nothing here is collected, a human enters
+        and edits it by hand, and it carries no `fingerprint`/`surface`/observation lifecycle.
+      properties:
+        id:
+          type: integer
+        organizationId:
+          type: integer
+        name:
+          type: string
+        vendor:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        deviceCount:
+          type: integer
+          nullable: true
+          description: Null means nobody has counted yet — distinct from a recorded zero.
+        site:
+          type: string
+          nullable: true
+        owner:
+          type: string
+          nullable: true
+          description: Free text — a team, role or vendor contact, not necessarily an app user.
+        cryptoInUse:
+          type: string
+          nullable: true
+          description: Free-form, customer-asserted description of the cryptography in use.
+        refreshCycleYears:
+          type: integer
+          nullable: true
+        nextProcurementDate:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        exposure:
+          $ref: "#/components/schemas/OtExposureAssessment"
+      required:
+        - id
+        - organizationId
+        - name
+        - vendor
+        - model
+        - deviceCount
+        - site
+        - owner
+        - cryptoInUse
+        - refreshCycleYears
+        - nextProcurementDate
+        - createdAt
+        - updatedAt
+        - exposure
+
+    CreateOtFleetBody:
+      type: object
+      properties:
+        name:
+          type: string
+        vendor:
+          type: string
+        model:
+          type: string
+        deviceCount:
+          type: integer
+          minimum: 0
+        site:
+          type: string
+        owner:
+          type: string
+        cryptoInUse:
+          type: string
+        refreshCycleYears:
+          type: integer
+          minimum: 0
+        nextProcurementDate:
+          type: string
+          format: date-time
+      required:
+        - name
+
+    UpdateOtFleetBody:
+      type: object
+      description: Every field optional; only fields present in the body are changed.
+      properties:
+        name:
+          type: string
+        vendor:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        deviceCount:
+          type: integer
+          minimum: 0
+          nullable: true
+        site:
+          type: string
+          nullable: true
+        owner:
+          type: string
+          nullable: true
+        cryptoInUse:
+          type: string
+          nullable: true
+        refreshCycleYears:
+          type: integer
+          minimum: 0
+          nullable: true
+        nextProcurementDate:
+          type: string
+          format: date-time
+          nullable: true
 
     CreateScanBody:
       type: object

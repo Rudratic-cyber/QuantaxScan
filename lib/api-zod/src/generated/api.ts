@@ -444,6 +444,289 @@ export const SubmitProjectDependenciesResponse = zod.object({
 });
 
 /**
+ * The manual register — every fleet a customer has recorded by hand, newest first. Each entry carries `exposure`, computed fresh on every read against the current Q-Day scenarios, so a scenario or date change is reflected without a backfill.
+ * @summary List this organisation's OT/embedded device fleets (B8)
+ */
+export const ListOtFleetsResponseItem = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    name: zod.string(),
+    vendor: zod.string().nullable(),
+    model: zod.string().nullable(),
+    deviceCount: zod
+      .number()
+      .nullable()
+      .describe(
+        "Null means nobody has counted yet — distinct from a recorded zero.",
+      ),
+    site: zod.string().nullable(),
+    owner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — a team, role or vendor contact, not necessarily an app user.",
+      ),
+    cryptoInUse: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, customer-asserted description of the cryptography in use.",
+      ),
+    refreshCycleYears: zod.number().nullable(),
+    nextProcurementDate: zod.coerce.date().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    exposure: zod
+      .object({
+        nextProcurementDate: zod.coerce.date().nullable(),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "`unknown` is distinct from `clear` — no recorded procurement date means nobody has asserted a replacement is coming, which must never be read as safe.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "The board-deck sentence — names the date and the scenario, not just the verdict.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's exposure verdict for a fleet's next procurement date.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B8's payoff: whether this fleet's next procurement decision falls after each Q-Day scenario's year, computed fresh on every read so a scenario change never needs a backfill. A fleet with no recorded procurement date is `unknown` under every scenario, never `clear`.",
+      ),
+  })
+  .describe(
+    "An `ot_fleets` row plus its computed exposure — B8, the manual OT\/embedded register. docs\/Claude\/03-features.md §B8. Not an `Asset`: nothing here is collected, a human enters and edits it by hand, and it carries no `fingerprint`\/`surface`\/observation lifecycle.",
+  );
+export const ListOtFleetsResponse = zod.array(ListOtFleetsResponseItem);
+
+/**
+ * A form submission, not a collector run: every field but `name` is optional, and an omitted field is stored as `null` — "not supplied" — rather than a guessed default.
+ * @summary Record a new device fleet (B8)
+ */
+export const createOtFleetBodyDeviceCountMin = 0;
+
+export const createOtFleetBodyRefreshCycleYearsMin = 0;
+
+export const CreateOtFleetBody = zod.object({
+  name: zod.string(),
+  vendor: zod.string().optional(),
+  model: zod.string().optional(),
+  deviceCount: zod.number().min(createOtFleetBodyDeviceCountMin).optional(),
+  site: zod.string().optional(),
+  owner: zod.string().optional(),
+  cryptoInUse: zod.string().optional(),
+  refreshCycleYears: zod
+    .number()
+    .min(createOtFleetBodyRefreshCycleYearsMin)
+    .optional(),
+  nextProcurementDate: zod.coerce.date().optional(),
+});
+
+/**
+ * @summary Get one OT fleet by id (B8)
+ */
+export const GetOtFleetParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetOtFleetResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    name: zod.string(),
+    vendor: zod.string().nullable(),
+    model: zod.string().nullable(),
+    deviceCount: zod
+      .number()
+      .nullable()
+      .describe(
+        "Null means nobody has counted yet — distinct from a recorded zero.",
+      ),
+    site: zod.string().nullable(),
+    owner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — a team, role or vendor contact, not necessarily an app user.",
+      ),
+    cryptoInUse: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, customer-asserted description of the cryptography in use.",
+      ),
+    refreshCycleYears: zod.number().nullable(),
+    nextProcurementDate: zod.coerce.date().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    exposure: zod
+      .object({
+        nextProcurementDate: zod.coerce.date().nullable(),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "`unknown` is distinct from `clear` — no recorded procurement date means nobody has asserted a replacement is coming, which must never be read as safe.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "The board-deck sentence — names the date and the scenario, not just the verdict.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's exposure verdict for a fleet's next procurement date.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B8's payoff: whether this fleet's next procurement decision falls after each Q-Day scenario's year, computed fresh on every read so a scenario change never needs a backfill. A fleet with no recorded procurement date is `unknown` under every scenario, never `clear`.",
+      ),
+  })
+  .describe(
+    "An `ot_fleets` row plus its computed exposure — B8, the manual OT\/embedded register. docs\/Claude\/03-features.md §B8. Not an `Asset`: nothing here is collected, a human enters and edits it by hand, and it carries no `fingerprint`\/`surface`\/observation lifecycle.",
+  );
+
+/**
+ * Every field is optional and only the fields present in the body are changed — omitting a field leaves the stored value (including `null`) exactly as it was, it does not clear it.
+ * @summary Update fields the customer has learned since the fleet was recorded (B8)
+ */
+export const UpdateOtFleetParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateOtFleetBodyDeviceCountMin = 0;
+
+export const updateOtFleetBodyRefreshCycleYearsMin = 0;
+
+export const UpdateOtFleetBody = zod
+  .object({
+    name: zod.string().optional(),
+    vendor: zod.string().nullish(),
+    model: zod.string().nullish(),
+    deviceCount: zod.number().min(updateOtFleetBodyDeviceCountMin).nullish(),
+    site: zod.string().nullish(),
+    owner: zod.string().nullish(),
+    cryptoInUse: zod.string().nullish(),
+    refreshCycleYears: zod
+      .number()
+      .min(updateOtFleetBodyRefreshCycleYearsMin)
+      .nullish(),
+    nextProcurementDate: zod.coerce.date().nullish(),
+  })
+  .describe(
+    "Every field optional; only fields present in the body are changed.",
+  );
+
+export const UpdateOtFleetResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    name: zod.string(),
+    vendor: zod.string().nullable(),
+    model: zod.string().nullable(),
+    deviceCount: zod
+      .number()
+      .nullable()
+      .describe(
+        "Null means nobody has counted yet — distinct from a recorded zero.",
+      ),
+    site: zod.string().nullable(),
+    owner: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — a team, role or vendor contact, not necessarily an app user.",
+      ),
+    cryptoInUse: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free-form, customer-asserted description of the cryptography in use.",
+      ),
+    refreshCycleYears: zod.number().nullable(),
+    nextProcurementDate: zod.coerce.date().nullable(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+    exposure: zod
+      .object({
+        nextProcurementDate: zod.coerce.date().nullable(),
+        verdicts: zod.array(
+          zod
+            .object({
+              scenario: zod.enum(["conservative", "central", "aggressive"]),
+              qDayYear: zod.number(),
+              state: zod
+                .enum(["exposed", "clear", "unknown"])
+                .describe(
+                  "`unknown` is distinct from `clear` — no recorded procurement date means nobody has asserted a replacement is coming, which must never be read as safe.",
+                ),
+              narrative: zod
+                .string()
+                .describe(
+                  "The board-deck sentence — names the date and the scenario, not just the verdict.",
+                ),
+            })
+            .describe(
+              "One Q-Day scenario's exposure verdict for a fleet's next procurement date.",
+            ),
+        ),
+        exposedScenarioCount: zod.number(),
+        unknownScenarioCount: zod.number(),
+        scenarioCount: zod.number(),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory framing for any customer-facing use of the scenario years.",
+          ),
+      })
+      .describe(
+        "B8's payoff: whether this fleet's next procurement decision falls after each Q-Day scenario's year, computed fresh on every read so a scenario change never needs a backfill. A fleet with no recorded procurement date is `unknown` under every scenario, never `clear`.",
+      ),
+  })
+  .describe(
+    "An `ot_fleets` row plus its computed exposure — B8, the manual OT\/embedded register. docs\/Claude\/03-features.md §B8. Not an `Asset`: nothing here is collected, a human enters and edits it by hand, and it carries no `fingerprint`\/`surface`\/observation lifecycle.",
+  );
+
+/**
+ * @summary Remove a fleet from the register (B8)
+ */
+export const DeleteOtFleetParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * Observed history from real collection instants, plus a projected horizon and the obligation deadlines that fall in it. Observed points come only from instants at which a collection actually happened — the series is never resampled onto a regular grid, because that would draw a smooth trend on an estate that never changed. When fewer than two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
 
  * @summary Estate cryptographic posture over time (D7)

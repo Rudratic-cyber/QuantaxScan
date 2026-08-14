@@ -443,6 +443,105 @@ export interface DependencyIngestSummary {
   evidenceCaveat: string;
 }
 
+/**
+ * `unknown` is distinct from `clear` — no recorded procurement date means nobody has asserted a replacement is coming, which must never be read as safe.
+ */
+export type OtExposureState =
+  (typeof OtExposureState)[keyof typeof OtExposureState];
+
+export const OtExposureState = {
+  exposed: "exposed",
+  clear: "clear",
+  unknown: "unknown",
+} as const;
+
+export type OtExposureVerdictScenario =
+  (typeof OtExposureVerdictScenario)[keyof typeof OtExposureVerdictScenario];
+
+export const OtExposureVerdictScenario = {
+  conservative: "conservative",
+  central: "central",
+  aggressive: "aggressive",
+} as const;
+
+/**
+ * One Q-Day scenario's exposure verdict for a fleet's next procurement date.
+ */
+export interface OtExposureVerdict {
+  scenario: OtExposureVerdictScenario;
+  qDayYear: number;
+  state: OtExposureState;
+  /** The board-deck sentence — names the date and the scenario, not just the verdict. */
+  narrative: string;
+}
+
+/**
+ * B8's payoff: whether this fleet's next procurement decision falls after each Q-Day scenario's year, computed fresh on every read so a scenario change never needs a backfill. A fleet with no recorded procurement date is `unknown` under every scenario, never `clear`.
+ */
+export interface OtExposureAssessment {
+  nextProcurementDate: string | null;
+  verdicts: OtExposureVerdict[];
+  exposedScenarioCount: number;
+  unknownScenarioCount: number;
+  scenarioCount: number;
+  /** Mandatory framing for any customer-facing use of the scenario years. */
+  framing: string;
+}
+
+/**
+ * An `ot_fleets` row plus its computed exposure — B8, the manual OT/embedded register. docs/Claude/03-features.md §B8. Not an `Asset`: nothing here is collected, a human enters and edits it by hand, and it carries no `fingerprint`/`surface`/observation lifecycle.
+ */
+export interface OtFleet {
+  id: number;
+  organizationId: number;
+  name: string;
+  vendor: string | null;
+  model: string | null;
+  /** Null means nobody has counted yet — distinct from a recorded zero. */
+  deviceCount: number | null;
+  site: string | null;
+  /** Free text — a team, role or vendor contact, not necessarily an app user. */
+  owner: string | null;
+  /** Free-form, customer-asserted description of the cryptography in use. */
+  cryptoInUse: string | null;
+  refreshCycleYears: number | null;
+  nextProcurementDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  exposure: OtExposureAssessment;
+}
+
+export interface CreateOtFleetBody {
+  name: string;
+  vendor?: string;
+  model?: string;
+  /** @minimum 0 */
+  deviceCount?: number;
+  site?: string;
+  owner?: string;
+  cryptoInUse?: string;
+  /** @minimum 0 */
+  refreshCycleYears?: number;
+  nextProcurementDate?: string;
+}
+
+/**
+ * Every field optional; only fields present in the body are changed.
+ */
+export interface UpdateOtFleetBody {
+  name?: string;
+  vendor?: string | null;
+  model?: string | null;
+  /** @minimum 0 */
+  deviceCount?: number | null;
+  site?: string | null;
+  owner?: string | null;
+  cryptoInUse?: string | null;
+  /** @minimum 0 */
+  refreshCycleYears?: number | null;
+  nextProcurementDate?: string | null;
+}
+
 export type CreateScanBodyMode =
   (typeof CreateScanBodyMode)[keyof typeof CreateScanBodyMode];
 

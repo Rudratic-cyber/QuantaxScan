@@ -216,7 +216,7 @@ another silo.
 | B5 | KMS / secret stores | `planned` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS. Read-only creds |
 | B6 | Protocol config | `planned` | **P2** | SSH, IPsec, JWT `alg`, SAML/OIDC signing |
 | B7 | Data-at-rest | `planned` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets |
-| B8 | Manual OT/embedded register | `planned` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first |
+| B8 | Manual OT/embedded register | `built` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first |
 | B9 | Vendor / third-party | `planned` | **P3** | Questionnaire + contractual PQC clause tracking |
 | B10 | Binaries / firmware | `deferred` | **P3** | Hard. Defer until coverage elsewhere is complete |
 
@@ -253,6 +253,24 @@ after 180 days. The audit that moved it corrected three customer-facing claims �
 The current scanner cannot see crypto inside dependencies, and that is where most enterprise
 crypto lives. B2 is not an incremental improvement; it is the difference between a demo and a
 product. Prioritise accordingly.
+
+**B8, as shipped 2026-08-14.** Org-scoped `ot_fleets` table, CRUD routes at `/api/ot-fleets`, and
+a form + list page at `/ot-register`. **Deliberately not an `assets` row.** `assets` exists to
+answer "what did a collector observe and does it still hold" — a stable `fingerprint` reconciled
+against a `collection_runs` row on a `surface` a collector actually flipped to `live`. Nothing
+here is ever collected; a human types it in and edits it by hand as facts change, which is the
+opposite lifecycle. Routing a fleet through the asset/observation model would mean inventing an
+`ot` surface that no collector ever populates — exactly the dishonesty the D3 coverage meter
+exists to prevent — so B8 does not touch `assets`, `observations`, `collection_runs` or the D3
+meter at all; it is orthogonal coverage, not a re-skin of the collector pipeline.
+
+The payoff is `assessOtExposure()` (`artifacts/api-server/src/lib/ot-exposure.ts`): a fleet's
+next procurement date is checked against every `DEFAULT_QDAY_SCENARIOS` year from
+`@workspace/risk` (never hardcoded), and a fleet whose next procurement falls after a scenario's
+Q-Day is `"exposed"` under that scenario by definition — no replacement is scheduled before the
+deadline. A fleet with no recorded date reads `"unknown"` under every scenario, never `"clear"`;
+collapsing the two would be the guessed-default failure CLAUDE.md's "null means not supplied"
+rule exists to prevent, applied to a date instead of a key size.
 
 ---
 

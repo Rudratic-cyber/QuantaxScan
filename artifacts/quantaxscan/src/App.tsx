@@ -13,6 +13,7 @@ import { CreatePost } from "@/pages/CreatePost";
 import { Report } from "@/pages/Report";
 import { Coverage } from "@/pages/Coverage";
 import { Security } from "@/pages/Security";
+import { OtRegister } from "@/pages/OtRegister";
 import { IntroScreen } from "@/components/IntroScreen";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { motion } from "framer-motion";
@@ -68,6 +69,7 @@ function AppRouter() {
       <Route path="/scan" component={Scan} />
       <Route path="/coverage" component={Coverage} />
       <Route path="/security" component={Security} />
+      <Route path="/ot-register" component={OtRegister} />
       <Route path="/demo/:slug" component={Demo} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/community/create" component={CreatePost} />
