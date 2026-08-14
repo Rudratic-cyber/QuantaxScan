@@ -1222,6 +1222,10 @@ export interface CbomDocument {
   dependencies: CycloneDxDependency[];
 }
 
+export type RateLimitedResponse = {
+  error: string;
+};
+
 export type ListCommunityPostsParams = {
   type?: ListCommunityPostsType;
   language?: string;

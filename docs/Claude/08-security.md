@@ -180,7 +180,7 @@ role passwords are meant to live locally.
 > **The secret-scanner half is not done.** The pre-pilot checklist below keeps S5 unticked for
 > that reason.
 
-### 🟡 S6 — No rate limiting
+### 🟡 S6 — No rate limiting — **RATE LIMITS SHIPPED, QUEUE DEFERRED**
 
 No limits on any route. `POST /api/scans` accepts 10 MB bodies and runs regex over every line;
 `routes/github.ts` will fetch arbitrary repositories on request.
@@ -188,7 +188,60 @@ No limits on any route. `POST /api/scans` accepts 10 MB bodies and runs regex ov
 **Fix:** per-org rate limits, body size limits tuned per route, and a job queue for scans rather
 than doing the work in the request handler.
 
-### 🟡 S7 — SSRF surface in GitHub scanning
+> **Rate limits landed 2026-08-14.** `artifacts/api-server/src/lib/rate-limit.ts` adds two layers,
+> mounted in `app.ts`:
+>
+> 1. an **IP-keyed limiter before `requireApiKey`**, because the 401 path is the one route
+>    guaranteed to be reachable without a credential and was free to hammer;
+> 2. a **principal-keyed limiter after it**, dispatching to a per-route budget from a table in the
+>    same shape as `PUBLIC_ROUTES`.
+>
+> **What the budgets are keyed on, and why it is per key rather than per org.** The shared API key
+> is the only principal this server has — no sign-in, no session, no person behind a request — so
+> per-key is the honest unit. Keying on the organisation would be the same bucket by construction,
+> since one key maps to one `QUANTAXSCAN_API_KEY_ORG_ID`, and calling it "per-org limits" would
+> claim a granularity that does not exist. Public routes carry no key and fall back to the client
+> address, which is a weak identifier (shared NAT collapses callers; a distributed caller escapes
+> it) — which is why the public budgets are the generous ones and every expensive route sits behind
+> the key. **When F1 lands** the per-route buckets should key on the user id and fall back to the
+> key, so one person cannot spend a whole organisation's allowance, with an org-wide ceiling above
+> it; that is a change in `principalKey()` plus one more layer.
+>
+> Budgets reflect cost rather than a single global number — a health check and a scan do not share
+> a limit, and `GET /healthz` is exempt from the per-route layer entirely so a load balancer's
+> probe cannot consume a scan's allowance. The GitHub-facing routes get the tightest allowance
+> (12/hour by default) because one `/github/fetch` costs a tree call, two branch probes and up to
+> 25 raw requests against a shared token whose unauthenticated ceiling is 60 requests/hour. All
+> budgets are env-overridable integers (`RATE_LIMIT_*`), deliberately not an on/off switch.
+>
+> 429 responses carry `Retry-After` and are byte-identical whether the presented key was valid,
+> invalid or absent — no `WWW-Authenticate`, one message. `rate-limit-edge.test.ts` asserts that
+> directly.
+>
+> **`TRUST_PROXY` must be set on the deployment, and merging this does not do that.** Unset,
+> `req.ip` is the proxy's address for every request and every IP-keyed bucket collapses into one
+> — which rate-limits the world together, most visibly on `POST /demo/repos/:slug/scan`, the one
+> journey that still works without an API key until F1. Set it to the *number* of proxies (`1`
+> for a single load balancer); a bare `true` is rejected at startup because it lets a client
+> forge `X-Forwarded-For` and mint a fresh bucket per request. The server logs a warning when it
+> is unset. **Same shape as S1: the control is not correctly in force until the deployment sets
+> the variable.** It is listed in `README.md`, `.env.example` and `docker-compose.yml`; the live
+> environment is outside this repository.
+>
+> **Not closed, and the checklist stays unticked for all three reasons:**
+>
+> - **The scan queue is deliberately deferred.** It is an architectural change — a job table, a
+>   worker, a status API, a UI that can render a pending scan — not a middleware, and it belongs
+>   with the request-handler rework in [04-architecture.md](04-architecture.md). Rate limits cap
+>   how much damage a caller can do; they do not stop a scan occupying a request handler for its
+>   whole duration.
+> - **The store is in-process memory.** N replicas means N × every budget and a restart resets
+>   every counter. A shared store (Redis) is the real fix and is not built.
+> - **Body limits are only partly per-route.** `/chat` (256 kB), `/github/fetch` and
+>   `/github/scan` (8 kB) are capped; `/scans` and `/github/scan-files` keep the global 10 MB
+>   because they legitimately carry source.
+
+### 🟡 S7 — SSRF surface in GitHub scanning — **HOST VALIDATION FIXED; SEVERITY WAS OVERSTATED**
 
 `routes/github.ts` fetches URLs derived from user input. Without strict validation this is a
 server-side request forgery primitive against internal networks and cloud metadata endpoints.
@@ -196,6 +249,59 @@ server-side request forgery primitive against internal networks and cloud metada
 **Fix:** strict allowlist (github.com API host only), reject redirects to other hosts, block
 private/link-local IP ranges, enforce timeouts. Already has size caps — good — but host
 validation is the important control.
+
+> **Fixed 2026-08-14, and the finding above is corrected rather than repeated.**
+>
+> **What was actually broken.** `parseGithubUrl()` tested `u.hostname.includes("github.com")`,
+> which is not a hostname check. Verified against the shipped implementation on Node 24 — each
+> row is now a test in `artifacts/api-server/src/lib/github-url.test.ts`, which runs the old
+> function alongside the new one so the table is a demonstration rather than a claim:
+>
+> | input | old result |
+> |---|---|
+> | `https://github.com.evil.example/owner/repo` | **accepted** |
+> | `https://evil-github.com/owner/repo` | **accepted** |
+> | `https://169.254.169.254.github.com/owner/repo` | **accepted** |
+> | `http://github.com/owner/repo` | **accepted** |
+> | `https://user:pass@github.com/owner/repo` | **accepted** |
+> | `https://github.com:8443/owner/repo` | **accepted** |
+> | `https://github.com/owner/repo%2F..%2F..` | **accepted**, repo = `repo%2F..%2F..` |
+>
+> Two shapes named in the original write-up **did not reproduce** and are recorded as corrections:
+> `https://evil.example/?x=github.com` was already rejected (`u.hostname` excludes the query
+> string) and so was `https://github.com@evil.example/...` (the host after a userinfo section is
+> `evil.example`). `https://github.com/../../etc/passwd` is also not a traversal — `new URL`
+> resolves dot-segments before `pathname` is read, so it arrives as owner `etc`, repo `passwd`.
+>
+> **What the reachable surface was, stated honestly.** The caller's *host never reached `fetch`*:
+> every request is built against a hardcoded `https://api.github.com/...` or
+> `https://raw.githubusercontent.com/...` with `owner` and `repo` interpolated into the path. So
+> this was **not** a request-forgery primitive against internal networks or cloud metadata — the
+> reachable half was **path injection into two fixed hosts**. The severity in the original finding
+> was too high, and "block private/link-local IP ranges" is **moot by construction** once the host
+> is an exact allowlist: there is no caller-controlled host left to resolve.
+>
+> **Controls now in `artifacts/api-server/src/lib/github-url.ts`:** exact hostname match against
+> `{github.com, www.github.com}`; `https:` only; no embedded credentials; no explicit port;
+> `owner`/`repo` matched against GitHub's real charsets (which makes `%2F`, `.` and `..`
+> unrepresentable) and percent-encoded into every request URL; tree-supplied file paths encoded
+> per segment with `.`/`..` refused; a 15-second `AbortSignal.timeout` per attempt; and
+> `githubFetch()`, which follows redirects manually and re-validates every hop against
+> `{api.github.com, raw.githubusercontent.com}`. `POST /github/scan-files` no longer echoes an
+> unvalidated `repoUrl`/`owner`/`repo` back to the client — all three routes return a canonical
+> URL rebuilt from the validated parts.
+>
+> **On the register's "redirect token leak": it was already mitigated, and not by us.** WHATWG
+> Fetch deletes `Authorization` when a redirect crosses origins and undici implements it; measured
+> on Node v24.14.0 against two local servers, a cross-origin 302 arrived with `authorization`
+> absent while other headers survived, and a same-origin 302 kept it. `github-url.test.ts` asserts
+> that against the running runtime rather than trusting the spec. Because `githubFetch` follows
+> redirects manually it opts *out* of that rule, so it reimplements it — which is a real control
+> we own, but it replaces a runtime guarantee rather than adding one where there was none.
+>
+> **Still outstanding:** the API-key middleware is the only thing keeping these routes from being
+> an open outbound-request proxy for anyone on the internet, and it is a single shared key. There
+> is also no allowlist of *which repositories* a caller may scan.
 
 ### 🟡 S8 — No audit logging
 
@@ -300,7 +406,16 @@ Before the first customer with real data:
 - [x] S4 — CORS allowlist
 - [ ] S5 — `.env` out of git *(done)*, secret scanning in CI *(not done)*
 - [ ] S6 — rate limits + scan queue
-- [ ] S7 — SSRF controls on GitHub fetching
+      *(rate limits shipped — two layers, per-route budgets, keyed per API key; the **scan queue
+      is deliberately deferred** as an architectural change, the store is in-process so the
+      budget is per replica, and body limits are only partly per-route. Three reasons this stays
+      unticked, all in §S6)*
+- [x] S7 — SSRF controls on GitHub fetching
+      *(exact host allowlist, https-only, no credentials or port, owner/repo charset validation
+      and encoding, per-hop redirect validation, request timeouts. The finding's severity was
+      **overstated** — the caller's host never reached `fetch` — and §S7 records the correction
+      and the two claimed bypasses that did not reproduce. Nothing here limits **which**
+      repositories a caller may ask for; that is access control, not SSRF)*
 - [ ] S8 — audit logging
 - [ ] Encryption at rest for the inventory database
 - [ ] Dependency scanning + `pnpm audit` in CI

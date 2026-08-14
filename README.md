@@ -261,6 +261,8 @@ reads `findings`. See [docs/Claude/03-features.md](docs/Claude/03-features.md) (
 | `PORT` | API, Vite | **yes** for API | API throws if unset; Vite defaults to 5173 |
 | `QUANTAXSCAN_API_KEYS` | API | **yes** | Comma-separated API keys. The API refuses to start without it, so it can never serve an unauthenticated API. Keep it out of `.env` — that file is tracked in git |
 | `CORS_ALLOWED_ORIGINS` | API | no | Comma-separated origins allowed to call the API cross-origin. Unset means same-origin only |
+| `TRUST_PROXY` | API | **behind a proxy** | Number of proxies in front of the API (`1` for a single load balancer). Rate limiting keys public routes on `req.ip`; unset behind a proxy, every caller shares one bucket and the public demo path rate-limits the world together. A bare `true` is rejected at startup — it lets a client forge `X-Forwarded-For` |
+| `RATE_LIMIT_*` | API | no | Per-window budgets; see `.env.example` and `artifacts/api-server/src/lib/rate-limit.ts`. The store is in-process, so each is per replica |
 | `VITE_API_BASE_URL` | frontend | dev only | API origin — no dev proxy exists |
 | `API_BASE_URL` | docker frontend | docker only | Injected into `config.js` at container start |
 | `GITHUB_TOKEN` | API | no | Raises the GitHub rate limit above 60 req/hr |

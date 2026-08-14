@@ -9,6 +9,11 @@ services:
       - PORT=5000
       - QUANTAXSCAN_API_KEYS=${QUANTAXSCAN_API_KEYS:?set QUANTAXSCAN_API_KEYS, e.g. openssl rand -base64 32}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      # Number of proxies in front of the API. Rate limiting (S6) keys public
+      # routes on req.ip, and behind a proxy with this unset every caller shares
+      # one bucket. The API port is published directly here, so 0 proxies is
+      # correct for this compose file; set it for any real deployment.
+      - TRUST_PROXY=${TRUST_PROXY:-}
       - DATABASE_URL=${DATABASE_URL}
       - VITE_OPENAI_API_KEY=${VITE_OPENAI_API_KEY}
       - AI_INTEGRATIONS_OPENAI_BASE_URL=${AI_INTEGRATIONS_OPENAI_BASE_URL}

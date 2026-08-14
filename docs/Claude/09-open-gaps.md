@@ -27,7 +27,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | ~~G-09~~ | ~~AES-ECB framed as a compliance violation~~ | **Closed** | Done 2026-08-14 (C1) | — |
 | ~~G-10~~ | ~~Hygiene findings inflate the PQC risk score~~ | **Closed** | Done 2026-08-14 (A4) | — |
 | G-11 | No confidence score on findings | Medium, mostly closed | Design | A2 + D3 — carried on `observations`, now read and shown; no *filtering* yet |
-| G-12 | Security findings S1–S8 | High | Interim auth + org scoping shipped; needs deploy | See [08](08-security.md), [13](13-auth-and-tenancy.md) |
+| G-12 | Security findings S1–S8 | High | Interim auth + org scoping shipped; needs deploy. S7 closed and S6 rate-limited (queue deferred) 2026-08-14 | See [08](08-security.md), [13](13-auth-and-tenancy.md) |
 | ~~G-13~~ | ~~`.env` tracked in git~~ | **Closed** | Done 2026-08-03 | — |
 | ~~G-14~~ | ~~No re-verification trigger for standards data~~ | **Closed (CI half); calendar half open** | Done 2026-08-14 | — |
 | G-15 | Observation model not aligned to SP 1800-38B data elements | Medium, partially closed | Design | A2 — profile + modality landed; no network collector populates it |
@@ -459,6 +459,29 @@ with credentials.
 > S1 still lacks per-user identity (F1), S2 still lacks the expiry and revocation *interface*
 > (the columns and the policy now exist), and S3, S6, S7, S8 are untouched. Real project names
 > are still in the production database and that needs database access, not a code change.
+
+> **S6 and S7 addressed 2026-08-14.** Rate limiting and the GitHub SSRF surface were the two
+> S-findings that were self-contained and needed no product decision, so they were taken
+> together. Detail and the honesty caveats are in [08-security.md](08-security.md); the summary
+> for this register:
+>
+> - **S7 is closed** and the pre-pilot checklist is ticked. Host validation is now an exact
+>   allowlist rather than `hostname.includes("github.com")`, with `https`-only, no embedded
+>   credentials, owner/repo charset validation and encoding, per-hop redirect validation and
+>   request timeouts. **The finding's severity was overstated:** the caller's host never reached
+>   `fetch` — every request was already built against two hardcoded GitHub hosts — so this was
+>   path injection into fixed hosts, not a request-forgery primitive against internal networks.
+>   The register's "redirect token leak" was likewise already mitigated by the Node runtime, and
+>   that is stated in 08 rather than claimed as a fix. Two of the bypasses named in the original
+>   write-up did not reproduce; the corrections are recorded there and asserted by tests.
+> - **S6 is not closed and stays unticked.** Two-layer rate limiting shipped with per-route
+>   budgets keyed per API key — per key rather than per org because the shared key is the only
+>   principal that exists — but the checklist item is "rate limits + **scan queue**", and the
+>   queue is deliberately deferred as an architectural change. The store is in-process, so every
+>   budget is per replica, and body limits are only partly per-route.
+>
+> The remaining S-findings are unchanged: S1 (per-user identity), S2 (share expiry/revocation
+> interface), S3 (full source persisted), S5 (secret scanning), S8 (audit logging).
 
 **Blocks:** the first pilot with real customer data — F1 and the remaining S-findings are still
 required for that. The immediate anonymous-access problem is addressed.
