@@ -11,3 +11,4 @@ export * from "./shared_reports";
 export * from "./collection_runs";
 export * from "./assets";
 export * from "./observations";
+export * from "./ot_fleets";

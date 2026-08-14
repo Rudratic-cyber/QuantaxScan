@@ -169,6 +169,14 @@ describe("route manifest — a new route cannot ship without being considered", 
     // project by location prefix, so it confirms the parent inside the scope
     // for the same reason POST /scans does.
     "POST /projects/:id/dependencies": "org-scoped",
+    // B8 — the manual OT register. No parent id is ever accepted, so there is
+    // no foreign-key-under-RLS check to make: the row is stamped with the
+    // caller's organisation and nothing else.
+    "GET /ot-fleets": "org-scoped",
+    "POST /ot-fleets": "org-scoped",
+    "GET /ot-fleets/:id": "org-scoped",
+    "PATCH /ot-fleets/:id": "org-scoped",
+    "DELETE /ot-fleets/:id": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",

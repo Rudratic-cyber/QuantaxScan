@@ -21,6 +21,7 @@ import type {
   ChatBody,
   CommunityPost,
   CreateCommunityPostBody,
+  CreateOtFleetBody,
   CreateProjectBody,
   CreateScanBody,
   CreateSharedReportBody,
@@ -41,6 +42,7 @@ import type {
   ListCommunityPostsParams,
   MultiScanBody,
   MultiScanResult,
+  OtFleet,
   PostureTimeline,
   Project,
   ProjectCoverage,
@@ -48,6 +50,7 @@ import type {
   Scan,
   SharedReport,
   SubmitProjectDependenciesBody,
+  UpdateOtFleetBody,
   VoteBody,
 } from "./api.schemas";
 
@@ -742,6 +745,428 @@ export const useSubmitProjectDependencies = <
   TContext
 > => {
   return useMutation(getSubmitProjectDependenciesMutationOptions(options));
+};
+
+/**
+ * The manual register — every fleet a customer has recorded by hand, newest first. Each entry carries `exposure`, computed fresh on every read against the current Q-Day scenarios, so a scenario or date change is reflected without a backfill.
+ * @summary List this organisation's OT/embedded device fleets (B8)
+ */
+export const getListOtFleetsUrl = () => {
+  return `/api/ot-fleets`;
+};
+
+export const listOtFleets = async (
+  options?: RequestInit,
+): Promise<OtFleet[]> => {
+  return customFetch<OtFleet[]>(getListOtFleetsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListOtFleetsQueryKey = () => {
+  return [`/api/ot-fleets`] as const;
+};
+
+export const getListOtFleetsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listOtFleets>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOtFleets>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListOtFleetsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listOtFleets>>> = ({
+    signal,
+  }) => listOtFleets({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listOtFleets>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListOtFleetsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listOtFleets>>
+>;
+export type ListOtFleetsQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary List this organisation's OT/embedded device fleets (B8)
+ */
+
+export function useListOtFleets<
+  TData = Awaited<ReturnType<typeof listOtFleets>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOtFleets>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListOtFleetsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * A form submission, not a collector run: every field but `name` is optional, and an omitted field is stored as `null` — "not supplied" — rather than a guessed default.
+ * @summary Record a new device fleet (B8)
+ */
+export const getCreateOtFleetUrl = () => {
+  return `/api/ot-fleets`;
+};
+
+export const createOtFleet = async (
+  createOtFleetBody: CreateOtFleetBody,
+  options?: RequestInit,
+): Promise<OtFleet> => {
+  return customFetch<OtFleet>(getCreateOtFleetUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createOtFleetBody),
+  });
+};
+
+export const getCreateOtFleetMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createOtFleet>>,
+    TError,
+    { data: BodyType<CreateOtFleetBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createOtFleet>>,
+  TError,
+  { data: BodyType<CreateOtFleetBody> },
+  TContext
+> => {
+  const mutationKey = ["createOtFleet"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createOtFleet>>,
+    { data: BodyType<CreateOtFleetBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createOtFleet(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateOtFleetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createOtFleet>>
+>;
+export type CreateOtFleetMutationBody = BodyType<CreateOtFleetBody>;
+export type CreateOtFleetMutationError = ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Record a new device fleet (B8)
+ */
+export const useCreateOtFleet = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createOtFleet>>,
+    TError,
+    { data: BodyType<CreateOtFleetBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createOtFleet>>,
+  TError,
+  { data: BodyType<CreateOtFleetBody> },
+  TContext
+> => {
+  return useMutation(getCreateOtFleetMutationOptions(options));
+};
+
+/**
+ * @summary Get one OT fleet by id (B8)
+ */
+export const getGetOtFleetUrl = (id: number) => {
+  return `/api/ot-fleets/${id}`;
+};
+
+export const getOtFleet = async (
+  id: number,
+  options?: RequestInit,
+): Promise<OtFleet> => {
+  return customFetch<OtFleet>(getGetOtFleetUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetOtFleetQueryKey = (id: number) => {
+  return [`/api/ot-fleets/${id}`] as const;
+};
+
+export const getGetOtFleetQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOtFleet>>,
+  TError = ErrorType<void | RateLimitedResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOtFleet>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetOtFleetQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getOtFleet>>> = ({
+    signal,
+  }) => getOtFleet(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOtFleet>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOtFleetQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOtFleet>>
+>;
+export type GetOtFleetQueryError = ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Get one OT fleet by id (B8)
+ */
+
+export function useGetOtFleet<
+  TData = Awaited<ReturnType<typeof getOtFleet>>,
+  TError = ErrorType<void | RateLimitedResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOtFleet>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOtFleetQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Every field is optional and only the fields present in the body are changed — omitting a field leaves the stored value (including `null`) exactly as it was, it does not clear it.
+ * @summary Update fields the customer has learned since the fleet was recorded (B8)
+ */
+export const getUpdateOtFleetUrl = (id: number) => {
+  return `/api/ot-fleets/${id}`;
+};
+
+export const updateOtFleet = async (
+  id: number,
+  updateOtFleetBody: UpdateOtFleetBody,
+  options?: RequestInit,
+): Promise<OtFleet> => {
+  return customFetch<OtFleet>(getUpdateOtFleetUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateOtFleetBody),
+  });
+};
+
+export const getUpdateOtFleetMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateOtFleet>>,
+    TError,
+    { id: number; data: BodyType<UpdateOtFleetBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateOtFleet>>,
+  TError,
+  { id: number; data: BodyType<UpdateOtFleetBody> },
+  TContext
+> => {
+  const mutationKey = ["updateOtFleet"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateOtFleet>>,
+    { id: number; data: BodyType<UpdateOtFleetBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateOtFleet(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateOtFleetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateOtFleet>>
+>;
+export type UpdateOtFleetMutationBody = BodyType<UpdateOtFleetBody>;
+export type UpdateOtFleetMutationError = ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Update fields the customer has learned since the fleet was recorded (B8)
+ */
+export const useUpdateOtFleet = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateOtFleet>>,
+    TError,
+    { id: number; data: BodyType<UpdateOtFleetBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateOtFleet>>,
+  TError,
+  { id: number; data: BodyType<UpdateOtFleetBody> },
+  TContext
+> => {
+  return useMutation(getUpdateOtFleetMutationOptions(options));
+};
+
+/**
+ * @summary Remove a fleet from the register (B8)
+ */
+export const getDeleteOtFleetUrl = (id: number) => {
+  return `/api/ot-fleets/${id}`;
+};
+
+export const deleteOtFleet = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteOtFleetUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteOtFleetMutationOptions = <
+  TError = ErrorType<RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteOtFleet>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteOtFleet>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteOtFleet"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteOtFleet>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteOtFleet(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteOtFleetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteOtFleet>>
+>;
+
+export type DeleteOtFleetMutationError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Remove a fleet from the register (B8)
+ */
+export const useDeleteOtFleet = <
+  TError = ErrorType<RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteOtFleet>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteOtFleet>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteOtFleetMutationOptions(options));
 };
 
 /**
