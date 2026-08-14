@@ -228,14 +228,21 @@ the product.
 `ee/` directory with a clear licence header, or a separate private repo. Decide before the first
 Enterprise line of code, because untangling it later is painful.
 
-### ⚠️ Resolve the existing conflict first
+### ✅ The existing conflict is resolved — 2026-08-14
 
-`package.json` declares `"license": "MIT"` and there is **no LICENSE file in the repo**. If the
-repository is published as-is, that declaration is what governs — MIT over the entire workspace,
-including anything intended to be Enterprise.
+`package.json` declared `"license": "MIT"` with **no LICENSE file in the repo**, which on
+publication would have granted MIT over the entire workspace, Enterprise included. Closed to the
+three decisions above rather than to a new one:
 
-Two-line fix now; a genuine mess later. Set the root manifest to the intended licence, add
-LICENSE files per tier, and add `mappings/LICENSE` for CC BY 4.0.
+| | |
+|---|---|
+| `LICENSE` | Apache 2.0, canonical text |
+| `docs/Claude/mappings/LICENSE` | CC BY 4.0, with attribution by `dataVersion` and a requirement not to strip `verified`/`needs-check` status |
+| `package.json` | `"license": "Apache-2.0"` — the line that would actually have governed |
+
+**Decision 3 is still open.** There is no `ee/` directory and no Enterprise licence header,
+because there is no Enterprise code yet. Nothing is mis-licensed today; the decision above says
+to make the call *before* the first Enterprise line is written, and that is still owed.
 
 ---
 
