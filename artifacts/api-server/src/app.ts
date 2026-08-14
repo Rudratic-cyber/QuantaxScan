@@ -4,8 +4,13 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { requireApiKey } from "./lib/auth";
+import { configureTrustProxy, edgeRateLimit, perRouteRateLimit } from "./lib/rate-limit";
 
 const app: Express = express();
+
+// Must run before any limiter is exercised: it decides what `req.ip` is, and
+// therefore whether IP-keyed buckets mean anything behind a proxy.
+configureTrustProxy(app);
 
 /**
  * Explicit CORS origin allowlist — closes S4. `origin: true` reflected any
@@ -63,9 +68,27 @@ app.use(
 // rather than being rejected with a 401.
 app.use(cors(corsOptions));
 
+// S6, layer 1: IP-keyed and *before* the auth middleware, because the 401 path
+// is itself reachable without a key and would otherwise be free to hammer.
+app.use("/api", edgeRateLimit);
+
 // Authenticate before the body parsers, so an unauthenticated request is
 // rejected without first buffering and parsing up to 10 MB of JSON.
 app.use("/api", requireApiKey);
+
+// S6, layer 2: principal-keyed per-route budgets. After auth so it can key on
+// the API key, still before the body parsers so an over-budget request is
+// refused without buffering its payload.
+app.use("/api", perRouteRateLimit);
+
+// Per-route body ceilings, mounted ahead of the global 10 MB parser. body-parser
+// marks a request as parsed, so the global parser below is a no-op once one of
+// these has run. `/scans` and `/github/scan-files` keep the 10 MB ceiling —
+// they legitimately carry source — which is why S6's "body size limits tuned
+// per route" is only partly done and is recorded that way in 08-security.md.
+app.use("/api/chat", express.json({ limit: "256kb" }));
+app.use("/api/github/fetch", express.json({ limit: "8kb" }));
+app.use("/api/github/scan", express.json({ limit: "8kb" }));
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));

@@ -43,6 +43,7 @@ import type {
   PostureTimeline,
   Project,
   ProjectCoverage,
+  RateLimitedResponse,
   Scan,
   SharedReport,
   VoteBody,
@@ -80,7 +81,7 @@ export const getHealthCheckQueryKey = () => {
 
 export const getHealthCheckQueryOptions = <
   TData = Awaited<ReturnType<typeof healthCheck>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
@@ -107,7 +108,7 @@ export const getHealthCheckQueryOptions = <
 export type HealthCheckQueryResult = NonNullable<
   Awaited<ReturnType<typeof healthCheck>>
 >;
-export type HealthCheckQueryError = ErrorType<unknown>;
+export type HealthCheckQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Health check
@@ -115,7 +116,7 @@ export type HealthCheckQueryError = ErrorType<unknown>;
 
 export function useHealthCheck<
   TData = Awaited<ReturnType<typeof healthCheck>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof healthCheck>>,
@@ -155,7 +156,7 @@ export const getListProjectsQueryKey = () => {
 
 export const getListProjectsQueryOptions = <
   TData = Awaited<ReturnType<typeof listProjects>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof listProjects>>,
@@ -182,7 +183,7 @@ export const getListProjectsQueryOptions = <
 export type ListProjectsQueryResult = NonNullable<
   Awaited<ReturnType<typeof listProjects>>
 >;
-export type ListProjectsQueryError = ErrorType<unknown>;
+export type ListProjectsQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary List all projects
@@ -190,7 +191,7 @@ export type ListProjectsQueryError = ErrorType<unknown>;
 
 export function useListProjects<
   TData = Awaited<ReturnType<typeof listProjects>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof listProjects>>,
@@ -228,7 +229,7 @@ export const createProject = async (
 };
 
 export const getCreateProjectMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -269,13 +270,13 @@ export type CreateProjectMutationResult = NonNullable<
   Awaited<ReturnType<typeof createProject>>
 >;
 export type CreateProjectMutationBody = BodyType<CreateProjectBody>;
-export type CreateProjectMutationError = ErrorType<unknown>;
+export type CreateProjectMutationError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Create a new project
  */
 export const useCreateProject = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -317,7 +318,7 @@ export const getGetProjectQueryKey = (id: number) => {
 
 export const getGetProjectQueryOptions = <
   TData = Awaited<ReturnType<typeof getProject>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -352,7 +353,7 @@ export const getGetProjectQueryOptions = <
 export type GetProjectQueryResult = NonNullable<
   Awaited<ReturnType<typeof getProject>>
 >;
-export type GetProjectQueryError = ErrorType<void>;
+export type GetProjectQueryError = ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Get a project by ID
@@ -360,7 +361,7 @@ export type GetProjectQueryError = ErrorType<void>;
 
 export function useGetProject<
   TData = Awaited<ReturnType<typeof getProject>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -399,7 +400,7 @@ export const deleteProject = async (
 };
 
 export const getDeleteProjectMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -440,13 +441,13 @@ export type DeleteProjectMutationResult = NonNullable<
   Awaited<ReturnType<typeof deleteProject>>
 >;
 
-export type DeleteProjectMutationError = ErrorType<unknown>;
+export type DeleteProjectMutationError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Delete a project
  */
 export const useDeleteProject = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -489,7 +490,7 @@ export const getGetProjectFindingsQueryKey = (id: number) => {
 
 export const getGetProjectFindingsQueryOptions = <
   TData = Awaited<ReturnType<typeof getProjectFindings>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -524,7 +525,8 @@ export const getGetProjectFindingsQueryOptions = <
 export type GetProjectFindingsQueryResult = NonNullable<
   Awaited<ReturnType<typeof getProjectFindings>>
 >;
-export type GetProjectFindingsQueryError = ErrorType<void>;
+export type GetProjectFindingsQueryError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Get every finding across every scan in a project
@@ -532,7 +534,7 @@ export type GetProjectFindingsQueryError = ErrorType<void>;
 
 export function useGetProjectFindings<
   TData = Awaited<ReturnType<typeof getProjectFindings>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -577,7 +579,7 @@ export const getGetProjectCoverageQueryKey = (id: number) => {
 
 export const getGetProjectCoverageQueryOptions = <
   TData = Awaited<ReturnType<typeof getProjectCoverage>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -612,7 +614,8 @@ export const getGetProjectCoverageQueryOptions = <
 export type GetProjectCoverageQueryResult = NonNullable<
   Awaited<ReturnType<typeof getProjectCoverage>>
 >;
-export type GetProjectCoverageQueryError = ErrorType<void>;
+export type GetProjectCoverageQueryError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Coverage and confidence meter for a project (D3)
@@ -620,7 +623,7 @@ export type GetProjectCoverageQueryError = ErrorType<void>;
 
 export function useGetProjectCoverage<
   TData = Awaited<ReturnType<typeof getProjectCoverage>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -665,7 +668,7 @@ export const getGetInventoryTimelineQueryKey = () => {
 
 export const getGetInventoryTimelineQueryOptions = <
   TData = Awaited<ReturnType<typeof getInventoryTimeline>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getInventoryTimeline>>,
@@ -692,7 +695,7 @@ export const getGetInventoryTimelineQueryOptions = <
 export type GetInventoryTimelineQueryResult = NonNullable<
   Awaited<ReturnType<typeof getInventoryTimeline>>
 >;
-export type GetInventoryTimelineQueryError = ErrorType<unknown>;
+export type GetInventoryTimelineQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Estate cryptographic posture over time (D7)
@@ -700,7 +703,7 @@ export type GetInventoryTimelineQueryError = ErrorType<unknown>;
 
 export function useGetInventoryTimeline<
   TData = Awaited<ReturnType<typeof getInventoryTimeline>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getInventoryTimeline>>,
@@ -741,7 +744,7 @@ export const getGetInventoryCbomQueryKey = () => {
 
 export const getGetInventoryCbomQueryOptions = <
   TData = Awaited<ReturnType<typeof getInventoryCbom>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getInventoryCbom>>,
@@ -768,7 +771,7 @@ export const getGetInventoryCbomQueryOptions = <
 export type GetInventoryCbomQueryResult = NonNullable<
   Awaited<ReturnType<typeof getInventoryCbom>>
 >;
-export type GetInventoryCbomQueryError = ErrorType<unknown>;
+export type GetInventoryCbomQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Export the cryptographic inventory as a CycloneDX 1.7 CBOM
@@ -776,7 +779,7 @@ export type GetInventoryCbomQueryError = ErrorType<unknown>;
 
 export function useGetInventoryCbom<
   TData = Awaited<ReturnType<typeof getInventoryCbom>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getInventoryCbom>>,
@@ -814,7 +817,7 @@ export const createScan = async (
 };
 
 export const getCreateScanMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -855,13 +858,13 @@ export type CreateScanMutationResult = NonNullable<
   Awaited<ReturnType<typeof createScan>>
 >;
 export type CreateScanMutationBody = BodyType<CreateScanBody>;
-export type CreateScanMutationError = ErrorType<unknown>;
+export type CreateScanMutationError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Start a new scan
  */
 export const useCreateScan = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -903,7 +906,7 @@ export const getGetScanQueryKey = (id: number) => {
 
 export const getGetScanQueryOptions = <
   TData = Awaited<ReturnType<typeof getScan>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -932,7 +935,7 @@ export const getGetScanQueryOptions = <
 export type GetScanQueryResult = NonNullable<
   Awaited<ReturnType<typeof getScan>>
 >;
-export type GetScanQueryError = ErrorType<void>;
+export type GetScanQueryError = ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Get scan results
@@ -940,7 +943,7 @@ export type GetScanQueryError = ErrorType<void>;
 
 export function useGetScan<
   TData = Awaited<ReturnType<typeof getScan>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -980,7 +983,7 @@ export const getGetScanFindingsQueryKey = (id: number) => {
 
 export const getGetScanFindingsQueryOptions = <
   TData = Awaited<ReturnType<typeof getScanFindings>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -1015,7 +1018,7 @@ export const getGetScanFindingsQueryOptions = <
 export type GetScanFindingsQueryResult = NonNullable<
   Awaited<ReturnType<typeof getScanFindings>>
 >;
-export type GetScanFindingsQueryError = ErrorType<unknown>;
+export type GetScanFindingsQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Get all findings for a scan
@@ -1023,7 +1026,7 @@ export type GetScanFindingsQueryError = ErrorType<unknown>;
 
 export function useGetScanFindings<
   TData = Awaited<ReturnType<typeof getScanFindings>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   id: number,
   options?: {
@@ -1065,7 +1068,7 @@ export const createMultiScan = async (
 };
 
 export const getCreateMultiScanMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1106,13 +1109,14 @@ export type CreateMultiScanMutationResult = NonNullable<
   Awaited<ReturnType<typeof createMultiScan>>
 >;
 export type CreateMultiScanMutationBody = BodyType<MultiScanBody>;
-export type CreateMultiScanMutationError = ErrorType<void>;
+export type CreateMultiScanMutationError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Scan several files as one new project
  */
 export const useCreateMultiScan = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1152,7 +1156,7 @@ export const createSharedReport = async (
 };
 
 export const getCreateSharedReportMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1193,13 +1197,14 @@ export type CreateSharedReportMutationResult = NonNullable<
   Awaited<ReturnType<typeof createSharedReport>>
 >;
 export type CreateSharedReportMutationBody = BodyType<CreateSharedReportBody>;
-export type CreateSharedReportMutationError = ErrorType<void>;
+export type CreateSharedReportMutationError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Create a share link for a report
  */
 export const useCreateSharedReport = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1242,7 +1247,7 @@ export const getGetSharedReportQueryKey = (id: string) => {
 
 export const getGetSharedReportQueryOptions = <
   TData = Awaited<ReturnType<typeof getSharedReport>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: string,
   options?: {
@@ -1277,7 +1282,7 @@ export const getGetSharedReportQueryOptions = <
 export type GetSharedReportQueryResult = NonNullable<
   Awaited<ReturnType<typeof getSharedReport>>
 >;
-export type GetSharedReportQueryError = ErrorType<void>;
+export type GetSharedReportQueryError = ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Read a shared report by its link id
@@ -1285,7 +1290,7 @@ export type GetSharedReportQueryError = ErrorType<void>;
 
 export function useGetSharedReport<
   TData = Awaited<ReturnType<typeof getSharedReport>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
 >(
   id: string,
   options?: {
@@ -1327,7 +1332,7 @@ export const createChatCompletion = async (
 };
 
 export const getCreateChatCompletionMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1368,13 +1373,14 @@ export type CreateChatCompletionMutationResult = NonNullable<
   Awaited<ReturnType<typeof createChatCompletion>>
 >;
 export type CreateChatCompletionMutationBody = BodyType<ChatBody>;
-export type CreateChatCompletionMutationError = ErrorType<void>;
+export type CreateChatCompletionMutationError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Stream an AI answer about a scan
  */
 export const useCreateChatCompletion = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1430,7 +1436,7 @@ export const getListCommunityPostsQueryKey = (
 
 export const getListCommunityPostsQueryOptions = <
   TData = Awaited<ReturnType<typeof listCommunityPosts>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   params?: ListCommunityPostsParams,
   options?: {
@@ -1461,7 +1467,7 @@ export const getListCommunityPostsQueryOptions = <
 export type ListCommunityPostsQueryResult = NonNullable<
   Awaited<ReturnType<typeof listCommunityPosts>>
 >;
-export type ListCommunityPostsQueryError = ErrorType<unknown>;
+export type ListCommunityPostsQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary List community posts
@@ -1469,7 +1475,7 @@ export type ListCommunityPostsQueryError = ErrorType<unknown>;
 
 export function useListCommunityPosts<
   TData = Awaited<ReturnType<typeof listCommunityPosts>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   params?: ListCommunityPostsParams,
   options?: {
@@ -1510,7 +1516,7 @@ export const createCommunityPost = async (
 };
 
 export const getCreateCommunityPostMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1551,13 +1557,13 @@ export type CreateCommunityPostMutationResult = NonNullable<
   Awaited<ReturnType<typeof createCommunityPost>>
 >;
 export type CreateCommunityPostMutationBody = BodyType<CreateCommunityPostBody>;
-export type CreateCommunityPostMutationError = ErrorType<unknown>;
+export type CreateCommunityPostMutationError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Create a community post
  */
 export const useCreateCommunityPost = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1597,7 +1603,7 @@ export const voteCommunityPost = async (
 };
 
 export const getVoteCommunityPostMutationOptions = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1638,13 +1644,13 @@ export type VoteCommunityPostMutationResult = NonNullable<
   Awaited<ReturnType<typeof voteCommunityPost>>
 >;
 export type VoteCommunityPostMutationBody = BodyType<VoteBody>;
-export type VoteCommunityPostMutationError = ErrorType<unknown>;
+export type VoteCommunityPostMutationError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Vote on a community post
  */
 export const useVoteCommunityPost = <
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1698,7 +1704,7 @@ export const getGetLeaderboardQueryKey = (params?: GetLeaderboardParams) => {
 
 export const getGetLeaderboardQueryOptions = <
   TData = Awaited<ReturnType<typeof getLeaderboard>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   params?: GetLeaderboardParams,
   options?: {
@@ -1728,7 +1734,7 @@ export const getGetLeaderboardQueryOptions = <
 export type GetLeaderboardQueryResult = NonNullable<
   Awaited<ReturnType<typeof getLeaderboard>>
 >;
-export type GetLeaderboardQueryError = ErrorType<unknown>;
+export type GetLeaderboardQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Get top contributors leaderboard
@@ -1736,7 +1742,7 @@ export type GetLeaderboardQueryError = ErrorType<unknown>;
 
 export function useGetLeaderboard<
   TData = Awaited<ReturnType<typeof getLeaderboard>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(
   params?: GetLeaderboardParams,
   options?: {
@@ -1779,7 +1785,7 @@ export const getGetGlobalStatsQueryKey = () => {
 
 export const getGetGlobalStatsQueryOptions = <
   TData = Awaited<ReturnType<typeof getGlobalStats>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getGlobalStats>>,
@@ -1806,7 +1812,7 @@ export const getGetGlobalStatsQueryOptions = <
 export type GetGlobalStatsQueryResult = NonNullable<
   Awaited<ReturnType<typeof getGlobalStats>>
 >;
-export type GetGlobalStatsQueryError = ErrorType<unknown>;
+export type GetGlobalStatsQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary Get global platform statistics
@@ -1814,7 +1820,7 @@ export type GetGlobalStatsQueryError = ErrorType<unknown>;
 
 export function useGetGlobalStats<
   TData = Awaited<ReturnType<typeof getGlobalStats>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getGlobalStats>>,
@@ -1854,7 +1860,7 @@ export const getListDemoReposQueryKey = () => {
 
 export const getListDemoReposQueryOptions = <
   TData = Awaited<ReturnType<typeof listDemoRepos>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof listDemoRepos>>,
@@ -1881,7 +1887,7 @@ export const getListDemoReposQueryOptions = <
 export type ListDemoReposQueryResult = NonNullable<
   Awaited<ReturnType<typeof listDemoRepos>>
 >;
-export type ListDemoReposQueryError = ErrorType<unknown>;
+export type ListDemoReposQueryError = ErrorType<RateLimitedResponse>;
 
 /**
  * @summary List available demo repositories
@@ -1889,7 +1895,7 @@ export type ListDemoReposQueryError = ErrorType<unknown>;
 
 export function useListDemoRepos<
   TData = Awaited<ReturnType<typeof listDemoRepos>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<RateLimitedResponse>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof listDemoRepos>>,
@@ -1926,7 +1932,7 @@ export const runDemoScan = async (
 };
 
 export const getRunDemoScanMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -1967,13 +1973,13 @@ export type RunDemoScanMutationResult = NonNullable<
   Awaited<ReturnType<typeof runDemoScan>>
 >;
 
-export type RunDemoScanMutationError = ErrorType<void>;
+export type RunDemoScanMutationError = ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Run a scan on a demo repository
  */
 export const useRunDemoScan = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2100,7 +2106,7 @@ export const getGetGithubRateLimitQueryKey = () => {
 
 export const getGetGithubRateLimitQueryOptions = <
   TData = Awaited<ReturnType<typeof getGithubRateLimit>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<RateLimitedResponse | void>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getGithubRateLimit>>,
@@ -2127,7 +2133,8 @@ export const getGetGithubRateLimitQueryOptions = <
 export type GetGithubRateLimitQueryResult = NonNullable<
   Awaited<ReturnType<typeof getGithubRateLimit>>
 >;
-export type GetGithubRateLimitQueryError = ErrorType<void>;
+export type GetGithubRateLimitQueryError =
+  ErrorType<RateLimitedResponse | void>;
 
 /**
  * @summary Remaining GitHub API quota
@@ -2135,7 +2142,7 @@ export type GetGithubRateLimitQueryError = ErrorType<void>;
 
 export function useGetGithubRateLimit<
   TData = Awaited<ReturnType<typeof getGithubRateLimit>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<RateLimitedResponse | void>,
 >(options?: {
   query?: UseQueryOptions<
     Awaited<ReturnType<typeof getGithubRateLimit>>,
@@ -2261,7 +2268,7 @@ export const scanGithubFiles = async (
 };
 
 export const getScanGithubFilesMutationOptions = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -2302,13 +2309,14 @@ export type ScanGithubFilesMutationResult = NonNullable<
   Awaited<ReturnType<typeof scanGithubFiles>>
 >;
 export type ScanGithubFilesMutationBody = BodyType<GithubScanFilesBody>;
-export type ScanGithubFilesMutationError = ErrorType<void>;
+export type ScanGithubFilesMutationError =
+  ErrorType<void | RateLimitedResponse>;
 
 /**
  * @summary Phase 2 — scan already-fetched files, with no GitHub API calls
  */
 export const useScanGithubFiles = <
-  TError = ErrorType<void>,
+  TError = ErrorType<void | RateLimitedResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<

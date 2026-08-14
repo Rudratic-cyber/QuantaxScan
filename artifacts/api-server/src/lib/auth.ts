@@ -90,8 +90,11 @@ function isPublic(method: string, path: string): boolean {
 
 /**
  * Extracts the presented key from `Authorization: Bearer <key>` or `X-API-Key`.
+ *
+ * Exported for the rate limiter, which keys its per-principal buckets on the
+ * digest of this value. It must never be logged or returned.
  */
-function presentedKey(headers: {
+export function presentedKey(headers: {
   authorization?: string;
   "x-api-key"?: string | string[];
 }): string | null {

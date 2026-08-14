@@ -34,6 +34,11 @@ tags:
 # Interim shared-key authentication (S1 / G-12). Applies to every operation
 # unless overridden with `security: []`. This carries no per-user identity and
 # no organisation scoping — see docs/Claude/08-security.md.
+#
+# Every operation can also answer 429 (S6). Budgets are per route and keyed on
+# the API key, falling back to the client address on the public operations;
+# `Retry-After` is always set. The store is in-process, so the documented
+# allowance is per replica. See `components/responses/RateLimited`.
 security:
   - apiKeyHeader: []
   - bearerApiKey: []
@@ -47,6 +52,8 @@ paths:
       summary: Health check
       description: Returns server health status
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Healthy
           content:
@@ -60,6 +67,8 @@ paths:
       tags: [projects]
       summary: List all projects
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: List of projects
           content:
@@ -79,6 +88,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateProjectBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "201":
           description: Created project
           content:
@@ -98,6 +109,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Project details
           content:
@@ -117,6 +130,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "204":
           description: Deleted
 
@@ -136,6 +151,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Project findings
           content:
@@ -164,6 +181,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Coverage summary
           content:
@@ -187,6 +206,8 @@ paths:
         because that would draw a smooth trend on an estate that never changed. When fewer than
         two distinct instants exist, `observed.sufficientForTrend` is false and `reason` says so.
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Posture timeline
           content:
@@ -205,6 +226,8 @@ paths:
         auditor must not list crypto that a later run proved absent. **Not public** — a CBOM
         is a complete map of an organisation's cryptographic weaknesses.
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: CycloneDX 1.7 document
           content:
@@ -224,6 +247,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateScanBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "201":
           description: Scan initiated
           content:
@@ -243,6 +268,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Scan results
           content:
@@ -264,6 +291,8 @@ paths:
           schema:
             type: integer
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Scan findings
           content:
@@ -290,6 +319,8 @@ paths:
             schema:
               $ref: "#/components/schemas/MultiScanBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "201":
           description: Multi-file scan summary
           content:
@@ -315,6 +346,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateSharedReportBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Share link created
           content:
@@ -344,6 +377,8 @@ paths:
           schema:
             type: string
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: The shared report row
           content:
@@ -372,6 +407,8 @@ paths:
             schema:
               $ref: "#/components/schemas/ChatBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Server-sent event stream
           content:
@@ -403,6 +440,8 @@ paths:
             type: integer
             default: 20
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Community posts
           content:
@@ -422,6 +461,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateCommunityPostBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "201":
           description: Created post
           content:
@@ -447,6 +488,8 @@ paths:
             schema:
               $ref: "#/components/schemas/VoteBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Updated post
           content:
@@ -467,6 +510,8 @@ paths:
             type: integer
             default: 10
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Leaderboard
           content:
@@ -482,6 +527,8 @@ paths:
       tags: [stats]
       summary: Get global platform statistics
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Global stats
           content:
@@ -496,6 +543,8 @@ paths:
       tags: [demo]
       summary: List available demo repositories
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Demo repos
           content:
@@ -521,6 +570,8 @@ paths:
           schema:
             type: string
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Demo scan results
           content:
@@ -553,7 +604,9 @@ paths:
         "404":
           description: Repository not found
         "429":
-          description: GitHub API rate limit
+          description: >-
+            Rate limited. Either this server's own per-route budget (S6) or GitHub's
+            upstream quota; `Retry-After` is set in both cases.
 
   /github/rate-limit:
     get:
@@ -561,6 +614,8 @@ paths:
       tags: [github]
       summary: Remaining GitHub API quota
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Rate limit status
           content:
@@ -597,7 +652,9 @@ paths:
         "404":
           description: Repository not found
         "429":
-          description: GitHub API rate limit
+          description: >-
+            Rate limited. Either this server's own per-route budget (S6) or GitHub's
+            upstream quota; `Retry-After` is set in both cases.
         "502":
           description: GitHub API unreachable
 
@@ -617,6 +674,8 @@ paths:
             schema:
               $ref: "#/components/schemas/GithubScanFilesBody"
       responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "200":
           description: Scan results
           content:
@@ -627,6 +686,30 @@ paths:
           description: files array is required
 
 components:
+  responses:
+    RateLimited:
+      description: >-
+        Rate limited (S6). The budget depends on the route: GitHub-facing scans,
+        local scans, chat and everything else have separate allowances, and the
+        health check is exempt. Buckets are keyed on the API key where one is
+        presented and on the client address otherwise, so the response is
+        identical whether or not the key was valid. `Retry-After` carries the
+        number of seconds until the window resets.
+      headers:
+        Retry-After:
+          description: Seconds until the caller may retry.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+            required:
+              - error
+
   securitySchemes:
     apiKeyHeader:
       type: apiKey
