@@ -6,12 +6,20 @@ import { sql } from "drizzle-orm";
  * Cross-tenant proof, through the real Express app.
  *
  * The principal here is the shared API key **bound to organisation 2**
- * (`QUANTAXSCAN_API_KEY_ORG_ID=2`), while the fixtures put most of the data in
- * organisation 1. So every assertion below is "a caller in one organisation
- * reaching for another organisation's data", exercised end to end: HTTP →
- * middleware → route → `withOrg` → policy.
+ * (via `QUANTAXSCAN_API_KEY_ORG_IDS`, F1's N-keys-to-N-orgs binding — see
+ * `artifacts/api-server/src/lib/principal.ts`), while the fixtures put most
+ * of the data in organisation 1. So every assertion below is "a caller in one
+ * organisation reaching for another organisation's data", exercised end to
+ * end: HTTP → middleware → route → `withOrg` → policy.
  *
- * Two things make it real rather than decorative:
+ * A *second* key, bound to a *third* organisation, is configured alongside
+ * it — see "multiple API keys bind to multiple organisations" below. That is
+ * what proves the binding is a real N-keys-to-N-orgs map and not just "the
+ * one env var happens to say 2 in this file": two independently-issued keys,
+ * live at the same time, resolving to two different, mutually-invisible
+ * organisations.
+ *
+ * Three things make it real rather than decorative:
  *
  *   1. The connection runs as `quantaxscan_app`, which has no BYPASSRLS. See
  *      the negative control in lib/db's tenant-isolation.test.ts — without
@@ -22,6 +30,11 @@ import { sql } from "drizzle-orm";
  *      forgetting a `where` clause", and it is why `GET /api/projects` —
  *      literally `select().from(projectsTable)` with no filter at all — is the
  *      strongest test in this file.
+ *   3. The two keys below are never sent together and never compared to each
+ *      other's digest by the test — each request carries exactly one key, the
+ *      same as a real caller, so a leak has to show up as one key's response
+ *      containing the other organisation's row, not as an artefact of the
+ *      test harness holding both credentials at once.
  *
  * The session half of the design's cross-tenant suite (two signed-in users,
  * membership revocation taking effect on the next request) needs sign-in,
@@ -30,14 +43,29 @@ import { sql } from "drizzle-orm";
 
 const API_KEY = "test-api-key-1234567890-super-secret-key-32bytes";
 const OTHER_ORG = 1; // where the fixtures live
-const OUR_ORG = 2; // who the API key is
+const OUR_ORG = 2; // who API_KEY is bound to
+
+/** A second, independently-issued key, bound to a third organisation. */
+const SECOND_API_KEY = "second-test-api-key-0987654321-super-secret-32b";
+const THIRD_ORG = 3; // who SECOND_API_KEY is bound to
 
 const { testDb, testScope, seedAsSuperuser, closeTestDb } = await vi.hoisted(async () => {
-  process.env.QUANTAXSCAN_API_KEYS = "test-api-key-1234567890-super-secret-key-32bytes";
+  process.env.QUANTAXSCAN_API_KEYS =
+    "test-api-key-1234567890-super-secret-key-32bytes,second-test-api-key-0987654321-super-secret-32b";
   process.env.DATABASE_URL = "postgres://dummy:dummy@localhost:5432/dummy";
-  process.env.QUANTAXSCAN_API_KEY_ORG_ID = "2";
+  // Positional: entry i of QUANTAXSCAN_API_KEY_ORG_IDS binds entry i of
+  // QUANTAXSCAN_API_KEYS. This is the mapping principal.ts replaced the old
+  // single QUANTAXSCAN_API_KEY_ORG_ID with — see its module doc for why an
+  // unlisted key is a startup error rather than a silent fall-back to
+  // organisation 1.
+  process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "2,3";
   const { createTestDb } = await import("@workspace/db/test-support");
-  const { db, scope, seedAsSuperuser, close } = await createTestDb({ asRole: "quantaxscan_app" });
+  // Default is [1, 2]; the third organisation is this file's own fixture for
+  // the second-key tests below, so it has to be seeded explicitly too.
+  const { db, scope, seedAsSuperuser, close } = await createTestDb({
+    asRole: "quantaxscan_app",
+    organizations: [1, 2, 3],
+  });
   return { testDb: db, testScope: scope, seedAsSuperuser, closeTestDb: close };
 });
 
@@ -53,11 +81,14 @@ import router from "./routes";
 
 const request = supertest(app);
 const auth = <T extends { set: (k: string, v: string) => T }>(r: T): T => r.set("X-API-Key", API_KEY);
+const auth2 = <T extends { set: (k: string, v: string) => T }>(r: T): T => r.set("X-API-Key", SECOND_API_KEY);
 
 /** Ids seeded into the OTHER organisation, which this caller must never reach. */
 const theirs = { projectId: 0, scanId: 0, findingId: 0, publicReport: "their-public", privateReport: "their-private" };
 /** Ids seeded into OUR organisation, which this caller must see. */
 const ours = { projectId: 0, scanId: 0 };
+/** Ids seeded into the THIRD organisation, for the second-key tests. */
+const theirsToo = { projectId: 0 };
 
 beforeAll(async () => {
   await seedAsSuperuser(async (client) => {
@@ -77,6 +108,7 @@ beforeAll(async () => {
     ours.projectId = await insertProject(OUR_ORG, "our project");
     theirs.scanId = await insertScan(OTHER_ORG, theirs.projectId);
     ours.scanId = await insertScan(OUR_ORG, ours.projectId);
+    theirsToo.projectId = await insertProject(THIRD_ORG, "third organisation's project");
 
     theirs.findingId = (await client.query<{ id: number }>(
       `insert into findings (organization_id, scan_id, file_name, line_number, severity, algorithm, code_snippet)
@@ -517,5 +549,76 @@ describe("writes land in the caller's organisation, never anywhere else", () => 
       executeRows<{ n: number }>(tx, sql`select count(*)::int as n from assets where location like ${assetPrefix}`),
     );
     expect(mine[0].n).toBeGreaterThan(0);
+  });
+});
+
+describe("multiple API keys bind to multiple organisations (F1)", () => {
+  /**
+   * Everything above this point uses one key (`API_KEY`, bound to `OUR_ORG`)
+   * against fixtures in `OTHER_ORG`. That alone would still pass if the
+   * server only ever supported a single key-to-org binding — it says nothing
+   * about whether a *second*, independently-configured key resolves to a
+   * *different* organisation rather than either erroring or quietly reusing
+   * the first key's binding. These tests exist to make exactly that leak
+   * fail: `SECOND_API_KEY` is bound to `THIRD_ORG`, a organisation neither
+   * `API_KEY` nor its fixtures have any relationship to.
+   */
+
+  it("the second key reaches its own organisation and none of the other two", async () => {
+    const res = await auth2(request.get("/api/projects"));
+    expect(res.status).toBe(200);
+    expect(res.body.map((p: { name: string }) => p.name)).toEqual(["third organisation's project"]);
+  });
+
+  it("the second key cannot address the first key's organisation's project by id — 404, not 403", async () => {
+    const res = await auth2(request.get(`/api/projects/${ours.projectId}`));
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "Project not found" });
+  });
+
+  it("the second key cannot address the fixture organisation's project by id either", async () => {
+    const res = await auth2(request.get(`/api/projects/${theirs.projectId}`));
+    expect(res.status).toBe(404);
+  });
+
+  it("the FIRST key cannot address the SECOND key's organisation's project — the binding is symmetric", async () => {
+    const res = await auth(request.get(`/api/projects/${theirsToo.projectId}`));
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "Project not found" });
+  });
+
+  it("a project the second key creates lands in THIRD_ORG, invisible to the first key, and disappears from neither existing organisation's count", async () => {
+    const beforeOurs = await auth(request.get("/api/projects"));
+    const beforeCount = beforeOurs.body.length;
+
+    const created = await auth2(
+      request.post("/api/projects").send({ name: "third org new project", language: "python", code: "z = 1" }),
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.organizationId).toBe(THIRD_ORG);
+
+    // The first key's list is exactly what it was — not stamped with the
+    // third organisation's new row, and not missing anything.
+    const afterOurs = await auth(request.get("/api/projects"));
+    expect(afterOurs.body).toHaveLength(beforeCount);
+    expect(afterOurs.body.map((p: { name: string }) => p.name)).not.toContain("third org new project");
+
+    // Verified from outside either scope, the same way the rest of this file
+    // verifies writes: this is the row's real organisation, not an
+    // agreement between two reads that both trust the same broken binding.
+    const stamped = await testScope.withOrg({ organizationId: THIRD_ORG, userId: "" }, (tx) =>
+      executeRows<{ n: number }>(
+        tx,
+        sql`select count(*)::int as n from projects where name = 'third org new project'`,
+      ),
+    );
+    expect(stamped).toEqual([{ n: 1 }]);
+  });
+
+  it("an unrecognised key is still 401, unaffected by there now being two valid ones", async () => {
+    const res = await request
+      .get("/api/projects")
+      .set("X-API-Key", "not-one-of-the-configured-keys-at-all-000000000");
+    expect(res.status).toBe(401);
   });
 });

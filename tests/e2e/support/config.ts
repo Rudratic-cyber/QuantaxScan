@@ -79,6 +79,24 @@ export const API_KEY_ORG_ID = "1";
 export const CAPTAIN_EMAIL = "e2e-captain@quantaxscan.invalid";
 
 /**
+ * A second organisation and a second API key bound to it — 07-multi-org.spec.ts's
+ * fixture, and *opt-in only*. Every other spec, and every other lane's run of
+ * this same global setup, must see byte-identical behaviour to before this
+ * existed, so nothing below runs unless `E2E_SECOND_ORG=1` is set on the
+ * process that starts the stack.
+ *
+ * `global-setup.ts` creates the organisation (via
+ * `pnpm --filter @workspace/db run create-organization`, the real script, not
+ * a shortcut) and binds this key to it with `QUANTAXSCAN_API_KEY_ORG_IDS`; the
+ * organisation's actual id is only known once that runs, so it is written into
+ * `StackState` rather than hard-coded here.
+ */
+export const SECOND_ORG_ENABLED = process.env["E2E_SECOND_ORG"] === "1";
+export const SECOND_ORG_SLUG = process.env["E2E_SECOND_ORG_SLUG"] ?? "second-org-e2e";
+export const SECOND_ORG_NAME = process.env["E2E_SECOND_ORG_NAME"] ?? "Second Org (e2e)";
+export const SECOND_API_KEY = process.env["E2E_SECOND_API_KEY"] ?? randomBytes(32).toString("base64url");
+
+/**
  * Set when the operator has already provided a PostgreSQL cluster (CI passes
  * a `services:` container this way). When absent the suite starts its own
  * container. When neither is possible the run fails — it never skips.
@@ -127,4 +145,10 @@ export type StackState = {
   startedContainer: boolean;
   container: string;
   apiKey: string;
+  /** Set only when `SECOND_ORG_ENABLED`. Persisted for the same reason `apiKey` is:
+   *  each Playwright worker is its own process, so a key regenerated at module
+   *  load in that process would differ from the one the server was started with. */
+  secondApiKey?: string;
+  /** Set only when `SECOND_ORG_ENABLED` — the id `create-organization` assigned. */
+  secondOrganizationId?: number;
 };

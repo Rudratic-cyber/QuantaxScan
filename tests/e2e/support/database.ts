@@ -38,6 +38,8 @@ import {
   PG_PORT,
   PG_SUPERUSER,
   PG_SUPERUSER_PASSWORD,
+  SECOND_ORG_NAME,
+  SECOND_ORG_SLUG,
   adminUrl,
   migratorUrl,
   runtimeUrl,
@@ -198,6 +200,38 @@ export async function assertRuntimeRoleIsSubjectToRls(): Promise<void> {
           `Every tenant-scoped assertion below would pass while proving nothing.`,
       );
     }
+  });
+}
+
+/**
+ * Creates the second organisation for 07-multi-org.spec.ts, through the real
+ * operator script (`lib/db/scripts/create-organization.ts`) rather than a raw
+ * INSERT — this is also how the script itself gets exercised end to end.
+ * Returns its id, read back afterwards since the script only prints it.
+ *
+ * Called only when `SECOND_ORG_ENABLED` (config.ts); every other run of this
+ * global setup never touches this function.
+ */
+export async function ensureSecondOrganization(): Promise<number> {
+  const migrator = migratorUrl();
+  await run("create-organization", "pnpm", ["--filter", "@workspace/db", "run", "create-organization"], {
+    DATABASE_URL_MIGRATOR: migrator,
+    ORG_NAME: SECOND_ORG_NAME,
+    ORG_SLUG: SECOND_ORG_SLUG,
+  });
+
+  return withClient(migrator, async (client) => {
+    const { rows } = await client.query<{ id: number }>(
+      `select id from organizations where slug = $1`,
+      [SECOND_ORG_SLUG],
+    );
+    const org = rows[0];
+    if (!org) {
+      throw new Error(
+        `create-organization ran but no organisation with slug "${SECOND_ORG_SLUG}" exists afterwards.`,
+      );
+    }
+    return org.id;
   });
 }
 
