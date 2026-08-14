@@ -2,7 +2,16 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    // `DOM` is here for the browser half of a Playwright suite, not for the
+    // suite itself. `page.addInitScript` and `page.evaluate` take callbacks
+    // that are serialised and run *in the page*, so they legitimately name
+    // `window`, `Headers` and `RequestInfo` — which `es2022` alone does not
+    // declare, and which is why `tests/e2e/support/fixtures.ts` would not
+    // compile without it. The cost is that a Node-side test file can now
+    // reference a DOM global and still typecheck; the alternative is
+    // hand-declaring the browser globals at every call site.
+    "lib": ["es2022", "DOM"]
   },
   "include": ["playwright.config.ts", "tests/**/*.ts"]
 }
