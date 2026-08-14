@@ -291,7 +291,36 @@ Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 | D4 | Drift detection + alerting | `planned` | **P1** |
 | D5 | Crypto-agility score | `planned` | **P1** |
 | D6 | Migration wave planner | `planned` | **P2** |
-| D7 | Trend/history view | `planned` | **P2** |
+| D7 | Trend/history view | `partial` | **P2** |
+
+### D7 `partial` — the timeline, and what it refuses to draw
+
+`GET /api/inventory/timeline` and the dashboard's Timeline tab plot the estate's Mosca exposure
+against time: one point per real collection instant, three lines (one per Q-Day scenario, never a
+blend), and the IR 8547 / CNSA deadlines that apply to the algorithms actually in the inventory,
+resolved through C1 rather than written down anywhere in TypeScript. It is the first estate-wide
+view in the product — D3's meter is per project, and its own note said the roll-up needed an asset
+model spanning projects; `assets` is that model, joined to projects by the `project:<id>:` location
+prefix.
+
+What it deliberately does **not** do is the point of the feature. It does not resample onto a
+regular grid: an evenly-spaced series between the first scan and today produces a smooth rising
+curve on an estate that never changed, because Z shrinks on its own, and that curve is a
+fabrication that looks like data. With fewer than two collection instants it says so in a sentence
+and draws no line at all, because a flat line through one measurement asserts a trend nobody
+observed. And the projection lives in a separate branch of the payload, hatched and dashed on the
+page, with its assumption restated on every projected frame.
+
+Two figures doc 06's time-pressure row asks for are **not computable and are labelled as such on
+the page**: certificate expiry against Q-Day (no `notAfter` in the asset model, no certificate
+collector) and renewal cycles remaining before a deadline (nothing records a refresh interval).
+
+**D2 stays `planned`.** The scrub readout does render doc 06's three-column exposure panel — a
+count and a share per scenario, with X's provenance beside it — but D2's actual requirement is
+that "clicking a scenario re-scores the whole page", and no number anywhere is clickable yet.
+Counting it as partially built would claim the interaction that makes it useful.
+
+Detail: [06-cisa-dashboard.md](06-cisa-dashboard.md)
 
 ### D3 deserves special mention
 

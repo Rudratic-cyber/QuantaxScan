@@ -6,7 +6,7 @@ import {
   ChevronDown, RefreshCw, Folder, BrainCircuit, Users, MessageSquare,
   ThumbsUp, ThumbsDown, TrendingUp, Clock, Target, Award, Sparkles,
   FileCode2, Activity, BarChart3, Layers, ChevronRight, ArrowUpRight,
-  Download,
+  Download, History,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -17,6 +17,7 @@ import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { apiUrl } from "@/lib/api";
 import { CoverageMeter } from "@/components/CoverageMeter";
+import { PostureTimeline } from "@/components/PostureTimeline";
 
 // ── THEME: Clean light enterprise ──
 const THEME = {
@@ -626,7 +627,7 @@ function CommunityIntel({ project, findings }: {
 }
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
-type DashTab = "overview" | "ai" | "community";
+type DashTab = "overview" | "timeline" | "ai" | "community";
 
 export function Dashboard() {
   const { data: globalStats } = useGetGlobalStats();
@@ -924,6 +925,9 @@ export function Dashboard() {
 
   const TABS: { key: DashTab; label: string; icon: React.ElementType }[] = [
     { key: "overview", label: "Overview", icon: BarChart3 },
+    // Estate-wide, so it deliberately does not follow the project selector —
+    // D3's coverage meter is per project; D7 is the roll-up across all of them.
+    { key: "timeline", label: "Timeline", icon: History },
     { key: "ai", label: "AI Analysis", icon: BrainCircuit },
     { key: "community", label: "Community Intel", icon: Users },
   ];
@@ -1359,6 +1363,23 @@ export function Dashboard() {
                     </Link>
                   </div>
                 </Reveal>
+              </motion.div>
+            )}
+
+            {/* ════════════════════════════════════════════════════
+                TAB: TIMELINE (D7)
+
+                Estate-wide, and therefore outside the `sorted.length === 0`
+                short-circuit that gates Overview: the panel's most important
+                state is the one where nothing has been collected yet, and
+                routing that through the generic "No scans yet" card would
+                replace a precise statement about missing history with a vague
+                one. It reads /api/inventory/timeline directly and ignores the
+                project selector, because it rolls up across every project.
+            ════════════════════════════════════════════════════ */}
+            {dashTab === "timeline" && (
+              <motion.div key="timeline" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
+                <PostureTimeline />
               </motion.div>
             )}
 
