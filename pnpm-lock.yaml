@@ -154,6 +154,12 @@ importers:
       '@types/node':
         specifier: ^25.3.5
         version: 25.3.5
+      '@types/pg':
+        specifier: ^8.18.0
+        version: 8.18.0
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
       prettier:
         specifier: ^3.8.1
         version: 3.8.1
