@@ -306,3 +306,84 @@ describe("AES — adequate, and the engine says so", () => {
     expect(result.obligations.filter((o) => o.deadline).length).toBe(0);
   });
 });
+
+
+describe("G-05 — key size and the security-strength band the rule is keyed on", () => {
+  const ir8547 = (r: { obligations: Array<{ framework: string; deadline?: { securityStrength?: string; after?: string } }> }) =>
+    r.obligations.filter((o) => o.framework === "NIST-IR-8547" && o.deadline?.securityStrength);
+
+  it("returns BOTH candidate obligations when the key size is undetermined", () => {
+    // The register's requirement, verbatim: "Where it is genuinely undeterminable, emit
+    // keySize: null and have the mapping engine return BOTH candidate obligations, flagged
+    // as 'key size undetermined — assumed 112-bit'."
+    const result = mappingEngine.resolve({ algorithm: "RSA" }, { asOf: ASOF })!;
+    const strengths = new Set(ir8547(result).map((o) => o.deadline!.securityStrength));
+    expect(strengths).toEqual(new Set(["112 bits", ">= 128 bits"]));
+  });
+
+  it("flags every one of them as assumed, naming the band and telling the reader to confirm", () => {
+    const result = mappingEngine.resolve({ algorithm: "RSA", keySize: null }, { asOf: ASOF })!;
+    for (const obligation of ir8547(result)) {
+      expect(obligation.caveats.join(" ")).toMatch(/Key size undetermined — assumed 112 bits/);
+      expect(obligation.caveats.join(" ")).toMatch(/Confirm the key size before acting/);
+    }
+  });
+
+  it("narrows to the 112-bit band for RSA-2048, which is the one with the 2030 deadline", () => {
+    const result = mappingEngine.resolve({ algorithm: "RSA", keySize: 2048 }, { asOf: ASOF })!;
+    const rows = ir8547(result);
+    expect(new Set(rows.map((o) => o.deadline!.securityStrength))).toEqual(new Set(["112 bits"]));
+    // 2030 deprecation is the consequence that only applies to this band.
+    expect(rows.some((o) => o.deadline!.after === "2030")).toBe(true);
+    for (const row of rows) expect(row.caveats.join(" ")).not.toMatch(/undetermined/);
+  });
+
+  it("narrows to >= 128 bits for RSA-4096, and that band has no 2030 deprecation", () => {
+    const rows = ir8547(mappingEngine.resolve({ algorithm: "RSA", keySize: 4096 }, { asOf: ASOF })!);
+    expect(new Set(rows.map((o) => o.deadline!.securityStrength))).toEqual(new Set([">= 128 bits"]));
+    expect(rows.some((o) => o.deadline!.after === "2030")).toBe(false);
+    // ...but larger keys still buy no time past 2035, which is the data's own IMPORTANT note.
+    expect(rows.some((o) => o.deadline!.after === "2035")).toBe(true);
+  });
+
+  it("reads a curve size against the curve range, not the modulus range", () => {
+    // P-256 is 112-bit security. Reading 256 against the modulus range would have put it in
+    // the <= 2048 band by luck; reading 384 there would silently mis-band it.
+    expect(new Set(ir8547(mappingEngine.resolve({ algorithm: "ECDSA", keySize: 256 }, { asOf: ASOF })!).map((o) => o.deadline!.securityStrength)))
+      .toEqual(new Set(["112 bits"]));
+    expect(new Set(ir8547(mappingEngine.resolve({ algorithm: "ECDSA", keySize: 384 }, { asOf: ASOF })!).map((o) => o.deadline!.securityStrength)))
+      .toEqual(new Set([">= 128 bits"]));
+  });
+
+  it("treats a size that falls in no band as undetermined rather than forcing it into one", () => {
+    const rows = ir8547(mappingEngine.resolve({ algorithm: "RSA", keySize: 2560 }, { asOf: ASOF })!);
+    expect(new Set(rows.map((o) => o.deadline!.securityStrength))).toEqual(
+      new Set(["112 bits", ">= 128 bits"]),
+    );
+    expect(rows[0].caveats.join(" ")).toMatch(/undetermined/);
+  });
+
+  it("leaves an algorithm with no key size at all untouched by any of this", () => {
+    // MD5 has no keySizeKind, so strength filtering must not apply and must not add a caveat.
+    const result = mappingEngine.resolve({ algorithm: "MD5" }, { asOf: ASOF })!;
+    expect(result.obligations.length).toBeGreaterThan(0);
+    expect(result.obligations.flatMap((o) => o.caveats).join(" ")).not.toMatch(/Key size undetermined/);
+  });
+
+  it("keys the bands off the data, so a revised band changes the answer with no code edit", () => {
+    // The C1 acceptance criterion applied to G-05's addition: move the boundary in a clone and
+    // the engine must follow. If this needs a TypeScript change, the band table is in the wrong place.
+    const data = clone();
+    const bands = (data.algorithms as unknown as {
+      securityStrengthBands: { bands: Array<{ modulusBits?: { min: number; max: number } }> };
+    }).securityStrengthBands.bands;
+    bands[0].modulusBits = { min: 0, max: 4096 };
+    bands[1].modulusBits = { min: 8192, max: 100000 };
+
+    const rows = createMappingEngine(parseMappingData(data.algorithms, data.frameworks))
+      .resolve({ algorithm: "RSA", keySize: 4096 }, { asOf: ASOF })!
+      .obligations.filter((o) => o.framework === "NIST-IR-8547" && o.deadline?.securityStrength);
+
+    expect(new Set(rows.map((o) => o.deadline!.securityStrength))).toEqual(new Set(["112 bits"]));
+  });
+});
