@@ -372,6 +372,26 @@ export const GetProjectCoverageResponse = zod
           ),
       ),
     }),
+    discovery: zod
+      .object({
+        knownTargets: zod.number(),
+        examinedTargets: zod
+          .number()
+          .describe("Derived on read from `assets.location`, never stored."),
+        unexaminedTargets: zod.number(),
+        basis: zod
+          .string()
+          .describe(
+            "Stated in the payload so a report quotes the basis rather than inventing one.",
+          ),
+      })
+      .describe(
+        "D7's contribution to D3. \*\*Not estate coverage\*\*: certificate transparency only reveals names given a publicly logged certificate, so a host with no certificate is invisible to this method and absent from `knownTargets` entirely.",
+      )
+      .optional()
+      .describe(
+        'D7 — how many hosts discovery knows about for this project and how many a collector has examined. \*\*Absent, not zeroed, when discovery has never run\*\*, for the same reason a never-examined surface is absent from `surfaces`: \"nobody has looked\" and \"we looked and there are none\" are different statements, and a zero would say the second.',
+      ),
   })
   .describe(
     "D3 — what has been examined, and what has never been looked at. The denominator is surfaces, not assets: how much cryptography hides in a surface nobody examined is unknowable from this data, so `examinedSurfaces \/ totalSurfaces` must not be presented as a percentage of the estate.",
@@ -5335,3 +5355,349 @@ export const GetProjectDataAtRestResponse = zod.object({
     .string()
     .describe("Mandatory wherever a scenario year is shown."),
 });
+
+/**
+ * Turns "name every host you want probed" into "give us your domain". Queries public Certificate Transparency logs (RFC 6962) for certificates covering the domain and records the names they carry as *discovered targets*. Needs no customer credential — CT is public — which is what makes it usable before any cloud access is negotiated.
+
+**A discovered name is a lead, not an asset.** Nothing here writes to `assets`, `observations` or `collection_runs`, and no surface becomes examined. A CT entry proves exactly one thing: some CA issued a certificate carrying this name. It does not prove a host exists there, that anything is served from it now, or that this organisation owns it. Every response repeats that in `evidenceCaveat`, and the names are unverified until a collector examines one.
+
+**Three kinds of name are refused rather than recorded**, each with its reason in `rejected[]`: a wildcard (`*.example.com` covers a set of names and is evidence for none of them), a name outside the domain matched at a **label boundary** (`%.` is a SQL `LIKE` wildcard at the source, so `notexample.com` and `example.com.attacker.test` come back from the query and are somebody else's), and an IP literal. `namesRead` versus the length of `targets` is what makes the filtering visible rather than silent.
+
+Names are additionally looked up in DNS as *corroboration*, never as a source of names — DNS cannot enumerate without a wordlist (guessing) or a zone transfer (a credential). `dnsResolution` is three-valued: a resolver that timed out or returned SERVFAIL establishes `undetermined`, never `not-resolved`, and a name never looked up is `null`.
+
+**Discovering a host is not consent to scan it.** Nothing here opens a connection to a discovered name. Handing names to B3's TLS prober is a separate, explicitly requested call — `POST /projects/{id}/discovered-targets/probe`.
+ * @summary Find hosts for a domain from public certificate-transparency logs (D7)
+ */
+export const RunProjectDiscoveryParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RunProjectDiscoveryBody = zod.object({
+  domain: zod
+    .string()
+    .describe(
+      "The registered domain to search, e.g. `example.com`. Lowercased and root-dot-stripped; anything that is not a well-formed multi-label hostname (a wildcard, a URL, an IP literal, a single label) is a 400. Names are then matched against it at a \*\*label boundary\*\*, so `notexample.com` is never claimed.",
+    ),
+});
+
+export const RunProjectDiscoveryResponse = zod.object({
+  projectId: zod.number(),
+  domain: zod.string(),
+  entriesRead: zod
+    .number()
+    .describe("Certificate-transparency log entries the source returned."),
+  namesRead: zod
+    .number()
+    .describe(
+      "Distinct names across those entries, accepted or not. The gap between this and `targets` is the filtering, made visible.",
+    ),
+  namesAccepted: zod.number(),
+  truncated: zod
+    .boolean()
+    .describe(
+      'True when the per-run ceiling was hit and the accepted list is therefore incomplete. Reported rather than silent: quietly trimming 4,000 names to 500 would make \"we know of N endpoints\" a lie in the one number this feature exists to make honest.',
+    ),
+  rejected: zod.array(
+    zod.object({
+      rawName: zod.string(),
+      reason: zod
+        .enum(["wildcard", "out-of-scope", "ip-literal", "not-a-hostname"])
+        .describe(
+          "`wildcard` — `\*.example.com` covers a set of names and is evidence for none of them. `out-of-scope` — a syntactically fine name that is genuinely somebody else's, matched at a label boundary. `ip-literal` — a real target but not a name, and this method discovers names. `not-a-hostname` — malformed.",
+        ),
+    }),
+  ),
+  targetsCreated: zod.number(),
+  targetsUpdated: zod.number(),
+  knownTargets: zod
+    .number()
+    .describe("Total discovered names for this project after the run."),
+  dns: zod
+    .object({
+      checked: zod.number(),
+      resolved: zod.number(),
+      notResolved: zod
+        .number()
+        .describe(
+          "An authoritative NXDOMAIN from both address families. Nothing weaker counts.",
+        ),
+      undetermined: zod.number(),
+      notChecked: zod
+        .number()
+        .describe(
+          "Names no lookup was attempted for — a fourth state, stored as null.",
+        ),
+    })
+    .describe(
+      "DNS is corroboration, not enumeration. `undetermined` is the load-bearing value: a resolver that timed out or returned SERVFAIL has told us nothing, and recording that as `notResolved` would be a fabricated negative — which makes a real host vanish from an inventory.",
+    ),
+  targets: zod.array(
+    zod.object({
+      id: zod.number(),
+      hostname: zod.string(),
+      sourceDomain: zod
+        .string()
+        .describe(
+          "The domain the customer asked us to search, kept so a name's scope claim can be re-checked against the question that produced it.",
+        ),
+      discoveryMethod: zod.enum(["certificate_transparency"]),
+      evidence: zod
+        .object({
+          entryId: zod
+            .number()
+            .nullable()
+            .describe(
+              "The log entry's id at the source, so a reader can reopen the exact record.",
+            ),
+          issuerName: zod
+            .string()
+            .nullable()
+            .describe(
+              "The CA, verbatim as the log states it. Deliberately unparsed.",
+            ),
+          serialNumber: zod.string().nullable(),
+          notBefore: zod.coerce.date().nullable(),
+          notAfter: zod.coerce
+            .date()
+            .nullable()
+            .describe(
+              'Null means the log stated no validity window, which is \"we cannot tell\", not \"not expired\".',
+            ),
+          loggedAt: zod.coerce.date().nullable(),
+          rawName: zod
+            .string()
+            .describe(
+              "The exact string the entry carried, before normalisation, so belief can be audited against evidence.",
+            ),
+        })
+        .describe(
+          "The certificate-transparency record a discovered name came from. Every field is nullable and nothing is defaulted: a log entry that states no issuer yields `null`, never a placeholder that would read as a value somebody recorded.",
+        ),
+      certificateExpired: zod
+        .boolean()
+        .nullable()
+        .describe(
+          'Derived on read from `evidence.notAfter`, never stored. Null when the log stated no validity window — \"cannot tell\", not \"not expired\".',
+        ),
+      dnsResolution: zod
+        .enum(["resolved", "not-resolved", "undetermined"])
+        .nullable()
+        .describe(
+          "Null means no lookup was ever attempted, a fourth state distinct from all three values.",
+        ),
+      resolvedAddresses: zod.array(zod.string()).nullable(),
+      dnsCheckedAt: zod.coerce.date().nullable(),
+      firstDiscoveredAt: zod.coerce.date(),
+      lastDiscoveredAt: zod.coerce
+        .date()
+        .describe(
+          "A name that stops appearing in the log is neither deleted nor marked gone — CT is append-only, so a name leaving a query result says something about the query, not about the estate. The row stays and this ages.",
+        ),
+      examined: zod
+        .boolean()
+        .describe(
+          "Whether any collector has examined this name. Derived from `assets.location`, never stored.",
+        ),
+      examinedPorts: zod.array(zod.number()),
+    }),
+  ),
+  evidenceCaveat: zod
+    .string()
+    .describe(
+      "What the evidence supports, in the payload rather than the documentation.",
+    ),
+});
+
+/**
+ * The read side of D7, and the source of the sentence the coverage meter could never say before: "we know of 400 names and 12 have been probed".
+
+`examined` is **derived on read** by matching each discovered name against the `project:{id}:{host}:{port}` locations B3 writes — never stored, so it cannot drift from the evidence. `examinedPorts` lists the ports actually observed.
+
+`coverage.examinedTargets / coverage.knownTargets` is **not estate coverage**. Certificate transparency only reveals names given a publicly logged certificate, so an internal service, a database or an IP-only endpoint is invisible to this method and absent from `knownTargets` entirely. `coverage.basis` states that in the payload.
+ * @summary Every host discovery knows about for this project, and whether it has been examined (D7)
+ */
+export const GetProjectDiscoveredTargetsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectDiscoveredTargetsResponse = zod.object({
+  projectId: zod.number(),
+  generatedAt: zod.coerce.date(),
+  coverage: zod
+    .object({
+      knownTargets: zod.number(),
+      examinedTargets: zod
+        .number()
+        .describe("Derived on read from `assets.location`, never stored."),
+      unexaminedTargets: zod.number(),
+      basis: zod
+        .string()
+        .describe(
+          "Stated in the payload so a report quotes the basis rather than inventing one.",
+        ),
+    })
+    .describe(
+      "D7's contribution to D3. \*\*Not estate coverage\*\*: certificate transparency only reveals names given a publicly logged certificate, so a host with no certificate is invisible to this method and absent from `knownTargets` entirely.",
+    ),
+  dns: zod
+    .object({
+      checked: zod.number(),
+      resolved: zod.number(),
+      notResolved: zod
+        .number()
+        .describe(
+          "An authoritative NXDOMAIN from both address families. Nothing weaker counts.",
+        ),
+      undetermined: zod.number(),
+      notChecked: zod
+        .number()
+        .describe(
+          "Names no lookup was attempted for — a fourth state, stored as null.",
+        ),
+    })
+    .describe(
+      "DNS is corroboration, not enumeration. `undetermined` is the load-bearing value: a resolver that timed out or returned SERVFAIL has told us nothing, and recording that as `notResolved` would be a fabricated negative — which makes a real host vanish from an inventory.",
+    ),
+  targets: zod.array(
+    zod.object({
+      id: zod.number(),
+      hostname: zod.string(),
+      sourceDomain: zod
+        .string()
+        .describe(
+          "The domain the customer asked us to search, kept so a name's scope claim can be re-checked against the question that produced it.",
+        ),
+      discoveryMethod: zod.enum(["certificate_transparency"]),
+      evidence: zod
+        .object({
+          entryId: zod
+            .number()
+            .nullable()
+            .describe(
+              "The log entry's id at the source, so a reader can reopen the exact record.",
+            ),
+          issuerName: zod
+            .string()
+            .nullable()
+            .describe(
+              "The CA, verbatim as the log states it. Deliberately unparsed.",
+            ),
+          serialNumber: zod.string().nullable(),
+          notBefore: zod.coerce.date().nullable(),
+          notAfter: zod.coerce
+            .date()
+            .nullable()
+            .describe(
+              'Null means the log stated no validity window, which is \"we cannot tell\", not \"not expired\".',
+            ),
+          loggedAt: zod.coerce.date().nullable(),
+          rawName: zod
+            .string()
+            .describe(
+              "The exact string the entry carried, before normalisation, so belief can be audited against evidence.",
+            ),
+        })
+        .describe(
+          "The certificate-transparency record a discovered name came from. Every field is nullable and nothing is defaulted: a log entry that states no issuer yields `null`, never a placeholder that would read as a value somebody recorded.",
+        ),
+      certificateExpired: zod
+        .boolean()
+        .nullable()
+        .describe(
+          'Derived on read from `evidence.notAfter`, never stored. Null when the log stated no validity window — \"cannot tell\", not \"not expired\".',
+        ),
+      dnsResolution: zod
+        .enum(["resolved", "not-resolved", "undetermined"])
+        .nullable()
+        .describe(
+          "Null means no lookup was ever attempted, a fourth state distinct from all three values.",
+        ),
+      resolvedAddresses: zod.array(zod.string()).nullable(),
+      dnsCheckedAt: zod.coerce.date().nullable(),
+      firstDiscoveredAt: zod.coerce.date(),
+      lastDiscoveredAt: zod.coerce
+        .date()
+        .describe(
+          "A name that stops appearing in the log is neither deleted nor marked gone — CT is append-only, so a name leaving a query result says something about the query, not about the estate. The row stays and this ages.",
+        ),
+      examined: zod
+        .boolean()
+        .describe(
+          "Whether any collector has examined this name. Derived from `assets.location`, never stored.",
+        ),
+      examinedPorts: zod.array(zod.number()),
+    }),
+  ),
+  evidenceCaveat: zod.string(),
+});
+
+/**
+ * The explicit consent boundary between discovery and scanning, and the reason it is a separate route rather than a flag on discovery.
+
+Probing a host is an outbound connection from this server to a machine the customer may not own — discovery having *found* a name is not permission to connect to it, and a CT log routinely names hosts that turn out to belong to a supplier, a former subsidiary, or an unrelated third party. So the caller must name the target ids explicitly; there is no "probe everything discovered" shortcut, deliberately, and the `port` has no default because a discovered name carries no port.
+
+Each named target is confirmed visible inside the caller's organisation scope **before** any connection is opened, so an id belonging to another tenant produces no egress at all. Results are ingested through B3's existing collector, so the assets, observations and collection run are identical to a hand-submitted probe — and reobservation is scoped to exactly the targets that completed a handshake, so a target that timed out never marks anything `gone`.
+
+At most 20 targets per call, the same ceiling as `POST /projects/{id}/tls`.
+ * @summary Hand named discovered targets to the TLS prober (D7 → B3)
+ */
+export const ProbeDiscoveredTargetsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const probeDiscoveredTargetsBodyTargetIdsMax = 20;
+
+export const probeDiscoveredTargetsBodyPortMax = 65535;
+
+export const ProbeDiscoveredTargetsBody = zod.object({
+  targetIds: zod
+    .array(zod.number())
+    .max(probeDiscoveredTargetsBodyTargetIdsMax)
+    .describe(
+      'The discovered targets to probe, named explicitly. There is no \"probe everything\" shortcut: discovery finding a host is not consent to connect to it.',
+    ),
+  port: zod
+    .number()
+    .min(1)
+    .max(probeDiscoveredTargetsBodyPortMax)
+    .describe(
+      "Required, with no default. A discovered name carries no port, and defaulting to 443 would be this server guessing which machine to open a socket to.",
+    ),
+});
+
+export const ProbeDiscoveredTargetsResponse = zod
+  .object({
+    projectId: zod.number(),
+    targetIdsRequested: zod.number(),
+    targetIdsNotFound: zod
+      .array(zod.number())
+      .describe(
+        "Ids that are not a discovered target of this project, or belong to another organisation. Indistinguishable on purpose.",
+      ),
+    targetsSubmitted: zod.number(),
+    targetsProbed: zod
+      .number()
+      .describe(
+        "Zero means no collection run was recorded and the tls surface is still un-examined.",
+      ),
+    targets: zod.array(
+      zod.object({
+        host: zod.string(),
+        port: zod.number(),
+        outcome: zod.enum(["probed", "refused", "unreachable"]),
+      }),
+    ),
+    collectionRunId: zod.number().nullable(),
+    assetsCreated: zod.number(),
+    assetsUpdated: zod.number(),
+    observationsCreated: zod.number(),
+    assetsMarkedGone: zod
+      .number()
+      .describe(
+        "Scoped to exactly the targets that completed a handshake. A target that timed out was not observed and must not have its prior assets retired — that would be a silent false remediation.",
+      ),
+    evidenceCaveat: zod.string(),
+  })
+  .describe(
+    "B3's `TlsProbeSummary` plus what this route resolved. The collector, assets, observations and collection run are B3's, unchanged.",
+  );

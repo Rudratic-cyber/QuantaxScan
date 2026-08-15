@@ -1,4 +1,5 @@
 import { COLLECTOR_SURFACES, CATALOGUE_ORDER_BY_SURFACE, catalogueEntryForSurface } from "@workspace/collectors";
+import type { DiscoveryCoverage } from "./discovery-coverage";
 
 /**
  * D3 — the coverage and confidence meter, computed.
@@ -106,6 +107,17 @@ export interface ProjectCoverage {
   /** Every catalogue surface that has any run or asset. A catalogue surface absent from here has never been examined at all. */
   surfaces: SurfaceCoverage[];
   confidence: ConfidenceSummary;
+  /**
+   * D7 — how many hosts discovery knows about, and how many of them a
+   * collector has actually examined. Computed in `discovery-coverage.ts` and
+   * passed through here unchanged.
+   *
+   * Absent (rather than zeroed) when discovery has never been run for the
+   * project, for the same reason a never-examined surface is absent from
+   * `surfaces`: "nobody has looked" and "we looked and there are none" are
+   * different statements and a zero would say the second.
+   */
+  discovery?: DiscoveryCoverage;
 }
 
 function toIso(value: Date | string | null): string | null {
@@ -173,6 +185,8 @@ export function summariseProjectCoverage(input: {
   runs: CoverageRunRow[];
   assets: CoverageAssetRow[];
   observations: CoverageObservationRow[];
+  /** D7. Omitted when discovery has never run for this scope — see `ProjectCoverage.discovery`. */
+  discovery?: DiscoveryCoverage;
 }): ProjectCoverage {
   const { runs, assets, observations } = input;
 
@@ -237,5 +251,6 @@ export function summariseProjectCoverage(input: {
     totalSurfaces: COLLECTOR_SURFACES.length,
     surfaces,
     confidence: summariseConfidence(assets, observations),
+    ...(input.discovery === undefined ? {} : { discovery: input.discovery }),
   };
 }

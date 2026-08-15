@@ -74,6 +74,7 @@ GRANT USAGE ON SCHEMA public TO quantaxscan_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   projects, scans, findings, assets, observations, collection_runs,
   activity, shared_reports, community_posts, ot_fleets, vendor_assessments,
+  discovered_targets,
   organizations, organization_members, user_identities, users, sessions
 TO quantaxscan_app;
 
@@ -168,6 +169,16 @@ ALTER TABLE vendor_assessments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vendor_assessments FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS vendor_assessments_org_isolation ON vendor_assessments;
 CREATE POLICY vendor_assessments_org_isolation ON vendor_assessments AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+-- D7 — discovered targets. Standard shape. A list of the hostnames a company's
+-- own certificates disclose is a map of its attack surface: as tenant-private
+-- as any scan result, and arguably more useful to an attacker than one.
+ALTER TABLE discovered_targets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE discovered_targets FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS discovered_targets_org_isolation ON discovered_targets;
+CREATE POLICY discovered_targets_org_isolation ON discovered_targets AS PERMISSIVE FOR ALL TO quantaxscan_app
   USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 

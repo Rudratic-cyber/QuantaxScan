@@ -18,3 +18,4 @@ export * from "./kms-key-specs";
 export * from "./kms-collector";
 export * from "./ot-register-collector";
 export * from "./data-at-rest-collector";
+export * from "./discovery";

@@ -64,6 +64,13 @@
       "when": 1786751055517,
       "tag": "0008_dusty_tempest",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786753070110,
+      "tag": "0010_discovered_targets",
+      "breakpoints": true
     }
   ]
 }

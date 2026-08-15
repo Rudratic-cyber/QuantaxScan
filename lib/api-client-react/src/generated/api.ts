@@ -32,6 +32,8 @@ import type {
   DemoRepo,
   DemoScanResult,
   DependencyIngestSummary,
+  DiscoveredTargetProbeSummary,
+  DiscoveryRunSummary,
   Finding,
   GetInventoryAssetsParams,
   GetLeaderboardParams,
@@ -50,14 +52,17 @@ import type {
   MultiScanResult,
   OtFleet,
   PostureTimeline,
+  ProbeDiscoveredTargetsBody,
   Project,
   ProjectCertificates,
   ProjectCoverage,
   ProjectDataAtRest,
+  ProjectDiscoveredTargets,
   ProjectKmsKeys,
   ProtocolConfigIngestSummary,
   RateLimitedResponse,
   ReadinessSummary,
+  RunProjectDiscoveryBody,
   Scan,
   SharedReport,
   SubmitProjectCertificatesBody,
@@ -4238,3 +4243,294 @@ export function useGetProjectDataAtRest<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Turns "name every host you want probed" into "give us your domain". Queries public Certificate Transparency logs (RFC 6962) for certificates covering the domain and records the names they carry as *discovered targets*. Needs no customer credential — CT is public — which is what makes it usable before any cloud access is negotiated.
+
+**A discovered name is a lead, not an asset.** Nothing here writes to `assets`, `observations` or `collection_runs`, and no surface becomes examined. A CT entry proves exactly one thing: some CA issued a certificate carrying this name. It does not prove a host exists there, that anything is served from it now, or that this organisation owns it. Every response repeats that in `evidenceCaveat`, and the names are unverified until a collector examines one.
+
+**Three kinds of name are refused rather than recorded**, each with its reason in `rejected[]`: a wildcard (`*.example.com` covers a set of names and is evidence for none of them), a name outside the domain matched at a **label boundary** (`%.` is a SQL `LIKE` wildcard at the source, so `notexample.com` and `example.com.attacker.test` come back from the query and are somebody else's), and an IP literal. `namesRead` versus the length of `targets` is what makes the filtering visible rather than silent.
+
+Names are additionally looked up in DNS as *corroboration*, never as a source of names — DNS cannot enumerate without a wordlist (guessing) or a zone transfer (a credential). `dnsResolution` is three-valued: a resolver that timed out or returned SERVFAIL establishes `undetermined`, never `not-resolved`, and a name never looked up is `null`.
+
+**Discovering a host is not consent to scan it.** Nothing here opens a connection to a discovered name. Handing names to B3's TLS prober is a separate, explicitly requested call — `POST /projects/{id}/discovered-targets/probe`.
+ * @summary Find hosts for a domain from public certificate-transparency logs (D7)
+ */
+export const getRunProjectDiscoveryUrl = (id: number) => {
+  return `/api/projects/${id}/discovery`;
+};
+
+export const runProjectDiscovery = async (
+  id: number,
+  runProjectDiscoveryBody: RunProjectDiscoveryBody,
+  options?: RequestInit,
+): Promise<DiscoveryRunSummary> => {
+  return customFetch<DiscoveryRunSummary>(getRunProjectDiscoveryUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(runProjectDiscoveryBody),
+  });
+};
+
+export const getRunProjectDiscoveryMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runProjectDiscovery>>,
+    TError,
+    { id: number; data: BodyType<RunProjectDiscoveryBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runProjectDiscovery>>,
+  TError,
+  { id: number; data: BodyType<RunProjectDiscoveryBody> },
+  TContext
+> => {
+  const mutationKey = ["runProjectDiscovery"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runProjectDiscovery>>,
+    { id: number; data: BodyType<RunProjectDiscoveryBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return runProjectDiscovery(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunProjectDiscoveryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runProjectDiscovery>>
+>;
+export type RunProjectDiscoveryMutationBody = BodyType<RunProjectDiscoveryBody>;
+export type RunProjectDiscoveryMutationError = ErrorType<void>;
+
+/**
+ * @summary Find hosts for a domain from public certificate-transparency logs (D7)
+ */
+export const useRunProjectDiscovery = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runProjectDiscovery>>,
+    TError,
+    { id: number; data: BodyType<RunProjectDiscoveryBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runProjectDiscovery>>,
+  TError,
+  { id: number; data: BodyType<RunProjectDiscoveryBody> },
+  TContext
+> => {
+  return useMutation(getRunProjectDiscoveryMutationOptions(options));
+};
+
+/**
+ * The read side of D7, and the source of the sentence the coverage meter could never say before: "we know of 400 names and 12 have been probed".
+
+`examined` is **derived on read** by matching each discovered name against the `project:{id}:{host}:{port}` locations B3 writes — never stored, so it cannot drift from the evidence. `examinedPorts` lists the ports actually observed.
+
+`coverage.examinedTargets / coverage.knownTargets` is **not estate coverage**. Certificate transparency only reveals names given a publicly logged certificate, so an internal service, a database or an IP-only endpoint is invisible to this method and absent from `knownTargets` entirely. `coverage.basis` states that in the payload.
+ * @summary Every host discovery knows about for this project, and whether it has been examined (D7)
+ */
+export const getGetProjectDiscoveredTargetsUrl = (id: number) => {
+  return `/api/projects/${id}/discovered-targets`;
+};
+
+export const getProjectDiscoveredTargets = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProjectDiscoveredTargets> => {
+  return customFetch<ProjectDiscoveredTargets>(
+    getGetProjectDiscoveredTargetsUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetProjectDiscoveredTargetsQueryKey = (id: number) => {
+  return [`/api/projects/${id}/discovered-targets`] as const;
+};
+
+export const getGetProjectDiscoveredTargetsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectDiscoveredTargets>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectDiscoveredTargets>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProjectDiscoveredTargetsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectDiscoveredTargets>>
+  > = ({ signal }) =>
+    getProjectDiscoveredTargets(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectDiscoveredTargets>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectDiscoveredTargetsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectDiscoveredTargets>>
+>;
+export type GetProjectDiscoveredTargetsQueryError = ErrorType<void>;
+
+/**
+ * @summary Every host discovery knows about for this project, and whether it has been examined (D7)
+ */
+
+export function useGetProjectDiscoveredTargets<
+  TData = Awaited<ReturnType<typeof getProjectDiscoveredTargets>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectDiscoveredTargets>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectDiscoveredTargetsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * The explicit consent boundary between discovery and scanning, and the reason it is a separate route rather than a flag on discovery.
+
+Probing a host is an outbound connection from this server to a machine the customer may not own — discovery having *found* a name is not permission to connect to it, and a CT log routinely names hosts that turn out to belong to a supplier, a former subsidiary, or an unrelated third party. So the caller must name the target ids explicitly; there is no "probe everything discovered" shortcut, deliberately, and the `port` has no default because a discovered name carries no port.
+
+Each named target is confirmed visible inside the caller's organisation scope **before** any connection is opened, so an id belonging to another tenant produces no egress at all. Results are ingested through B3's existing collector, so the assets, observations and collection run are identical to a hand-submitted probe — and reobservation is scoped to exactly the targets that completed a handshake, so a target that timed out never marks anything `gone`.
+
+At most 20 targets per call, the same ceiling as `POST /projects/{id}/tls`.
+ * @summary Hand named discovered targets to the TLS prober (D7 → B3)
+ */
+export const getProbeDiscoveredTargetsUrl = (id: number) => {
+  return `/api/projects/${id}/discovered-targets/probe`;
+};
+
+export const probeDiscoveredTargets = async (
+  id: number,
+  probeDiscoveredTargetsBody: ProbeDiscoveredTargetsBody,
+  options?: RequestInit,
+): Promise<DiscoveredTargetProbeSummary> => {
+  return customFetch<DiscoveredTargetProbeSummary>(
+    getProbeDiscoveredTargetsUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(probeDiscoveredTargetsBody),
+    },
+  );
+};
+
+export const getProbeDiscoveredTargetsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof probeDiscoveredTargets>>,
+    TError,
+    { id: number; data: BodyType<ProbeDiscoveredTargetsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof probeDiscoveredTargets>>,
+  TError,
+  { id: number; data: BodyType<ProbeDiscoveredTargetsBody> },
+  TContext
+> => {
+  const mutationKey = ["probeDiscoveredTargets"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof probeDiscoveredTargets>>,
+    { id: number; data: BodyType<ProbeDiscoveredTargetsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return probeDiscoveredTargets(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProbeDiscoveredTargetsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof probeDiscoveredTargets>>
+>;
+export type ProbeDiscoveredTargetsMutationBody =
+  BodyType<ProbeDiscoveredTargetsBody>;
+export type ProbeDiscoveredTargetsMutationError = ErrorType<void>;
+
+/**
+ * @summary Hand named discovered targets to the TLS prober (D7 → B3)
+ */
+export const useProbeDiscoveredTargets = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof probeDiscoveredTargets>>,
+    TError,
+    { id: number; data: BodyType<ProbeDiscoveredTargetsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof probeDiscoveredTargets>>,
+  TError,
+  { id: number; data: BodyType<ProbeDiscoveredTargetsBody> },
+  TContext
+> => {
+  return useMutation(getProbeDiscoveredTargetsMutationOptions(options));
+};

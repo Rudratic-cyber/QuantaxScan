@@ -1048,6 +1048,18 @@ export interface ConfidenceSummary {
 }
 
 /**
+ * D7's contribution to D3. **Not estate coverage**: certificate transparency only reveals names given a publicly logged certificate, so a host with no certificate is invisible to this method and absent from `knownTargets` entirely.
+ */
+export interface DiscoveryCoverage {
+  knownTargets: number;
+  /** Derived on read from `assets.location`, never stored. */
+  examinedTargets: number;
+  unexaminedTargets: number;
+  /** Stated in the payload so a report quotes the basis rather than inventing one. */
+  basis: string;
+}
+
+/**
  * D3 — what has been examined, and what has never been looked at. The denominator is surfaces, not assets: how much cryptography hides in a surface nobody examined is unknowable from this data, so `examinedSurfaces / totalSurfaces` must not be presented as a percentage of the estate.
  */
 export interface ProjectCoverage {
@@ -1058,6 +1070,8 @@ export interface ProjectCoverage {
   /** Every catalogue surface with any run or asset. A surface absent from this list has never been examined at all — that absence is the machine-readable half of the answer. */
   surfaces: SurfaceCoverage[];
   confidence: ConfidenceSummary;
+  /** D7 — how many hosts discovery knows about for this project and how many a collector has examined. **Absent, not zeroed, when discovery has never run**, for the same reason a never-examined surface is absent from `surfaces`: "nobody has looked" and "we looked and there are none" are different statements, and a zero would say the second. */
+  discovery?: DiscoveryCoverage;
 }
 
 export interface CycloneDxProperty {
@@ -2297,6 +2311,181 @@ export interface ProjectDataAtRest {
   scenarios: ProjectDataAtRestScenariosItem[];
   /** Mandatory wherever a scenario year is shown. */
   framing: string;
+}
+
+export interface RunProjectDiscoveryBody {
+  /** The registered domain to search, e.g. `example.com`. Lowercased and root-dot-stripped; anything that is not a well-formed multi-label hostname (a wildcard, a URL, an IP literal, a single label) is a 400. Names are then matched against it at a **label boundary**, so `notexample.com` is never claimed. */
+  domain: string;
+}
+
+/**
+ * The certificate-transparency record a discovered name came from. Every field is nullable and nothing is defaulted: a log entry that states no issuer yields `null`, never a placeholder that would read as a value somebody recorded.
+ */
+export interface CtCertificateEvidence {
+  /** The log entry's id at the source, so a reader can reopen the exact record. */
+  entryId: number | null;
+  /** The CA, verbatim as the log states it. Deliberately unparsed. */
+  issuerName: string | null;
+  serialNumber: string | null;
+  notBefore: string | null;
+  /** Null means the log stated no validity window, which is "we cannot tell", not "not expired". */
+  notAfter: string | null;
+  loggedAt: string | null;
+  /** The exact string the entry carried, before normalisation, so belief can be audited against evidence. */
+  rawName: string;
+}
+
+/**
+ * `wildcard` — `*.example.com` covers a set of names and is evidence for none of them. `out-of-scope` — a syntactically fine name that is genuinely somebody else's, matched at a label boundary. `ip-literal` — a real target but not a name, and this method discovers names. `not-a-hostname` — malformed.
+ */
+export type RejectedCtNameReason =
+  (typeof RejectedCtNameReason)[keyof typeof RejectedCtNameReason];
+
+export const RejectedCtNameReason = {
+  wildcard: "wildcard",
+  "out-of-scope": "out-of-scope",
+  "ip-literal": "ip-literal",
+  "not-a-hostname": "not-a-hostname",
+} as const;
+
+export interface RejectedCtName {
+  rawName: string;
+  /** `wildcard` — `*.example.com` covers a set of names and is evidence for none of them. `out-of-scope` — a syntactically fine name that is genuinely somebody else's, matched at a label boundary. `ip-literal` — a real target but not a name, and this method discovers names. `not-a-hostname` — malformed. */
+  reason: RejectedCtNameReason;
+}
+
+/**
+ * DNS is corroboration, not enumeration. `undetermined` is the load-bearing value: a resolver that timed out or returned SERVFAIL has told us nothing, and recording that as `notResolved` would be a fabricated negative — which makes a real host vanish from an inventory.
+ */
+export interface DiscoveryDnsSummary {
+  checked: number;
+  resolved: number;
+  /** An authoritative NXDOMAIN from both address families. Nothing weaker counts. */
+  notResolved: number;
+  undetermined: number;
+  /** Names no lookup was attempted for — a fourth state, stored as null. */
+  notChecked: number;
+}
+
+export type DiscoveredTargetDiscoveryMethod =
+  (typeof DiscoveredTargetDiscoveryMethod)[keyof typeof DiscoveredTargetDiscoveryMethod];
+
+export const DiscoveredTargetDiscoveryMethod = {
+  certificate_transparency: "certificate_transparency",
+} as const;
+
+/**
+ * Null means no lookup was ever attempted, a fourth state distinct from all three values.
+ */
+export type DiscoveredTargetDnsResolution =
+  | (typeof DiscoveredTargetDnsResolution)[keyof typeof DiscoveredTargetDnsResolution]
+  | null;
+
+export const DiscoveredTargetDnsResolution = {
+  resolved: "resolved",
+  "not-resolved": "not-resolved",
+  undetermined: "undetermined",
+} as const;
+
+export interface DiscoveredTarget {
+  id: number;
+  hostname: string;
+  /** The domain the customer asked us to search, kept so a name's scope claim can be re-checked against the question that produced it. */
+  sourceDomain: string;
+  discoveryMethod: DiscoveredTargetDiscoveryMethod;
+  evidence: CtCertificateEvidence;
+  /** Derived on read from `evidence.notAfter`, never stored. Null when the log stated no validity window — "cannot tell", not "not expired". */
+  certificateExpired: boolean | null;
+  /** Null means no lookup was ever attempted, a fourth state distinct from all three values. */
+  dnsResolution: DiscoveredTargetDnsResolution;
+  resolvedAddresses: string[] | null;
+  dnsCheckedAt: string | null;
+  firstDiscoveredAt: string;
+  /** A name that stops appearing in the log is neither deleted nor marked gone — CT is append-only, so a name leaving a query result says something about the query, not about the estate. The row stays and this ages. */
+  lastDiscoveredAt: string;
+  /** Whether any collector has examined this name. Derived from `assets.location`, never stored. */
+  examined: boolean;
+  examinedPorts: number[];
+}
+
+export interface DiscoveryRunSummary {
+  projectId: number;
+  domain: string;
+  /** Certificate-transparency log entries the source returned. */
+  entriesRead: number;
+  /** Distinct names across those entries, accepted or not. The gap between this and `targets` is the filtering, made visible. */
+  namesRead: number;
+  namesAccepted: number;
+  /** True when the per-run ceiling was hit and the accepted list is therefore incomplete. Reported rather than silent: quietly trimming 4,000 names to 500 would make "we know of N endpoints" a lie in the one number this feature exists to make honest. */
+  truncated: boolean;
+  rejected: RejectedCtName[];
+  targetsCreated: number;
+  targetsUpdated: number;
+  /** Total discovered names for this project after the run. */
+  knownTargets: number;
+  dns: DiscoveryDnsSummary;
+  targets: DiscoveredTarget[];
+  /** What the evidence supports, in the payload rather than the documentation. */
+  evidenceCaveat: string;
+}
+
+export interface ProjectDiscoveredTargets {
+  projectId: number;
+  generatedAt: string;
+  coverage: DiscoveryCoverage;
+  dns: DiscoveryDnsSummary;
+  targets: DiscoveredTarget[];
+  evidenceCaveat: string;
+}
+
+export interface ProbeDiscoveredTargetsBody {
+  /**
+   * The discovered targets to probe, named explicitly. There is no "probe everything" shortcut: discovery finding a host is not consent to connect to it.
+   * @maxItems 20
+   */
+  targetIds: number[];
+  /**
+   * Required, with no default. A discovered name carries no port, and defaulting to 443 would be this server guessing which machine to open a socket to.
+   * @minimum 1
+   * @maximum 65535
+   */
+  port: number;
+}
+
+export type DiscoveredTargetProbeSummaryTargetsItemOutcome =
+  (typeof DiscoveredTargetProbeSummaryTargetsItemOutcome)[keyof typeof DiscoveredTargetProbeSummaryTargetsItemOutcome];
+
+export const DiscoveredTargetProbeSummaryTargetsItemOutcome = {
+  probed: "probed",
+  refused: "refused",
+  unreachable: "unreachable",
+} as const;
+
+export type DiscoveredTargetProbeSummaryTargetsItem = {
+  host: string;
+  port: number;
+  outcome: DiscoveredTargetProbeSummaryTargetsItemOutcome;
+};
+
+/**
+ * B3's `TlsProbeSummary` plus what this route resolved. The collector, assets, observations and collection run are B3's, unchanged.
+ */
+export interface DiscoveredTargetProbeSummary {
+  projectId: number;
+  targetIdsRequested: number;
+  /** Ids that are not a discovered target of this project, or belong to another organisation. Indistinguishable on purpose. */
+  targetIdsNotFound: number[];
+  targetsSubmitted: number;
+  /** Zero means no collection run was recorded and the tls surface is still un-examined. */
+  targetsProbed: number;
+  targets: DiscoveredTargetProbeSummaryTargetsItem[];
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Scoped to exactly the targets that completed a handshake. A target that timed out was not observed and must not have its prior assets retired — that would be a silent false remediation. */
+  assetsMarkedGone: number;
+  evidenceCaveat: string;
 }
 
 export type RateLimitedResponse = {
