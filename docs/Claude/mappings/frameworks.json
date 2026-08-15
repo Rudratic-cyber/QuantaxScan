@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1.1.0",
-  "dataVersion": "0.4.0",
+  "dataVersion": "0.5.0",
   "compiledAt": "2026-08-01",
-  "verifiedAt": "2026-08-01",
-  "verificationNote": "NIST, CISA joint factsheet and CycloneDX entries verified against primary sources on 2026-08-01. CNSA 2.0 and OMB M-23-02 remain needs-check — nsa.gov, media.defense.gov and cisa.gov all return HTTP 403 to automated fetches and must be verified by hand.",
+  "verifiedAt": "2026-08-16",
+  "verificationNote": "PARTIAL re-verification on 2026-08-16 (C4/C5/C6). Re-read against primary sources that day, and `retrievedAt` moved ONLY on these: NIST-IR-8547 (full PDF from nvlpubs.nist.gov plus the CSRC status page — still an initial public draft) and CISA-QR (the NCCoE-hosted copy of the factsheet, all seven sections). NOT reopened and therefore still dated 2026-08-01: NIST-FIPS, FIPS 186-5, SP 800-131A Rev 2, FIPS 180-4, SP 800-38A, NIST-SP-1800-38, CYCLONEDX-CBOM. CNSA-2.0 and OMB-M-23-02 remain needs-check — nsa.gov and media.defense.gov returned HTTP 403 again on 2026-08-16 (see CNSA-2.0.retrievalAttempts) and must be verified by hand. cisa.gov itself is still 403; the CISA factsheet is verified via the NCCoE mirror of the same TLP:CLEAR document.",
 
   "frameworks": [
     {
@@ -257,20 +257,36 @@
       },
 
       "dataLifetimeSupport": {
-        "note": "PRIMARY-SOURCE SUPPORT for the X variable in Mosca (feature A3).",
+        "note": "PRIMARY-SOURCE SUPPORT for the X variable in Mosca (feature A3). CORRECTED 2026-08-16: these three quotes were listed as though they shared one section. They do not — they come from three different named sections, and a citation that says otherwise is wrong in the one way an auditor can check. Each quote now carries the heading it actually appears under.",
         "quotes": [
-          "'cyber threat actors could be targeting data today that would still require protection in the future (or in other words, has a long secrecy lifetime), using a catch now, break later or harvest now, decrypt later operation'",
-          "'Organizations should include in their inventory when and where quantum-vulnerable cryptography is being leveraged to protect the most sensitive and critical datasets and include estimates on length of protection for these datasets.'",
-          "'Prioritization should be given to high impact systems, industrial control systems (ICSs), and systems with long-term confidentiality/secrecy needs.'"
+          { "section": "WHY PREPARE NOW?", "quote": "'cyber threat actors could be targeting data today that would still require protection in the future (or in other words, has a long secrecy lifetime), using a catch now, break later or harvest now, decrypt later operation'" },
+          { "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "quote": "'Organizations should include in their inventory when and where quantum-vulnerable cryptography is being leveraged to protect the most sensitive and critical datasets and include estimates on length of protection for these datasets.'" },
+          { "section": "SUPPLY CHAIN QUANTUM-READINESS", "quote": "'Prioritization should be given to high impact systems, industrial control systems (ICSs), and systems with long-term confidentiality/secrecy needs.'" }
         ],
         "confidence": "verified"
       },
 
-      "productNote": "The inventory and prioritisation sections are what QuantaXscan automates. Vendor engagement is the vendor collector (B9). Roadmap establishment and migration execution are customer process we evidence but do not perform.",
+      "roadmapAlignment": {
+        "note": "C6. What the product does against each of the factsheet's own named sections — not a numbered stage model, which this document does not have (see CORRECTION). `productRole` is deliberately three-valued so that 'we evidence this' is never printed as 'we do this'.",
+        "sections": [
+          { "heading": "BACKGROUND", "productRole": "context", "note": "No product claim. Framing only." },
+          { "heading": "WHY PREPARE NOW?", "productRole": "evidenced", "note": "The harvest-now-decrypt-later argument is what the A3 secrecy-lifetime input and the Mosca inequality express. The product supplies the exposure evidence; the urgency judgement is the customer's." },
+          { "heading": "ESTABLISH A QUANTUM-READINESS ROADMAP", "productRole": "customer-process", "note": "Establishing a project team and a roadmap is customer process. The product supplies the inventory that section says the roadmap must start from, and nothing more. Claiming to produce the roadmap would be an over-claim." },
+          { "heading": "PREPARE A CRYPTOGRAPHIC INVENTORY", "productRole": "automated", "note": "This is the section QuantaXscan automates. The three discovery targets named under it map to the collector surfaces — see `discoveryTargets`. The factsheet's own embedded-cryptography warning is why a coverage-gap panel (D3) is required rather than optional." },
+          { "heading": "DISCUSS POST-QUANTUM ROADMAPS WITH TECHNOLOGY VENDORS", "productRole": "evidenced", "note": "The vendor assessment register (B9) records what vendors answered. The product does not conduct the engagement." },
+          { "heading": "SUPPLY CHAIN QUANTUM-READINESS", "productRole": "evidenced", "note": "Dependency and vendor findings show where the reliance is. Prioritisation of high-impact systems and ICS is a customer risk decision the product informs." },
+          { "heading": "TECHNOLOGY VENDOR RESPONSIBILITIES", "productRole": "context", "note": "Addressed to vendors, not to the organisation being scanned. No product claim." }
+        ],
+        "confidence": "verified"
+      },
+
+      "stalenessNote": "This factsheet is dated 'As of August 17, 2023' and its forward-looking language is now out of date: it says the PQC standards are 'to be released in 2024' and asks vendors to 'review the NIST-published draft PQC standards'. FIPS 203, 204 and 205 were finalised in August 2024. The factsheet's PROCESS guidance (inventory first, prioritise by secrecy lifetime, engage vendors) is what this entry is cited for and it is unaffected; its draft-standards language must never be surfaced as current. No superseding revision was found on 2026-08-16.",
+
+      "productNote": "The inventory and prioritisation sections are what QuantaXscan automates. Vendor engagement is the vendor collector (B9). Roadmap establishment and migration execution are customer process we evidence but do not perform. Structured form: `roadmapAlignment` above.",
       "url": "https://www.cisa.gov/resources-tools/resources/quantum-readiness-migration-post-quantum-cryptography",
       "mirrorUrl": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf",
-      "retrievedAt": "2026-08-01",
-      "retrievalNote": "cisa.gov returns HTTP 403 to automated fetches; verified against the NIST NCCoE-hosted copy of the same factsheet.",
+      "retrievedAt": "2026-08-16",
+      "retrievalNote": "cisa.gov returns HTTP 403 to automated fetches; verified against the NIST NCCoE-hosted copy of the same factsheet, re-downloaded and read in full on 2026-08-16 (all seven sections, every bullet). Section headings, the three discovery targets and every quote in this entry match verbatim; the section attributions in `dataLifetimeSupport` did not, and were corrected.",
       "confidence": "verified",
       "findingObligations": [
         {
@@ -278,7 +294,7 @@
           "match": {},
           "requirement": "Record this cryptographic asset in the organisation's cryptographic inventory, including where it is used and the secrecy lifetime of the data it protects.",
           "severity": "informational",
-          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-01" },
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
           "confidence": "verified"
         },
         {
@@ -286,7 +302,44 @@
           "match": { "quantumVulnerable": true },
           "requirement": "Prioritise this asset for migration where it protects data with a long secrecy lifetime — harvest-now-decrypt-later exposure starts when the data is recorded, not on the migration deadline.",
           "severity": "high",
-          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-01" },
+          "caveat": "The two halves of this requirement come from two sections: the secrecy-lifetime inventory instruction is under PREPARE A CRYPTOGRAPHIC INVENTORY, and the harvest-now-decrypt-later framing is under WHY PREPARE NOW?.",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY (secrecy lifetime); WHY PREPARE NOW? (harvest now, decrypt later)", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
+          "confidence": "verified"
+        },
+        {
+          "id": "cisa-qr-feed-risk-assessment",
+          "match": { "quantumVulnerable": true },
+          "requirement": "Feed this finding into the organisation's risk assessment process so that risk officials can prioritise where to ensure use of PQC. An inventory that is not read by a risk owner is not the control this factsheet asks for.",
+          "severity": "informational",
+          "caveat": "Verbatim: 'Organizations should feed the quantum-vulnerable inventory into their risk assessment process, allowing risk officials to prioritize where to ensure use of PQC as soon as it is available.'",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
+          "confidence": "verified"
+        },
+        {
+          "id": "cisa-qr-prioritise-high-impact",
+          "match": { "quantumVulnerable": true },
+          "requirement": "Rank this finding higher where it sits in a high-impact system, an industrial control system, or a system with long-term confidentiality needs. Secrecy lifetime is one of three prioritisation axes the factsheet names, not the only one.",
+          "severity": "high",
+          "caveat": "Verbatim: 'Prioritization should be given to high impact systems, industrial control systems (ICSs), and systems with long-term confidentiality/secrecy needs.'",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "SUPPLY CHAIN QUANTUM-READINESS", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
+          "confidence": "verified"
+        },
+        {
+          "id": "cisa-qr-vendor-roadmap",
+          "match": { "quantumVulnerable": true },
+          "requirement": "Where this algorithm reaches the estate through a vendor product, ask that vendor for its post-quantum roadmap — how it plans to migrate, and on what timeline — and plan the contract changes needed to hold it to one.",
+          "severity": "medium",
+          "caveat": "The factsheet also warns that discovery has a blind spot here: 'Discovery tools may not be able to identify embedded cryptography used internally within products ... Organizations should ask vendors for lists of embedded cryptography within their products.' A scan result is therefore a floor on vendor exposure, not a measure of it.",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "DISCUSS POST-QUANTUM ROADMAPS WITH TECHNOLOGY VENDORS", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
+          "confidence": "verified"
+        },
+        {
+          "id": "cisa-qr-signing-and-update-paths",
+          "match": { "purposes": ["signature"] },
+          "requirement": "Include the software and firmware update path in scope for this signature algorithm. The factsheet names signature creation and validation — and the software and firmware updates that depend on them — as quantum-vulnerable assets in their own right.",
+          "severity": "high",
+          "caveat": "Verbatim: 'Systems and assets with quantum-vulnerable cryptography include those involved in creating and validating digital signatures, which also incorporates software and firmware updates.'",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "ESTABLISH A QUANTUM-READINESS ROADMAP", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
           "confidence": "verified"
         }
       ],

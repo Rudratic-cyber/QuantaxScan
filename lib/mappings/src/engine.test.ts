@@ -451,6 +451,83 @@ describe("C5 — CNSA 2.0 resolves per purpose, and stays unverified while it do
   });
 });
 
+describe("C6 — the CISA quantum-readiness roadmap, aligned section by section", () => {
+  const cisa = (algorithm: string) =>
+    mappingEngine.resolve({ algorithm }, { asOf: ASOF })!.obligations.filter((o) => o.framework === "CISA-QR");
+
+  it("covers the four inventory-and-prioritisation instructions the factsheet actually gives", () => {
+    const requirements = cisa("RSA").map((o) => o.requirement).join(" | ");
+    expect(requirements).toMatch(/cryptographic inventory/i);
+    expect(requirements).toMatch(/long secrecy lifetime/i);
+    expect(requirements).toMatch(/risk assessment process/i);
+    expect(requirements).toMatch(/industrial control system/i);
+    expect(requirements).toMatch(/post-quantum roadmap/i);
+  });
+
+  it("cites the section each instruction is actually printed under", () => {
+    const sectionOf = (fragment: RegExp) => cisa("RSA").find((o) => fragment.test(o.requirement))!.citation.section!;
+    // Corrected 2026-08-16: the ICS/high-impact sentence is under SUPPLY CHAIN QUANTUM-READINESS,
+    // not under PREPARE A CRYPTOGRAPHIC INVENTORY where it was previously grouped.
+    expect(sectionOf(/industrial control system/i)).toBe("SUPPLY CHAIN QUANTUM-READINESS");
+    expect(sectionOf(/risk assessment process/i)).toBe("PREPARE A CRYPTOGRAPHIC INVENTORY");
+    expect(sectionOf(/post-quantum roadmap/i)).toBe("DISCUSS POST-QUANTUM ROADMAPS WITH TECHNOLOGY VENDORS");
+    expect(sectionOf(/long secrecy lifetime/i)).toMatch(/WHY PREPARE NOW\?/);
+  });
+
+  it("puts the update path in scope for a signature algorithm, and only for one", () => {
+    const updatePath = /software and firmware update path/i;
+    expect(cisa("ECDSA").some((o) => updatePath.test(o.requirement))).toBe(true);
+    expect(cisa("ECDH/DH").some((o) => updatePath.test(o.requirement))).toBe(false);
+  });
+
+  it("carries the factsheet's own admission that discovery has blind spots", () => {
+    const vendor = cisa("RSA").find((o) => /post-quantum roadmap/i.test(o.requirement))!;
+    expect(vendor.caveats.join(" ")).toMatch(/may not be able to identify embedded cryptography/);
+    expect(vendor.caveats.join(" ")).toMatch(/floor on vendor exposure/);
+  });
+
+  it("keeps the inventory instruction universal — it is the one obligation every finding gets", () => {
+    for (const algorithm of ["RSA", "AES-256", "AES-ECB", "MD5", "SHA-1", "DSA"]) {
+      expect(cisa(algorithm).some((o) => /cryptographic inventory/i.test(o.requirement))).toBe(true);
+    }
+    // ...and the quantum-vulnerable-only ones stay off a classical-hygiene finding.
+    expect(cisa("MD5").some((o) => /industrial control system/i.test(o.requirement))).toBe(false);
+  });
+
+  it("adds no deadline, so a CISA obligation cannot change a bucket", () => {
+    for (const obligation of cisa("RSA")) expect(obligation.deadline).toBeUndefined();
+    expect(mappingEngine.resolve({ algorithm: "AES-256" }, { asOf: ASOF })!.bucket).toBe("no-obligation");
+    expect(mappingEngine.resolve({ algorithm: "AES-ECB" }, { asOf: ASOF })!.bucket).toBe("best-practice");
+  });
+
+  it("never presents the factsheet's 2023 draft-standards language as current", () => {
+    for (const obligation of cisa("RSA")) {
+      expect(`${obligation.requirement} ${obligation.caveats.join(" ")}`).not.toMatch(/to be released in 2024|draft PQC standards/i);
+    }
+  });
+
+  it("follows the JSON — a new section instruction becomes an obligation with no code edit", () => {
+    const engine = engineOver((data) => {
+      data.frameworks.frameworks
+        .find((f) => f.id === "CISA-QR")!
+        .findingObligations.push({
+          id: "cisa-qr-example-future-section",
+          match: { quantumVulnerable: true },
+          requirement: "A section this file did not know about when the engine was written.",
+          severity: "medium",
+          citation: { document: "Example", url: "https://example.invalid", retrievedAt: "2026-08-16" },
+          confidence: "verified",
+        });
+    });
+
+    const added = engine
+      .resolve({ algorithm: "RSA" }, { asOf: ASOF })!
+      .obligations.filter((o) => o.framework === "CISA-QR");
+    expect(added.some((o) => /did not know about/.test(o.requirement))).toBe(true);
+    expect(added).toHaveLength(cisa("RSA").length + 1);
+  });
+});
+
 describe("MD5 — never approved, so no transition deadline may be cited", () => {
   const result = mappingEngine.resolve({ algorithm: "MD5" }, { asOf: ASOF })!;
 
