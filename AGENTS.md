@@ -258,7 +258,7 @@ journal mergeable and every lane's tests pass. What nobody reconciled was
 the *common parent*, so after the merge the chain forked five ways and
 `drizzle-kit generate` refused to run at all — `are pointing to a parent
 snapshot ... which is a collision`. Nothing catches this until the next person
-tries to add a column, which was three weeks of lanes later. The repair is
+tries to add a column — here, the same day, which is the lucky version. The repair is
 mechanical when the lanes touched disjoint tables (check first, with a script):
 walk the snapshots in journal order, apply each lane's delta against the common
 parent onto a running cumulative state, and relink `prevId` to the previous
