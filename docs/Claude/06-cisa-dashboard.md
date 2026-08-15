@@ -2,8 +2,16 @@
 
 ## Why mirror the CISA factsheet
 
-`verified 2026-08-01` against the joint CISA/NSA/NIST factsheet *"Quantum-Readiness: Migration
-to Post-Quantum Cryptography"*, dated **As of August 17, 2023**, TLP:CLEAR.
+`verified 2026-08-16` against the joint CISA/NSA/NIST factsheet *"Quantum-Readiness: Migration
+to Post-Quantum Cryptography"*, dated **As of August 17, 2023**, TLP:CLEAR. Re-read in full that
+day (all seven sections, every bullet) via the NCCoE-hosted copy — `cisa.gov` still returns
+HTTP 403 to automated fetches.
+
+> **The machine-readable form of the table below is `CISA-QR.roadmapAlignment` in
+> [mappings/frameworks.json](mappings/frameworks.json), added by C6 on 2026-08-16.** That block is
+> the authority; this table is its prose summary and must not drift from it. It carries all seven
+> named sections (this table lists the five with a product role) and a three-valued `productRole`,
+> so "we evidence this" cannot be rendered as "we do this".
 
 > ⚠️ **Correction to earlier drafts of this document.** The factsheet does **not** define a
 > numbered five-stage roadmap. An earlier version of this file invented one. The factsheet is
@@ -14,13 +22,17 @@ Structuring the dashboard around **the buyer's own reference document** rather t
 data model means a CISO can point at it in a board meeting and say *"this is the CISA guidance,
 and here is where we are against it."* That is worth more than any chart we could invent.
 
-| Factsheet section | Who does it | Our role |
-|---|---|---|
-| Establish a quantum-readiness roadmap | Customer | Evidence + template |
-| **Prepare a cryptographic inventory** | **QuantaXscan** | **Automated** |
-| Discuss post-quantum roadmaps with technology vendors | Customer, tracked in QuantaXscan | Vendor register (B9) |
-| Supply chain quantum-readiness | Customer, tracked in QuantaXscan | Vendor + dependency collectors |
-| Technology vendor responsibilities | Vendors | Out of scope |
+| Factsheet section | Who does it | Our role | `productRole` |
+|---|---|---|---|
+| Why prepare now? | Customer | Exposure evidence (A3 secrecy lifetime, Mosca) | `evidenced` |
+| Establish a quantum-readiness roadmap | Customer | Evidence + template | `customer-process` |
+| **Prepare a cryptographic inventory** | **QuantaXscan** | **Automated** | `automated` |
+| Discuss post-quantum roadmaps with technology vendors | Customer, tracked in QuantaXscan | Vendor register (B9) | `evidenced` |
+| Supply chain quantum-readiness | Customer, tracked in QuantaXscan | Vendor + dependency collectors | `evidenced` |
+| Technology vendor responsibilities | Vendors | Out of scope | `context` |
+
+(BACKGROUND is framing with no product claim — `context` — and is omitted here for the same
+reason. It is present in `roadmapAlignment` so the seven sections are complete there.)
 
 ### Two things the factsheet says that directly validate this design
 
@@ -33,18 +45,23 @@ and here is where we are against it."* That is worth more than any chart we coul
 That is primary-source justification for the coverage panel (D3). We are not being unusually
 humble; we are reflecting what the guidance already says.
 
-**On data lifetime** — the factsheet asks for exactly the X input Mosca needs:
+**On data lifetime** — the factsheet asks for exactly the X input Mosca needs. Under
+**PREPARE A CRYPTOGRAPHIC INVENTORY**:
 
 > *"Organizations should include in their inventory when and where quantum-vulnerable
 > cryptography is being leveraged to protect the most sensitive and critical datasets and
 > include estimates on length of protection for these datasets."*
 
-and
+and — **corrected 2026-08-16** — under **SUPPLY CHAIN QUANTUM-READINESS**, not the inventory
+section where this file previously grouped it:
 
 > *"Prioritization should be given to high impact systems, industrial control systems (ICSs),
 > and systems with long-term confidentiality/secrecy needs."*
 
-Cite these when a buyer asks why we require a data classification. It is not our invention.
+Cite these when a buyer asks why we require a data classification. It is not our invention — but
+cite each to the section it is actually printed under. A buyer who opens the factsheet checks the
+heading first, and secrecy lifetime is only one of the three prioritisation axes that second quote
+names.
 
 ### The three named discovery targets
 
