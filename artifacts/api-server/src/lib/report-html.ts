@@ -153,6 +153,11 @@ export function renderBoardPackHtml(pack: BoardPack): string {
     )
     .join("");
 
+  // Page one is the four questions plus the coverage gap, and nothing else —
+  // doc 07 budgets it at one page for a reader with four minutes. The
+  // assumption register is the one thing that would push it over, so it rides
+  // in the limitations appendix, next to the other reasons a number is not what
+  // it looks like.
   const appendices = pack.appendices
     .map(
       (appendix) => `<section class="page-break"><h2>${esc(appendix.title)}</h2>
@@ -176,6 +181,11 @@ ${
         .join("")}</tbody></table>`
 }
 ${appendix.notes.length === 0 ? "" : `<ul class="small">${appendix.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`}
+${
+  appendix.id === "c-limits"
+    ? `<h3>Assumptions behind every number in this pack</h3>${assumptionsTable(pack.assumptions)}`
+    : ""
+}
 </section>`,
     )
     .join("");
@@ -217,9 +227,6 @@ ${headerTable(pack.header)}
 
 <h2>What this pack does not cover</h2>
 ${coverageCallout(coverage)}
-
-<h2>Assumptions behind every number above</h2>
-${assumptionsTable(pack.assumptions)}
 
 ${appendices}
 
