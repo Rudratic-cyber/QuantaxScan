@@ -2201,6 +2201,233 @@ paths:
         "403":
           description: Not signed in, or not a member of that organisation
 
+  # ── RBAC — divisions, grants and members ────────────────────────────────
+  # Every write here needs `admin`; the gate is central (lib/require-role.ts),
+  # not a check inside each handler. `GET /divisions` is deliberately readable
+  # by a viewer: a person restricted to Payments sees that Retail exists, by
+  # name, holding none of their data — hiding its existence makes "why can't I
+  # see Retail?" unanswerable by the one person experiencing it.
+
+  /divisions:
+    get:
+      operationId: listDivisions
+      tags: [divisions]
+      summary: Divisions in this organisation, with how many projects each holds (RBAC)
+      description: >-
+        Project counts are computed from what the caller can see rather than stored, because a
+        cached total would be a second source of truth able to disagree with the policy that
+        decides visibility. `organizationWideProjects` counts projects belonging to no division —
+        visible to everyone in the tenant, and not any division's omission.
+      responses:
+        "200":
+          description: The organisation's divisions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DivisionList"
+    post:
+      operationId: createDivision
+      tags: [divisions]
+      summary: Create a division (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDivisionBody"
+      responses:
+        "201":
+          description: The created division
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Division"
+        "400":
+          description: Missing name, or a slug that is not lower-case letters, digits and single hyphens
+        "403":
+          description: Not an admin
+        "409":
+          description: That slug is already used in this organisation
+
+  /divisions/{id}:
+    patch:
+      operationId: updateDivision
+      tags: [divisions]
+      summary: Rename or re-describe a division (admin)
+      description: >-
+        The slug is deliberately immutable — it appears in URLs people have bookmarked.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDivisionBody"
+      responses:
+        "200":
+          description: The updated division
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Division"
+        "400":
+          description: Invalid id, or nothing to update
+        "403":
+          description: Not an admin
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteDivision
+      tags: [divisions]
+      summary: Dissolve a division (admin)
+      description: >-
+        The projects inside it are **not** deleted — `projects.division_id` is `ON DELETE SET
+        NULL`, so they become organisation-wide, which is the state they were in before divisions
+        existed and the only safe reading of "the team was dissolved". The response says how many
+        projects that affected: silence would let an admin widen who can see a team's work without
+        realising it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Dissolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projectsReleased:
+                    type: integer
+                    description: Projects that just became organisation-wide.
+                required: [projectsReleased]
+        "403":
+          description: Not an admin
+        "404":
+          description: Not found
+
+  /divisions/{id}/grants:
+    post:
+      operationId: grantDivisionRole
+      tags: [divisions]
+      summary: Grant a member a role on this division (admin)
+      description: >-
+        A grant only ever **raises**: the effective role on a project is the stronger of the
+        organisation role and any grant on that project's division. "Viewer on Payments" for
+        somebody who is already an organisation member is a no-op, not a demotion — expressing
+        "admin everywhere except Payments" needs a deny model, which is a different feature.
+
+
+        Both parents are confirmed inside the caller's scope before the row is written: a foreign
+        key is checked with row-level security bypassed, so PostgreSQL would otherwise accept
+        another organisation's division id or a stranger's user id.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDivisionGrantBody"
+      responses:
+        "201":
+          description: The grant, created or updated in place
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DivisionGrant"
+        "400":
+          description: Missing userId, or a role outside viewer/member/admin
+        "403":
+          description: Not an admin
+        "404":
+          description: No such division, or that user is not a member of this organisation
+
+  /divisions/{id}/grants/{userId}:
+    delete:
+      operationId: revokeDivisionGrant
+      tags: [divisions]
+      summary: Revoke a division grant (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Revoked
+        "403":
+          description: Not an admin
+        "404":
+          description: No such grant
+
+  /organization/members:
+    get:
+      operationId: listOrganizationMembers
+      tags: [divisions]
+      summary: Who is in this organisation, at what role (admin)
+      description: >-
+        Admin-only: a membership list names every colleague and what each of them may do.
+      responses:
+        "200":
+          description: Members and their division grants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationMemberList"
+        "403":
+          description: Not an admin
+
+  /organization/members/{userId}:
+    patch:
+      operationId: updateOrganizationMemberRole
+      tags: [divisions]
+      summary: Change a member's organisation role (admin)
+      description: >-
+        Refuses to remove the last owner. An organisation with no owner has nobody who can
+        transfer or delete it — a state no support call can resolve, and one keystroke away when
+        an admin demotes themselves.
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum: [viewer, member, admin, owner]
+              required: [role]
+      responses:
+        "200":
+          description: The updated membership
+        "400":
+          description: Invalid user id or role
+        "403":
+          description: Not an admin
+        "404":
+          description: Not a member of this organisation
+        "409":
+          description: That would leave the organisation with no owner
+
 components:
   responses:
     RateLimited:
@@ -8217,3 +8444,99 @@ components:
         - user
         - organization
         - memberships
+
+    # ── RBAC — divisions ────────────────────────────────────────────────────
+
+    Division:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug:
+          type: string
+          description: Lower-case, hyphenated, unique within the organisation. Immutable once created — it appears in URLs.
+        description: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        projects:
+          type: integer
+          description: Projects in this division that the caller can see. Computed, never stored.
+      required: [id, name, slug]
+
+    DivisionList:
+      type: object
+      properties:
+        divisions:
+          type: array
+          items: { $ref: "#/components/schemas/Division" }
+        organizationWideProjects:
+          type: integer
+          description: >-
+            Projects belonging to no division. Visible to everyone in the tenant — this is what
+            every project created before divisions existed carries, and it is not a division's
+            omission.
+      required: [divisions, organizationWideProjects]
+
+    CreateDivisionBody:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        slug:
+          type: string
+          description: Lower-case letters, digits and single hyphens.
+          pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        description: { type: string, nullable: true }
+      required: [name, slug]
+
+    UpdateDivisionBody:
+      type: object
+      description: The slug is absent on purpose — it is immutable.
+      properties:
+        name: { type: string }
+        description: { type: string, nullable: true }
+
+    DivisionGrant:
+      type: object
+      properties:
+        divisionId: { type: integer }
+        userId: { type: string }
+        role:
+          type: string
+          enum: [viewer, member, admin]
+          description: No `owner` — ownership is a fact about the organisation, and a division owner would imply a right to delete something they do not own.
+        createdAt: { type: string, format: date-time }
+      required: [divisionId, userId, role]
+
+    CreateDivisionGrantBody:
+      type: object
+      properties:
+        userId: { type: string }
+        role:
+          type: string
+          enum: [viewer, member, admin]
+      required: [userId, role]
+
+    OrganizationMemberList:
+      type: object
+      properties:
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              userId: { type: string }
+              role: { type: string, enum: [viewer, member, admin, owner] }
+              createdAt: { type: string, format: date-time }
+              divisionGrants:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    divisionId: { type: integer }
+                    role: { type: string }
+                  required: [divisionId, role]
+            required: [userId, role, divisionGrants]
+        roles:
+          type: array
+          items: { type: string }
+          description: The role vocabulary this build understands, weakest to strongest.
+      required: [members, roles]

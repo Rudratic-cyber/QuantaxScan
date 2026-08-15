@@ -7370,3 +7370,158 @@ export const SelectOrganizationResponse = zod.object({
     })
     .nullable(),
 });
+
+/**
+ * Project counts are computed from what the caller can see rather than stored, because a cached total would be a second source of truth able to disagree with the policy that decides visibility. `organizationWideProjects` counts projects belonging to no division — visible to everyone in the tenant, and not any division's omission.
+ * @summary Divisions in this organisation, with how many projects each holds (RBAC)
+ */
+export const ListDivisionsResponse = zod.object({
+  divisions: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+      slug: zod
+        .string()
+        .describe(
+          "Lower-case, hyphenated, unique within the organisation. Immutable once created — it appears in URLs.",
+        ),
+      description: zod.string().nullish(),
+      createdAt: zod.coerce.date().optional(),
+      projects: zod
+        .number()
+        .optional()
+        .describe(
+          "Projects in this division that the caller can see. Computed, never stored.",
+        ),
+    }),
+  ),
+  organizationWideProjects: zod
+    .number()
+    .describe(
+      "Projects belonging to no division. Visible to everyone in the tenant — this is what every project created before divisions existed carries, and it is not a division's omission.",
+    ),
+});
+
+/**
+ * @summary Create a division (admin)
+ */
+
+export const createDivisionBodySlugRegExp = new RegExp(
+  "^[a-z0-9]+(?:-[a-z0-9]+)\*$",
+);
+
+export const CreateDivisionBody = zod.object({
+  name: zod.string().min(1),
+  slug: zod
+    .string()
+    .regex(createDivisionBodySlugRegExp)
+    .describe("Lower-case letters, digits and single hyphens."),
+  description: zod.string().nullish(),
+});
+
+/**
+ * The slug is deliberately immutable — it appears in URLs people have bookmarked.
+ * @summary Rename or re-describe a division (admin)
+ */
+export const UpdateDivisionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateDivisionBody = zod
+  .object({
+    name: zod.string().optional(),
+    description: zod.string().nullish(),
+  })
+  .describe("The slug is absent on purpose — it is immutable.");
+
+export const UpdateDivisionResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  slug: zod
+    .string()
+    .describe(
+      "Lower-case, hyphenated, unique within the organisation. Immutable once created — it appears in URLs.",
+    ),
+  description: zod.string().nullish(),
+  createdAt: zod.coerce.date().optional(),
+  projects: zod
+    .number()
+    .optional()
+    .describe(
+      "Projects in this division that the caller can see. Computed, never stored.",
+    ),
+});
+
+/**
+ * The projects inside it are **not** deleted — `projects.division_id` is `ON DELETE SET NULL`, so they become organisation-wide, which is the state they were in before divisions existed and the only safe reading of "the team was dissolved". The response says how many projects that affected: silence would let an admin widen who can see a team's work without realising it.
+ * @summary Dissolve a division (admin)
+ */
+export const DeleteDivisionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteDivisionResponse = zod.object({
+  projectsReleased: zod
+    .number()
+    .describe("Projects that just became organisation-wide."),
+});
+
+/**
+ * A grant only ever **raises**: the effective role on a project is the stronger of the organisation role and any grant on that project's division. "Viewer on Payments" for somebody who is already an organisation member is a no-op, not a demotion — expressing "admin everywhere except Payments" needs a deny model, which is a different feature.
+
+Both parents are confirmed inside the caller's scope before the row is written: a foreign key is checked with row-level security bypassed, so PostgreSQL would otherwise accept another organisation's division id or a stranger's user id.
+ * @summary Grant a member a role on this division (admin)
+ */
+export const GrantDivisionRoleParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GrantDivisionRoleBody = zod.object({
+  userId: zod.string(),
+  role: zod.enum(["viewer", "member", "admin"]),
+});
+
+/**
+ * @summary Revoke a division grant (admin)
+ */
+export const RevokeDivisionGrantParams = zod.object({
+  id: zod.coerce.number(),
+  userId: zod.coerce.string(),
+});
+
+/**
+ * Admin-only: a membership list names every colleague and what each of them may do.
+ * @summary Who is in this organisation, at what role (admin)
+ */
+export const ListOrganizationMembersResponse = zod.object({
+  members: zod.array(
+    zod.object({
+      userId: zod.string(),
+      role: zod.enum(["viewer", "member", "admin", "owner"]),
+      createdAt: zod.coerce.date().optional(),
+      divisionGrants: zod.array(
+        zod.object({
+          divisionId: zod.number(),
+          role: zod.string(),
+        }),
+      ),
+    }),
+  ),
+  roles: zod
+    .array(zod.string())
+    .describe(
+      "The role vocabulary this build understands, weakest to strongest.",
+    ),
+});
+
+/**
+ * Refuses to remove the last owner. An organisation with no owner has nobody who can transfer or delete it — a state no support call can resolve, and one keystroke away when an admin demotes themselves.
+ * @summary Change a member's organisation role (admin)
+ */
+export const UpdateOrganizationMemberRoleParams = zod.object({
+  userId: zod.coerce.string(),
+});
+
+export const UpdateOrganizationMemberRoleBody = zod.object({
+  role: zod.enum(["viewer", "member", "admin", "owner"]),
+});

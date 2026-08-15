@@ -130,3 +130,87 @@ describe("the gate does not break what came before it", () => {
     expect((await request.get("/api/demo/repos")).status).toBe(200);
   });
 });
+
+describe("RBAC stage 5 — the management surface", () => {
+  it("lets an admin create a division, and a viewer see that it exists", async () => {
+    const slug = `payments-${Date.now()}`;
+    const created = await asAdmin(request.post("/api/divisions").send({ name: "Payments", slug }));
+    expect(created.status).toBe(201);
+
+    // Deliberately readable by a viewer. Hiding a division's existence makes
+    // "why can't I see Payments?" unanswerable by the person experiencing it,
+    // and it holds none of their data either way.
+    const listed = await asViewer(request.get("/api/divisions"));
+    expect(listed.status).toBe(200);
+    expect(listed.body.divisions.map((d: { slug: string }) => d.slug)).toContain(slug);
+    // The count a reader needs to interpret the rest.
+    expect(listed.body).toHaveProperty("organizationWideProjects");
+  });
+
+  it("refuses a viewer every write on it", async () => {
+    const slug = `retail-${Date.now()}`;
+    expect((await asViewer(request.post("/api/divisions").send({ name: "Retail", slug }))).status).toBe(403);
+    // A membership list names every colleague and what each may do.
+    expect((await asViewer(request.get("/api/organization/members"))).status).toBe(403);
+  });
+
+  it("refuses a slug that would not survive being put in a URL", async () => {
+    const res = await asAdmin(request.post("/api/divisions").send({ name: "Bad", slug: "Not A Slug" }));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/lower-case/i);
+  });
+
+  it("refuses a second division with the same slug rather than silently reusing one", async () => {
+    const slug = `dup-${Date.now()}`;
+    expect((await asAdmin(request.post("/api/divisions").send({ name: "First", slug }))).status).toBe(201);
+    const second = await asAdmin(request.post("/api/divisions").send({ name: "Second", slug }));
+    expect(second.status).toBe(409);
+  });
+
+  it("refuses to grant a division to somebody who is not in the organisation", async () => {
+    const created = await asAdmin(
+      request.post("/api/divisions").send({ name: "Grants", slug: `grants-${Date.now()}` }),
+    );
+    const divisionId = (created.body as { id: number }).id;
+
+    // Granting a division to a stranger would create access to a tenant they
+    // were never admitted to.
+    const res = await asAdmin(
+      request.post(`/api/divisions/${divisionId}/grants`).send({ userId: "nobody-here", role: "viewer" }),
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not a member/i);
+  });
+
+  it("refuses `owner` as a division role", async () => {
+    const created = await asAdmin(
+      request.post("/api/divisions").send({ name: "Owners", slug: `owners-${Date.now()}` }),
+    );
+    const divisionId = (created.body as { id: number }).id;
+
+    const res = await asAdmin(
+      request.post(`/api/divisions/${divisionId}/grants`).send({ userId: "someone", role: "owner" }),
+    );
+    expect(res.status).toBe(400);
+    // Ownership is a fact about the organisation; a division owner would imply
+    // a right to delete something they do not own.
+    expect(res.body.error).toMatch(/viewer, member, admin/);
+  });
+
+  it("dissolving a division releases its projects rather than deleting them", async () => {
+    const created = await asAdmin(
+      request.post("/api/divisions").send({ name: "Doomed", slug: `doomed-${Date.now()}` }),
+    );
+    const divisionId = (created.body as { id: number }).id;
+
+    const deleted = await asAdmin(request.delete(`/api/divisions/${divisionId}`));
+    expect(deleted.status).toBe(200);
+    // Said out loud, because silence would let an admin widen who can see a
+    // team's work without realising it.
+    expect(deleted.body).toHaveProperty("projectsReleased");
+  });
+
+  it("is a 404, not a 403, for a division that does not exist", async () => {
+    expect((await asAdmin(request.patch("/api/divisions/99999999").send({ name: "x" }))).status).toBe(404);
+  });
+});

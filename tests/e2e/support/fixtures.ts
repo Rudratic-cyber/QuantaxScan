@@ -24,6 +24,18 @@ export function apiKey(): string {
 }
 
 /**
+ * The read-only key, bound to the *same* organisation as `apiKey()`.
+ *
+ * Read from the state file for the same reason `apiKey()` is: each Playwright
+ * worker is its own process, so a key derived at module load would differ from
+ * the one the server was started with and every request would 401 for a reason
+ * that has nothing to do with the role being tested.
+ */
+export function viewerApiKey(): string {
+  return stackState().viewerApiKey;
+}
+
+/**
  * The second organisation's key and id — set only when the stack was started
  * with `E2E_SECOND_ORG=1` (07-multi-org.spec.ts). Throws for any other spec,
  * on the theory that a fixture silently returning `undefined` here would be a

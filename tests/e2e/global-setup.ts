@@ -23,6 +23,7 @@ import {
   SESSION_SECRET,
   SECOND_API_KEY,
   SECOND_ORG_ENABLED,
+  VIEWER_API_KEY,
   STATE_FILE,
   UI_PORT,
   UI_URL,
@@ -51,6 +52,7 @@ export default async function globalSetup(): Promise<void> {
     startedContainer: false,
     container: "",
     apiKey: API_KEY,
+    viewerApiKey: VIEWER_API_KEY,
   };
   const persist = () => {
     mkdirSync(path.dirname(STATE_FILE), { recursive: true });
@@ -90,14 +92,20 @@ export default async function globalSetup(): Promise<void> {
       // artifacts/api-server/src/lib/principal.ts. Without a second
       // organisation, QUANTAXSCAN_API_KEY_ORG_ID keeps the single-key,
       // single-org shape every other spec relies on.
+      // The viewer key is appended in both shapes: RBAC's spec needs a
+      // read-only principal in the *same* organisation, so that every
+      // difference it observes is caused by the role rather than the tenant.
+      // Roles are positional like the org ids — see principal.ts.
       ...(secondOrganizationId !== null
         ? {
-            QUANTAXSCAN_API_KEYS: `${API_KEY},${SECOND_API_KEY}`,
-            QUANTAXSCAN_API_KEY_ORG_IDS: `${API_KEY_ORG_ID},${secondOrganizationId}`,
+            QUANTAXSCAN_API_KEYS: `${API_KEY},${SECOND_API_KEY},${VIEWER_API_KEY}`,
+            QUANTAXSCAN_API_KEY_ORG_IDS: `${API_KEY_ORG_ID},${secondOrganizationId},${API_KEY_ORG_ID}`,
+            QUANTAXSCAN_API_KEY_ROLES: "admin,admin,viewer",
           }
         : {
-            QUANTAXSCAN_API_KEYS: API_KEY,
-            QUANTAXSCAN_API_KEY_ORG_ID: API_KEY_ORG_ID,
+            QUANTAXSCAN_API_KEYS: `${API_KEY},${VIEWER_API_KEY}`,
+            QUANTAXSCAN_API_KEY_ORG_IDS: `${API_KEY_ORG_ID},${API_KEY_ORG_ID}`,
+            QUANTAXSCAN_API_KEY_ROLES: "admin,viewer",
           }),
       // F4's credential store. Configured here because an unconfigured store
       // answers 503 by design, so without this the credential spec would be

@@ -76,6 +76,17 @@ export const API_KEY = process.env["E2E_API_KEY"] ?? randomBytes(32).toString("b
 export const API_KEY_ORG_ID = "1";
 
 /**
+ * A second key bound to the **same** organisation at the **viewer** role, for
+ * the RBAC spec.
+ *
+ * Same tenant on purpose: every difference that spec observes is then caused by
+ * the role and by nothing else — a second organisation would confound the two.
+ * Always configured, and it changes nothing for the other specs: they keep
+ * presenting the admin key, and admin is what an unconfigured key already had.
+ */
+export const VIEWER_API_KEY = process.env["E2E_VIEWER_API_KEY"] ?? randomBytes(32).toString("base64url");
+
+/**
  * F4's credential-store key, and the id the server stamps on every row it
  * encrypts. Generated per run for the same reason `API_KEY` is.
  *
@@ -212,6 +223,10 @@ export type StackState = {
   startedContainer: boolean;
   container: string;
   apiKey: string;
+  /** The read-only key, same organisation. Persisted for the same reason `apiKey` is —
+   *  a key regenerated at module load in a worker process would differ from the one the
+   *  server was started with, and the request would 401 for a reason unrelated to RBAC. */
+  viewerApiKey: string;
   /** Set only when `SECOND_ORG_ENABLED`. Persisted for the same reason `apiKey` is:
    *  each Playwright worker is its own process, so a key regenerated at module
    *  load in that process would differ from the one the server was started with. */

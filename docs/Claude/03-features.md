@@ -606,7 +606,7 @@ Detail: [07-reports.md](07-reports.md)
 
 | # | Feature | Status | Pri |
 |---|---|---|---|
-| F1 | Authentication + RBAC | `partial`† | **P0** |
+| F1 | Authentication + RBAC | `built`† | **P0** |
 | F2 | Multi-tenancy with hard isolation | `partial` | **P0**† |
 | F3 | Audit logging | `planned` | **P1** |
 | F4 | Source-code handling controls (ephemeral mode) + credential store | `built` | **P0**† |
@@ -634,10 +634,22 @@ The registry documents all three anyway, because the properties that differ (`oi
 `/auth/providers` returns only what is implemented, so the deferral cannot be mistaken for a
 button a user could press.
 
-**Still `partial`, and this is the half that remains:** there are no *roles* worth the name. A
-membership carries a role string and nothing consumes it — no route is gated on it, there is no
-admin/member/viewer distinction in behaviour, and no UI for managing members. Sign-in without RBAC
-means the product knows who you are and not what you may do.
+**RBAC landed 2026-08-15** — `owner / admin / member / viewer`, plus **divisions**: a first-class
+group owning projects, so a role can be granted over a team or business unit rather than the whole
+tenant. Sub-organisation scoping is enforced **in the row-level-security policies**, not in route
+code, because a filter in application code is one somebody can forget and the failure returns
+another division's rows rather than an error.
+
+Writes are gated by one middleware, and the default is the design: a read needs `viewer`, anything
+else needs `member`, and a route nobody thought about is therefore closed to read-only accounts.
+The shared API key gets an explicit role too — defaulting to `admin` so no existing deployment
+breaks — because without it RBAC would be bypassable by the credential every deployment already
+holds. Full design, including why `assets` needed a denormalised `division_id`:
+[15-rbac-design.md](15-rbac-design.md).
+
+**Not built:** the management *UI*. Divisions, grants and member roles are administered over HTTP
+(`/api/divisions`, `/api/organization/members`); no screen exists yet. Member *invites* are gated
+but unimplemented — adding a person needs an email flow.
 
 **A deployment with no `SESSION_SECRET` is unchanged**, byte for byte: no session middleware is
 installed, no cookie is parsed, and every `/auth/*` route answers 501. Configuring a provider

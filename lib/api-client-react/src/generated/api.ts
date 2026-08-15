@@ -29,6 +29,8 @@ import type {
   CreateCollectionScheduleBody,
   CreateCommunityPostBody,
   CreateCredentialBody,
+  CreateDivisionBody,
+  CreateDivisionGrantBody,
   CreateOtFleetBody,
   CreateProjectBody,
   CreateScanBody,
@@ -37,11 +39,15 @@ import type {
   CreateVendorAssessmentBody,
   Credential,
   DataAtRestIngestSummary,
+  DeleteDivision200,
   DemoRepo,
   DemoScanResult,
   DependencyIngestSummary,
   DiscoveredTargetProbeSummary,
   DiscoveryRunSummary,
+  Division,
+  DivisionGrant,
+  DivisionList,
   DriftFeed,
   EndpointIngestSummary,
   Finding,
@@ -62,6 +68,7 @@ import type {
   MultiScanBody,
   MultiScanResult,
   NetworkFlowIngestSummary,
+  OrganizationMemberList,
   OtFleet,
   PostureTimeline,
   ProbeDiscoveredTargetsBody,
@@ -91,6 +98,8 @@ import type {
   SubmitProjectTlsBody,
   TlsProbeSummary,
   UpdateCollectionScheduleBody,
+  UpdateDivisionBody,
+  UpdateOrganizationMemberRoleBody,
   UpdateOtFleetBody,
   UpdateVendorAssessmentBody,
   VendorAssessment,
@@ -6258,4 +6267,680 @@ export const useSelectOrganization = <
   TContext
 > => {
   return useMutation(getSelectOrganizationMutationOptions(options));
+};
+
+/**
+ * Project counts are computed from what the caller can see rather than stored, because a cached total would be a second source of truth able to disagree with the policy that decides visibility. `organizationWideProjects` counts projects belonging to no division — visible to everyone in the tenant, and not any division's omission.
+ * @summary Divisions in this organisation, with how many projects each holds (RBAC)
+ */
+export const getListDivisionsUrl = () => {
+  return `/api/divisions`;
+};
+
+export const listDivisions = async (
+  options?: RequestInit,
+): Promise<DivisionList> => {
+  return customFetch<DivisionList>(getListDivisionsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDivisionsQueryKey = () => {
+  return [`/api/divisions`] as const;
+};
+
+export const getListDivisionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDivisions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDivisions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDivisionsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listDivisions>>> = ({
+    signal,
+  }) => listDivisions({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDivisions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDivisionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDivisions>>
+>;
+export type ListDivisionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Divisions in this organisation, with how many projects each holds (RBAC)
+ */
+
+export function useListDivisions<
+  TData = Awaited<ReturnType<typeof listDivisions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDivisions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDivisionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a division (admin)
+ */
+export const getCreateDivisionUrl = () => {
+  return `/api/divisions`;
+};
+
+export const createDivision = async (
+  createDivisionBody: CreateDivisionBody,
+  options?: RequestInit,
+): Promise<Division> => {
+  return customFetch<Division>(getCreateDivisionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createDivisionBody),
+  });
+};
+
+export const getCreateDivisionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDivision>>,
+    TError,
+    { data: BodyType<CreateDivisionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createDivision>>,
+  TError,
+  { data: BodyType<CreateDivisionBody> },
+  TContext
+> => {
+  const mutationKey = ["createDivision"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createDivision>>,
+    { data: BodyType<CreateDivisionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createDivision(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateDivisionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createDivision>>
+>;
+export type CreateDivisionMutationBody = BodyType<CreateDivisionBody>;
+export type CreateDivisionMutationError = ErrorType<void>;
+
+/**
+ * @summary Create a division (admin)
+ */
+export const useCreateDivision = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDivision>>,
+    TError,
+    { data: BodyType<CreateDivisionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createDivision>>,
+  TError,
+  { data: BodyType<CreateDivisionBody> },
+  TContext
+> => {
+  return useMutation(getCreateDivisionMutationOptions(options));
+};
+
+/**
+ * The slug is deliberately immutable — it appears in URLs people have bookmarked.
+ * @summary Rename or re-describe a division (admin)
+ */
+export const getUpdateDivisionUrl = (id: number) => {
+  return `/api/divisions/${id}`;
+};
+
+export const updateDivision = async (
+  id: number,
+  updateDivisionBody: UpdateDivisionBody,
+  options?: RequestInit,
+): Promise<Division> => {
+  return customFetch<Division>(getUpdateDivisionUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateDivisionBody),
+  });
+};
+
+export const getUpdateDivisionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDivision>>,
+    TError,
+    { id: number; data: BodyType<UpdateDivisionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDivision>>,
+  TError,
+  { id: number; data: BodyType<UpdateDivisionBody> },
+  TContext
+> => {
+  const mutationKey = ["updateDivision"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDivision>>,
+    { id: number; data: BodyType<UpdateDivisionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateDivision(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateDivisionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDivision>>
+>;
+export type UpdateDivisionMutationBody = BodyType<UpdateDivisionBody>;
+export type UpdateDivisionMutationError = ErrorType<void>;
+
+/**
+ * @summary Rename or re-describe a division (admin)
+ */
+export const useUpdateDivision = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDivision>>,
+    TError,
+    { id: number; data: BodyType<UpdateDivisionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDivision>>,
+  TError,
+  { id: number; data: BodyType<UpdateDivisionBody> },
+  TContext
+> => {
+  return useMutation(getUpdateDivisionMutationOptions(options));
+};
+
+/**
+ * The projects inside it are **not** deleted — `projects.division_id` is `ON DELETE SET NULL`, so they become organisation-wide, which is the state they were in before divisions existed and the only safe reading of "the team was dissolved". The response says how many projects that affected: silence would let an admin widen who can see a team's work without realising it.
+ * @summary Dissolve a division (admin)
+ */
+export const getDeleteDivisionUrl = (id: number) => {
+  return `/api/divisions/${id}`;
+};
+
+export const deleteDivision = async (
+  id: number,
+  options?: RequestInit,
+): Promise<DeleteDivision200> => {
+  return customFetch<DeleteDivision200>(getDeleteDivisionUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteDivisionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDivision>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteDivision>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteDivision"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteDivision>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteDivision(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteDivisionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDivision>>
+>;
+
+export type DeleteDivisionMutationError = ErrorType<void>;
+
+/**
+ * @summary Dissolve a division (admin)
+ */
+export const useDeleteDivision = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDivision>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDivision>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteDivisionMutationOptions(options));
+};
+
+/**
+ * A grant only ever **raises**: the effective role on a project is the stronger of the organisation role and any grant on that project's division. "Viewer on Payments" for somebody who is already an organisation member is a no-op, not a demotion — expressing "admin everywhere except Payments" needs a deny model, which is a different feature.
+
+Both parents are confirmed inside the caller's scope before the row is written: a foreign key is checked with row-level security bypassed, so PostgreSQL would otherwise accept another organisation's division id or a stranger's user id.
+ * @summary Grant a member a role on this division (admin)
+ */
+export const getGrantDivisionRoleUrl = (id: number) => {
+  return `/api/divisions/${id}/grants`;
+};
+
+export const grantDivisionRole = async (
+  id: number,
+  createDivisionGrantBody: CreateDivisionGrantBody,
+  options?: RequestInit,
+): Promise<DivisionGrant> => {
+  return customFetch<DivisionGrant>(getGrantDivisionRoleUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createDivisionGrantBody),
+  });
+};
+
+export const getGrantDivisionRoleMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof grantDivisionRole>>,
+    TError,
+    { id: number; data: BodyType<CreateDivisionGrantBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof grantDivisionRole>>,
+  TError,
+  { id: number; data: BodyType<CreateDivisionGrantBody> },
+  TContext
+> => {
+  const mutationKey = ["grantDivisionRole"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof grantDivisionRole>>,
+    { id: number; data: BodyType<CreateDivisionGrantBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return grantDivisionRole(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GrantDivisionRoleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof grantDivisionRole>>
+>;
+export type GrantDivisionRoleMutationBody = BodyType<CreateDivisionGrantBody>;
+export type GrantDivisionRoleMutationError = ErrorType<void>;
+
+/**
+ * @summary Grant a member a role on this division (admin)
+ */
+export const useGrantDivisionRole = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof grantDivisionRole>>,
+    TError,
+    { id: number; data: BodyType<CreateDivisionGrantBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof grantDivisionRole>>,
+  TError,
+  { id: number; data: BodyType<CreateDivisionGrantBody> },
+  TContext
+> => {
+  return useMutation(getGrantDivisionRoleMutationOptions(options));
+};
+
+/**
+ * @summary Revoke a division grant (admin)
+ */
+export const getRevokeDivisionGrantUrl = (id: number, userId: string) => {
+  return `/api/divisions/${id}/grants/${userId}`;
+};
+
+export const revokeDivisionGrant = async (
+  id: number,
+  userId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getRevokeDivisionGrantUrl(id, userId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getRevokeDivisionGrantMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeDivisionGrant>>,
+    TError,
+    { id: number; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revokeDivisionGrant>>,
+  TError,
+  { id: number; userId: string },
+  TContext
+> => {
+  const mutationKey = ["revokeDivisionGrant"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revokeDivisionGrant>>,
+    { id: number; userId: string }
+  > = (props) => {
+    const { id, userId } = props ?? {};
+
+    return revokeDivisionGrant(id, userId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevokeDivisionGrantMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revokeDivisionGrant>>
+>;
+
+export type RevokeDivisionGrantMutationError = ErrorType<void>;
+
+/**
+ * @summary Revoke a division grant (admin)
+ */
+export const useRevokeDivisionGrant = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeDivisionGrant>>,
+    TError,
+    { id: number; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof revokeDivisionGrant>>,
+  TError,
+  { id: number; userId: string },
+  TContext
+> => {
+  return useMutation(getRevokeDivisionGrantMutationOptions(options));
+};
+
+/**
+ * Admin-only: a membership list names every colleague and what each of them may do.
+ * @summary Who is in this organisation, at what role (admin)
+ */
+export const getListOrganizationMembersUrl = () => {
+  return `/api/organization/members`;
+};
+
+export const listOrganizationMembers = async (
+  options?: RequestInit,
+): Promise<OrganizationMemberList> => {
+  return customFetch<OrganizationMemberList>(getListOrganizationMembersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListOrganizationMembersQueryKey = () => {
+  return [`/api/organization/members`] as const;
+};
+
+export const getListOrganizationMembersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listOrganizationMembers>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOrganizationMembers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListOrganizationMembersQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listOrganizationMembers>>
+  > = ({ signal }) => listOrganizationMembers({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listOrganizationMembers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListOrganizationMembersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listOrganizationMembers>>
+>;
+export type ListOrganizationMembersQueryError = ErrorType<void>;
+
+/**
+ * @summary Who is in this organisation, at what role (admin)
+ */
+
+export function useListOrganizationMembers<
+  TData = Awaited<ReturnType<typeof listOrganizationMembers>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listOrganizationMembers>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListOrganizationMembersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Refuses to remove the last owner. An organisation with no owner has nobody who can transfer or delete it — a state no support call can resolve, and one keystroke away when an admin demotes themselves.
+ * @summary Change a member's organisation role (admin)
+ */
+export const getUpdateOrganizationMemberRoleUrl = (userId: string) => {
+  return `/api/organization/members/${userId}`;
+};
+
+export const updateOrganizationMemberRole = async (
+  userId: string,
+  updateOrganizationMemberRoleBody: UpdateOrganizationMemberRoleBody,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getUpdateOrganizationMemberRoleUrl(userId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateOrganizationMemberRoleBody),
+  });
+};
+
+export const getUpdateOrganizationMemberRoleMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateOrganizationMemberRole>>,
+    TError,
+    { userId: string; data: BodyType<UpdateOrganizationMemberRoleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateOrganizationMemberRole>>,
+  TError,
+  { userId: string; data: BodyType<UpdateOrganizationMemberRoleBody> },
+  TContext
+> => {
+  const mutationKey = ["updateOrganizationMemberRole"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateOrganizationMemberRole>>,
+    { userId: string; data: BodyType<UpdateOrganizationMemberRoleBody> }
+  > = (props) => {
+    const { userId, data } = props ?? {};
+
+    return updateOrganizationMemberRole(userId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateOrganizationMemberRoleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateOrganizationMemberRole>>
+>;
+export type UpdateOrganizationMemberRoleMutationBody =
+  BodyType<UpdateOrganizationMemberRoleBody>;
+export type UpdateOrganizationMemberRoleMutationError = ErrorType<void>;
+
+/**
+ * @summary Change a member's organisation role (admin)
+ */
+export const useUpdateOrganizationMemberRole = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateOrganizationMemberRole>>,
+    TError,
+    { userId: string; data: BodyType<UpdateOrganizationMemberRoleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateOrganizationMemberRole>>,
+  TError,
+  { userId: string; data: BodyType<UpdateOrganizationMemberRoleBody> },
+  TContext
+> => {
+  return useMutation(getUpdateOrganizationMemberRoleMutationOptions(options));
 };

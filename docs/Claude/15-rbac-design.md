@@ -1,7 +1,16 @@
 # 15 — RBAC design (F1's second half)
 
-**Status: design, not built.** Decisions below were taken 2026-08-15; the open questions at the end
-are the ones that still change the build.
+**Status: built, 2026-08-15 — stages 1–5 of §5, except the management *UI*.** The API, the policies
+and the gate are in and proven; divisions and grants are administered over HTTP rather than in a
+screen. The open questions at the end were answered by the recommendations beside them.
+
+| Stage | State |
+|---|---|
+| 1 · schema | ✅ `divisions`, `division_grants`, nullable `division_id`, four roles |
+| 2 · resolution | ✅ effective role + division set on the principal; API-key roles |
+| 3 · write gating | ✅ one middleware, viewer-closed by default |
+| 4 · read scoping | ✅ `app.current_divisions` GUC, nine policies, negative control proven able to fail |
+| 5 · management | ✅ API (`/divisions`, `/organization/members`) · ⬜ UI |
 
 F1 shipped authentication — a person can sign in, hold a session, and switch organisation. What it
 did not ship is *authorisation for people*: `organization_members.role` carries a string,
@@ -203,38 +212,47 @@ Each step is separately deployable and none breaks the step before it.
 
 ---
 
-## 6. How it gets proven
+## 6. How it was proven
 
-Following the precedent in [12-test-suite.md](12-test-suite.md) — and the negative control that
-makes the existing tenancy suite trustworthy:
+All four, and the first was demonstrated rather than asserted:
 
-- **A negative control first.** A test that demonstrably fails when the division GUC is not set,
-  the way `tenant-isolation.test.ts` proves the harness is genuinely subject to RLS. Without it, a
-  green suite proves nothing.
-- **Cross-division reads**, in the same shape as the cross-tenant suite: two divisions, one user
-  granted one of them, asserting that a query with no filter at all returns only their division.
-- **Every role against every gated route** in the API suite, including that an unnamed route denies
-  a viewer.
-- **End to end with two real principals** — an admin and a viewer, through the real stack, asserting
-  the viewer's write is refused and their read is scoped.
+- **The negative control was proven able to fail.** Removing the division clause from the
+  `projects` policy fails exactly the two isolation assertions in
+  `lib/db/src/division-isolation.test.ts` and leaves the other ten passing — including the control
+  itself. A suite that goes green without that demonstration is evidence of nothing.
+- **Cross-division reads** — twelve tests, every query with **no `where` clause at all**, because
+  the database is what scopes and the routes do not filter. Two cover the denormalised columns
+  specifically: another division's assets are invisible, and its collection runs cannot be counted
+  into a coverage meter.
+- **Every role against the route table** — `cross-tenant.test.ts` asserts the admin set matches an
+  explicit list in both directions, and that every write is unreachable by a viewer, which is what
+  catches a route nobody considered.
+- **Two principals end to end** — `tests/e2e/19-rbac.spec.ts`, two API keys in the *same*
+  organisation at different roles against real PostgreSQL, so every difference it observes is
+  caused by the role and nothing else.
 
 ---
 
-## 7. Open questions
+## 7. Questions that were open, and how they were answered
 
-These change the build and are not answerable from the code:
+All five took the recommendation beside them. Recorded because the answers are now load-bearing:
 
-1. **Can a grant *reduce* access?** The design says no — grants only raise. A true deny model
-   ("admin everywhere except Payments") is a different and much larger feature. Confirm that
-   "raise-only" is acceptable.
-2. **Do divisions nest?** Assumed flat. Nesting turns the division set into a tree walk and changes
-   the policy expression.
-3. **Can a project move between divisions?** Assumed yes, admin-only. If assets denormalise
-   `division_id` (§4.3), a move has to rewrite those rows — a data migration per move, which is
-   fine at expected volumes but needs to be deliberate rather than discovered.
-4. **What does a viewer see of *other* divisions — nothing, or that they exist?** Recommendation:
-   they exist by name in the switcher and hold no visible data. Hiding their existence entirely
-   makes "why can't I see Payments?" unanswerable by the person experiencing it.
-5. **Does an org `member` get write access to org-wide projects by default?** The matrix says yes.
-   The stricter alternative is that members only write where granted, which makes divisions
-   mandatory in practice.
+1. **Can a grant reduce access?** No — grants only raise. `strongerRole()` is the whole
+   implementation, and a deny model remains a separate, larger feature.
+2. **Do divisions nest?** No, flat. The GUC is a flat id list and the policy is one `= ANY(...)`.
+3. **Can a project move between divisions?** Yes, admin-only — **and the follow-up is real**: an
+   asset's `division_id` is stamped at ingest, so moving a project leaves already-ingested rows on
+   the old division until the next collection. Recorded as the one loose end of stage 4.
+4. **What does a viewer see of other divisions?** They exist by name — `GET /divisions` is
+   deliberately readable by a viewer and holds none of their data.
+5. **Does an org member write to org-wide projects by default?** Yes — a project with
+   `division_id IS NULL` is visible and writable to the whole tenant, which is what every project
+   created before divisions carries.
+
+## 8. What is not built
+
+- **The management UI.** Divisions and grants are administered over HTTP. The API is complete and
+  spec'd; the screen is not written.
+- **Moving a project between divisions** does not re-stamp already-ingested rows (see question 3).
+- **Invites.** `POST`/`DELETE /organization/members` are gated in `require-role.ts` but not
+  implemented — adding a member needs an email flow, which is its own feature.

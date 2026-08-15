@@ -239,6 +239,17 @@ describe("route manifest — a new route cannot ship without being considered", 
     // re-checks membership rather than trusting the session, so a revocation
     // takes effect on the next request instead of the next sign-in.
     "POST /auth/organizations/:id/select": "org-scoped",
+    // RBAC stage 5 — the management surface. Every write is admin-gated
+    // centrally; the list is readable by a viewer on purpose, so "why can't I
+    // see Retail?" is answerable by the person asking it.
+    "GET /divisions": "org-scoped",
+    "POST /divisions": "org-scoped",
+    "PATCH /divisions/:id": "org-scoped",
+    "DELETE /divisions/:id": "org-scoped",
+    "POST /divisions/:id/grants": "org-scoped",
+    "DELETE /divisions/:id/grants/:userId": "org-scoped",
+    "GET /organization/members": "org-scoped",
+    "PATCH /organization/members/:userId": "org-scoped",
     "GET /community/posts": "unscoped-public-content",
     "GET /community/leaderboard": "unscoped-public-content",
     "POST /community/posts": "unscoped-public-content",
@@ -404,10 +415,17 @@ describe("route manifest — a new route cannot ship without being considered", 
      * in a test somebody reviews — not a quiet edit to a regex list.
      */
     const ADMIN_ONLY = [
+      "DELETE /divisions/:id",
+      "DELETE /divisions/:id/grants/:userId",
       "DELETE /projects/:id",
       "GET /credentials",
+      "GET /organization/members",
+      "PATCH /divisions/:id",
+      "PATCH /organization/members/:userId",
       "POST /credentials",
       "POST /credentials/:id/revoke",
+      "POST /divisions",
+      "POST /divisions/:id/grants",
       "POST /reports",
     ].sort();
 

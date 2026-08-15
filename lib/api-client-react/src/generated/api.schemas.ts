@@ -3465,6 +3465,104 @@ export interface AuthSession {
   memberships: OrganizationMembership[];
 }
 
+export interface Division {
+  id: number;
+  name: string;
+  /** Lower-case, hyphenated, unique within the organisation. Immutable once created — it appears in URLs. */
+  slug: string;
+  description?: string | null;
+  createdAt?: string;
+  /** Projects in this division that the caller can see. Computed, never stored. */
+  projects?: number;
+}
+
+export interface DivisionList {
+  divisions: Division[];
+  /** Projects belonging to no division. Visible to everyone in the tenant — this is what every project created before divisions existed carries, and it is not a division's omission. */
+  organizationWideProjects: number;
+}
+
+export interface CreateDivisionBody {
+  /** @minLength 1 */
+  name: string;
+  /**
+   * Lower-case letters, digits and single hyphens.
+   * @pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$
+   */
+  slug: string;
+  description?: string | null;
+}
+
+/**
+ * The slug is absent on purpose — it is immutable.
+ */
+export interface UpdateDivisionBody {
+  name?: string;
+  description?: string | null;
+}
+
+/**
+ * No `owner` — ownership is a fact about the organisation, and a division owner would imply a right to delete something they do not own.
+ */
+export type DivisionGrantRole =
+  (typeof DivisionGrantRole)[keyof typeof DivisionGrantRole];
+
+export const DivisionGrantRole = {
+  viewer: "viewer",
+  member: "member",
+  admin: "admin",
+} as const;
+
+export interface DivisionGrant {
+  divisionId: number;
+  userId: string;
+  /** No `owner` — ownership is a fact about the organisation, and a division owner would imply a right to delete something they do not own. */
+  role: DivisionGrantRole;
+  createdAt?: string;
+}
+
+export type CreateDivisionGrantBodyRole =
+  (typeof CreateDivisionGrantBodyRole)[keyof typeof CreateDivisionGrantBodyRole];
+
+export const CreateDivisionGrantBodyRole = {
+  viewer: "viewer",
+  member: "member",
+  admin: "admin",
+} as const;
+
+export interface CreateDivisionGrantBody {
+  userId: string;
+  role: CreateDivisionGrantBodyRole;
+}
+
+export type OrganizationMemberListMembersItemRole =
+  (typeof OrganizationMemberListMembersItemRole)[keyof typeof OrganizationMemberListMembersItemRole];
+
+export const OrganizationMemberListMembersItemRole = {
+  viewer: "viewer",
+  member: "member",
+  admin: "admin",
+  owner: "owner",
+} as const;
+
+export type OrganizationMemberListMembersItemDivisionGrantsItem = {
+  divisionId: number;
+  role: string;
+};
+
+export type OrganizationMemberListMembersItem = {
+  userId: string;
+  role: OrganizationMemberListMembersItemRole;
+  createdAt?: string;
+  divisionGrants: OrganizationMemberListMembersItemDivisionGrantsItem[];
+};
+
+export interface OrganizationMemberList {
+  members: OrganizationMemberListMembersItem[];
+  /** The role vocabulary this build understands, weakest to strongest. */
+  roles: string[];
+}
+
 export type RateLimitedResponse = {
   error: string;
 };
@@ -3524,4 +3622,23 @@ export const StartAuthFlowMode = {
 export type CompleteAuthFlowParams = {
   code?: string;
   state?: string;
+};
+
+export type DeleteDivision200 = {
+  /** Projects that just became organisation-wide. */
+  projectsReleased: number;
+};
+
+export type UpdateOrganizationMemberRoleBodyRole =
+  (typeof UpdateOrganizationMemberRoleBodyRole)[keyof typeof UpdateOrganizationMemberRoleBodyRole];
+
+export const UpdateOrganizationMemberRoleBodyRole = {
+  viewer: "viewer",
+  member: "member",
+  admin: "admin",
+  owner: "owner",
+} as const;
+
+export type UpdateOrganizationMemberRoleBody = {
+  role: UpdateOrganizationMemberRoleBodyRole;
 };

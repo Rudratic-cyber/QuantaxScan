@@ -15,6 +15,8 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Risk Engine Suite** | Vitest | `lib/risk/src/risk-profile.test.ts` | Pure — `now` injected, because Z is "years remaining" |
 | **CBOM Conformance Suite** | Vitest + ajv | `lib/cbom/src/build-cbom.test.ts` | Node, against the official CycloneDX 1.7 schema vendored in `lib/cbom/schema/` |
 | **API Feature Suite** | Vitest + Supertest | `artifacts/api-server/src/api-feature.test.ts` | In-memory `@electric-sql/pglite` Postgres + Express `app` |
+| **Division Isolation Suite** | Vitest | `lib/db/src/division-isolation.test.ts` | pglite with the real policies as `quantaxscan_app`; opens with a negative control that was **demonstrated able to fail** by removing the policy clause |
+| **Role Gate Suite** | Vitest + Supertest | `artifacts/api-server/src/role-gate.test.ts` | Two keys, one organisation, two roles — the gate refusing, through the real app |
 | **Tenant Isolation Suite** | Vitest | `lib/db/src/tenant-isolation.test.ts` | pglite with the real RLS policies, connected as `quantaxscan_app` |
 | **Cross-Tenant HTTP Suite** | Vitest + Supertest | `artifacts/api-server/src/cross-tenant.test.ts` | As above, through the real Express app |
 | **Scope-Discipline Guard** | Vitest | `artifacts/api-server/src/db-import.test.ts` | Static — reads `routes/*.ts` source |
@@ -23,7 +25,7 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Coverage Summariser Suite** | Vitest | `artifacts/api-server/src/lib/coverage.test.ts` | Pure — no database, no HTTP |
 | **Posture Timeline Suite** | Vitest | `artifacts/api-server/src/lib/posture-timeline.test.ts` | Pure — no database, `now` injected (D7's whole subject is time) |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts`, `tests/ui/timeline-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
-| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (eighteen files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
+| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (nineteen files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
 | **Continuous Integration** | GitHub Actions | `.github/workflows/ci.yml` | Ubuntu runner (`ubuntu-latest`) |
 
 The UI suite always starts its own Vite dev server (`reuseExistingServer: false`) so it can never
@@ -225,6 +227,7 @@ mid-run.
 | `10-protocol-config` (B6) | What a config *declares*, never conflated with what B3 observed being negotiated |
 | `11-data-at-rest` (B7) | A Regulated archive reaches the risk engine with X = 25 and `xAssumed: false`; "encrypted, cipher unknown" produces no asset; a blank resubmission does not retire a recorded cipher |
 | `12-vendor` (B9) | A vendor's claim never reads as an observation; "no clause" and "nobody read the contract" stay distinguishable in both directions |
+| `19-rbac` (F1 / RBAC) | Two API keys in the **same organisation at different roles**, so every difference observed is caused by the role and nothing else: a viewer reads the same estate an admin does, writes nothing, cannot list the credential store, and is told which role the action needs; dissolving a division releases its projects rather than deleting them |
 | `18-auth` (F1) | Asserted with sessions genuinely enabled, not switched off: `/auth/providers` offers GitHub and **not** Google or Microsoft; an anonymous caller gets 200 with `user: null` rather than 401; a missing or forged `state` establishes no session; logout with no session is 204; organisation switching is the one route here that refuses an anonymous caller; and the API key still authenticates unchanged |
 | `17-continuity` (D4/M3) | An asset that merely stopped being collected is not reported as remediated; a future or unparseable `since` is a 400 rather than an empty feed that reads as "nothing changed"; a schedule refuses a sub-floor interval, an over-cap target list and a URL-as-host; `run-due` runs nothing that is not due |
 | `16-endpoint` (B12) | A suite the host disables produces no asset and the suppression is reported; an unrecognised (ChaCha20) suite is returned undecoded rather than guessed; a placeholder machine id and two hosts claiming one id are refused **by name**, both of the pair rather than one; a host that was read and declares nothing records no run |
