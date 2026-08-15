@@ -92,8 +92,9 @@ the other three. Full audit trail: [09-open-gaps.md §"B2 provenance audit"](../
 
 ### Blocked on human verification
 
-`nsa.gov`, `media.defense.gov` and `cisa.gov` all return **HTTP 403** to automated fetches. A
-human must open these directly:
+`nsa.gov`, `media.defense.gov` and `cisa.gov` all return **HTTP 403** to automated fetches —
+**re-attempted 2026-08-16, all still 403**; each attempt is logged in `CNSA-2.0.retrievalAttempts`
+so nobody has to rediscover it. A human must open these directly:
 
 - **CNSA 2.0 FAQ (Ver 2.1, December 2024)** — the per-category timeline. The seed data
   previously implied a single "~2033" end state; the real timeline differs by system category
@@ -103,6 +104,105 @@ human must open these directly:
 
 The CISA factsheet *was* verified — via the NIST NCCoE-hosted copy of the same TLP:CLEAR
 document, which is fetchable.
+
+---
+
+## Changes in 0.5.0 — C4, C5, C6 (2026-08-16)
+
+`algorithms.json` 0.4.1 → 0.5.0, `frameworks.json` 0.4.0 → 0.5.0. **Data only** — no TypeScript,
+no migration, no `openapi.yaml` change. Two sources were reopened and read in full that day; one
+was attempted five times and never opened at all.
+
+### What was actually read, and when
+
+| Source | Result on 2026-08-16 |
+|---|---|
+| NIST IR 8547 ipd — `nvlpubs.nist.gov` PDF | ✅ read in full: Tables 1–7, §3.2, §4, §4.1.1–4.1.3, §4.2 |
+| NIST IR 8547 — CSRC landing page | ✅ read: **still an initial public draft.** Document history lists only "11/12/24: IR 8547 (Draft)"; comments posted 2025-01-21; no final, no withdrawal |
+| CISA/NSA/NIST factsheet — NCCoE mirror | ✅ read in full: all seven named sections, every bullet |
+| CNSA 2.0 FAQ — `media.defense.gov` | ❌ **HTTP 403** |
+| CNSA 2.0 algorithms advisory — `media.defense.gov` | ❌ **HTTP 403** |
+| `nsa.gov` PQC resources; NSA document gallery | ❌ **HTTP 403** (both) |
+| `cisa.gov` factsheet page | ❌ HTTP 403 — the NCCoE mirror of the same TLP:CLEAR document is what was read |
+
+`retrievedAt` moved **only** on entries whose source was reopened: `NIST-IR-8547`, `CISA-QR`, the
+five `algorithms.json` entries citing IR 8547 (`rsa`, `ecdsa`, `eddsa`, `ecdh`, `aes`) and
+`securityStrengthBands`. Everything else still reads 2026-08-01, because it was not reopened.
+No date in the register changed value; IR 8547's tables read identically to the 2026-08-01 pass.
+
+### C4 — NIST IR 8547
+
+The dates were already here. The **sentence that stops 2035 reading as a target** was not:
+`NIST-IR-8547.findingObligations` was empty. Three obligations now carry §4.2 and §3.2, all
+`verified` and all inheriting the framework's draft label:
+
+| id | match | severity |
+|---|---|---|
+| `ir8547-2035-is-a-ceiling` | `quantumVulnerable: true` | medium |
+| `ir8547-key-establishment-priority` | `purposes: ["key-establishment"]` | high |
+| `ir8547-hybrid-is-permitted` | `quantumVulnerable: true` | informational |
+
+None carries a `deadline`, so `classify()` and `bucketFor()` are untouched — no finding's bucket,
+status or headline moved. `keyDates` no longer merges the Table 2 (signature) and Table 4 (key
+establishment) families into one row, since Table 4's three families are not Table 2's three.
+
+**Deliberately not claimed.** §4.1.3 says "NIST has a few symmetric cryptography standards at the
+112-bit security level, which will be disallowed in 2030" and **enumerates none**. The row is
+recorded on the framework so it is not lost; no algorithm entry claims it, and a test asserts
+that. Attaching it to 3DES or SHA-224 would need a different primary source. Likewise Table 7
+records SHA-1 at 80-bit collision security — a security-strength statement with no date, not a
+transition rule, so no IR 8547 deadline is derived for a hash.
+
+### C5 — CNSA 2.0: restructured, not re-verified
+
+**G-01 is unchanged.** The FAQ has still never been opened; five attempts on 2026-08-16 are logged
+in the framework's new `retrievalAttempts` block. So C5 adds **no new date and no new algorithm** —
+it redistributes claims already recorded here. One blanket obligation became three matched by
+purpose (`signature`, `key-establishment`, `symmetric`/`symmetric-mode`/`hash`), so an ECDSA
+finding is no longer told about ML-KEM and an AES finding is no longer told it is a PQC migration
+item. All three stay `needs-check` and carry the G-01 caveat.
+
+Two things worth knowing before anyone "updates" this entry:
+
+- **Secondary summaries read on 2026-08-16 contradict each other** — one set says "support and
+  prefer by 2025, exclusively by 2030", another says "by 2027 … exclusive use by 2033" plus a
+  claimed 2027-01-01 new-deployment cutoff. Two mutually exclusive timelines cannot both be
+  transcribed, and choosing one is indistinguishable from inventing it. Recorded in
+  `secondarySourceConflict`; **not** used to change any date.
+- **The obligation's citation no longer carries `retrievedAt`.** It said `2026-08-01` for a PDF
+  nobody has ever opened. `check:standards` measures that field's *age* and cannot tell it was
+  written for an unread document — the exact failure it cannot see. A `needs-check` claim gets no
+  date. The citation now reads "NOT READ; see retrievalAttempts".
+
+### C6 — CISA quantum-readiness roadmap
+
+Four obligations added, each from a sentence the factsheet prints, each cited to the heading it
+appears under: `cisa-qr-feed-risk-assessment`, `cisa-qr-prioritise-high-impact`,
+`cisa-qr-vendor-roadmap`, `cisa-qr-signing-and-update-paths` (the last matched on
+`purposes: ["signature"]`, because the factsheet names signature creation/validation and the
+software and firmware updates depending on them as assets in their own right).
+
+**Two citations were wrong and are corrected against the primary source:**
+
+1. `dataLifetimeSupport` listed three quotes as though they shared one section. They are from
+   three — WHY PREPARE NOW?, PREPARE A CRYPTOGRAPHIC INVENTORY, and SUPPLY CHAIN
+   QUANTUM-READINESS. Each quote now carries its own heading.
+2. `cisa-qr-prioritise-long-secrecy` was cited wholly to PREPARE A CRYPTOGRAPHIC INVENTORY, but
+   its harvest-now-decrypt-later half is from WHY PREPARE NOW?.
+
+`roadmapAlignment` is the C6 deliverable in structured form: one row per named section with a
+three-valued `productRole` (`automated` / `evidenced` / `customer-process` / `context`), so
+"we evidence this" can never be rendered as "we do this". The factsheet still has **no numbered
+stages** and the `CORRECTION` guarding that is untouched. `stalenessNote` records that its 2023
+forward-looking language ("standards to be released in 2024", "draft PQC standards") is stale
+while its process guidance is not — with a test that the stale wording never reaches an obligation.
+
+| Entry | Status |
+|---|---|
+| IR 8547 — every table row, §4.1.3, §4.2, §3.2 quotes, draft status | ✅ `verified` 2026-08-16 |
+| CISA factsheet — sections, discovery targets, every quote, section attributions | ✅ `verified` 2026-08-16 |
+| `roadmapAlignment` `productRole` values | ⚠️ our own product judgement, not a source claim — the headings and quotes are verified, the mapping to what QuantaXscan does is ours |
+| CNSA 2.0 — timeline, suite, per-category dates | ⚠️ `needs-check` — **still 403, five attempts logged** |
 
 ---
 

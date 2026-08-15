@@ -168,6 +168,46 @@ describe("API Feature Test Suite", () => {
       expect(sha1Finding.compliance.useDependent).toBe(true);
       expect(sha1Finding.compliance.detection.reviewRequired).toBe(true);
       expect(sha1Finding.compliance.countsTowardPostQuantumScore).toBe(false);
+
+      // C4/C5/C6 reach a real route response, not just the engine's unit tests.
+      interface RouteObligation {
+        framework: string;
+        requirement: string;
+        severity: string;
+        draftStatus?: string;
+        deadline?: unknown;
+        citation: { url: string; section?: string };
+      }
+      const obligations: RouteObligation[] = rsaFinding.compliance.obligations;
+
+      // C4 — IR 8547's 2035 date arrives with the sentence that stops it reading as a target,
+      // still labelled draft, and carrying no deadline of its own so it cannot move the bucket.
+      const ceiling = obligations.find((o) => /Do not treat 2035 as the migration target/.test(o.requirement));
+      expect(ceiling).toBeDefined();
+      expect(ceiling!.framework).toBe("NIST-IR-8547");
+      expect(ceiling!.draftStatus).toMatch(/DRAFT/);
+      expect(ceiling!.deadline).toBeUndefined();
+      expect(ceiling!.citation.section).toMatch(/4\.2/);
+      expect(rsaFinding.compliance.bucket).toBe("pqc-migration");
+
+      // C6 — the factsheet's vendor and prioritisation instructions, each cited to the section
+      // it is actually printed under.
+      const vendorRoadmap = obligations.find((o) => /post-quantum roadmap/i.test(o.requirement));
+      expect(vendorRoadmap?.framework).toBe("CISA-QR");
+      expect(vendorRoadmap?.citation.section).toBe("DISCUSS POST-QUANTUM ROADMAPS WITH TECHNOLOGY VENDORS");
+      expect(
+        obligations.find((o) => /industrial control system/i.test(o.requirement))?.citation.section,
+      ).toBe("SUPPLY CHAIN QUANTUM-READINESS");
+
+      // C5 — this route declares no customer profile, so CNSA 2.0 must not appear at all.
+      // It binds US national security systems; showing it to anyone else is the over-claim
+      // doc 05 forbids, and it is the framework whose dates are still unverified (G-01).
+      expect(obligations.some((o) => o.framework === "CNSA-2.0")).toBe(false);
+      for (const finding of res.body.findings as Array<{ compliance?: { obligations: RouteObligation[] } | null }>) {
+        for (const obligation of finding.compliance?.obligations ?? []) {
+          expect(obligation.framework).not.toBe("CNSA-2.0");
+        }
+      }
     });
 
     it("returns 404 for unknown demo repo slug", async () => {

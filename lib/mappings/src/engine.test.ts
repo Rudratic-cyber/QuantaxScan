@@ -616,6 +616,25 @@ describe("G-05 — key size and the security-strength band the rule is keyed on"
     expect(result.obligations.flatMap((o) => o.caveats).join(" ")).not.toMatch(/Key size undetermined/);
   });
 
+  it("G-24 — PINS THE DEFECT: a finite-field DH modulus is banded as a curve and loses 2030", () => {
+    // IR 8547 Table 4 lists Finite Field DH/MQV and Elliptic Curve DH/MQV as SEPARATE families:
+    // the first states a modulus, the second a curve order. `algorithms.json` has one entry for
+    // both, with keySizeKind "curve", and the collectors canonicalise finite-field DH onto it
+    // (`protocol-config-collector` resolves diffie-hellman-group14-sha256 to keySize 2048).
+    //
+    // So 2048 is read against curveBits, misses the 112-bit band {0,256}, matches the >= 128 bits
+    // band {384,100000}, and the "deprecated after 2030" row — which DOES apply to a 2048-bit
+    // finite-field group — is filtered out. More runway than the standard allows, with no error
+    // and no "undetermined" caveat, because the engine was correctly told it had a curve size.
+    //
+    // This assertion pins the defect deliberately. When G-24 is fixed in the collectors and the
+    // entry is split, this test must FAIL and be rewritten to assert the 2030 row is present.
+    const rows = ir8547(mappingEngine.resolve({ algorithm: "ECDH/DH", keySize: 2048 }, { asOf: ASOF })!);
+    expect(new Set(rows.map((o) => o.deadline!.securityStrength))).toEqual(new Set([">= 128 bits"]));
+    expect(rows.some((o) => o.deadline!.after === "2030")).toBe(false);
+    expect(rows.flatMap((o) => o.caveats).join(" ")).not.toMatch(/undetermined/);
+  });
+
   it("keys the bands off the data, so a revised band changes the answer with no code edit", () => {
     // The C1 acceptance criterion applied to G-05's addition: move the boundary in a clone and
     // the engine must follow. If this needs a TypeScript change, the band table is in the wrong place.

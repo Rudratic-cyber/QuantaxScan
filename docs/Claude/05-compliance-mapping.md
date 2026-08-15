@@ -266,6 +266,38 @@ correcting it is a credibility win in a sales conversation.
 (Ver 2.1, December 2024) directly. The CISA factsheet was verified via the NIST NCCoE-hosted
 copy of the same document.
 
+### Partial re-verification 2026-08-16 — C4, C5, C6
+
+IR 8547 and the CISA factsheet were reopened and read in full; **no date changed value**. Only
+those two entries' `retrievedAt` moved. Everything above is otherwise still dated 2026-08-01
+because it was not reopened — full attempt log in
+[mappings/README.md](mappings/README.md) §"Changes in 0.5.0".
+
+Three things that pass changed:
+
+1. **IR 8547 is still an initial public draft** (CSRC document history re-read 2026-08-16: only
+   "11/12/24: IR 8547 (Draft)"). The draft-labelling rule below stands unchanged.
+2. **The 2035 date now arrives with §4.2 attached.** The table dates alone let a reader treat 2035
+   as the target. IR 8547 says application-specific guidance may specify *earlier* transitions,
+   and that NIST expects to prioritise key establishment against harvest-now-decrypt-later
+   "particularly in interactive protocols like TLS and IKE". `NIST-IR-8547.findingObligations`
+   carries that as three obligations, none of which has a deadline, so no bucket moved.
+3. **CNSA 2.0 is still 403** — five attempts on 2026-08-16, all logged in the framework's
+   `retrievalAttempts`. Its obligations were split by purpose so the right suite reaches the right
+   finding, but **no new date was added**: secondary summaries read that day contradict each other
+   (2025/2030 vs 2027/2033), which is recorded as the reason to keep waiting rather than as data.
+   The obligation citation's `retrievedAt` was **removed** — it dated a document nobody has opened,
+   which is precisely the failure `check:standards` cannot see.
+
+One correction the CISA re-read produced: three quotes recorded under `dataLifetimeSupport` come
+from three different named sections (WHY PREPARE NOW?, PREPARE A CRYPTOGRAPHIC INVENTORY, SUPPLY
+CHAIN QUANTUM-READINESS), not one. A wrong section is the citation error an auditor can check
+fastest.
+
+And one gap opened: **[G-24](09-open-gaps.md#g-24)** — finite-field DH is banded against the curve
+ranges, so a 2048-bit group is reported as `>= 128 bits` and loses its 2030 deprecation. Pinned by
+a deliberately-failing-later test in `lib/mappings/src/engine.test.ts`.
+
 ---
 
 ## Applicability — do not over-claim
