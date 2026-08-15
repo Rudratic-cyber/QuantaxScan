@@ -16,3 +16,4 @@ export * from "./vendor_assessments";
 export * from "./credentials";
 export * from "./discovered_targets";
 export * from "./network_flows";
+export * from "./collection_schedules";

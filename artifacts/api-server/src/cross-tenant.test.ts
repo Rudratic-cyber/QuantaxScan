@@ -322,6 +322,24 @@ describe("route manifest — a new route cannot ship without being considered", 
     // `where organization_id` in the handler.
     "GET /inventory/readiness": "org-scoped",
     "GET /inventory/assets": "org-scoped",
+    // M3 — scheduled re-collection. `collection_schedules.project_id` is a real
+    // foreign key, and a foreign key is checked with RLS bypassed, so POST
+    // confirms the parent project is visible inside the scope before writing —
+    // the same rule the collector submission routes follow for their location
+    // prefix, here for an actual FK.
+    "GET /collection-schedules": "org-scoped",
+    "POST /collection-schedules": "org-scoped",
+    "PATCH /collection-schedules/:id": "org-scoped",
+    "DELETE /collection-schedules/:id": "org-scoped",
+    // The runner. Org-scoped deliberately rather than a cross-tenant daemon:
+    // finding due work across every organisation means reading an
+    // org-scoped table outside any scope, which org-scope.ts forbids. It
+    // executes only the caller's own due schedules.
+    "POST /collection-schedules/run-due": "org-scoped",
+    // D4 — the drift feed. Reads every asset, collection run, schedule and
+    // attempt in the organisation with no where clause at all, the same shape
+    // as `GET /projects` and the inventory reads above.
+    "GET /drift": "org-scoped",
     // These touch no database at all: chat proxies to OpenAI and persists
     // nothing, and the github routes fetch from GitHub and hand the result
     // straight back. They still require an API key. When any of them starts
@@ -642,6 +660,73 @@ describe("addressing another organisation's row by id is indistinguishable from 
 
     const after = await countTheirTlsAssets();
     expect(after).toEqual(before);
+  });
+
+  it("POST /api/collection-schedules naming another organisation's project writes nothing (M3)", async () => {
+    // `collection_schedules.project_id` is a genuine foreign key, and
+    // PostgreSQL checks referential integrity with policies BYPASSED — so
+    // without the parent-visibility check inside the scope this insert would
+    // succeed, and a runner would then start opening sockets to hosts named
+    // against another tenant's project.
+    const countTheirSchedules = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(tx, sql`select count(*)::int as n from collection_schedules`),
+      );
+    const before = await countTheirSchedules();
+
+    const res = await auth(
+      request.post("/api/collection-schedules").send({
+        projectId: theirs.projectId,
+        targetKind: "tls",
+        targets: [{ host: "example.test", port: 443 }],
+        intervalMinutes: 60,
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    expect(await countTheirSchedules()).toEqual(before);
+  });
+
+  it("a schedule is invisible to another key, by list and by id, and its target hosts do not leak (M3)", async () => {
+    const created = await auth(
+      request.post("/api/collection-schedules").send({
+        projectId: ours.projectId,
+        targetKind: "tls",
+        // A hostname is estate intelligence in its own right: which internal
+        // endpoints a company watches names its infrastructure.
+        targets: [{ host: "vault.internal.ours.test", port: 8443 }],
+        intervalMinutes: 30,
+      }),
+    );
+    expect(created.status).toBe(201);
+
+    const theirList = await auth2(request.get("/api/collection-schedules"));
+    expect(theirList.status).toBe(200);
+    expect(JSON.stringify(theirList.body)).not.toContain("vault.internal.ours.test");
+
+    expect((await auth2(request.patch(`/api/collection-schedules/${created.body.id}`).send({ enabled: false }))).status).toBe(404);
+    await auth2(request.delete(`/api/collection-schedules/${created.body.id}`));
+
+    const stillOurs = await auth(request.get("/api/collection-schedules"));
+    expect(stillOurs.body.map((s: { id: number }) => s.id)).toContain(created.body.id);
+
+    // And the drift feed's schedule half is scoped the same way.
+    const theirDrift = await auth2(request.get("/api/drift"));
+    expect(theirDrift.status).toBe(200);
+    expect(theirDrift.body.schedules.overdue.map((o: { scheduleId: number }) => o.scheduleId)).not.toContain(
+      created.body.id,
+    );
+
+    await auth(request.delete(`/api/collection-schedules/${created.body.id}`));
+  });
+
+  it("GET /api/drift reports none of another organisation's assets or history (M3)", async () => {
+    const res = await auth(request.get("/api/drift"));
+    expect(res.status).toBe(200);
+    // The fixture organisation's project id appears in every one of its asset
+    // locations, so its absence from the whole serialised feed is the proof.
+    expect(JSON.stringify(res.body)).not.toContain(`project:${theirs.projectId}:`);
+    expect(res.body.caveat).toContain("NOT a remediation");
   });
 
   it("GET /api/projects/:id/certificates → 404 for another organisation's project, not their certificate inventory", async () => {

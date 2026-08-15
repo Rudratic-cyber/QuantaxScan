@@ -6694,3 +6694,518 @@ export const GetProjectEndpointResponse = zod.object({
   ),
   evidenceCaveat: zod.string(),
 });
+
+/**
+ * Every schedule, with its recent attempts. `lastRunAt` and `lastSucceededAt` are two different facts and both are reported: a schedule attempted hourly for a week whose host has been unreachable all week has a recent `lastRunAt` and a week-old `lastSucceededAt`, and reporting only the first would make an unobserved estate read as freshly verified.
+ * @summary List this organisation's re-collection schedules (M3)
+ */
+export const ListCollectionSchedulesResponseItem = zod.object({
+  id: zod.number(),
+  projectId: zod.number(),
+  targetKind: zod.enum(["tls"]),
+  target: zod
+    .object({
+      targets: zod.array(
+        zod.object({
+          host: zod.string(),
+          port: zod.number(),
+        }),
+      ),
+    })
+    .describe(
+      "The collector's stored input, in the shape that collector already accepts.",
+    ),
+  intervalMinutes: zod.number(),
+  enabled: zod.boolean(),
+  nextRunAt: zod.coerce.date(),
+  lastRunAt: zod.coerce
+    .date()
+    .nullable()
+    .describe(
+      "When the runner last attempted this schedule. Null until the first attempt — never defaulted, which would claim a run that never happened.",
+    ),
+  lastSucceededAt: zod.coerce
+    .date()
+    .nullable()
+    .describe(
+      "When an attempt last produced evidence. The gap between this and `lastRunAt` is how long the estate has gone unobserved.",
+    ),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+  recentAttempts: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        scheduleId: zod.number(),
+        status: zod.enum(["succeeded", "no_evidence", "failed"]),
+        startedAt: zod.coerce.date(),
+        finishedAt: zod.coerce.date().nullable(),
+        collectionRunId: zod
+          .number()
+          .nullable()
+          .describe(
+            "The collection run this attempt produced. Null for `no_evidence` and `failed` — there was nothing to record.",
+          ),
+        targetsAttempted: zod.number(),
+        targetsObserved: zod.number(),
+        error: zod.string().nullable(),
+      })
+      .describe(
+        "One execution attempt. `succeeded` is the only status that makes a later absence meaningful — `no_evidence` (nothing was reachable) and `failed` (the attempt threw) both mean the estate was not examined, and neither may be read as a remediation.",
+      ),
+  ),
+});
+export const ListCollectionSchedulesResponse = zod.array(
+  ListCollectionSchedulesResponseItem,
+);
+
+/**
+ * `targetKind` is deliberately a much smaller vocabulary than `surface`. Only `tls` is schedulable, because it is the one collector that observes the world on its own rather than reading a file a human uploaded; replaying a stored upload would re-derive the identical result and keep `lastSeen` moving on assets nobody has actually looked at.
+
+A new schedule is due immediately (`nextRunAt` = now), so the first `run-due` call after creation collects it.
+ * @summary Schedule a collection target for re-collection (M3)
+ */
+export const createCollectionScheduleBodyTargetsItemPortMax = 65535;
+
+export const createCollectionScheduleBodyTargetsMax = 20;
+
+export const createCollectionScheduleBodyIntervalMinutesMin = 15;
+
+export const CreateCollectionScheduleBody = zod.object({
+  projectId: zod.number(),
+  targetKind: zod.enum(["tls"]),
+  targets: zod
+    .array(
+      zod.object({
+        host: zod
+          .string()
+          .describe(
+            "Hostname or IP literal. Never a URL — no scheme, path or credentials.",
+          ),
+        port: zod
+          .number()
+          .min(1)
+          .max(createCollectionScheduleBodyTargetsItemPortMax),
+      }),
+    )
+    .min(1)
+    .max(createCollectionScheduleBodyTargetsMax),
+  intervalMinutes: zod
+    .number()
+    .min(createCollectionScheduleBodyIntervalMinutesMin)
+    .describe(
+      "Minimum 15. Not a performance guard: the only re-collectable target opens sockets to a customer's own hosts, and a one-minute schedule pointed at production is a self-inflicted denial of service.",
+    ),
+  enabled: zod.boolean().optional(),
+});
+
+/**
+ * The runner. Org-scoped on purpose — finding due work across every tenant would mean reading an organisation-scoped table outside any organisation scope, which this codebase forbids — so an external scheduler calls this per organisation with that organisation's credential.
+
+Every attempt is recorded, including the ones that produced nothing. An attempt whose targets were all unreachable is reported as `no_evidence`, writes no collection run, and **cannot mark any asset `gone`**: reobservation scope is paired with what was actually observed, so an unreached host is never reported as remediated.
+ * @summary Execute every schedule of this organisation that is due (M3)
+ */
+export const RunDueCollectionSchedulesResponse = zod.object({
+  ranAt: zod.coerce.date(),
+  due: zod
+    .number()
+    .describe(
+      "How many schedules were due. Capped per call, so this can be lower than the number actually waiting.",
+    ),
+  executed: zod.array(
+    zod.object({
+      scheduleId: zod.number(),
+      projectId: zod.number(),
+      targetKind: zod.string(),
+      status: zod.enum(["succeeded", "no_evidence", "failed"]),
+      scheduleRunId: zod.number(),
+      collectionRunId: zod.number().nullable(),
+      targetsAttempted: zod.number(),
+      targetsObserved: zod.number(),
+      observationsCreated: zod.number(),
+      assetsCreated: zod.number(),
+      assetsMarkedGone: zod
+        .number()
+        .describe(
+          "Only ever non-zero for a `succeeded` attempt. An attempt that observed nothing reconciles nothing, which is what stops an unreachable host being reported as fixed.",
+        ),
+      targets: zod.array(
+        zod.object({
+          host: zod.string(),
+          port: zod.number(),
+          outcome: zod.string(),
+        }),
+      ),
+      error: zod.string().nullable(),
+      nextRunAt: zod.coerce.date(),
+    }),
+  ),
+});
+
+/**
+ * Only the fields present in the body change. Disabling a schedule keeps it and its history rather than deleting it, so a noisy target can be paused without losing the target list.
+ * @summary Pause, retarget or re-cadence a schedule (M3)
+ */
+export const UpdateCollectionScheduleParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateCollectionScheduleBodyTargetsItemPortMax = 65535;
+
+export const updateCollectionScheduleBodyTargetsMax = 20;
+
+export const updateCollectionScheduleBodyIntervalMinutesMin = 15;
+
+export const UpdateCollectionScheduleBody = zod.object({
+  targets: zod
+    .array(
+      zod.object({
+        host: zod.string(),
+        port: zod
+          .number()
+          .min(1)
+          .max(updateCollectionScheduleBodyTargetsItemPortMax),
+      }),
+    )
+    .min(1)
+    .max(updateCollectionScheduleBodyTargetsMax)
+    .optional(),
+  intervalMinutes: zod
+    .number()
+    .min(updateCollectionScheduleBodyIntervalMinutesMin)
+    .optional(),
+  enabled: zod.boolean().optional(),
+});
+
+export const UpdateCollectionScheduleResponse = zod.object({
+  id: zod.number(),
+  projectId: zod.number(),
+  targetKind: zod.enum(["tls"]),
+  target: zod
+    .object({
+      targets: zod.array(
+        zod.object({
+          host: zod.string(),
+          port: zod.number(),
+        }),
+      ),
+    })
+    .describe(
+      "The collector's stored input, in the shape that collector already accepts.",
+    ),
+  intervalMinutes: zod.number(),
+  enabled: zod.boolean(),
+  nextRunAt: zod.coerce.date(),
+  lastRunAt: zod.coerce
+    .date()
+    .nullable()
+    .describe(
+      "When the runner last attempted this schedule. Null until the first attempt — never defaulted, which would claim a run that never happened.",
+    ),
+  lastSucceededAt: zod.coerce
+    .date()
+    .nullable()
+    .describe(
+      "When an attempt last produced evidence. The gap between this and `lastRunAt` is how long the estate has gone unobserved.",
+    ),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+  recentAttempts: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        scheduleId: zod.number(),
+        status: zod.enum(["succeeded", "no_evidence", "failed"]),
+        startedAt: zod.coerce.date(),
+        finishedAt: zod.coerce.date().nullable(),
+        collectionRunId: zod
+          .number()
+          .nullable()
+          .describe(
+            "The collection run this attempt produced. Null for `no_evidence` and `failed` — there was nothing to record.",
+          ),
+        targetsAttempted: zod.number(),
+        targetsObserved: zod.number(),
+        error: zod.string().nullable(),
+      })
+      .describe(
+        "One execution attempt. `succeeded` is the only status that makes a later absence meaningful — `no_evidence` (nothing was reachable) and `failed` (the attempt threw) both mean the estate was not examined, and neither may be read as a remediation.",
+      ),
+  ),
+});
+
+/**
+ * @summary Remove a schedule (M3)
+ */
+export const DeleteCollectionScheduleParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * Drift, derived entirely on read from the `assets` lifecycle. Nothing here is persisted: a stored drift verdict would go stale the moment a standard or a Q-Day scenario moved, which is the C1 failure this product exists to fix.
+
+**Read `surfaces[]` before reading any list as empty.** A surface with `observedInWindow: false` was not collected during the window, so an empty `disappeared` list says nothing about it. Empty-because-nothing-changed and empty-because-nobody-looked are different statements and this payload keeps them apart.
+
+**Nothing here is called remediated.** Every `disappeared` entry carries `meaning: "not-observed"` and the id of the collection run that failed to observe it, so the claim can be audited. A collector that did not run, an expired credential, a host behind a firewall and a submission nobody repeated all produce the same absence, and only a human who has checked can call one of them fixed.
+ * @summary What appeared, changed and stopped being observed since a timestamp (D4)
+ */
+export const GetDriftQueryParams = zod.object({
+  since: zod
+    .date()
+    .optional()
+    .describe(
+      "ISO-8601 instant the window starts at. Defaults to seven days before now.",
+    ),
+});
+
+export const GetDriftResponse = zod.object({
+  window: zod.object({
+    since: zod.coerce.date(),
+    until: zod.coerce.date(),
+  }),
+  appeared: zod.array(
+    zod
+      .object({
+        assetId: zod.number(),
+        surface: zod.string(),
+        surfaceId: zod.string().nullable(),
+        algorithm: zod.string(),
+        keySize: zod
+          .number()
+          .nullable()
+          .describe("Null means undetermined. Never a guessed default (G-05)."),
+        location: zod.string(),
+        status: zod.string(),
+        firstSeen: zod.coerce.date(),
+        lastSeen: zod.coerce.date(),
+        compliance: zod
+          .record(zod.string(), zod.unknown())
+          .nullable()
+          .describe(
+            "Obligations, deadlines and citations resolved through C1 on this read, never stored. Null for an algorithm the mapping data does not know — an absent obligation, never an invented one.",
+          ),
+      })
+      .and(
+        zod.object({
+          appearedAt: zod.coerce.date(),
+        }),
+      ),
+  ),
+  disappeared: zod.array(
+    zod
+      .object({
+        assetId: zod.number(),
+        surface: zod.string(),
+        surfaceId: zod.string().nullable(),
+        algorithm: zod.string(),
+        keySize: zod
+          .number()
+          .nullable()
+          .describe("Null means undetermined. Never a guessed default (G-05)."),
+        location: zod.string(),
+        status: zod.string(),
+        firstSeen: zod.coerce.date(),
+        lastSeen: zod.coerce.date(),
+        compliance: zod
+          .record(zod.string(), zod.unknown())
+          .nullable()
+          .describe(
+            "Obligations, deadlines and citations resolved through C1 on this read, never stored. Null for an algorithm the mapping data does not know — an absent obligation, never an invented one.",
+          ),
+      })
+      .and(
+        zod.object({
+          meaning: zod
+            .enum(["not-observed"])
+            .describe(
+              'A fixed literal, not a label. It is the only statement this payload makes about an absence, and it is not \"remediated\".',
+            ),
+          notObservedAt: zod.coerce
+            .date()
+            .describe(
+              "When the collection that did not find it ran — not when the asset stopped existing, which nobody knows.",
+            ),
+          lastObservedAt: zod.coerce
+            .date()
+            .describe(
+              "When it was last actually observed. Never advanced by the run that missed it.",
+            ),
+          evidence: zod.union([
+            zod
+              .object({
+                collectionRunId: zod.number(),
+                collector: zod.string().nullable(),
+                runCompletedAt: zod.coerce.date().nullable(),
+                runTarget: zod.string().nullable(),
+              })
+              .describe(
+                "The collection run behind an absence. Without it, an absence is unauditable.",
+              ),
+            zod.null(),
+          ]),
+        }),
+      ),
+  ),
+  reappeared: zod.array(
+    zod
+      .object({
+        assetId: zod.number(),
+        surface: zod.string(),
+        surfaceId: zod.string().nullable(),
+        algorithm: zod.string(),
+        keySize: zod
+          .number()
+          .nullable()
+          .describe("Null means undetermined. Never a guessed default (G-05)."),
+        location: zod.string(),
+        status: zod.string(),
+        firstSeen: zod.coerce.date(),
+        lastSeen: zod.coerce.date(),
+        compliance: zod
+          .record(zod.string(), zod.unknown())
+          .nullable()
+          .describe(
+            "Obligations, deadlines and citations resolved through C1 on this read, never stored. Null for an algorithm the mapping data does not know — an absent obligation, never an invented one.",
+          ),
+      })
+      .and(
+        zod.object({
+          reappearedAt: zod.coerce.date(),
+          evidence: zod.union([
+            zod
+              .object({
+                collectionRunId: zod.number(),
+                collector: zod.string().nullable(),
+                runCompletedAt: zod.coerce.date().nullable(),
+                runTarget: zod.string().nullable(),
+              })
+              .describe(
+                "The collection run behind an absence. Without it, an absence is unauditable.",
+              ),
+            zod.null(),
+          ]),
+        }),
+      ),
+  ),
+  changed: zod.array(
+    zod
+      .object({
+        surface: zod.string(),
+        location: zod.string(),
+        from: zod.object({
+          assetId: zod.number(),
+          surface: zod.string(),
+          surfaceId: zod.string().nullable(),
+          algorithm: zod.string(),
+          keySize: zod
+            .number()
+            .nullable()
+            .describe(
+              "Null means undetermined. Never a guessed default (G-05).",
+            ),
+          location: zod.string(),
+          status: zod.string(),
+          firstSeen: zod.coerce.date(),
+          lastSeen: zod.coerce.date(),
+          compliance: zod
+            .record(zod.string(), zod.unknown())
+            .nullable()
+            .describe(
+              "Obligations, deadlines and citations resolved through C1 on this read, never stored. Null for an algorithm the mapping data does not know — an absent obligation, never an invented one.",
+            ),
+        }),
+        to: zod.object({
+          assetId: zod.number(),
+          surface: zod.string(),
+          surfaceId: zod.string().nullable(),
+          algorithm: zod.string(),
+          keySize: zod
+            .number()
+            .nullable()
+            .describe(
+              "Null means undetermined. Never a guessed default (G-05).",
+            ),
+          location: zod.string(),
+          status: zod.string(),
+          firstSeen: zod.coerce.date(),
+          lastSeen: zod.coerce.date(),
+          compliance: zod
+            .record(zod.string(), zod.unknown())
+            .nullable()
+            .describe(
+              "Obligations, deadlines and citations resolved through C1 on this read, never stored. Null for an algorithm the mapping data does not know — an absent obligation, never an invented one.",
+            ),
+        }),
+      })
+      .describe(
+        "The same location serving different cryptography. A correlation computed on read: an asset's identity includes its algorithm, so a changed algorithm is necessarily two rows, and both halves stay in `appeared`\/`disappeared` as well.",
+      ),
+  ),
+  surfaces: zod.array(
+    zod
+      .object({
+        surface: zod.string(),
+        surfaceId: zod.string().nullable(),
+        completedRunsInWindow: zod.number(),
+        unproductiveAttemptsInWindow: zod
+          .number()
+          .describe(
+            "Scheduled attempts in the window that produced no evidence (`failed` or `no_evidence`).",
+          ),
+        lastCollectedAt: zod.coerce
+          .date()
+          .nullable()
+          .describe(
+            "The last completed run on this surface at any time. Null means never examined at all.",
+          ),
+        observedInWindow: zod
+          .boolean()
+          .describe(
+            "False means every empty list in this response is empty because nobody collected, not because nothing changed.",
+          ),
+      })
+      .describe(
+        "Whether anybody actually looked at this surface during the window.",
+      ),
+  ),
+  schedules: zod.object({
+    attempts: zod.array(
+      zod
+        .object({
+          id: zod.number(),
+          scheduleId: zod.number(),
+          status: zod.enum(["succeeded", "no_evidence", "failed"]),
+          startedAt: zod.coerce.date(),
+          finishedAt: zod.coerce.date().nullable(),
+          collectionRunId: zod
+            .number()
+            .nullable()
+            .describe(
+              "The collection run this attempt produced. Null for `no_evidence` and `failed` — there was nothing to record.",
+            ),
+          targetsAttempted: zod.number(),
+          targetsObserved: zod.number(),
+          error: zod.string().nullable(),
+        })
+        .describe(
+          "One execution attempt. `succeeded` is the only status that makes a later absence meaningful — `no_evidence` (nothing was reachable) and `failed` (the attempt threw) both mean the estate was not examined, and neither may be read as a remediation.",
+        ),
+    ),
+    overdue: zod.array(
+      zod.object({
+        scheduleId: zod.number(),
+        projectId: zod.number(),
+        targetKind: zod.string(),
+        dueAt: zod.coerce.date(),
+        minutesOverdue: zod.number(),
+        lastSucceededAt: zod.coerce.date().nullable(),
+        neverSucceeded: zod.boolean(),
+      }),
+    ),
+  }),
+  caveat: zod
+    .string()
+    .describe(
+      "Stated in the payload rather than only in the docs, so a report built from this can quote it.",
+    ),
+});

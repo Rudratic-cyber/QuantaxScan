@@ -5,7 +5,7 @@ Every known gap in one place, with what closes it and what it blocks. Updated 20
 Three families:
 
 - **G-01…G-04** — standards still unverified
-- **G-05…G-11**, **G-20…G-22** — detection quality, surfaced by the verification work
+- **G-05…G-11**, **G-20…G-23** — detection quality, surfaced by the verification work
 - **G-12…G-14** — platform and process
 
 Severity is **for the enterprise product**, not for today's demo.
@@ -38,6 +38,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-20 | Dependency findings do not distinguish direct from transitive | Medium | Lockfile format | B2 follow-up — caveat shipped, detection not |
 | G-21 | The package table applies one claim to every version of a package | Medium | Design | B2 follow-up |
 | G-22 | **The estate timeline tells the customer we have no certificate collector** | **High** | Nothing — B4 already supplies the data | Compute the certificate-expiry row estate-wide |
+| G-23 | A collection schedule's `host` is validated only by its description | Medium | Nothing | Enforce hostname/IP-literal at the boundary |
 
 ---
 
@@ -789,6 +790,33 @@ sentence with certificates already in their inventory concludes we cannot do som
 **Cross-ref:** the same stale-refusal check should be run over every "not available" string in the
 product, not just this one — three other status claims went stale in the same week
 ([14-in-flight-lanes.md](14-in-flight-lanes.md)).
+
+---
+
+## G-23 — A schedule's `host` is validated by its documentation `Medium` `found 2026-08-15`
+
+`CreateCollectionScheduleBody.targets[].host` is a bare `string`. Its description says
+*"Hostname or IP literal. Never a URL — no scheme, path or credentials"*, and nothing enforces it:
+`POST /api/collection-schedules` accepts `https://example.test/path` and answers `201`.
+
+**Not a security hole**, and worth saying why so it is not over-prioritised: the only thing that
+ever dials a scheduled target is B3's prober, which resolves-then-pins and refuses anything that
+does not resolve into a permitted range. A URL fails there.
+
+What it *is* is a schedule that can never succeed, stored as though it were fine — and a
+description that tells the reader we checked. The failure mode is the one this register keeps
+returning to: not an error, a silently wrong state. A customer schedules re-collection for a host
+they typed as a URL, the run reports it unreachable forever, and nothing says the target was
+malformed at the point it could have been fixed.
+
+**What closes it:** validate at the boundary (a hostname per RFC 1123 labels, or an IP literal) and
+answer 400 with the reason. `normaliseHostname()` in `lib/collectors/src/discovery.ts` already
+implements exactly this rule for D8 and is dependency-free, so the fix is to reuse it rather than
+write a second definition — a second one that drifts from the first is how a validator becomes a
+lie of its own.
+
+**Pinned:** `tests/e2e/17-continuity.spec.ts` asserts the current `201` with a message that says to
+update it when this closes, so the gap cannot be closed silently or forgotten.
 
 ---
 

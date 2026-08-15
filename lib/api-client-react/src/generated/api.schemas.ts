@@ -3080,6 +3080,306 @@ export interface ProjectEndpointFleet {
   evidenceCaveat: string;
 }
 
+export type CollectionScheduleAttemptStatus =
+  (typeof CollectionScheduleAttemptStatus)[keyof typeof CollectionScheduleAttemptStatus];
+
+export const CollectionScheduleAttemptStatus = {
+  succeeded: "succeeded",
+  no_evidence: "no_evidence",
+  failed: "failed",
+} as const;
+
+/**
+ * One execution attempt. `succeeded` is the only status that makes a later absence meaningful — `no_evidence` (nothing was reachable) and `failed` (the attempt threw) both mean the estate was not examined, and neither may be read as a remediation.
+ */
+export interface CollectionScheduleAttempt {
+  id: number;
+  scheduleId: number;
+  status: CollectionScheduleAttemptStatus;
+  startedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+  /**
+   * The collection run this attempt produced. Null for `no_evidence` and `failed` — there was nothing to record.
+   * @nullable
+   */
+  collectionRunId: number | null;
+  targetsAttempted: number;
+  targetsObserved: number;
+  /** @nullable */
+  error: string | null;
+}
+
+export type CollectionScheduleTargetKind =
+  (typeof CollectionScheduleTargetKind)[keyof typeof CollectionScheduleTargetKind];
+
+export const CollectionScheduleTargetKind = {
+  tls: "tls",
+} as const;
+
+export type CollectionScheduleTargetTargetsItem = {
+  host: string;
+  port: number;
+};
+
+/**
+ * The collector's stored input, in the shape that collector already accepts.
+ */
+export type CollectionScheduleTarget = {
+  targets: CollectionScheduleTargetTargetsItem[];
+};
+
+export interface CollectionSchedule {
+  id: number;
+  projectId: number;
+  targetKind: CollectionScheduleTargetKind;
+  /** The collector's stored input, in the shape that collector already accepts. */
+  target: CollectionScheduleTarget;
+  intervalMinutes: number;
+  enabled: boolean;
+  nextRunAt: string;
+  /**
+   * When the runner last attempted this schedule. Null until the first attempt — never defaulted, which would claim a run that never happened.
+   * @nullable
+   */
+  lastRunAt: string | null;
+  /**
+   * When an attempt last produced evidence. The gap between this and `lastRunAt` is how long the estate has gone unobserved.
+   * @nullable
+   */
+  lastSucceededAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  recentAttempts: CollectionScheduleAttempt[];
+}
+
+export type CreateCollectionScheduleBodyTargetKind =
+  (typeof CreateCollectionScheduleBodyTargetKind)[keyof typeof CreateCollectionScheduleBodyTargetKind];
+
+export const CreateCollectionScheduleBodyTargetKind = {
+  tls: "tls",
+} as const;
+
+export type CreateCollectionScheduleBodyTargetsItem = {
+  /** Hostname or IP literal. Never a URL — no scheme, path or credentials. */
+  host: string;
+  /**
+   * @minimum 1
+   * @maximum 65535
+   */
+  port: number;
+};
+
+export interface CreateCollectionScheduleBody {
+  projectId: number;
+  targetKind: CreateCollectionScheduleBodyTargetKind;
+  /**
+   * @minItems 1
+   * @maxItems 20
+   */
+  targets: CreateCollectionScheduleBodyTargetsItem[];
+  /**
+   * Minimum 15. Not a performance guard: the only re-collectable target opens sockets to a customer's own hosts, and a one-minute schedule pointed at production is a self-inflicted denial of service.
+   * @minimum 15
+   */
+  intervalMinutes: number;
+  enabled?: boolean;
+}
+
+export type UpdateCollectionScheduleBodyTargetsItem = {
+  host: string;
+  /**
+   * @minimum 1
+   * @maximum 65535
+   */
+  port: number;
+};
+
+export interface UpdateCollectionScheduleBody {
+  /**
+   * @minItems 1
+   * @maxItems 20
+   */
+  targets?: UpdateCollectionScheduleBodyTargetsItem[];
+  /** @minimum 15 */
+  intervalMinutes?: number;
+  enabled?: boolean;
+}
+
+export type ScheduleExecutionStatus =
+  (typeof ScheduleExecutionStatus)[keyof typeof ScheduleExecutionStatus];
+
+export const ScheduleExecutionStatus = {
+  succeeded: "succeeded",
+  no_evidence: "no_evidence",
+  failed: "failed",
+} as const;
+
+export type ScheduleExecutionTargetsItem = {
+  host: string;
+  port: number;
+  outcome: string;
+};
+
+export interface ScheduleExecution {
+  scheduleId: number;
+  projectId: number;
+  targetKind: string;
+  status: ScheduleExecutionStatus;
+  scheduleRunId: number;
+  /** @nullable */
+  collectionRunId: number | null;
+  targetsAttempted: number;
+  targetsObserved: number;
+  observationsCreated: number;
+  assetsCreated: number;
+  /** Only ever non-zero for a `succeeded` attempt. An attempt that observed nothing reconciles nothing, which is what stops an unreachable host being reported as fixed. */
+  assetsMarkedGone: number;
+  targets: ScheduleExecutionTargetsItem[];
+  /** @nullable */
+  error: string | null;
+  nextRunAt: string;
+}
+
+export interface RunDueSchedulesResult {
+  ranAt: string;
+  /** How many schedules were due. Capped per call, so this can be lower than the number actually waiting. */
+  due: number;
+  executed: ScheduleExecution[];
+}
+
+/**
+ * Obligations, deadlines and citations resolved through C1 on this read, never stored. Null for an algorithm the mapping data does not know — an absent obligation, never an invented one.
+ * @nullable
+ */
+export type DriftAssetCompliance = { [key: string]: unknown } | null;
+
+export interface DriftAsset {
+  assetId: number;
+  surface: string;
+  /** @nullable */
+  surfaceId: string | null;
+  algorithm: string;
+  /**
+   * Null means undetermined. Never a guessed default (G-05).
+   * @nullable
+   */
+  keySize: number | null;
+  location: string;
+  status: string;
+  firstSeen: string;
+  lastSeen: string;
+  /**
+   * Obligations, deadlines and citations resolved through C1 on this read, never stored. Null for an algorithm the mapping data does not know — an absent obligation, never an invented one.
+   * @nullable
+   */
+  compliance: DriftAssetCompliance;
+}
+
+/**
+ * The collection run behind an absence. Without it, an absence is unauditable.
+ */
+export interface DriftNotObservedEvidence {
+  collectionRunId: number;
+  /** @nullable */
+  collector: string | null;
+  /** @nullable */
+  runCompletedAt: string | null;
+  /** @nullable */
+  runTarget: string | null;
+}
+
+export type DriftAppearance = DriftAsset & {
+  appearedAt: string;
+};
+
+/**
+ * A fixed literal, not a label. It is the only statement this payload makes about an absence, and it is not "remediated".
+ */
+export type DriftDisappearanceMeaning =
+  (typeof DriftDisappearanceMeaning)[keyof typeof DriftDisappearanceMeaning];
+
+export const DriftDisappearanceMeaning = {
+  "not-observed": "not-observed",
+} as const;
+
+export type DriftDisappearance = DriftAsset & {
+  /** A fixed literal, not a label. It is the only statement this payload makes about an absence, and it is not "remediated". */
+  meaning: DriftDisappearanceMeaning;
+  /** When the collection that did not find it ran — not when the asset stopped existing, which nobody knows. */
+  notObservedAt: string;
+  /** When it was last actually observed. Never advanced by the run that missed it. */
+  lastObservedAt: string;
+  evidence: DriftNotObservedEvidence | null;
+};
+
+export type DriftReappearance = DriftAsset & {
+  reappearedAt: string;
+  evidence: DriftNotObservedEvidence | null;
+};
+
+/**
+ * The same location serving different cryptography. A correlation computed on read: an asset's identity includes its algorithm, so a changed algorithm is necessarily two rows, and both halves stay in `appeared`/`disappeared` as well.
+ */
+export interface DriftLocationChange {
+  surface: string;
+  location: string;
+  from: DriftAsset;
+  to: DriftAsset;
+}
+
+/**
+ * Whether anybody actually looked at this surface during the window.
+ */
+export interface SurfaceObservability {
+  surface: string;
+  /** @nullable */
+  surfaceId: string | null;
+  completedRunsInWindow: number;
+  /** Scheduled attempts in the window that produced no evidence (`failed` or `no_evidence`). */
+  unproductiveAttemptsInWindow: number;
+  /**
+   * The last completed run on this surface at any time. Null means never examined at all.
+   * @nullable
+   */
+  lastCollectedAt: string | null;
+  /** False means every empty list in this response is empty because nobody collected, not because nothing changed. */
+  observedInWindow: boolean;
+}
+
+export interface DriftOverdueSchedule {
+  scheduleId: number;
+  projectId: number;
+  targetKind: string;
+  dueAt: string;
+  minutesOverdue: number;
+  /** @nullable */
+  lastSucceededAt: string | null;
+  neverSucceeded: boolean;
+}
+
+export type DriftFeedWindow = {
+  since: string;
+  until: string;
+};
+
+export type DriftFeedSchedules = {
+  attempts: CollectionScheduleAttempt[];
+  overdue: DriftOverdueSchedule[];
+};
+
+export interface DriftFeed {
+  window: DriftFeedWindow;
+  appeared: DriftAppearance[];
+  disappeared: DriftDisappearance[];
+  reappeared: DriftReappearance[];
+  changed: DriftLocationChange[];
+  surfaces: SurfaceObservability[];
+  schedules: DriftFeedSchedules;
+  /** Stated in the payload rather than only in the docs, so a report built from this can quote it. */
+  caveat: string;
+}
+
 export type RateLimitedResponse = {
   error: string;
 };
@@ -3109,4 +3409,11 @@ export const ListCommunityPostsType = {
 
 export type GetLeaderboardParams = {
   limit?: number;
+};
+
+export type GetDriftParams = {
+  /**
+   * ISO-8601 instant the window starts at. Defaults to seven days before now.
+   */
+  since?: string;
 };

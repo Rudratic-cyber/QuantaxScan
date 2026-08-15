@@ -13,6 +13,8 @@ import otFleetsRouter from "./ot-fleets";
 import vendorAssessmentsRouter from "./vendor-assessments";
 import credentialsRouter from "./credentials";
 import discoveryRouter from "./discovery";
+import collectionSchedulesRouter from "./collection-schedules";
+import driftRouter from "./drift";
 
 const router: IRouter = Router();
 
@@ -30,5 +32,7 @@ router.use(otFleetsRouter);
 router.use(vendorAssessmentsRouter);
 router.use(credentialsRouter);
 router.use(discoveryRouter);
+router.use(collectionSchedulesRouter);
+router.use(driftRouter);
 
 export default router;

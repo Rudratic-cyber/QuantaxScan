@@ -326,6 +326,21 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
       // is already one-directional in the same way: it only ever moves
       // `active` assets.
       status: sql`CASE WHEN ${assetsTable.status} = 'gone' THEN 'active' ELSE ${assetsTable.status} END`,
+      // M3 — stamp the lifecycle transition, and ONLY when one happens.
+      //
+      // The same `CASE` as `status` above, deliberately: a plain
+      // `statusChangedAt: new Date()` here would stamp every re-observation of
+      // an unchanged asset, so a nightly schedule would report the entire
+      // estate as having changed every night. The signal is the transition, not
+      // the visit — `lastSeen` above already records the visit.
+      //
+      // `now()` rather than a JS timestamp so both branches of the statement
+      // agree on one instant (transaction start) with no round-trip.
+      // `statusChangedByRunId` records the run that saw it again, which is what
+      // lets the drift feed show a reappearance with real evidence behind it
+      // rather than an unexplained status flip.
+      statusChangedAt: sql`CASE WHEN ${assetsTable.status} = 'gone' THEN now() ELSE ${assetsTable.statusChangedAt} END`,
+      statusChangedByRunId: sql`CASE WHEN ${assetsTable.status} = 'gone' THEN ${run.id} ELSE ${assetsTable.statusChangedByRunId} END`,
       ...classificationSet,
     };
 
@@ -381,7 +396,16 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
     if (goneAssetIds.length > 0) {
       // lastSeen is deliberately left as-is — it records when the asset
       // was last actually observed, not when we last failed to find it.
-      await tx.update(assetsTable).set({ status: "gone" }).where(inArray(assetsTable.id, goneAssetIds));
+      //
+      // M3 stamps the transition instead, with the id of the run whose scope
+      // covered this asset and did not find it. That pairing is what makes the
+      // drift feed auditable: `GET /api/drift` reports a disappearance only
+      // alongside the collection run behind it, so a reader can check that a
+      // real examination happened rather than taking an absence on trust.
+      await tx
+        .update(assetsTable)
+        .set({ status: "gone", statusChangedAt: new Date(), statusChangedByRunId: run.id })
+        .where(inArray(assetsTable.id, goneAssetIds));
       assetsMarkedGone = goneAssetIds.length;
     }
   }

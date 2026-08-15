@@ -168,6 +168,70 @@ describe("ingestSourceObservations — the A1/A2 dual-write path", () => {
     expect(assetsAfterReactivation).toHaveLength(2); // still the same two rows, no duplicate created on reactivation
   });
 
+  /**
+   * M3 — the two lifecycle-stamp columns the drift feed reads.
+   *
+   * The bug this guards against is silent and would make the whole feature
+   * lie: stamping `statusChangedAt` on every upsert rather than only on a real
+   * transition. Nothing would fail, no count would change, and a nightly
+   * schedule would report the entire estate as having changed every night —
+   * which is indistinguishable from "we have no idea what changed".
+   */
+  it("stamps statusChangedAt only on a real transition, never on an unchanged re-observation", async () => {
+    await start();
+
+    const files = [{ path: "keys.py", content: "key = RSA.generate(2048)", language: "python" }];
+    await ingest({ repo: "project:1", files });
+
+    // A brand-new asset has never transitioned. Null, not `firstSeen`: an
+    // asset that has never left the status it was created in has no change to
+    // report, and a timestamp here would be a change that never happened.
+    const [created] = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.algorithm, "RSA")));
+    expect(created.statusChangedAt).toBeNull();
+    expect(created.statusChangedByRunId).toBeNull();
+
+    // Re-observing it unchanged moves `lastSeen` and nothing else.
+    await ingest({ repo: "project:1", files });
+    const [reobserved] = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.algorithm, "RSA")));
+    expect(reobserved.statusChangedAt).toBeNull();
+    expect(reobserved.statusChangedByRunId).toBeNull();
+    expect(reobserved.lastSeen.getTime()).toBeGreaterThanOrEqual(created.lastSeen.getTime());
+  });
+
+  it("stamps the disappearance with the run that did not observe it, and the reappearance with the run that did", async () => {
+    await start();
+
+    const withRsa = [{ path: "keys.py", content: "key = RSA.generate(2048)\nh = hashlib.md5(x)", language: "python" }];
+    const withoutRsa = [{ path: "keys.py", content: "h = hashlib.md5(x)", language: "python" }];
+
+    await ingest({ repo: "project:1", files: withRsa });
+    const removal = await ingest({ repo: "project:1", files: withoutRsa });
+    expect(removal.assetsMarkedGone).toBe(1);
+
+    const [gone] = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.algorithm, "RSA")));
+    expect(gone.status).toBe("gone");
+    expect(gone.statusChangedAt).not.toBeNull();
+    // The run that *failed to find it*, which is the provenance a drift reader
+    // follows to confirm a real examination happened. Without it an absence is
+    // just an absence, and reporting that as remediation is the failure D4
+    // exists to avoid.
+    expect(gone.statusChangedByRunId).toBe(removal.collectionRunId);
+    // `lastSeen` still records when it was last actually observed — never
+    // advanced by the run that missed it.
+    expect(gone.lastSeen.getTime()).toBeLessThan(gone.statusChangedAt!.getTime() + 1);
+
+    // The asset that was there both times is untouched by its neighbour's
+    // transition — the stamp is per asset, not per run.
+    const [stayed] = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.algorithm, "MD5")));
+    expect(stayed.statusChangedAt).toBeNull();
+
+    const reappearance = await ingest({ repo: "project:1", files: withRsa });
+    const [back] = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.algorithm, "RSA")));
+    expect(back.status).toBe("active");
+    expect(back.statusChangedByRunId).toBe(reappearance.collectionRunId);
+    expect(back.statusChangedAt!.getTime()).toBeGreaterThanOrEqual(gone.statusChangedAt!.getTime());
+  });
+
   it("does not mark a file's assets gone when that file is simply absent from a later, narrower scan — reconciliation is scoped per scanned file, not per repo", async () => {
     await start();
 

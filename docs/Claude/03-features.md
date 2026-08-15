@@ -434,11 +434,41 @@ Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 | D1 | CISA quantum-readiness dashboard | `built` | **P1** |
 | D2 | Mosca exposure view (per scenario) | `planned` | **P1** |
 | D3 | Coverage/confidence meter — *what we haven't looked at* | `partial` | **P1** |
-| D4 | Drift detection + alerting | `planned` | **P1** |
+| D4 | Drift detection + alerting | `built`* | **P1** |
 | D5 | Crypto-agility score | `planned` | **P1** |
 | D6 | Migration wave planner | `planned` | **P2** |
 | D7 | Trend/history view | `partial` | **P2** |
 | D8 | Asset & host discovery (certificate transparency) | `built` | **P1** |
+
+### D4 `built`* — drift that refuses to claim a remediation nobody performed
+
+`GET /api/drift` returns what appeared, disappeared, reappeared and changed since a timestamp,
+and `POST/GET/PATCH/DELETE /api/collection-schedules` (+ `run-due`) is the scheduled re-collection
+that makes the window mean something. Together they are M3's "inventory of record rather than a
+report generator".
+
+**Nothing is persisted, deliberately.** A drift verdict written to a row is the exact C1 failure
+this project exists to fix — an "urgent" recorded in 2026 still reads urgent in 2028, after the
+deadline that made it urgent has passed. Every obligation on every entry is resolved through
+`@workspace/mappings` on the way out, at one `asOf` for the whole response.
+
+**The rule the module is built around: it must never report a remediation that did not happen.**
+"This asset is gone" can mean the vulnerable line was deleted, or it can mean the collector never
+ran, the credential expired, or the host was behind a firewall that day. B3 established that at
+ingest level — an unreachable host is not marked `gone`, because a timeout is not evidence of
+absence — and the feed preserves it on the way out: an asset that merely stopped being *looked at*
+is not a disappearance, and the response carries a per-surface observability section so a reader
+can tell "nothing changed" from "nothing was collected". A `since` in the future or one that does
+not parse is a 400 rather than an empty feed, because an empty feed reads as a claim.
+
+Scheduling refuses three things at the edge, each with a test: an interval below the floor (the
+targets are the customer's own hosts and this server does the dialling, so a one-minute schedule
+is a denial of service run on their behalf), a target list over the per-schedule cap (split it,
+never truncate — a truncated list monitors a subset while reading as if it monitored all of them),
+and a URL where a host was asked for.
+
+\* **Not built: alerting.** The feed exists and nothing delivers it — no email, no webhook, no
+digest. `run-due` also has no deployed trigger yet; something outside the process has to call it.
 
 ### D8 `built` — the first thing that names a host nobody told us about
 

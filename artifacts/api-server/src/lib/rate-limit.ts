@@ -235,6 +235,11 @@ const ROUTE_BUDGETS: ReadonlyArray<{
   // The D8 → B3 handoff opens the same sockets `POST /projects/:id/tls` does,
   // so it draws on the same budget rather than a laxer one of its own.
   { method: "POST", path: /^\/projects\/[^/]+\/discovered-targets\/probe$/, limiter: tlsLimiter },
+  // M3 — the same egress by a different door. One `run-due` call replays up to
+  // MAX_SCHEDULES_PER_RUN stored target lists, so it is if anything more
+  // expensive than a single submission and must share the tighter budget rather
+  // than fall through to `default`.
+  { method: "POST", path: /^\/collection-schedules\/run-due$/, limiter: tlsLimiter },
   // Public: scans a hard-coded repository from memory, but still runs the full
   // regex pass, and no key is required so this is IP-keyed in practice.
   { method: "POST", path: /^\/demo\/repos\/[^/]+\/scan$/, limiter: scanLimiter },
