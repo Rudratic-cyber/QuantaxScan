@@ -15,6 +15,7 @@ import {
   type ReportInput,
   type TrendStatement,
 } from "./report-common";
+import { DEFAULT_QDAY_SCENARIOS, yearsUntilQDay } from "@workspace/risk";
 import type { EnrichedInventoryAsset } from "./inventory-assets";
 
 /**
@@ -161,12 +162,19 @@ function buildExposure(assets: EnrichedInventoryAsset[], coverage: CoverageLimit
 function buildTiming(input: ReportInput, header: ReportHeader): TimingAnswer {
   const applicable = input.assets.filter((a) => a.mosca.applicable);
 
-  const scenarios: ScenarioAnswer[] = header.scenarios.map((scenario) => {
+  // The typed scenario set, not `header.scenarios` — the header widens
+  // `confidence` to `string` for the payload, and `yearsUntilQDay` wants the
+  // real thing.
+  const scenarioSet = input.scenarios ?? DEFAULT_QDAY_SCENARIOS;
+
+  const scenarios: ScenarioAnswer[] = scenarioSet.map((scenario) => {
     const breached = applicable.filter((a) => a.mosca.breachedScenarios.includes(scenario.name));
     // The overshoot is (X + Y) − Z, in years, for the worst asset under this
-    // scenario. Recomputed here from the same three numbers the asset carries
-    // rather than from a second Mosca implementation.
-    const zYears = (Date.UTC(scenario.qDayYear, 0, 1) - input.now.getTime()) / (365.2425 * 24 * 60 * 60 * 1000);
+    // scenario. Z comes from `@workspace/risk`'s own `yearsUntilQDay` rather
+    // than a year-length constant spelled out again here — a second copy of it
+    // would drift and put this table quietly out of step with every Mosca
+    // verdict elsewhere in the product.
+    const zYears = yearsUntilQDay(scenario, input.now);
     let worst: number | null = null;
     for (const asset of breached) {
       const overshoot = asset.mosca.x + asset.mosca.y - zYears;
