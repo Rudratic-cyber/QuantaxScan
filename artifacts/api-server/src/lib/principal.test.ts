@@ -125,13 +125,19 @@ describe("principal.ts — API key to organisation binding (F1)", () => {
     process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "10,20";
 
     const principal = await importPrincipal();
+    // `divisionIds` is asserted rather than ignored: an empty set is what
+    // carries "unrestricted" into the GUC (RBAC stage 4), and a machine
+    // credential acquiring a division restriction by accident would silently
+    // narrow what every CI script can see.
     expect(principal.orgContextFor(await principalFor(principal, "key-one-abcdefghijklmnopqrstuvwx"))).toEqual({
       organizationId: 10,
       userId: "",
+      divisionIds: [],
     });
     expect(principal.orgContextFor(await principalFor(principal, "key-two-abcdefghijklmnopqrstuvwx"))).toEqual({
       organizationId: 20,
       userId: "",
+      divisionIds: [],
     });
   });
 

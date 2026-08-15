@@ -118,42 +118,90 @@ ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE projects FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS projects_org_isolation ON projects;
 CREATE POLICY projects_org_isolation ON projects AS PERMISSIVE FOR ALL TO quantaxscan_app
-  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- WITH CHECK carries the tenant clause only. A write lands in the division
+  -- its parent names, and the caller does not choose it — so constraining the
+  -- write side on the caller's division set would refuse legitimate writes
+  -- (an admin creating a project inside a division they are not granted) while
+  -- adding nothing: the read side is what confines a viewer.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 ALTER TABLE scans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scans FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS scans_org_isolation ON scans;
 CREATE POLICY scans_org_isolation ON scans AS PERMISSIVE FOR ALL TO quantaxscan_app
-  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- WITH CHECK carries the tenant clause only. A write lands in the division
+  -- its parent names, and the caller does not choose it — so constraining the
+  -- write side on the caller's division set would refuse legitimate writes
+  -- (an admin creating a project inside a division they are not granted) while
+  -- adding nothing: the read side is what confines a viewer.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 ALTER TABLE findings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE findings FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS findings_org_isolation ON findings;
 CREATE POLICY findings_org_isolation ON findings AS PERMISSIVE FOR ALL TO quantaxscan_app
-  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- WITH CHECK carries the tenant clause only. A write lands in the division
+  -- its parent names, and the caller does not choose it — so constraining the
+  -- write side on the caller's division set would refuse legitimate writes
+  -- (an admin creating a project inside a division they are not granted) while
+  -- adding nothing: the read side is what confines a viewer.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assets FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS assets_org_isolation ON assets;
 CREATE POLICY assets_org_isolation ON assets AS PERMISSIVE FOR ALL TO quantaxscan_app
-  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- WITH CHECK carries the tenant clause only. A write lands in the division
+  -- its parent names, and the caller does not choose it — so constraining the
+  -- write side on the caller's division set would refuse legitimate writes
+  -- (an admin creating a project inside a division they are not granted) while
+  -- adding nothing: the read side is what confines a viewer.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 ALTER TABLE observations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observations FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS observations_org_isolation ON observations;
 CREATE POLICY observations_org_isolation ON observations AS PERMISSIVE FOR ALL TO quantaxscan_app
-  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- WITH CHECK carries the tenant clause only. A write lands in the division
+  -- its parent names, and the caller does not choose it — so constraining the
+  -- write side on the caller's division set would refuse legitimate writes
+  -- (an admin creating a project inside a division they are not granted) while
+  -- adding nothing: the read side is what confines a viewer.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 ALTER TABLE collection_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE collection_runs FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS collection_runs_org_isolation ON collection_runs;
 CREATE POLICY collection_runs_org_isolation ON collection_runs AS PERMISSIVE FOR ALL TO quantaxscan_app
-  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- WITH CHECK carries the tenant clause only. A write lands in the division
+  -- its parent names, and the caller does not choose it — so constraining the
+  -- write side on the caller's division set would refuse legitimate writes
+  -- (an admin creating a project inside a division they are not granted) while
+  -- adding nothing: the read side is what confines a viewer.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 ALTER TABLE ot_fleets ENABLE ROW LEVEL SECURITY;
@@ -194,7 +242,15 @@ ALTER TABLE discovered_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE discovered_targets FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS discovered_targets_org_isolation ON discovered_targets;
 CREATE POLICY discovered_targets_org_isolation ON discovered_targets AS PERMISSIVE FOR ALL TO quantaxscan_app
-  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- WITH CHECK carries the tenant clause only. A write lands in the division
+  -- its parent names, and the caller does not choose it — so constraining the
+  -- write side on the caller's division set would refuse legitimate writes
+  -- (an admin creating a project inside a division they are not granted) while
+  -- adding nothing: the read side is what confines a viewer.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 -- B11 — the network-conversation inventory. Standard shape. Worth naming what
@@ -206,7 +262,15 @@ ALTER TABLE network_flows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE network_flows FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS network_flows_org_isolation ON network_flows;
 CREATE POLICY network_flows_org_isolation ON network_flows AS PERMISSIVE FOR ALL TO quantaxscan_app
-  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- WITH CHECK carries the tenant clause only. A write lands in the division
+  -- its parent names, and the caller does not choose it — so constraining the
+  -- write side on the caller's division set would refuse legitimate writes
+  -- (an admin creating a project inside a division they are not granted) while
+  -- adding nothing: the read side is what confines a viewer.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 -- M3 — scheduled re-collection. Standard shape for both. Which hosts a company
@@ -217,7 +281,15 @@ ALTER TABLE collection_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE collection_schedules FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS collection_schedules_org_isolation ON collection_schedules;
 CREATE POLICY collection_schedules_org_isolation ON collection_schedules AS PERMISSIVE FOR ALL TO quantaxscan_app
-  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- WITH CHECK carries the tenant clause only. A write lands in the division
+  -- its parent names, and the caller does not choose it — so constraining the
+  -- write side on the caller's division set would refuse legitimate writes
+  -- (an admin creating a project inside a division they are not granted) while
+  -- adding nothing: the read side is what confines a viewer.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 ALTER TABLE collection_schedule_runs ENABLE ROW LEVEL SECURITY;

@@ -55,6 +55,23 @@ export interface OrgContext {
    * for a machine credential.
    */
   userId: string;
+  /**
+   * RBAC — divisions this caller may see, and **empty means unrestricted**.
+   * docs/Claude/15-rbac-design.md §4.1.
+   *
+   * The encoding is the load-bearing part. An org admin, an owner, and the
+   * API-key principal all see every division — that is what makes them
+   * administrators — and carry an empty list. A member or viewer carries the
+   * divisions they hold a grant on and is confined to those plus rows with no
+   * division at all. Encoding "unrestricted" as empty rather than a magic
+   * value keeps the policy expression simple, and fails the right way: a
+   * caller with *some* divisions is restricted to them.
+   *
+   * Optional so that every existing caller — and there are many — keeps
+   * compiling and keeps meaning "unrestricted", which is exactly what they
+   * were before divisions existed.
+   */
+  divisionIds?: readonly number[];
 }
 
 /**
@@ -239,10 +256,15 @@ export function createOrgScope(database: AppDatabase, options: OrgScopeOptions =
         // takes BIND PARAMETERS, so the organisation id is never
         // string-interpolated into SQL; and `SET LOCAL` outside a transaction
         // silently succeeds while doing nothing at all (verified).
+        // A comma-separated list, because a GUC is text and `string_to_array`
+        // is what the policies parse it with. Empty string is unrestricted —
+        // see `OrgContext.divisionIds`.
+        const divisions = (ctx.divisionIds ?? []).join(",");
         await scoped.execute(sql`select
-          set_config('app.current_org_id',  ${String(ctx.organizationId)}, true),
-          set_config('app.current_user_id', ${ctx.userId},                 true),
-          set_config(${SCOPE_SENTINEL},     '1',                           true)`);
+          set_config('app.current_org_id',   ${String(ctx.organizationId)}, true),
+          set_config('app.current_user_id',  ${ctx.userId},                 true),
+          set_config('app.current_divisions', ${divisions},                 true),
+          set_config(${SCOPE_SENTINEL},      '1',                           true)`);
         return fn(scoped);
       }),
     );

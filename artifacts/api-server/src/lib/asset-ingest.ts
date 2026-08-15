@@ -1,4 +1,4 @@
-import { assetsTable, observationsTable, collectionRunsTable, networkFlowsTable } from "@workspace/db/schema";
+import { assetsTable, observationsTable, collectionRunsTable, networkFlowsTable, projectsTable } from "@workspace/db/schema";
 import type { ScopedTx } from "@workspace/db/org-scope";
 import {
   collectSourceObservations,
@@ -188,8 +188,39 @@ function reobservationPredicate(scope: ReobservationScope): SQL | undefined {
   return clauses.length === 0 ? undefined : or(...clauses);
 }
 
+/**
+ * RBAC stage 4 — the division a run's rows belong to, denormalised from the
+ * project the run targets. docs/Claude/15-rbac-design.md §4.3.
+ *
+ * `assets`, `observations` and `collection_runs` have no `project_id` at all:
+ * an asset reaches its project through the `project:<id>:` prefix in
+ * `location`. Parsing that inside a row-level-security policy — which runs on
+ * every row of every query — is slow and fragile, so the division is resolved
+ * **once per ingest, here**, and stamped on the rows instead.
+ *
+ * Returns null for a run that targets no project (a TLS endpoint, a submitted
+ * certificate, a KMS key inventory). Null means organisation-wide, which is
+ * honest: those genuinely belong to no division.
+ *
+ * The lookup runs inside the caller's scope, so a project the caller cannot
+ * see resolves to null rather than leaking its division.
+ */
+async function divisionForTarget(tx: ScopedTx, target: string): Promise<number | null> {
+  const match = /^project:(\d+)\b/.exec(target);
+  if (!match) return null;
+  const projectId = Number(match[1]);
+  if (!Number.isInteger(projectId)) return null;
+
+  const [row] = await tx
+    .select({ divisionId: projectsTable.divisionId })
+    .from(projectsTable)
+    .where(eq(projectsTable.id, projectId));
+  return row?.divisionId ?? null;
+}
+
 async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<IngestResult> {
   const { organizationId, observations } = spec;
+  const divisionId = await divisionForTarget(tx, spec.repo);
 
   // Collapse the run's observations to one row per asset before touching the
   // database: a file legitimately matches the same (repo, path, algorithm,
@@ -228,6 +259,7 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
 
     assetValuesByFingerprint.set(fingerprint, {
       organizationId,
+      divisionId,
       fingerprint,
       surface: fingerprintInput.surface,
       algorithm: raw.algorithm,
@@ -270,6 +302,7 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
     .insert(collectionRunsTable)
     .values({
       organizationId,
+      divisionId,
       collector: spec.collector,
       collectorVersion: spec.collectorVersion,
       surface: spec.surface,
@@ -364,7 +397,7 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
         if (assetId === undefined) {
           throw new Error(`asset upsert returned no row for fingerprint ${pending.fingerprint}`);
         }
-        return { assetId, collectionRunId: run.id, ...pending.values };
+        return { assetId, collectionRunId: run.id, divisionId, ...pending.values };
       }),
     );
   }

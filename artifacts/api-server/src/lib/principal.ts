@@ -318,7 +318,9 @@ export function orgContextFor(req: Request): OrgContext {
   }
 
   if (principal.kind === "apiKey") {
-    return { organizationId: principal.organizationId, userId: principal.userId };
+    // Empty division set: a machine credential acts across the whole
+    // organisation at its role.
+    return { organizationId: principal.organizationId, userId: principal.userId, divisionIds: [] };
   }
 
   if (principal.organizationId === null) {
@@ -328,5 +330,13 @@ export function orgContextFor(req: Request): OrgContext {
     );
   }
 
-  return { organizationId: principal.organizationId, userId: principal.userId };
+  // RBAC stage 4 — the division set travels into `withOrg`, which turns it
+  // into the `app.current_divisions` GUC the policies read. Empty is
+  // unrestricted, which is what an admin, an owner and every pre-RBAC caller
+  // carry.
+  return {
+    organizationId: principal.organizationId,
+    userId: principal.userId,
+    divisionIds: principal.divisionIds,
+  };
 }
