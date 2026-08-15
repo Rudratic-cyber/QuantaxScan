@@ -296,6 +296,8 @@ describe("route manifest — a new route cannot ship without being considered", 
     // would let a caller make this server open sockets to another tenant's
     // hosts by guessing integers.
     "POST /projects/:id/discovered-targets/probe": "org-scoped",
+    "POST /projects/:id/network-flows": "org-scoped",
+    "GET /projects/:id/network-flows": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",
@@ -739,6 +741,44 @@ describe("addressing another organisation's row by id is indistinguishable from 
 
   it("GET /api/projects/:id/data-at-rest → 404 for another organisation's project, not their store inventory", async () => {
     const res = await auth(request.get(`/api/projects/${theirs.projectId}/data-at-rest`));
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/projects/:id/network-flows naming another organisation's project writes no conversation", async () => {
+    // This route writes to a table `assets` does not cover, so the count below
+    // is on `network_flows` rather than on assets. Worth stating why the
+    // boundary matters more here than on most surfaces: the rows are an ordered
+    // list of which of a tenant's services talk to which, i.e. a network map of
+    // their estate — it leaks topology even when every row's cryptography is
+    // undetermined and no algorithm is recorded at all.
+    const countTheirFlows = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from network_flows where project_id = ${theirs.projectId}`,
+        ),
+      );
+    const before = await countTheirFlows();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/network-flows`).send({
+        records: [
+          {
+            source: { workload: "attacker" },
+            destination: { hostname: "their-payments.internal", port: 443 },
+            cipherSuite: "ECDHE-RSA-AES128-GCM-SHA256",
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirFlows();
+    expect(after).toEqual(before);
+  });
+
+  it("GET /api/projects/:id/network-flows → 404 for another organisation's project, not their network map", async () => {
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/network-flows`));
     expect(res.status).toBe(404);
   });
 });

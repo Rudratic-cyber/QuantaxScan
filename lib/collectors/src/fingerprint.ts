@@ -144,6 +144,39 @@ import type { RawObservation } from "./types";
  * `repo` is present for the same reason it is on `dependency`, `tls` and
  * `certificate`: two projects describing a store they both call `prod` must not
  * collide into one asset row whose `location` can only name one of them.
+ *
+ * **The `network-flow` variant (B11)** is `repo + transport + destination +
+ * destinationPort + role + algorithm`. Three things about it are decisions, not
+ * conventions, and each one exists to stop the inventory filling with garbage:
+ *
+ *  - **The source endpoint is NOT in it**, even though the surface's whole
+ *    point is recording both ends of a conversation. The cryptography
+ *    protecting a conversation is a property of the service being dialled — its
+ *    TLS configuration — not of which client dialled it. Five hundred clients
+ *    talking to one load balancer are five hundred *conversations* and one set
+ *    of crypto assets. The conversations themselves are persisted separately,
+ *    with both endpoints, in `network_flows`; that is where "who talked to
+ *    whom" lives. Including the source here would mint an asset per client, and
+ *    then a second one per client the next time DHCP or a pod redeploy
+ *    renumbered it.
+ *  - **The source *port* is not in it and is not stored anywhere at all.** It
+ *    changes on every TCP connection; a fingerprint carrying it would create a
+ *    new asset per handshake. Same anti-requirement as the line number above,
+ *    on a much faster clock.
+ *  - **`role`** (`key-exchange` | `authentication` | `bulk-cipher`) is in the
+ *    identity for the reason B7's `role` is: one suite name legitimately states
+ *    the *same algorithm* twice. `TLS_RSA_WITH_AES_256_CBC_SHA` names RSA as
+ *    both the key exchange and the authentication, and without the role those
+ *    two facts would fingerprint identically and collapse into one asset —
+ *    losing the distinction between "the session key was transported under
+ *    RSA" and "the server proved who it was with RSA", which are remediated
+ *    separately.
+ *
+ * `transport` is present because 443/tcp and 443/udp are different services.
+ * `algorithm` is in the identity while `location` is not — the same pairing,
+ * for the same reason, as `data-at-rest`: a service that moves off RSA reads as
+ * the RSA asset going `gone` at that slot and a new one appearing, which is
+ * what a migration is.
  */
 export type FingerprintInput =
   | { surface: "source"; repo: string; path: string; algorithm: string; symbol: string }
@@ -153,6 +186,15 @@ export type FingerprintInput =
   | { surface: "config"; repo: string; path: string; directive: string; algorithm: string; token: string }
   | { surface: "kms"; repo: string; provider: string; keyId: string }
   | { surface: "data-at-rest"; repo: string; engine: string; storeId: string; role: string; algorithm: string }
+  | {
+      surface: "network-flow";
+      repo: string;
+      transport: string;
+      destination: string;
+      destinationPort: number;
+      role: string;
+      algorithm: string;
+    }
   | { surface: "ot"; fleetId: string; algorithm: string }
   | {
       surface: "binary";
@@ -186,6 +228,16 @@ function orderedFields(input: FingerprintInput): string[] {
       return [input.surface, input.repo, input.provider, input.keyId];
     case "data-at-rest":
       return [input.surface, input.repo, input.engine, input.storeId, input.role, input.algorithm];
+    case "network-flow":
+      return [
+        input.surface,
+        input.repo,
+        input.transport,
+        input.destination,
+        String(input.destinationPort),
+        input.role,
+        input.algorithm,
+      ];
     case "ot":
       return [input.surface, input.fleetId, input.algorithm];
     case "binary":
@@ -328,6 +380,27 @@ export function fingerprintForObservation(
         role: detail.dataAtRest.role,
         algorithm: observation.algorithm,
       };
+    case "network-flow": {
+      // Unlike `network` below, this discriminator identifies exactly one
+      // surface, so there is no ambiguity to resolve. The destination identity
+      // and port come off the profile rather than being re-derived, so the
+      // fingerprint is computed from the same strings the ingest stored.
+      const port = detail.networkFlow.destination.destinationPort;
+      // Hard precondition, not a heuristic: without a destination port there is
+      // no service endpoint to attribute the cryptography to. Returning
+      // `undefined` makes the ingest fail loudly rather than mint an asset at a
+      // fabricated port — the collector rejects such a record long before here.
+      if (port === undefined) return undefined;
+      return {
+        surface: "network-flow",
+        repo: context.repo,
+        transport: detail.networkFlow.transport,
+        destination: detail.networkFlow.destinationIdentity,
+        destinationPort: port,
+        role: detail.networkFlow.role,
+        algorithm: observation.algorithm,
+      };
+    }
     case "ot":
       // The register row is the identity. A fleet is not observed at a path,
       // a host or an ARN — it is an entry a human maintains, so the row id is

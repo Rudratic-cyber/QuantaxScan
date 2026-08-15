@@ -7,6 +7,7 @@ import { CERTIFICATE_KEY_ALGORITHMS } from "./certificate-collector";
 import { PROTOCOL_CONFIG_ALGORITHMS } from "./protocol-config";
 import { KMS_KEY_ALGORITHMS } from "./kms-key-specs";
 import { DATA_AT_REST_ALGORITHMS } from "./data-at-rest-collector";
+import { CIPHER_SUITE_ALGORITHMS } from "./cipher-suite";
 
 describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappings/algorithms.json", () => {
   it("reproduces the pre-refactor scanner.ts severities exactly (quantumVulnerable -> critical, else alert)", () => {
@@ -50,6 +51,11 @@ describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappi
       // `kms-key-specs.json` row naming an algorithm nothing can resolve.
       ...KMS_KEY_ALGORITHMS,
       ...DATA_AT_REST_ALGORITHMS,
+      // B11's cipher-suite decomposition. The guard that stops a new token
+      // being added to its key-exchange/authentication/bulk tables with no
+      // `algorithms.json` entry behind it — which is the order that keeps a
+      // collector from naming an algorithm nothing can cite.
+      ...CIPHER_SUITE_ALGORITHMS,
     ]) {
       expect(deriveAlgorithmMapping(algorithm), algorithm).toBeDefined();
     }

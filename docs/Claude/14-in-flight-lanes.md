@@ -1,6 +1,6 @@
 # 14 — In-flight lanes (wave 3)
 
-**Status: six branches exist, all committed. Two are merged, four are not. Read this before
+**Status: six branches exist, all committed. Three are merged, three are not. Read this before
 starting new work, because the thing you are about to build may already be sitting on one of
 them.**
 
@@ -20,7 +20,7 @@ pointed at it.
 |---|---|---|---|
 | ~~`feat/qx-f4-secret-handling`~~ | ~~`bdabf12`~~ | `0009` | **Merged 2026-08-15 (`6edf282`)** — F4, both halves: ephemeral scan retention and the credential store |
 | ~~`feat/qx-discovery`~~ | ~~`aa40122`~~ | `0010` | **Merged 2026-08-15** — D8, CT-log host discovery + DNS corroboration into `discovered_targets` |
-| `feat/qx-network-flow` | `cb4f3a2` | `0011` | The `network-flow` surface — conversations, from flow/session records the estate already produces. No packet capture |
+| ~~`feat/qx-network-flow`~~ | ~~`cb4f3a2`~~ | `0011` | **Merged 2026-08-15** — B11, the `network-flow` surface, ninth `live` |
 | `feat/qx-m3-continuity` | `f54175a` | `0013` | D4 drift (computed, never persisted) + scheduled re-collection |
 | `feat/qx-f1-authentication` | `a835ca2` | `0014` | F1 — identity providers, sessions, `/auth/*`. GitHub implemented; Google and Microsoft deliberately deferred |
 | `feat/qx-endpoint` | `6b02fb9` | none | The `endpoint` surface — host fleet certificate stores and TLS policy. No agent ships; this is the report format one would report against |

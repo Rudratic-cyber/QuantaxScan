@@ -276,6 +276,98 @@ export const OtLocationDetailSchema = z.object({
 });
 export type OtLocationDetail = z.infer<typeof OtLocationDetailSchema>;
 
+/**
+ * B11 — a *conversation* between two endpoints, and what the customer's own
+ * flow/session record said protected it.
+ *
+ * **The two endpoint profiles are `NetworkLocationDetailSchema` itself, reused
+ * verbatim.** SP 1800-38B §4.1.4.1 Table 6's seven data elements describe where
+ * on the wire something was observed, and a conversation has two such places —
+ * so this kind embeds the existing profile twice rather than inventing a second
+ * network schema with the same fields under different names. What it adds is
+ * only what Table 6 has no concept of: which end is which, the transport, which
+ * part of the session's cryptography this observation is, and the record the
+ * evidence came from.
+ *
+ * It is its own kind rather than a variant of `network` for the same reason
+ * `certificate` is: `fingerprintForObservation()` reads the discriminator to
+ * decide a surface, and `network` is already shared between `tls` and a future
+ * live-fetch certificate collector. A conversation's identity (destination
+ * endpoint + port + role) is not shaped like `tls`'s (`host + port`), and
+ * resolving `kind === "network"` to two different surfaces by inspecting its
+ * fields is exactly the ambiguity that comment warns against.
+ */
+
+/**
+ * Which kind of record a submission came from. Presentation, evidence and
+ * caveat only — deliberately **not** part of any identity, since the same
+ * conversation legitimately appears in both a VPC flow log and a load-balancer
+ * access log and must not become two assets.
+ */
+export const NETWORK_FLOW_RECORD_FORMAT_VALUES = [
+  "vpc-flow-log",
+  "load-balancer-access-log",
+  "service-mesh-telemetry",
+  "firewall-session-log",
+  "other",
+] as const;
+export type NetworkFlowRecordFormat = (typeof NETWORK_FLOW_RECORD_FORMAT_VALUES)[number];
+
+/**
+ * Transport protocol, part of the conversation's identity: the same host pair
+ * on the same port number over TCP and over UDP are two different conversations
+ * (443/tcp is HTTPS, 443/udp is QUIC, protected by different machinery).
+ */
+export const NETWORK_FLOW_TRANSPORT_VALUES = ["tcp", "udp", "other"] as const;
+export type NetworkFlowTransport = (typeof NETWORK_FLOW_TRANSPORT_VALUES)[number];
+
+/**
+ * Whether this product knows what protected the conversation.
+ *
+ * `undetermined` is a first-class value and never a synonym for "unencrypted".
+ * One means the evidence did not say; the other would be a claim, and no flow
+ * record this collector reads is capable of making it. There is deliberately no
+ * `not-encrypted` value: a flow log that omits a cipher field omits it for every
+ * row, encrypted or not.
+ */
+export const NETWORK_FLOW_CRYPTO_STATE_VALUES = ["observed", "undetermined"] as const;
+export type NetworkFlowCryptoState = (typeof NETWORK_FLOW_CRYPTO_STATE_VALUES)[number];
+
+export const NetworkFlowLocationDetailSchema = z.object({
+  /** SP 1800-38B Table 6's elements for the far end — the service being dialled. Carries `destinationPort`. */
+  destination: NetworkLocationDetailSchema,
+  /**
+   * The same elements for the near end. `destinationPort` is deliberately never
+   * set here: Table 6 defines no source-port element, and the source port is
+   * the one field on a flow record that changes on every connection — see
+   * `network-flow-collector.ts`'s identity section.
+   */
+  source: NetworkLocationDetailSchema,
+  /**
+   * The string each end's identity resolved to — workload name, else hostname,
+   * else address (`endpointIdentity()`). Carried explicitly rather than
+   * re-derived from the two profiles above, for two reasons: Table 6 has no
+   * element for a service/workload name, so a mesh peer's real identity has
+   * nowhere else to live; and this is the exact value the asset fingerprint was
+   * computed from, so storing it makes the identity auditable instead of
+   * reconstructible.
+   */
+  destinationIdentity: z.string(),
+  sourceIdentity: z.string(),
+  transport: z.enum(NETWORK_FLOW_TRANSPORT_VALUES),
+  /** `CipherSuiteRole` — kept as a plain string so this schema does not have to change when a role is added. */
+  role: z.string(),
+  cryptoState: z.enum(NETWORK_FLOW_CRYPTO_STATE_VALUES),
+  recordFormat: z.enum(NETWORK_FLOW_RECORD_FORMAT_VALUES),
+  /** The suite name verbatim, beside the canonical algorithm derived from it — so the decomposition can be audited after the fact. */
+  reportedCipherSuite: z.string(),
+  /** e.g. `"TLSv1.2"`. Absent when the record named a cipher but no version. A version alone is never an observation — it is not an algorithm. */
+  reportedTlsVersion: z.string().optional(),
+  /** The single token in the suite name this observation was read from (`ECDHE`, `RSA`, `AES`). Evidence for the whole-token parse. */
+  reportedComponentToken: z.string(),
+});
+export type NetworkFlowLocationDetail = z.infer<typeof NetworkFlowLocationDetailSchema>;
+
 export const LocationDetailSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("source"), source: SourceLocationDetailSchema }),
   z.object({ kind: z.literal("network"), network: NetworkLocationDetailSchema }),
@@ -286,5 +378,6 @@ export const LocationDetailSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("config"), config: ConfigLocationDetailSchema }),
   z.object({ kind: z.literal("kms"), kms: KmsLocationDetailSchema }),
   z.object({ kind: z.literal("data-at-rest"), dataAtRest: DataAtRestLocationDetailSchema }),
+  z.object({ kind: z.literal("network-flow"), networkFlow: NetworkFlowLocationDetailSchema }),
 ]);
 export type LocationDetail = z.infer<typeof LocationDetailSchema>;

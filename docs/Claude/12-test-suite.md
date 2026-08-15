@@ -22,7 +22,7 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Coverage Summariser Suite** | Vitest | `artifacts/api-server/src/lib/coverage.test.ts` | Pure — no database, no HTTP |
 | **Posture Timeline Suite** | Vitest | `artifacts/api-server/src/lib/posture-timeline.test.ts` | Pure — no database, `now` injected (D7's whole subject is time) |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts`, `tests/ui/timeline-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
-| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (fourteen files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
+| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (fifteen files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
 | **Continuous Integration** | GitHub Actions | `.github/workflows/ci.yml` | Ubuntu runner (`ubuntu-latest`) |
 
 The UI suite always starts its own Vite dev server (`reuseExistingServer: false`) so it can never
@@ -224,6 +224,7 @@ mid-run.
 | `10-protocol-config` (B6) | What a config *declares*, never conflated with what B3 observed being negotiated |
 | `11-data-at-rest` (B7) | A Regulated archive reaches the risk engine with X = 25 and `xAssumed: false`; "encrypted, cipher unknown" produces no asset; a blank resubmission does not retire a recorded cipher |
 | `12-vendor` (B9) | A vendor's claim never reads as an observation; "no clause" and "nobody read the contract" stay distinguishable in both directions |
+| `15-network-flows` (B11) | A cipher-free flow record stays `undetermined` and produces no asset, and is counted so the meter cannot read the surface as clean; an unidentified endpoint is rejected with its position and reason rather than recorded against a guess; two ephemeral source ports collapse to one conversation |
 | `14-discovery` (D8) | A wildcard and two lookalike domains stay out of the inventory and are reported as refusals; an unreachable resolver yields `undetermined` rather than `not-resolved`; a re-run keeps `firstDiscoveredAt`; a CT source answering 429 is a 502, never an empty list read as "this domain has no certificates". Runs a real `node:http` CT stub so the SSRF guard, timeout, byte cap and parse all execute against a real outbound request |
 | `13-credentials` (F4) | The credential store *withholds*: every assertion greps the raw response text for the secret rather than checking named fields, because a leak arrives through the field nobody listed. Covers the 400 that must not echo its rejected input, revocation destroying material while keeping the audit row, and the 409 a wrapped unique violation would otherwise answer 500 |
 

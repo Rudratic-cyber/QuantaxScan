@@ -196,6 +196,14 @@ export const LOCATION_DETAIL_KIND_VALUES = [
   "kms",
   "data-at-rest",
   "ot",
+  // B11 — a conversation between two endpoints. Its own kind rather than a
+  // second `network` variant: it *embeds* the `network` profile twice (one end
+  // each) rather than redefining Table 6's elements, and it gives
+  // `fingerprintForObservation()` an unambiguous discriminator, which
+  // `network` — shared between `tls` and a future certificate collector —
+  // cannot provide. See `NetworkFlowLocationDetailSchema` in
+  // `location-detail.ts`.
+  "network-flow",
 ] as const;
 
 export type LocationDetailKind = (typeof LOCATION_DETAIL_KIND_VALUES)[number];

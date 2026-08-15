@@ -74,7 +74,7 @@ GRANT USAGE ON SCHEMA public TO quantaxscan_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   projects, scans, findings, assets, observations, collection_runs,
   activity, shared_reports, community_posts, ot_fleets, vendor_assessments,
-  credentials, discovered_targets,
+  credentials, discovered_targets, network_flows,
   organizations, organization_members, user_identities, users, sessions
 TO quantaxscan_app;
 
@@ -186,13 +186,25 @@ CREATE POLICY credentials_org_isolation ON credentials AS PERMISSIVE FOR ALL TO 
   USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
--- D7 — discovered targets. Standard shape. A list of the hostnames a company's
+-- D8 — discovered targets. Standard shape. A list of the hostnames a company's
 -- own certificates disclose is a map of its attack surface: as tenant-private
 -- as any scan result, and arguably more useful to an attacker than one.
 ALTER TABLE discovered_targets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE discovered_targets FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS discovered_targets_org_isolation ON discovered_targets;
 CREATE POLICY discovered_targets_org_isolation ON discovered_targets AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+-- B11 — the network-conversation inventory. Standard shape. Worth naming what
+-- this table holds, because it is more sensitive than most: an ordered list of
+-- which of a tenant's services talk to which, which is a network map. It leaks
+-- an estate's internal topology even when every row's `crypto_state` is
+-- `undetermined` and no cryptography is recorded at all.
+ALTER TABLE network_flows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE network_flows FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS network_flows_org_isolation ON network_flows;
+CREATE POLICY network_flows_org_isolation ON network_flows AS PERMISSIVE FOR ALL TO quantaxscan_app
   USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 

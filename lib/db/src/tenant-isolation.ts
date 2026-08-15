@@ -42,6 +42,7 @@ export const ORG_SCOPED_TABLES = [
   // Neither substitutes for the other.
   "credentials",
   "discovered_targets",
+  "network_flows",
 ] as const;
 
 export type OrgScopedTable = (typeof ORG_SCOPED_TABLES)[number];
