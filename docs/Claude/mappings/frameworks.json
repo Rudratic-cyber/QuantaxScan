@@ -310,24 +310,53 @@
         { "category": "CNSA 1.0 acceptance", "note": "accepted without waiver until 2025-12-31", "confidence": "needs-check" }
       ],
       "algorithmsIndicative": "ML-KEM-1024 (FIPS 203), ML-DSA-87 (FIPS 204), AES-256, SHA-384/SHA-512, LMS/XMSS (SP 800-208) for software and firmware signing.",
-      "BLOCKER": "NOT VERIFIED AGAINST PRIMARY SOURCE. nsa.gov and media.defense.gov both return HTTP 403 to automated fetches. The dates above came from search-result summaries and secondary vendor sites and MUST be confirmed by a human opening the CNSA 2.0 FAQ (Ver 2.1, December 2024) directly before any customer-facing use. Note the seed data previously said '~2033 end state' as a single date — the real timeline is per-category and 2033 appears to apply only to custom/legacy equipment.",
+      "BLOCKER": "NOT VERIFIED AGAINST PRIMARY SOURCE. nsa.gov and media.defense.gov both return HTTP 403 to automated fetches. Every date and every algorithm named in this entry came from search-result summaries and secondary vendor sites and MUST be confirmed by a human opening the CNSA 2.0 FAQ directly before any customer-facing use. Note the seed data previously said '~2033 end state' as a single date — the real timeline is per-category and 2033 appears to apply only to custom/legacy equipment.",
       "primarySourceUrls": [
         "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF",
         "https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF",
         "https://www.nsa.gov/Cybersecurity/Post-Quantum-Cybersecurity-Resources/"
       ],
+      "retrievalAttempts": [
+        { "date": "2026-08-01", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF", "result": "HTTP 403" },
+        { "date": "2026-08-16", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF", "result": "HTTP 403" },
+        { "date": "2026-08-16", "url": "https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF", "result": "HTTP 403" },
+        { "date": "2026-08-16", "url": "https://www.nsa.gov/Cybersecurity/Post-Quantum-Cybersecurity-Resources/", "result": "HTTP 403" },
+        { "date": "2026-08-16", "url": "https://www.nsa.gov/Press-Room/Digital-Media-Center/Document-Gallery/igphoto/2003071836/", "result": "HTTP 403" }
+      ],
+      "secondarySourceConflict": "Checked again on 2026-08-16 and this is why the dates below stay `needs-check` rather than being promoted. Secondary summaries retrieved that day DISAGREE with each other and with the dates recorded here: one set says 'support and prefer by 2025, exclusively by 2030'; another says 'support and prefer by 2027, exclusive use by 2033' and 'from January 1, 2027 NSA expects new deployments to comply'. Two mutually exclusive timelines cannot both be transcribed, and picking one would be indistinguishable from inventing it. There are also reports that CNSSP 15 was updated in 2025 to incorporate CNSA 2.0 and deprecate CNSA 1.0 — likewise unverified, and likewise not recorded as fact.",
       "applicabilityWarning": "Hiding this framework for non-US-NSS customers is REQUIRED. Showing a UK bank a CNSA 2.0 compliance percentage is noise that damages credibility.",
       "confidence": "needs-check",
+      "findingObligationsNote": "C5. Split by PURPOSE, because the CNSA 2.0 suite is organised by purpose and a single blanket sentence made every finding read the same. No date and no algorithm here is new: all of it is the `algorithmsIndicative` and `indicativeDates` already in this entry, redistributed so the right one reaches the right finding. Every one stays `needs-check`, and the framework's BLOCKER reaches all of them as a caveat automatically.",
       "findingObligations": [
         {
-          "id": "cnsa-2.0-replace-quantum-vulnerable",
-          "match": { "quantumVulnerable": true },
-          "requirement": "On a US National Security System, replace this quantum-vulnerable public-key algorithm with the CNSA 2.0 suite: ML-KEM-1024 (FIPS 203), ML-DSA-87 (FIPS 204), AES-256, SHA-384/SHA-512, and LMS/XMSS (SP 800-208) for software and firmware signing.",
+          "id": "cnsa-2.0-signature",
+          "match": { "purposes": ["signature"] },
+          "requirement": "On a US National Security System, replace this signature algorithm with ML-DSA-87 (FIPS 204). For software and firmware signing specifically, LMS or XMSS (SP 800-208) is the indicated CNSA 2.0 choice.",
           "severity": "high",
-          "deadlineNote": "CNSA 2.0 dates are PER SYSTEM CATEGORY — see this framework's `indicativeDates`. There is no single CNSA 2.0 deadline and presenting one would be wrong.",
-          "citation": { "document": "CNSA 2.0 FAQ (Ver 2.1, December 2024)", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF", "retrievedAt": "2026-08-01" },
+          "deadlineNote": "CNSA 2.0 dates are PER SYSTEM CATEGORY, and the earliest category is this one: software and firmware signing is indicated as 'begin transitioning immediately; support and prefer by 2025; exclusively by 2030'. General equipment transitions are indicated as complete by 2030-12-31 and custom applications and legacy equipment by 2033. All four figures are UNVERIFIED — see this framework's `indicativeDates` and `secondarySourceConflict`. There is no single CNSA 2.0 deadline and presenting one would be wrong.",
+          "citation": { "document": "CNSA 2.0 FAQ (Ver 2.1, December 2024) — NOT READ; see retrievalAttempts", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF" },
           "confidence": "needs-check",
-          "caveat": "NOT VERIFIED AGAINST THE PRIMARY SOURCE — nsa.gov and media.defense.gov return HTTP 403 to automated fetches (open gap G-01). Render as indicative and unverified, never as a compliance percentage."
+          "caveat": "NOT VERIFIED AGAINST THE PRIMARY SOURCE — nsa.gov and media.defense.gov return HTTP 403 to automated fetches (open gap G-01), re-attempted 2026-08-16 and still 403. Render as indicative and unverified, never as a compliance percentage."
+        },
+        {
+          "id": "cnsa-2.0-key-establishment",
+          "match": { "purposes": ["key-establishment"] },
+          "requirement": "On a US National Security System, replace this key-establishment scheme with ML-KEM-1024 (FIPS 203).",
+          "severity": "high",
+          "deadlineNote": "CNSA 2.0 dates are PER SYSTEM CATEGORY. General equipment transitions are indicated as complete by 2030-12-31 and custom applications and legacy equipment by 2033; CNSA 1.0 is indicated as accepted without waiver only until 2025-12-31. All UNVERIFIED — see this framework's `indicativeDates` and `secondarySourceConflict`. There is no single CNSA 2.0 deadline and presenting one would be wrong.",
+          "citation": { "document": "CNSA 2.0 FAQ (Ver 2.1, December 2024) — NOT READ; see retrievalAttempts", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF" },
+          "confidence": "needs-check",
+          "caveat": "NOT VERIFIED AGAINST THE PRIMARY SOURCE — nsa.gov and media.defense.gov return HTTP 403 to automated fetches (open gap G-01), re-attempted 2026-08-16 and still 403. Render as indicative and unverified, never as a compliance percentage."
+        },
+        {
+          "id": "cnsa-2.0-symmetric-and-hash",
+          "match": { "families": ["symmetric", "symmetric-mode", "hash"] },
+          "requirement": "On a US National Security System, the indicated CNSA 2.0 symmetric and hash choices are AES-256 and SHA-384 or SHA-512. Confirm the key length and digest size in use — CNSA 2.0 constrains the parameter, not only the algorithm family.",
+          "severity": "medium",
+          "deadlineNote": "CNSA 2.0 dates are PER SYSTEM CATEGORY and all of them are UNVERIFIED here — see this framework's `indicativeDates` and `secondarySourceConflict`.",
+          "citation": { "document": "CNSA 2.0 FAQ (Ver 2.1, December 2024) — NOT READ; see retrievalAttempts", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF" },
+          "confidence": "needs-check",
+          "caveat": "NOT VERIFIED AGAINST THE PRIMARY SOURCE — nsa.gov and media.defense.gov return HTTP 403 to automated fetches (open gap G-01), re-attempted 2026-08-16 and still 403. Render as indicative and unverified, never as a compliance percentage. Symmetric algorithms are NOT quantum-vulnerable: this is a suite-conformance point, not a PQC migration item, and it must not be counted toward a PQC score."
         }
       ]
     },

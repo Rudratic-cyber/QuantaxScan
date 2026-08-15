@@ -370,6 +370,87 @@ describe("applicability — frameworks that do not bind the customer are hidden,
   });
 });
 
+describe("C5 — CNSA 2.0 resolves per purpose, and stays unverified while it does", () => {
+  const NSS = { jurisdiction: "US", sector: "government", systemType: "national-security-system" };
+  const cnsa = (algorithm: string) =>
+    mappingEngine.resolve({ algorithm }, { asOf: ASOF, profile: NSS })!.obligations.filter((o) => o.framework === "CNSA-2.0");
+
+  it("gives a signature finding the signature suite and a key-establishment finding the KEM", () => {
+    const ecdsa = cnsa("ECDSA");
+    expect(ecdsa).toHaveLength(1);
+    expect(ecdsa[0].requirement).toContain("ML-DSA-87");
+    expect(ecdsa[0].requirement).not.toContain("ML-KEM");
+
+    const ecdh = cnsa("ECDH/DH");
+    expect(ecdh).toHaveLength(1);
+    expect(ecdh[0].requirement).toContain("ML-KEM-1024");
+    expect(ecdh[0].requirement).not.toContain("ML-DSA");
+  });
+
+  it("gives RSA both, because IR 8547 lists it under signatures AND key establishment", () => {
+    expect(cnsa("RSA").map((o) => o.requirement).join(" ")).toMatch(/ML-DSA-87[\s\S]*ML-KEM-1024|ML-KEM-1024[\s\S]*ML-DSA-87/);
+    expect(cnsa("RSA")).toHaveLength(2);
+  });
+
+  it("names LMS/XMSS only where CNSA 2.0 does — software and firmware signing", () => {
+    expect(cnsa("ECDSA")[0].requirement).toMatch(/LMS or XMSS \(SP 800-208\)/);
+    expect(cnsa("ECDH/DH")[0].requirement).not.toMatch(/LMS|XMSS/);
+  });
+
+  it("reaches symmetric and hash findings without calling them a PQC migration item", () => {
+    const aes = cnsa("AES-256");
+    expect(aes).toHaveLength(1);
+    expect(aes[0].requirement).toContain("AES-256");
+    expect(aes[0].caveats.join(" ")).toMatch(/NOT quantum-vulnerable/);
+    expect(aes[0].caveats.join(" ")).toMatch(/must not be counted toward a PQC score/);
+    // The bucket is decided by deadlines, and CNSA contributes none — so AES stays where it was.
+    expect(mappingEngine.resolve({ algorithm: "AES-256" }, { asOf: ASOF, profile: NSS })!.bucket).toBe("no-obligation");
+    expect(cnsa("SHA-1")[0].requirement).toMatch(/SHA-384 or SHA-512/);
+  });
+
+  it("keeps every one of them needs-check and carries G-01 to each", () => {
+    for (const algorithm of ["RSA", "ECDSA", "ECDH/DH", "AES-256", "SHA-1", "MD5"]) {
+      for (const obligation of cnsa(algorithm)) {
+        expect(obligation.confidence).toBe("needs-check");
+        expect(obligation.caveats.join(" ")).toMatch(/NOT VERIFIED AGAINST THE PRIMARY SOURCE/);
+        expect(obligation.caveats.join(" ")).toMatch(/re-attempted 2026-08-16 and still 403/);
+        expect(obligation.caveats.join(" ")).toMatch(/PER SYSTEM CATEGORY/);
+      }
+    }
+  });
+
+  it("dates no unverified claim — a needs-check citation carries no retrievedAt", () => {
+    // `check:standards` measures the age of a `retrievedAt`; it cannot tell that one was written
+    // for a document nobody opened. The only safe answer for a 403 source is to have no date.
+    for (const obligation of cnsa("RSA")) {
+      expect(obligation.citation.retrievedAt).toBeUndefined();
+      expect(obligation.citation.document).toMatch(/NOT READ/);
+    }
+  });
+
+  it("still disappears entirely for a customer who is not a US national security system", () => {
+    const ukBank = { jurisdiction: "GB", sector: "financial-services", systemType: "payment-platform" };
+    for (const algorithm of ["RSA", "ECDSA", "AES-256"]) {
+      expect(
+        mappingEngine.resolve({ algorithm }, { asOf: ASOF, profile: ukBank })!.obligations.some((o) => o.framework === "CNSA-2.0"),
+      ).toBe(false);
+    }
+  });
+
+  it("follows the JSON — promoting the confidence in a clone promotes it in the output", () => {
+    // The shape of the eventual G-01 fix: a human reads the FAQ, edits JSON, and nothing else.
+    const engine = engineOver((data) => {
+      const framework = data.frameworks.frameworks.find((f) => f.id === "CNSA-2.0")!;
+      for (const rule of framework.findingObligations) rule.confidence = "verified";
+    });
+    const promoted = engine
+      .resolve({ algorithm: "ECDSA" }, { asOf: ASOF, profile: NSS })!
+      .obligations.filter((o) => o.framework === "CNSA-2.0");
+    expect(promoted).toHaveLength(1);
+    expect(promoted[0].confidence).toBe("verified");
+  });
+});
+
 describe("MD5 — never approved, so no transition deadline may be cited", () => {
   const result = mappingEngine.resolve({ algorithm: "MD5" }, { asOf: ASOF })!;
 
