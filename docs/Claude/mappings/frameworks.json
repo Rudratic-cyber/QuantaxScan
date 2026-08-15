@@ -27,22 +27,92 @@
       "status": "INITIAL PUBLIC DRAFT",
       "published": "2024-11-12",
       "commentPeriodClosed": "2025-01-10",
-      "finalStatus": "NOT FINAL as of 2026-08-01. The CSRC landing page still shows only the ipd.",
+      "finalStatus": "NOT FINAL as of 2026-08-16. Re-checked at https://csrc.nist.gov/pubs/ir/8547/ipd on 2026-08-16: the document history still lists only '11/12/24: IR 8547 (Draft)'. Received public comments were posted 2025-01-21; no final version, and no withdrawal.",
       "applicability": { "jurisdictions": ["US", "*"], "sectors": ["*"], "systemTypes": ["*"] },
       "role": "Defines the deprecation and disallowance TIMELINE. This is the source of the dates that make our reports actionable.",
       "keyDates": [
-        { "securityStrength": "112 bits", "type": "deprecated", "after": "2030", "appliesTo": "RSA, ECDSA, finite-field DH/MQV, elliptic-curve DH/MQV", "source": "Tables 2 and 4", "confidence": "verified" },
-        { "securityStrength": "112 bits", "type": "disallowed", "after": "2035", "appliesTo": "RSA, ECDSA, finite-field DH/MQV, elliptic-curve DH/MQV", "source": "Tables 2 and 4", "confidence": "verified" },
-        { "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "appliesTo": "RSA, ECDSA, EdDSA, DH/MQV, ECDH/MQV — ALL sizes", "source": "Tables 2 and 4", "confidence": "verified" },
-        { "securityStrength": "112 bits (symmetric)", "type": "disallowed", "in": "2030", "appliesTo": "Symmetric standards at the 112-bit level", "source": "§4.1.3", "confidence": "verified" }
+        { "securityStrength": "112 bits", "type": "deprecated", "after": "2030", "appliesTo": "ECDSA, RSA (signatures)", "source": "Table 2", "confidence": "verified" },
+        { "securityStrength": "112 bits", "type": "disallowed", "after": "2035", "appliesTo": "ECDSA, RSA (signatures)", "source": "Table 2", "confidence": "verified" },
+        { "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "appliesTo": "ECDSA, EdDSA, RSA (signatures) — ALL sizes", "source": "Table 2", "confidence": "verified" },
+        { "securityStrength": "112 bits", "type": "deprecated", "after": "2030", "appliesTo": "Finite Field DH and MQV [SP 800-56A], Elliptic Curve DH and MQV [SP 800-56A], RSA [SP 800-56B] (key establishment)", "source": "Table 4", "confidence": "verified" },
+        { "securityStrength": "112 bits", "type": "disallowed", "after": "2035", "appliesTo": "Finite Field DH and MQV, Elliptic Curve DH and MQV, RSA (key establishment)", "source": "Table 4", "confidence": "verified" },
+        { "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "appliesTo": "Finite Field DH and MQV, Elliptic Curve DH and MQV, RSA (key establishment) — ALL sizes", "source": "Table 4", "confidence": "verified" },
+        { "securityStrength": "112 bits (symmetric)", "type": "disallowed", "in": "2030", "appliesTo": "Symmetric standards at the 112-bit level", "source": "§4.1.3", "confidence": "verified", "note": "Verbatim: 'NIST has a few symmetric cryptography standards at the 112-bit security level, which will be disallowed in 2030.' IR 8547 does NOT enumerate which standards those are, so no algorithm entry in algorithms.json claims this row. Naming a specific algorithm here would be an over-claim; it needs a different primary source (SP 800-131A Rev 2 / SP 800-67) before it can attach to a finding." }
       ],
       "criticalNuance": "Larger classical key sizes do NOT extend the deadline. RSA-3072 and P-384 are disallowed after 2035 on the same schedule as RSA-2048 and P-256. The only difference is that 112-bit parameters get an earlier DEPRECATION milestone in 2030. Many vendors get this wrong.",
       "contextQuote": "§4.1.1: SP 800-57pt1 had projected NIST would disallow 112-bit public-key schemes on 2031-01-01; IR 8547 instead DEPRECATES them at that level so organisations can continue use while migrating.",
+      "applicationSpecificGuidance": {
+        "note": "§4.2 is the reason the 2035 date must never be presented as a target. C4's `ir8547-2035-is-a-ceiling` and `ir8547-key-establishment-priority` obligations below are built from these two quotes and nothing else.",
+        "quotes": [
+          "§4.2: 'While NIST's cryptographic algorithm standards may continue to specify quantum-vulnerable techniques until 2035 and generally allow their use, these application-specific standards and guidelines may specify earlier transitions for certain cryptographic algorithms, techniques, and protocols used within these applications.'",
+          "§4.2: 'NIST expects to prioritize the migration to quantum-resistant key-establishment schemes within these updates to protect against \"harvest now, decrypt later\" attacks, particularly in interactive protocols like TLS and IKE.'",
+          "§4.1.2: 'in order to mitigate the risk of \"harvest now, decrypt later\" attacks on network communications, application-specific guidance, as described in Sec. 4.2, may require or recommend migration to quantum-resistant key establishment schemes before the classical schemes are generally disallowed.'"
+        ],
+        "confidence": "verified"
+      },
+      "hybridAndDualSignatures": {
+        "note": "§3.2 — what an organisation is ALLOWED to do while migrating. Recorded because a report that only states prohibitions gives no migration path.",
+        "quotes": [
+          "§3.2.1: 'NIST currently allows a generic composite key-establishment technique described in SP 800-56C ... any shared secret key generated as specified in FIPS 203 may be used as the value Z in the generic composite mode described in SP 800-56C.'",
+          "§3.2.2: 'Existing NIST standards and guidelines accommodate their use provided that at least one component digital signature algorithm is NIST-approved.'",
+          "§3.2.2: 'NIST will accommodate the use of a hybrid key-establishment mode and dual signatures in FIPS 140 validation when suitably combined with a NIST-approved scheme.'"
+        ],
+        "confidence": "verified"
+      },
       "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
       "pdf": "https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf",
-      "retrievedAt": "2026-08-01",
+      "retrievedAt": "2026-08-16",
+      "retrievalNote": "PDF downloaded from nvlpubs.nist.gov and read in full on 2026-08-16 (Tables 1–7, §3.2, §4, §4.1.1–4.1.3, §4.2). Every date and quote in this entry was re-read against that copy; none changed from the 2026-08-01 reading.",
       "confidence": "verified",
-      "customerFacingRule": "Because this is a DRAFT, every customer-facing use must be labelled 'NIST draft guidance (IR 8547 ipd, November 2024)'. Presenting these as final binding dates is a factual error."
+      "customerFacingRule": "Because this is a DRAFT, every customer-facing use must be labelled 'NIST draft guidance (IR 8547 ipd, November 2024)'. Presenting these as final binding dates is a factual error.",
+      "findingObligations": [
+        {
+          "id": "ir8547-2035-is-a-ceiling",
+          "match": { "quantumVulnerable": true },
+          "requirement": "Do not treat 2035 as the migration target for this algorithm. NIST states that application-specific standards and guidelines may specify earlier transitions than the general algorithm-standard dates, so the binding date for a given system may be earlier than the table date.",
+          "severity": "medium",
+          "deadlineNote": "IR 8547 §4.2: 'While NIST's cryptographic algorithm standards may continue to specify quantum-vulnerable techniques until 2035 and generally allow their use, these application-specific standards and guidelines may specify earlier transitions for certain cryptographic algorithms, techniques, and protocols used within these applications.'",
+          "citation": {
+            "document": "NIST IR 8547 ipd",
+            "section": "§4.2 Application-Specific Standards and Guidelines",
+            "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
+            "retrievedAt": "2026-08-16",
+            "published": "2024-11-12"
+          },
+          "confidence": "verified"
+        },
+        {
+          "id": "ir8547-key-establishment-priority",
+          "match": { "purposes": ["key-establishment"] },
+          "requirement": "Migrate this key-establishment use ahead of the general timeline. NIST expects to prioritise migration to quantum-resistant key establishment in its application-specific guidance to protect against harvest-now-decrypt-later attacks, particularly in interactive protocols like TLS and IKE.",
+          "severity": "high",
+          "deadlineNote": "IR 8547 §4.1.2: application-specific guidance 'may require or recommend migration to quantum-resistant key establishment schemes before the classical schemes are generally disallowed.' The 2030/2035 rows are therefore a ceiling for this purpose, not a schedule.",
+          "citation": {
+            "document": "NIST IR 8547 ipd",
+            "section": "§4.1.2 Key Establishment and §4.2",
+            "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
+            "retrievedAt": "2026-08-16",
+            "published": "2024-11-12"
+          },
+          "confidence": "verified"
+        },
+        {
+          "id": "ir8547-hybrid-is-permitted",
+          "match": { "quantumVulnerable": true },
+          "requirement": "A hybrid construction is an approved migration path for this algorithm: a composite key-establishment mode per SP 800-56C, or a dual signature, is accommodated by existing NIST standards provided at least one component is NIST-approved.",
+          "severity": "informational",
+          "caveat": "IR 8547 §3.2.2: 'NIST leaves the decision to each specific application as to whether it can afford the implementation cost, performance reduction, and engineering complexity ... of a hybrid mode for key establishment or the use of dual signatures.' This is an allowance, not a recommendation, and hybrid mode does not by itself satisfy the 2030/2035 transition rows.",
+          "citation": {
+            "document": "NIST IR 8547 ipd",
+            "section": "§3.2 Hybrid and Dual Signature Modes",
+            "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
+            "retrievedAt": "2026-08-16",
+            "published": "2024-11-12"
+          },
+          "confidence": "verified"
+        }
+      ],
+      "notClaimed": "IR 8547 Table 7 records SHA-1 at 80 bits of collision security (Category <1) and SHA-224/SHA-512/224/SHA3-224 at 112 bits. Those are security-strength statements, NOT transition rules, and IR 8547 attaches no date to any of them — so no IR 8547 deadline or obligation is derived for a hash entry here. SHA-1's rules stay sourced to SP 800-131A Rev 2 §9, where they actually live."
     },
     {
       "id": "FIPS 186-5",

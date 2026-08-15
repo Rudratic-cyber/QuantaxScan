@@ -170,6 +170,94 @@ describe("PQC migration items keep their runway (RSA, ECDSA, ECDH/DH)", () => {
   });
 });
 
+describe("C4 — IR 8547 is a ceiling, not a schedule (§4.2 / §4.1.2 / §3.2)", () => {
+  const obligationsOf = (algorithm: string, id: string) =>
+    mappingEngine
+      .resolve({ algorithm }, { asOf: ASOF })!
+      .obligations.filter((o) => o.framework === "NIST-IR-8547" && o.requirement.length > 0 && o.source === "framework" && idMatches(o.requirement, id));
+
+  /** The engine does not surface rule ids, so match on the sentence each rule contributes. */
+  function idMatches(requirement: string, id: string): boolean {
+    if (id === "ceiling") return /Do not treat 2035 as the migration target/.test(requirement);
+    if (id === "key-establishment") return /Migrate this key-establishment use ahead of the general timeline/.test(requirement);
+    if (id === "hybrid") return /hybrid construction is an approved migration path/.test(requirement);
+    throw new Error(`unknown rule id ${id}`);
+  }
+
+  it("tells a quantum-vulnerable finding that 2035 is not the target date", () => {
+    const [ceiling] = obligationsOf("RSA", "ceiling");
+    expect(ceiling).toBeDefined();
+    expect(ceiling.citation.section).toMatch(/4\.2/);
+    // The claim is only worth as much as the quote behind it.
+    expect(ceiling.caveats.join(" ")).toMatch(/may specify earlier transitions/);
+  });
+
+  it("carries the draft label on every one of them, like the deadline rows already do", () => {
+    for (const id of ["ceiling", "hybrid"] as const) {
+      const [obligation] = obligationsOf("ECDSA", id);
+      expect(obligation.draftStatus).toMatch(/DRAFT/);
+      expect(obligation.confidence).toBe("verified");
+    }
+  });
+
+  it("adds no deadline, so it cannot move a bucket or manufacture a failure", () => {
+    const result = mappingEngine.resolve({ algorithm: "RSA" }, { asOf: ASOF })!;
+    const added = result.obligations.filter((o) => o.source === "framework" && o.framework === "NIST-IR-8547");
+    expect(added.length).toBeGreaterThan(0);
+    for (const obligation of added) expect(obligation.deadline).toBeUndefined();
+    expect(result.bucket).toBe("pqc-migration");
+    expect(result.complianceStatus).toBe("future-obligation");
+  });
+
+  it("prioritises key establishment for the harvest-now-decrypt-later purpose, and only that purpose", () => {
+    // RSA declares key-establishment among its purposes (IR 8547 Table 4, SP 800-56B); ECDSA does not.
+    expect(obligationsOf("ECDH/DH", "key-establishment")).toHaveLength(1);
+    expect(obligationsOf("RSA", "key-establishment")).toHaveLength(1);
+    expect(obligationsOf("ECDSA", "key-establishment")).toHaveLength(0);
+    expect(obligationsOf("ECDH/DH", "key-establishment")[0].severity).toBe("high");
+    expect(obligationsOf("ECDH/DH", "key-establishment")[0].caveats.join(" ")).toMatch(
+      /before the classical schemes are generally disallowed/,
+    );
+  });
+
+  it("offers the hybrid allowance without letting it read as compliance", () => {
+    const [hybrid] = obligationsOf("ECDH/DH", "hybrid");
+    expect(hybrid.severity).toBe("informational");
+    expect(hybrid.caveats.join(" ")).toMatch(/does not by itself satisfy/i);
+    expect(hybrid.requirement.toLowerCase()).not.toMatch(/violat|non-compliant/);
+  });
+
+  it("leaves algorithms IR 8547 does not call quantum-vulnerable entirely alone", () => {
+    const aes = mappingEngine.resolve({ algorithm: "AES-256" }, { asOf: ASOF })!;
+    expect(aes.obligations.some((o) => o.framework === "NIST-IR-8547")).toBe(false);
+    expect(aes.bucket).toBe("no-obligation");
+  });
+
+  it("claims no algorithm for the §4.1.3 112-bit symmetric row, because IR 8547 names none", () => {
+    // The row is recorded on the framework so it is not lost, but attaching it to (say) 3DES or
+    // SHA-224 would be an over-claim: IR 8547 says only "a few symmetric cryptography standards".
+    for (const name of mappingEngine.listAlgorithms()) {
+      const result = mappingEngine.resolve({ algorithm: name }, { asOf: ASOF })!;
+      expect(result.obligations.some((o) => o.framework === "NIST-IR-8547" && o.deadline?.in === "2030")).toBe(false);
+    }
+  });
+
+  it("follows the JSON — rewording the §4.2 rule changes the output with no code edit", () => {
+    const engine = engineOver((data) => {
+      const framework = data.frameworks.frameworks.find((f) => f.id === "NIST-IR-8547")!;
+      const rule = framework.findingObligations.find((r) => r.id === "ir8547-2035-is-a-ceiling")!;
+      rule.requirement = "REWORDED BY THE DATA, NOT THE ENGINE.";
+      rule.severity = "critical";
+    });
+
+    const rewritten = engine
+      .resolve({ algorithm: "RSA" }, { asOf: ASOF })!
+      .obligations.find((o) => o.requirement === "REWORDED BY THE DATA, NOT THE ENGINE.")!;
+    expect(rewritten.severity).toBe("critical");
+    expect(rewritten.framework).toBe("NIST-IR-8547");
+  });
+});
+
 describe("G-07 — DSA is a present-tense compliance failure, not a 2035 migration item", () => {
   const result = mappingEngine.resolve({ algorithm: "DSA", confidence: 0.7 }, { asOf: ASOF })!;
 
