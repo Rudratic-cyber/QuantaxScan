@@ -157,6 +157,9 @@ importers:
       '@types/pg':
         specifier: ^8.18.0
         version: 8.18.0
+      '@workspace/collectors':
+        specifier: workspace:*
+        version: link:lib/collectors
       pg:
         specifier: ^8.20.0
         version: 8.20.0

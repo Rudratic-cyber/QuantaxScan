@@ -1,0 +1,4 @@
+ALTER TABLE "collection_runs" DROP CONSTRAINT "collection_runs_surface_check";--> statement-breakpoint
+ALTER TABLE "assets" DROP CONSTRAINT "assets_surface_check";--> statement-breakpoint
+ALTER TABLE "collection_runs" ADD CONSTRAINT "collection_runs_surface_check" CHECK ("collection_runs"."surface" in ('source', 'dependency', 'tls', 'certificate', 'kms', 'config', 'ot', 'binary', 'data-at-rest', 'vendor', 'network-flow', 'endpoint', 'identity'));--> statement-breakpoint
+ALTER TABLE "assets" ADD CONSTRAINT "assets_surface_check" CHECK ("assets"."surface" in ('source', 'dependency', 'tls', 'certificate', 'kms', 'config', 'ot', 'binary', 'data-at-rest', 'vendor', 'network-flow', 'endpoint', 'identity'));

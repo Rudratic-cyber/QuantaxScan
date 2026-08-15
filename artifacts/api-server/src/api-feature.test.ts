@@ -34,6 +34,11 @@ vi.mock("@workspace/db", async () => {
 });
 
 // Import app after setting env vars and mocking db
+// The denominator is the catalogue's, not a number restated here: three
+// surfaces were added on 2026-08-15 and every hardcoded 10 in this file went
+// stale at once. What these tests are actually about is the *numerator* —
+// that a surface counts as examined only when something was collected from it.
+import { COLLECTOR_SURFACES } from "@workspace/collectors/surface-catalogue";
 import app from "./app";
 import { KEY_SIZE_UNDETERMINED, PROP_KEY_SIZE, type CycloneDxBom } from "@workspace/cbom";
 import { createCbomValidator, type CbomValidator } from "@workspace/cbom/validate";
@@ -272,20 +277,20 @@ describe("API Feature Test Suite", () => {
       projectId = res.body.id;
     });
 
-    it("reports zero of ten surfaces examined before anything has been collected", async () => {
+    it("reports zero examined surfaces before anything has been collected", async () => {
       const res = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
       expect(res.status).toBe(200);
       expect(res.body.projectId).toBe(projectId);
       // Creating a project runs the scanner for its risk score but writes no
       // collection run — so nothing has been examined, and the meter says so.
       expect(res.body.examinedSurfaces).toBe(0);
-      expect(res.body.totalSurfaces).toBe(10);
+      expect(res.body.totalSurfaces).toBe(COLLECTOR_SURFACES.length);
       expect(res.body.surfaces).toEqual([]);
       expect(res.body.confidence.scored).toBe(0);
       expect(res.body.confidence.mean).toBeNull();
     });
 
-    it("still reports only one of ten surfaces examined after a source scan", async () => {
+    it("still reports only one examined surface after a source scan", async () => {
       const scan = await request
         .post("/api/scans")
         .set("X-API-Key", API_KEY)
@@ -300,7 +305,7 @@ describe("API Feature Test Suite", () => {
       const res = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
       expect(res.status).toBe(200);
       expect(res.body.examinedSurfaces).toBe(1);
-      expect(res.body.totalSurfaces).toBe(10);
+      expect(res.body.totalSurfaces).toBe(COLLECTOR_SURFACES.length);
 
       const source = res.body.surfaces.find((s: { surface: string }) => s.surface === "source");
       expect(source).toMatchObject({ surfaceId: "source", state: "examined", completedRuns: 1, failedRuns: 0 });
@@ -374,7 +379,7 @@ packages:
       expect(coverage.body.surfaces.map((s: { surface: string }) => s.surface)).toEqual(["source"]);
     });
 
-    it("reports two of ten surfaces examined once a lockfile has actually been collected", async () => {
+    it("reports two examined surfaces once a lockfile has actually been collected", async () => {
       const submitted = await request
         .post(`/api/projects/${projectId}/dependencies`)
         .set("X-API-Key", API_KEY)
@@ -394,7 +399,7 @@ packages:
       const res = await request.get(`/api/projects/${projectId}/coverage`).set("X-API-Key", API_KEY);
       expect(res.status).toBe(200);
       expect(res.body.examinedSurfaces).toBe(2);
-      expect(res.body.totalSurfaces).toBe(10);
+      expect(res.body.totalSurfaces).toBe(COLLECTOR_SURFACES.length);
 
       // The count alone is not the claim: a bare `collection_runs` row with no
       // assets would also make it 2, while stating that we looked at the

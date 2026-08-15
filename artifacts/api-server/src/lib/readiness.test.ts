@@ -67,7 +67,12 @@ describe("summariseReadiness — tracked sections compute real fractions", () =>
     expect(inventory.state).toBe("tracked");
     expect(inventory.percentComplete).toBe(20);
     expect(inventory.numerator).toBe(2);
-    expect(inventory.denominator).toBe(10);
+    // The fixture's own `totalSurfaces`, deliberately — this is a pure test of
+    // the summariser, which passes the coverage payload's denominator through
+    // rather than consulting the catalogue. Do not couple it to
+    // `COLLECTOR_SURFACES.length`: that would make the assertion pass for the
+    // wrong reason if the summariser ever started overriding the input.
+    expect(inventory.denominator).toBe(emptyCoverage.totalSurfaces);
   });
 
   it("prioritisation counts assets with an explicit classification, asset- or project-level", () => {

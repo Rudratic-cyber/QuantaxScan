@@ -1,7 +1,7 @@
 import { type Surface } from "./enums";
 
 /**
- * The ten collector surfaces, in the order they are presented.
+ * The thirteen collector surfaces, in the order they are presented.
  *
  * This is the **single source of truth** for "what could we have looked at",
  * and it exists because there were two answers to that question in this
@@ -92,6 +92,13 @@ export const COLLECTOR_SURFACES = [
   { id: "ot", name: "Manual OT / embedded register", status: "live", surface: "ot" },
   { id: "vendor", name: "Vendor / third-party", status: "planned", surface: "vendor" },
   { id: "binary", name: "Binaries / firmware", status: "planned", surface: "binary" },
+  // Added 2026-08-15. These three were missing from the catalogue entirely
+  // rather than listed as unexamined — see `SURFACE_VALUES` for why that is the
+  // worse of the two errors. Each is a real part of an enterprise estate that
+  // no collector reaches today.
+  { id: "network-flow", name: "Network conversations", status: "planned", surface: "network-flow" },
+  { id: "endpoint", name: "Endpoint & host fleet", status: "planned", surface: "endpoint" },
+  { id: "identity", name: "Identity & authentication", status: "planned", surface: "identity" },
 ] as const satisfies readonly CollectorSurfaceEntry[];
 
 export type CollectorSurfaceId = (typeof COLLECTOR_SURFACES)[number]["id"];

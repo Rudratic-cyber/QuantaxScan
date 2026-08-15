@@ -54,6 +54,17 @@ export type DiscoveryModality = (typeof DISCOVERY_MODALITY_VALUES)[number];
  * `0005_*` and colliding in `drizzle/meta/_journal.json`, which no merge can
  * resolve. Neither collector exists yet: the catalogue still reports both
  * `planned`, which is the honest state.
+ *
+ * `network-flow`, `endpoint` and `identity` were added 2026-08-15, again ahead
+ * of their collectors and for a reason worth recording: the catalogue said ten
+ * surfaces, and an enterprise estate has at least thirteen. Network
+ * conversations between endpoints, the Windows/Linux host fleet, and the
+ * identity provider's own signing keys were absent from the list entirely —
+ * not marked unexamined, simply not counted. A denominator that omits a
+ * surface is worse than one that reports it never-examined, because the first
+ * silently shrinks the estate and the second states a gap. Adding them moves
+ * the honest reading from "8 of 10" to "8 of 13", which is a less flattering
+ * number and a truer one.
  */
 export const SURFACE_VALUES = [
   "source",
@@ -66,6 +77,9 @@ export const SURFACE_VALUES = [
   "binary",
   "data-at-rest",
   "vendor",
+  "network-flow",
+  "endpoint",
+  "identity",
 ] as const;
 
 export type Surface = (typeof SURFACE_VALUES)[number];

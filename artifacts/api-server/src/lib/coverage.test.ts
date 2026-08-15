@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { COLLECTOR_SURFACES } from "@workspace/collectors/surface-catalogue";
 import { summariseProjectCoverage, CONFIDENCE_BUCKETS, type CoverageObservationRow } from "./coverage";
 
 /**
@@ -20,7 +21,7 @@ describe("summariseProjectCoverage — surfaces", () => {
     expect(result.surfaces).toEqual([]);
     expect(result.examinedSurfaces).toBe(0);
     // The denominator is the catalogue's, not a count of what happens to have data.
-    expect(result.totalSurfaces).toBe(10);
+    expect(result.totalSurfaces).toBe(COLLECTOR_SURFACES.length);
   });
 
   it("counts one examined surface after a single source scan — not a near-full bar", () => {
@@ -31,7 +32,7 @@ describe("summariseProjectCoverage — surfaces", () => {
     });
 
     expect(result.examinedSurfaces).toBe(1);
-    expect(result.totalSurfaces).toBe(10);
+    expect(result.totalSurfaces).toBe(COLLECTOR_SURFACES.length);
     expect(result.surfaces).toHaveLength(1);
     expect(result.surfaces[0]).toMatchObject({
       surface: "source",

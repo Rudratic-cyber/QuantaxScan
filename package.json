@@ -23,6 +23,7 @@
     "@playwright/test": "^1.62.1",
     "@types/node": "^25.3.5",
     "@types/pg": "^8.18.0",
+    "@workspace/collectors": "workspace:*",
     "pg": "^8.20.0",
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"

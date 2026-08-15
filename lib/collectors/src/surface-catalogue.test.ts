@@ -8,18 +8,18 @@ import {
 } from "./surface-catalogue";
 
 /**
- * The catalogue is the denominator of D3's honesty claim ("2 of 10 examined"),
+ * The catalogue is the denominator of D3's honesty claim ("8 of 13 examined"),
  * so these assertions are about the *numbers on the page*, not about tidiness.
  * Each one fails loudly for a specific real change:
  *
- *  - an eleventh surface added to the roadmap but not to the UI, or vice versa
- *  - a ninth `Surface` enum value added with no catalogue entry to record it
+ *  - a fourteenth surface added to the roadmap but not to the UI, or vice versa
+ *  - a new `Surface` enum value added with no catalogue entry to record it
  *    under, which would let observations land somewhere the meter never counts
  *  - a collector going live without the coverage copy being revisited
  */
 describe("collector surface catalogue", () => {
-  it("has ten surfaces — the number docs/Claude/03-features.md §B and the coverage page both state", () => {
-    expect(COLLECTOR_SURFACES).toHaveLength(10);
+  it("has thirteen surfaces — the number docs/Claude/03-features.md §B and the coverage page both state", () => {
+    expect(COLLECTOR_SURFACES).toHaveLength(13);
   });
 
   it("has unique ids, because presentation and coverage data are joined on them", () => {

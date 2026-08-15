@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { COLLECTOR_SURFACES } from "@workspace/collectors/surface-catalogue";
 
 test.beforeEach(async ({ page }) => {
   // Provide clean default API route mocks so background fetches do not hang or block page renders
@@ -338,7 +339,13 @@ test.describe("UI Journey Tests", () => {
     projectId: 7,
     generatedAt: "2026-08-10T09:05:00.000Z",
     examinedSurfaces: 2,
-    totalSurfaces: 10,
+    // From the catalogue, not restated. This fixture hardcoded 10 and went
+    // stale the day three surfaces were added — and the mismatch surfaced here
+    // rather than in the headline, because the pills come from the catalogue
+    // join while the headline comes from the payload. That divergence is
+    // exactly what this test exists to catch, so the fixture must track the
+    // catalogue or the test starts failing for its own reasons.
+    totalSurfaces: COLLECTOR_SURFACES.length,
     surfaces: [
       {
         surface: "source",
@@ -401,10 +408,13 @@ test.describe("UI Journey Tests", () => {
 
     await expect(page.getByText(/collector surfaces examined/i)).toBeVisible({ timeout: 10000 });
     // The headline's count comes from the server's examinedSurfaces...
-    await expect(page.getByText(/8 of 10 have never been examined/i)).toBeVisible();
+    const neverExamined = COLLECTOR_SURFACES.length - 2;
+    await expect(
+      page.getByText(`${neverExamined} of ${COLLECTOR_SURFACES.length} have never been examined`, { exact: false }),
+    ).toBeVisible();
     // ...and the pills from the catalogue join. Both must say eight, or one of
     // the two paths is computing a different — and therefore wrong — number.
-    await expect(page.getByText("Never examined", { exact: true })).toHaveCount(8);
+    await expect(page.getByText("Never examined", { exact: true })).toHaveCount(neverExamined);
 
     // Examined-and-found-nothing is rendered as its own state, not folded into
     // either neighbour. A clean surface is coverage; an unexamined one is not.

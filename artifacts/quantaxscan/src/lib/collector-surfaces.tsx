@@ -1,4 +1,4 @@
-import { Boxes, FileCode, Network, Lock, KeyRound, Server, Database, FileText, Building2, Binary } from "lucide-react";
+import { Boxes, FileCode, Network, Lock, KeyRound, Server, Database, FileText, Building2, Binary, Share2, MonitorSmartphone, Fingerprint } from "lucide-react";
 import {
   COLLECTOR_SURFACES,
   type CollectorSurfaceEntry,
@@ -74,6 +74,18 @@ const PRESENTATION: Record<CollectorSurfaceId, SurfacePresentation> = {
   binary: {
     icon: <Binary className="h-5 w-5" />,
     blurb: "Compiled artefacts with no source and no manifest. NIST SP 1800-38B places this inside core discovery; we have it deferred, and say so rather than omitting the surface.",
+  },
+  "network-flow": {
+    icon: <Share2 className="h-5 w-5" />,
+    blurb: "Which endpoint talks to which, and what the two of them negotiate. Nothing here observes a conversation today — the cryptography protecting traffic between your own services is the largest single blind spot in this list.",
+  },
+  endpoint: {
+    icon: <MonitorSmartphone className="h-5 w-5" />,
+    blurb: "The Windows and Linux fleet: machine certificate stores, host TLS policy, and the cryptographic providers a workstation or server actually loads. No agent exists, so none of it is visible.",
+  },
+  identity: {
+    icon: <Fingerprint className="h-5 w-5" />,
+    blurb: "The signing keys your identity provider is really using — Active Directory, Entra, Okta. Today we can read the algorithm a config file *claims*; we cannot yet ask the provider itself.",
   },
 };
 
