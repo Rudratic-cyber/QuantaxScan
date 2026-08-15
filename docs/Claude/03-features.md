@@ -210,7 +210,7 @@ another silo.
 | # | Collector | Status | Pri | Notes |
 |---|---|---|---|---|
 | B1 | Source code (regex) | `built` | — | Now `SourceRegexCollector` behind A2 (`lib/collectors/`). **Key size (G-05): partially closed** — extracts a same-line literal modulus or named-curve size, undetermined (not defaulted) otherwise; no cross-line/AST resolution. **Confidence (G-11): closed** for this collector — `0.7`, persisted. **EdDSA (G-06): closed** — eighth pattern added, Ed25519/Ed448 resolve their curve bit sizes; one finding per line still means a line naming both `ssh-rsa` and `ssh-ed25519` reports only RSA |
-| B2 | Dependency / SBOM | `built` | **P0** | Biggest coverage jump, and now wired end to end. `DependencyCollector` (`lib/collectors/src/dependency-collector.ts`) parses pnpm/npm/yarn lockfiles and `requirements.txt` → the cited package table in [`mappings/crypto-packages.json`](mappings/crypto-packages.json) → observations at `0.8` (single-purpose library) or `0.5` (general-purpose library) confidence, persisted as `surface: "dependency"` assets by `POST /api/projects/:id/dependencies`. **`dependency` is the second `live` surface**, so the D3 meter reads 2 of 10 for a project with a scanned lockfile |
+| B2 | Dependency / SBOM | `built` | **P0** | Biggest coverage jump, and wired end to end. `DependencyCollector` (`lib/collectors/src/dependency-collector.ts`) parses lockfiles and manifests in **six ecosystems** — npm, PyPI, Maven, Go, NuGet and Cargo (see the ecosystem table below) → the cited package table in [`mappings/crypto-packages.json`](mappings/crypto-packages.json) → observations at `0.8` (single-purpose library) or `0.5` (general-purpose library) confidence, persisted as `surface: "dependency"` assets by `POST /api/projects/:id/dependencies`. **`dependency` is the second `live` surface**, so the D3 meter reads 2 of 10 for a project with a scanned lockfile |
 | B3 | TLS / cipher suite prober | `built` | **P1** | Active handshake against hosts, recording the *negotiated* key exchange rather than the configured one — `tls-collector.ts` maps the handshake, `tls-probe.ts` opens the socket, and `tls-ssrf-guard.ts` resolves-then-pins so a caller-named host cannot be turned into an SSRF. `POST /projects/:id/tls`. Confidence 1.0, the only collector that earns it. TLS 1.3 records its key-exchange size as undetermined rather than guessing — Node reports no group there |
 | B4 | Certificate / X.509 | `built` | **P1** | Key type, size, expiry, parsed with `node:crypto`'s `X509Certificate` — no third-party dependency, so `lib/collectors` stays shippable as a standalone agent. Every certificate in a submitted chain is read, not just the leaf. `POST` / `GET /projects/:id/certificates`, with the Q-Day verdict derived per scenario on read |
 | B5 | KMS / secret stores | `built` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS — **submission-based, not credentialed**. `POST /api/projects/:id/kms` takes the key inventory your own `describe-key`/`keys list` produced; `GET` returns the persisted inventory with rotation posture. Spec → algorithm resolution is cited data in [`mappings/kms-key-specs.json`](mappings/kms-key-specs.json) (84 specs, four primary sources). **`kms` is the fifth `live` surface** |
@@ -222,13 +222,51 @@ another silo.
 | B12 | Endpoint & host fleet | `built` | **P1** | The `endpoint` surface: machine certificate stores, host TLS policy and loaded providers for a Windows/Linux fleet, via `POST/GET /api/projects/:id/endpoint`. **No agent ships** — what exists is the report format an agent (or existing config-management tooling) reports against, and that is a decision: a binary running on a customer's domain controller is a packaging and security-review problem several times a collector's size, and it cannot authenticate until F4. `live` claims less here than elsewhere and the caveat says so on every response: **an enabled cipher suite is a permitted algorithm, not a negotiated one** — a suite list is an upper bound, and what was actually agreed is B3's surface. A suite the host's own policy disables produces nothing, and every suppression is returned so it can be audited; an unrecognised token (including every post-quantum suite) produces nothing rather than a guess. Identity is `machineId`, never `hostname` — hostnames get reused — and a placeholder or duplicated id is refused **by name** rather than merged. **`endpoint` is the tenth `live` surface** |
 | B11 | Network conversations | `built` | **P1** | The `network-flow` surface: what talks to what, and the cryptography (if any) the customer's own records say protected it. **No packet capture and no tap** — real-time interception is an explicit twelve-month non-goal, so this ingests the flow and session records an estate already produces (VPC flow logs, load-balancer access logs, service-mesh telemetry, firewall session logs) via `POST/GET /api/projects/:id/network-flows`. A record naming no cipher is recorded with `cryptoState: undetermined` and produces **no asset** — never "unencrypted", which would be a finding nobody observed — and `flowsWithUndeterminedCryptography` counts those rows so the coverage meter cannot render the surface as examined-and-clean. The source's ephemeral port is accepted and discarded: keying a conversation on it would mint a row per TCP handshake. **`network-flow` is the ninth `live` surface** |
 
-**B2, as shipped 2026-08-14.** Ecosystems covered: npm (pnpm-lock.yaml, package-lock.json,
-yarn.lock — both yarn dialects) and PyPI (`requirements.txt` only; `poetry.lock`/`Pipfile.lock`
-are not read). Submission is `POST /api/projects/:id/dependencies`, org-scoped like every other
-persisting route; files are selected by basename, so a caller may submit a whole tree.
-`POST /api/github/scan-files` was considered and rejected as the host: no lockfile reaches it
-(`SCANNABLE_EXTENSIONS` lists source extensions only, so `/github/fetch` filters them out before
-a client sees them) and it persists nothing at all — no project, no organisation scope, no row.
+**B2, as shipped 2026-08-14 and widened 2026-08-16.** Submission is
+`POST /api/projects/:id/dependencies`, org-scoped like every other persisting route; files are
+selected by basename, so a caller may submit a whole tree. `POST /api/github/scan-files` was
+considered and rejected as the host: no lockfile reaches it (`SCANNABLE_EXTENSIONS` lists source
+extensions only, so `/github/fetch` filters them out before a client sees them) and it persists
+nothing at all — no project, no organisation scope, no row.
+
+**Ecosystems, and how much each one is actually worth.** The distinction that matters is *lock*
+versus *manifest*: a lock states the resolved graph and an exact version, a manifest states what
+was asked for. Both are read, and the response never hides which it was — `lockfiles[].kind` names
+the format and an unknowable version comes back as `null`, never as the placeholder text
+(G-05).
+
+| Ecosystem (purl) | Files read | Lock or manifest | Not read |
+|---|---|---|---|
+| `npm` | `pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock` (both dialects) | lock | — |
+| `pypi` | `requirements*.txt` | manifest — only `==` is a pin | `poetry.lock`, `Pipfile.lock`, `uv.lock` |
+| `maven` | `pom.xml`, `gradle.lockfile`, `buildscript-gradle.lockfile`, `build.gradle(.kts)` | `gradle.lockfile` is a lock; the other two are manifests | `libs.versions.toml`, `settings.gradle`, a parent POM's properties |
+| `golang` | `go.mod`, `go.sum` | lock (`go.sum` is a *superset* of the built graph) | `go.work`, `vendor/modules.txt` |
+| `nuget` | `packages.lock.json`, `packages.config`, `*.csproj`/`*.fsproj`/`*.vbproj`, `Directory.Packages.props`, `Directory.Build.props` | `packages.lock.json` is a lock; the rest are manifests | `project.assets.json` |
+| `cargo` | `Cargo.lock` | lock | `Cargo.toml` (its versions are ranges, and workspace inheritance resolves elsewhere) |
+
+Three limits worth stating out loud rather than discovering:
+
+- **`build.gradle` is a program, not a manifest.** Only the unambiguous single-literal form
+  (`implementation 'g:a:1.2.3'`, `api("g:a:1.2.3")`) under a known configuration name is read. A
+  version catalogue reference, map notation, a variable or a loop produces **nothing** — fewer
+  observations, never wrong ones. A Gradle project is best submitted as a `gradle.lockfile`.
+- **A `${property}` / `$(MSBuildProperty)` version is not a version.** A `pom.xml`'s own
+  `<properties>` block is resolved one level; anything beyond that (a parent POM, central package
+  management, a BOM-managed dependency with no `<version>` at all) yields `null`.
+- **Post-quantum algorithms a library ships are omitted, not denied.** `algorithms.json` has nine
+  canonicalNames and none of them is ML-KEM/ML-DSA/SLH-DSA, so a Bouncy Castle, Tink or CIRCL
+  entry under-reports what that library provides. Each such entry's `note` says so.
+
+**The four new ecosystems are curated, not enumerated.** A Go module, a NuGet id or a Maven
+coordinate this project has not read documentation for produces no observation at all — the same
+convention npm and PyPI have always used, and the reason it is right is that the alternative is a
+guess presented as inventory. Nineteen entries were added on 2026-08-16, each with a verbatim
+quote from the library's own documentation; three of them are `needs-check` and say why in the
+response.
+Two omissions are deliberate and recorded in the file's `curationRules`: `golang.org/x/crypto` (a
+bundle whose cryptography differs per sub-package, so the module path implies no algorithm — the
+same reason JOSE/JWT libraries are absent in every ecosystem) and `bcpkix`/`bctls`, which are
+format and protocol layers over `bcprov` rather than algorithm implementations.
 
 Three things it deliberately does **not** do:
 
