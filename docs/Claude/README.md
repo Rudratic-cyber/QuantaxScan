@@ -42,6 +42,7 @@ its three variables in the codebase. See [01-strategy.md](01-strategy.md).
 | 10 | [Editions](10-editions.md) | Community vs Enterprise, all 46 features tiered, licensing, publication gates |
 | 12 | [Test suite & CI](12-test-suite.md) | API feature suite, Playwright UI journeys, GitHub Actions pipeline, coverage gaps |
 | 15 | [RBAC design](15-rbac-design.md) | **Design, not built** — divisions, four roles, and why sub-org scoping goes in the policies |
+| 17 | [Discovery & credentialed collection](17-discovery-design.md) | **Design, not built** — enumerating the estate instead of being handed it, converting the submission collectors to pull, and why "examined" must never read as "complete" |
 | 13 | [Auth & tenancy](13-auth-and-tenancy.md) | Organisation scoping and row-level security (built); sign-in, providers, sessions (specified) |
 
 ### Engineering records
