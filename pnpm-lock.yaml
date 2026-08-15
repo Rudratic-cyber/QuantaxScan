@@ -214,6 +214,9 @@ importers:
       pino-http:
         specifier: ^10
         version: 10.5.0
+      playwright-core:
+        specifier: ^1.62.1
+        version: 1.62.1
       zod:
         specifier: 'catalog:'
         version: 3.25.76

@@ -25,6 +25,7 @@
     "express-session": "^1.19.0",
     "pino": "^9",
     "pino-http": "^10",
+    "playwright-core": "^1.62.1",
     "zod": "catalog:"
   },
   "devDependencies": {

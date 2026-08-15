@@ -73,6 +73,15 @@ export interface EnrichedInventoryAsset {
   ownerId: number | null;
   dataClassification: DataClassification | null;
   secrecyLifetimeYears: number | null;
+  /**
+   * Effort somebody recorded against *this* asset, in hours. Null means nobody
+   * did — no collector writes it today — and it is deliberately not defaulted,
+   * for the same reason `keySize` is not (G-05): a report has to be able to say
+   * that a number was derived from the algorithm's class average rather than
+   * estimated for this asset. `mosca.y` is this value converted to years, so a
+   * null here and a `y` of 0 are the same fact seen twice.
+   */
+  effortHours: number | null;
   /** Where the X used below actually came from — never re-derived by the client. */
   classificationSource: "asset" | "project" | "default";
   latestConfidence: number | null;
@@ -162,6 +171,7 @@ export function summariseInventoryAssets(input: {
       ownerId: row.ownerId,
       dataClassification: row.dataClassification,
       secrecyLifetimeYears: row.secrecyLifetimeYears,
+      effortHours: row.effortHours,
       classificationSource: lifetime.classificationSource,
       latestConfidence: latestByAsset.get(row.id)?.confidence ?? null,
       compliance,

@@ -335,6 +335,20 @@ describe("route manifest — a new route cannot ship without being considered", 
     "GET /scans/:id/findings": "org-scoped",
     "POST /scans/multi": "org-scoped",
     "POST /reports": "org-scoped",
+    // E1/E2 — the board pack and the regulator submission. Each reads every
+    // asset, project, collection run and observation in the organisation with
+    // no where clause of its own, exactly like the CBOM export, and is at
+    // least as sensitive: the regulator submission is the CBOM plus per-asset
+    // provenance and per-obligation citations. Deliberately **not** on the
+    // public allowlist, and deliberately not mounted under `/reports/...`,
+    // where `PUBLIC_ROUTES`' share-link regex `/^\/reports\/[^/]+$/` would
+    // have matched them and served them anonymously.
+    "GET /report-packs/board": "org-scoped",
+    "GET /report-packs/board.html": "org-scoped",
+    "GET /report-packs/board.pdf": "org-scoped",
+    "GET /report-packs/regulator": "org-scoped",
+    "GET /report-packs/regulator.html": "org-scoped",
+    "GET /report-packs/regulator.pdf": "org-scoped",
     "GET /stats": "org-scoped",
     // A CBOM is the whole inventory in one response — the single worst thing
     // to leak across a tenant boundary, and the reason it is not public.

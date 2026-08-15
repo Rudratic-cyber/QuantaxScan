@@ -97,6 +97,9 @@ async function buildAll() {
       "zeromq",
       "zeromq-prebuilt",
       "playwright",
+      // E1/E2 render their PDF through it, via a dynamic import so a
+      // deployment with no Chromium still starts. See src/lib/pdf.ts.
+      "playwright-core",
       "puppeteer",
       "puppeteer-core",
       "electron",
