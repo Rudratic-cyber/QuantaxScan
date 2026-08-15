@@ -109,7 +109,15 @@ export const COLLECTOR_SURFACES = [
   // network-flow routes is the number that says how much of the surface is in
   // that state.
   { id: "network-flow", name: "Network conversations", status: "live", surface: "network-flow" },
-  { id: "endpoint", name: "Endpoint & host fleet", status: "planned", surface: "endpoint" },
+  // `live` since EP's ingest path landed — `POST /projects/:id/endpoint`. Same
+  // bar as every entry above: what earns the status is a route that persists
+  // what it reads, not a collector existing. Worth naming what `live` does not
+  // claim here, because this surface invites the misreading more than most: no
+  // agent ships with this product yet, so the surface counts as examined for
+  // the hosts whose reports a caller sent, exactly as `dependency` counts as
+  // examined for the lockfiles a caller sent. The agent is the follow-up; the
+  // contract and the ingest it reports to are what exist.
+  { id: "endpoint", name: "Endpoint & host fleet", status: "live", surface: "endpoint" },
   { id: "identity", name: "Identity & authentication", status: "planned", surface: "identity" },
 ] as const satisfies readonly CollectorSurfaceEntry[];
 

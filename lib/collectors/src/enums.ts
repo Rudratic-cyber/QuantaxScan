@@ -141,6 +141,15 @@ export type AssetStatus = (typeof ASSET_STATUS_VALUES)[number];
  * reported before it was canonicalised) fit none of the profiles above. Adding
  * a value here needs no migration — `assets.location_detail` is `jsonb`, with
  * the shape validated at the application boundary rather than by a `CHECK`.
+ *
+ * `endpoint` is EP's profile for a fact read off a Windows or Linux host. It is
+ * not `config` even though a Schannel registry value and an `sshd_config` line
+ * are both declarations: `config`'s identity is a file at a path, while this
+ * one's is a *machine* — an OS-install identity that survives a rename and a
+ * reboot, and the OS build, providers and store the fact was read from, none of
+ * which `config` has anywhere to put. Two hosts with identical policy are two
+ * genuinely different findings, and folding them into `config` would make them
+ * one.
  */
 /**
  * D8 — how a *target* was discovered. Not a `Surface` and not a
@@ -204,6 +213,7 @@ export const LOCATION_DETAIL_KIND_VALUES = [
   // cannot provide. See `NetworkFlowLocationDetailSchema` in
   // `location-detail.ts`.
   "network-flow",
+  "endpoint",
 ] as const;
 
 export type LocationDetailKind = (typeof LOCATION_DETAIL_KIND_VALUES)[number];

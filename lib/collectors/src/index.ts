@@ -21,3 +21,5 @@ export * from "./data-at-rest-collector";
 export * from "./discovery";
 export * from "./cipher-suite";
 export * from "./network-flow-collector";
+export * from "./endpoint-report";
+export * from "./endpoint-collector";

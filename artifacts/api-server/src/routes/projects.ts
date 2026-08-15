@@ -23,6 +23,7 @@ import {
   SubmitProjectKmsBody,
   SubmitProjectDataAtRestBody,
   SubmitProjectNetworkFlowsBody,
+  SubmitProjectEndpointBody,
 } from "@workspace/api-zod";
 import {
   lockfilesIn,
@@ -38,6 +39,9 @@ import {
   type LocationDetail,
   type NetworkFlowConversation,
   type NetworkFlowRecordInput,
+  collectEndpointObservations,
+  type EndpointHostReport,
+  type EndpointHostResult,
 } from "@workspace/collectors";
 import { scanCode, computeScanResult } from "../lib/scanner";
 import { summariseProjectCoverage } from "../lib/coverage";
@@ -51,6 +55,7 @@ import {
   ingestKmsObservations,
   ingestDataAtRestObservations,
   ingestNetworkFlowObservations,
+  ingestEndpointObservations,
   type CertificateSummary,
 } from "../lib/asset-ingest";
 import { evaluateCertificateExpiryAgainstQDay } from "../lib/certificate-risk";
@@ -1932,6 +1937,264 @@ router.get("/projects/:id/network-flows", async (req, res): Promise<void> => {
     flowsWithUndeterminedCryptography: conversations.filter((c) => c.cryptoState === "undetermined").length,
     conversations,
     evidenceCaveat: NETWORK_FLOW_EVIDENCE_CAVEAT,
+  });
+});
+
+/**
+ * EP — `POST /api/projects/:id/endpoint` and `GET /api/projects/:id/endpoint`.
+ * docs/Claude/03-features.md §EP: "Windows and Linux host fleet".
+ *
+ * Structurally the data-at-rest pair: org-scoped, parent confirmed inside the
+ * scope (a foreign key is not subject to RLS, and `assets` has none to
+ * `projects` at all — the association is the `project:<id>:` location prefix
+ * this route writes), a run recorded only when something was genuinely
+ * examined, and a second route for the persisted read because
+ * `GET /inventory/assets` returns no `locationDetail`.
+ *
+ * **What this route is not: a host agent.** It is the contract one reports
+ * against. Shipping a binary that runs on a customer's domain controller,
+ * reads their machine certificate stores and their Schannel policy and then
+ * authenticates outbound is a packaging and security-review problem several
+ * times the size of a collector, and it cannot authenticate at all until
+ * credential handling (F4) exists. Building the format and the ingest first
+ * means the agent has a defined thing to send, and that the format is settled
+ * before anything is deployed against it. B5 made the same call for key stores
+ * and for the same reason.
+ *
+ * **The "examined nothing" gate is on identifiable hosts, not observations**,
+ * which puts it with B6 rather than B2/B3/B4. A hardened Windows server whose
+ * machine store is empty and whose suite list holds nothing this product
+ * catalogues *was examined*, and a recorded run with zero observations is the
+ * honest answer — refusing one would tell a CISO their server fleet had never
+ * been looked at. Only a submission where every host was refused examined
+ * nothing. `ingestEndpointObservations` enforces the same rule so it does not
+ * depend on this route remembering it.
+ */
+
+/** Mirrors the spec's `maxItems`; both exist because a client generated from the spec should refuse before the server has to. */
+const MAX_ENDPOINT_HOSTS_PER_SUBMISSION = 500;
+
+const ENDPOINT_EVIDENCE_CAVEAT =
+  "This reads a report a host agent submitted; no agent ships with this product yet and nothing here connects to a " +
+  "host. An enabled cipher suite is a permitted algorithm, not a negotiated one — a Windows suite list is an upper " +
+  "bound on what the host would accept, and most of it is never selected (see the TLS route for what was actually " +
+  "agreed on the wire). A suite the host's policy disables is not reported at all, and every such suppression is " +
+  "returned so it can be audited. Four deliberate silences: no protocol version and no loaded cryptographic provider " +
+  "becomes an asset, because a protocol has no entry in the algorithm register and a provider is a capability rather " +
+  "than a key; the OS build is carried so a reader knows what the defaults would have been and is never used to infer " +
+  "one; a certificate is read as its store renders it rather than parsed, so it carries less weight than a submitted " +
+  "PEM; and a cipher-suite or key-algorithm token with no canonical name — including every post-quantum one — " +
+  "produces nothing rather than a guess.";
+
+router.post("/projects/:id/endpoint", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const body = SubmitProjectEndpointBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+  const hosts: EndpointHostReport[] = body.data.hosts;
+
+  if (hosts.length > MAX_ENDPOINT_HOSTS_PER_SUBMISSION) {
+    res.status(400).json({
+      error: `Too many hosts in one submission (${hosts.length} > ${MAX_ENDPOINT_HOSTS_PER_SUBMISSION}). Split the request rather than truncating it.`,
+    });
+    return;
+  }
+
+  // Which hosts are ingestable at all. Computed before the scope is opened, the
+  // same reason `lockfilesIn` and `protocolConfigsIn` are: it decides whether
+  // there is anything to write, and `@workspace/collectors` is pure.
+  const resolved = collectEndpointObservations(repo, hosts);
+  const ingestable = resolved.filter((host) => host.skipped === undefined);
+
+  const ctx = orgContextFor(req);
+  const outcome = await withOrg(ctx, async (tx) => {
+    const [parent] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!parent) return null;
+
+    // No identifiable host means we examined nothing. Note what this branch is
+    // NOT: a host that was read and declares nothing reportable falls through
+    // to the ingest, records a run and reports zero observations, because "we
+    // read your domain controller and it configures nothing we can report" is a
+    // true and useful answer. Collapsing the two would make the coverage meter
+    // either overstate or understate what was looked at.
+    if (ingestable.length === 0) return { kind: "no-hosts" as const };
+
+    return {
+      kind: "ingested" as const,
+      result: await ingestEndpointObservations(tx, { repo, hosts, organizationId: ctx.organizationId }),
+    };
+  });
+
+  if (outcome === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  const hostResults = outcome.kind === "ingested" ? outcome.result.hosts : resolved;
+  const response = {
+    projectId: id,
+    hostsSubmitted: hosts.length,
+    hostsIngested: ingestable.length,
+    collectionRunId: outcome.kind === "ingested" ? outcome.result.collectionRunId : null,
+    assetsCreated: outcome.kind === "ingested" ? outcome.result.assetsCreated : 0,
+    assetsUpdated: outcome.kind === "ingested" ? outcome.result.assetsUpdated : 0,
+    observationsCreated: outcome.kind === "ingested" ? outcome.result.observationsCreated : 0,
+    assetsMarkedGone: outcome.kind === "ingested" ? outcome.result.assetsMarkedGone : 0,
+    hosts: hostResults.map(toEndpointHostResponse),
+    evidenceCaveat: ENDPOINT_EVIDENCE_CAVEAT,
+  };
+
+  if (outcome.kind === "ingested") {
+    logger.info(
+      {
+        projectId: id,
+        hostsSubmitted: hosts.length,
+        hostsIngested: ingestable.length,
+        observations: outcome.result.observationsCreated,
+        route: "POST /projects/:id/endpoint",
+      },
+      "endpoint host collection complete",
+    );
+  }
+
+  res.json(response);
+});
+
+/**
+ * One submitted host's outcome, including the refused ones.
+ *
+ * `suppressedSuites`, `undecodedSuites` and `unrecognisedDisabledAlgorithms`
+ * are all on the response rather than kept in a log, and the third is the one
+ * that matters most: it is the only input whose misreading risks a false
+ * positive rather than an omission, so a caller has to be told this collector
+ * could not act on it.
+ */
+function toEndpointHostResponse(host: EndpointHostResult) {
+  return {
+    machineId: host.machineId,
+    hostname: host.hostname,
+    skipped: host.skipped ?? null,
+    observationsCreated: host.observations.length,
+    certificatesRead: host.certificatesRead,
+    cipherSuiteDeclarations: host.tlsPolicy?.declarations.length ?? 0,
+    suppressedSuites: host.tlsPolicy?.suppressedSuites ?? [],
+    undecodedSuites: host.tlsPolicy?.undecodedSuites ?? [],
+    unrecognisedDisabledAlgorithms: host.tlsPolicy?.unrecognisedDisabledAlgorithms ?? [],
+    enabledProtocols: host.tlsPolicy?.enabledProtocols ?? [],
+    disabledProtocols: host.tlsPolicy?.disabledProtocols ?? [],
+    undeterminedProtocols: host.tlsPolicy?.undeterminedProtocols ?? [],
+  };
+}
+
+router.get("/projects/:id/endpoint", async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(rawId, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+
+  const found = await withOrg(orgContextFor(req), async (tx) => {
+    const [project] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!project) return null;
+
+    return tx
+      .select({
+        id: assetsTable.id,
+        algorithm: assetsTable.algorithm,
+        keySize: assetsTable.keySize,
+        locationDetail: assetsTable.locationDetail,
+        status: assetsTable.status,
+        firstSeen: assetsTable.firstSeen,
+        lastSeen: assetsTable.lastSeen,
+      })
+      .from(assetsTable)
+      .where(and(eq(assetsTable.surface, "endpoint"), like(assetsTable.location, `${repo}:%`)))
+      .orderBy(assetsTable.location, assetsTable.id);
+  });
+
+  if (found === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  type EndpointDetail = Extract<LocationDetail, { kind: "endpoint" }>;
+  interface HostGroup {
+    machineId: string;
+    detail: EndpointDetail["endpoint"];
+    lastSeen: Date;
+    components: Array<(typeof found)[number] & { detail: EndpointDetail["endpoint"] }>;
+  }
+
+  // Grouped back into hosts, because a host is the unit an administrator acts
+  // on: "what does DC-01 trust" is one question even though it is answered by a
+  // store's certificates and a registry's suite list.
+  const byMachine = new Map<string, HostGroup>();
+  const groups: HostGroup[] = [];
+
+  for (const asset of found) {
+    const locationDetail = asset.locationDetail;
+    // Defensive, not expected: every row on this surface was written by
+    // `ingestEndpointObservations`, which always sets this. Skipping rather than
+    // throwing keeps one malformed historical row from taking the whole fleet
+    // read down — the same call `GET /projects/:id/data-at-rest` makes.
+    if (locationDetail?.kind !== "endpoint") {
+      logger.warn({ assetId: asset.id }, "endpoint asset has no endpoint locationDetail — skipped");
+      continue;
+    }
+    const detail = locationDetail.endpoint;
+    let group = byMachine.get(detail.machineId);
+    if (group === undefined) {
+      group = { machineId: detail.machineId, detail, lastSeen: asset.lastSeen, components: [] };
+      byMachine.set(detail.machineId, group);
+      groups.push(group);
+    }
+    // The host block on the most recently observed asset wins: a rename, an OS
+    // patch or a provider being loaded are all real changes to the same
+    // machine, and the newest report is the current state of it.
+    if (asset.lastSeen > group.lastSeen) {
+      group.lastSeen = asset.lastSeen;
+      group.detail = detail;
+    }
+    group.components.push({ ...asset, detail });
+  }
+
+  res.json({
+    projectId: id,
+    generatedAt: new Date().toISOString(),
+    hosts: groups.map((group) => ({
+      machineId: group.machineId,
+      machineIdSource: group.detail.machineIdSource ?? null,
+      hostname: group.detail.hostname ?? null,
+      os: group.detail.os ?? null,
+      tlsPolicy: group.detail.tlsPolicy ?? null,
+      providers: group.detail.providers ?? [],
+      lastSeen: group.lastSeen.toISOString(),
+      components: group.components.map((asset) => ({
+        component: asset.detail.component,
+        observedToken: asset.detail.observedToken,
+        algorithm: asset.algorithm,
+        keySize: asset.keySize,
+        strength: asset.detail.strength,
+        status: asset.status,
+        firstSeen: asset.firstSeen.toISOString(),
+        lastSeen: asset.lastSeen.toISOString(),
+        certificate: asset.detail.certificate ?? null,
+      })),
+    })),
+    evidenceCaveat: ENDPOINT_EVIDENCE_CAVEAT,
   });
 });
 

@@ -2813,6 +2813,273 @@ export interface ProjectNetworkFlows {
   evidenceCaveat: string;
 }
 
+/**
+ * One certificate in one of the host's machine stores, as the *store* renders it — not the DER. A Windows machine store holds hundreds of trusted roots, so shipping every certificate's bytes would send megabytes per host per run; what `Get-ChildItem Cert:\LocalMachine\My` already gives you is these fields. The confidence is priced for that: 0.8 here against 0.9 for a certificate `POST /projects/{id}/certificates` actually parsed.
+ */
+export interface EndpointCertificateReport {
+  /** The store's stable handle for this certificate (Windows' SHA-1 `Thumbprint`). Part of the asset identity; read as a handle, never as a claim that SHA-1 is in use. */
+  thumbprint: string;
+  /** The store's own string — `RSA`, `ECC`, `1.2.840.113549.1.1.1`, `id-ecPublicKey`, `ED25519`. A string this collector does not carry produces **no observation at all** rather than a guess, which is how a post-quantum certificate stays absent instead of being reported as something classical. */
+  publicKeyAlgorithm?: string;
+  /** Bits, as the store states them. Omit when the store did not: `ECC` names no curve, and a defaulted 256 would be a fabricated measurement (G-05). Only Ed25519/Ed448, whose identifiers fix a size, get one without this field. */
+  keySize?: number;
+  subject?: string;
+  issuer?: string;
+  serialNumber?: string;
+  notBefore?: string;
+  notAfter?: string;
+  /** Omitting it means the agent did not report it, which is not the same claim as `false`. Evidence only. */
+  hasPrivateKey?: boolean;
+}
+
+export type SubmitProjectEndpointBodyHostsItemMachineIdSource =
+  (typeof SubmitProjectEndpointBodyHostsItemMachineIdSource)[keyof typeof SubmitProjectEndpointBodyHostsItemMachineIdSource];
+
+export const SubmitProjectEndpointBodyHostsItemMachineIdSource = {
+  "windows-machine-guid": "windows-machine-guid",
+  "linux-machine-id": "linux-machine-id",
+  other: "other",
+} as const;
+
+export type SubmitProjectEndpointBodyHostsItemOsFamily =
+  (typeof SubmitProjectEndpointBodyHostsItemOsFamily)[keyof typeof SubmitProjectEndpointBodyHostsItemOsFamily];
+
+export const SubmitProjectEndpointBodyHostsItemOsFamily = {
+  windows: "windows",
+  linux: "linux",
+  other: "other",
+} as const;
+
+/**
+ * Carried so a reader knows what the OS defaults *would* have been, and for no other purpose. Nothing infers a setting from it: if the report does not state a setting, the setting is undetermined.
+ */
+export type SubmitProjectEndpointBodyHostsItemOs = {
+  family: SubmitProjectEndpointBodyHostsItemOsFamily;
+  name?: string;
+  version?: string;
+  build?: string;
+};
+
+export type SubmitProjectEndpointBodyHostsItemCertificateStoresItem = {
+  /** e.g. `LocalMachine\My`, `LocalMachine\Root`, `/etc/ssl/certs`. Part of the asset identity — the same certificate in the personal store and in the trust anchors is two different facts about the host. */
+  store: string;
+  certificates: EndpointCertificateReport[];
+};
+
+export type SubmitProjectEndpointBodyHostsItemTlsPolicyProvider =
+  (typeof SubmitProjectEndpointBodyHostsItemTlsPolicyProvider)[keyof typeof SubmitProjectEndpointBodyHostsItemTlsPolicyProvider];
+
+export const SubmitProjectEndpointBodyHostsItemTlsPolicyProvider = {
+  schannel: "schannel",
+  openssl: "openssl",
+  gnutls: "gnutls",
+  other: "other",
+} as const;
+
+export type SubmitProjectEndpointBodyHostsItemTlsPolicyProtocolsItem = {
+  name: string;
+  /** `Server` / `Client` where the policy distinguishes them, as Schannel does. */
+  role?: string;
+  /** Tri-state, and omitting it is the common case: a Schannel `Enabled` REG_DWORD frequently does not exist, and the build default then applies — which this product does not claim to know. Such an entry is reported as `undeterminedProtocols`, never as on or off. */
+  enabled?: boolean;
+};
+
+export type SubmitProjectEndpointBodyHostsItemTlsPolicyCipherSuitesItem = {
+  /** IANA (`TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384`) or OpenSSL (`ECDHE-RSA-AES256-GCM-SHA384`) spelling; both are read. */
+  name: string;
+  /** Required, unlike a protocol's. Schannel's suite order, OpenSSL's `CipherString` and a GnuTLS priority string are all lists of what is *on* — membership is enablement, so an agent transcribing one would have nothing to put in an optional field. */
+  enabled: boolean;
+};
+
+export type SubmitProjectEndpointBodyHostsItemTlsPolicy = {
+  provider: SubmitProjectEndpointBodyHostsItemTlsPolicyProvider;
+  /** No protocol version becomes an asset — `algorithms.json` catalogues algorithms and inventing a `TLS 1.0` entry would put that vocabulary in two places. The posture is carried as host context instead. */
+  protocols?: SubmitProjectEndpointBodyHostsItemTlsPolicyProtocolsItem[];
+  /** Absent = the suite list was not read, which leaves previously recorded suites untouched. */
+  cipherSuites?: SubmitProjectEndpointBodyHostsItemTlsPolicyCipherSuitesItem[];
+  /** Algorithms switched off independently of the suite list — Schannel `Ciphers`/`Hashes`/`KeyExchangeAlgorithms` subkeys with `Enabled = 0`, spelled exactly as the registry does (`AES 128/128`, `Triple DES 168`, `SHA`). Any suite that needs one is suppressed entirely. The match is on (algorithm, size): disabling `AES 128/128` does not silence an AES-256 suite. */
+  disabledAlgorithms?: string[];
+};
+
+export type SubmitProjectEndpointBodyHostsItemProvidersItem = {
+  name: string;
+  kind?: string;
+  loaded?: boolean;
+  version?: string;
+};
+
+export type SubmitProjectEndpointBodyHostsItem = {
+  /**
+   * The identifier the OS mints at install — Windows' `MachineGuid`, Linux' `/etc/machine-id`. Survives a rename, a reboot and a re-address; changes on a re-image. There is no hostname fallback, and a placeholder or duplicated value is refused rather than merged — see the route description.
+   * @minLength 1
+   */
+  machineId: string;
+  machineIdSource?: SubmitProjectEndpointBodyHostsItemMachineIdSource;
+  /** Display only. Deliberately not identity — hostnames get changed and, worse, reused. */
+  hostname?: string;
+  /** Carried so a reader knows what the OS defaults *would* have been, and for no other purpose. Nothing infers a setting from it: if the report does not state a setting, the setting is undetermined. */
+  os?: SubmitProjectEndpointBodyHostsItemOs;
+  collectedAt?: string;
+  /** Absent = the stores were not read. Present-and-empty = they were read and hold nothing, which correctly retires what used to be there. */
+  certificateStores?: SubmitProjectEndpointBodyHostsItemCertificateStoresItem[];
+  tlsPolicy?: SubmitProjectEndpointBodyHostsItemTlsPolicy;
+  /** Loaded CNG KSPs, CAPI CSPs, PKCS#11 modules, OpenSSL providers. Recorded and echoed, but **no observation is produced from one**: a loaded provider is a capability, not a key, and turning it into an algorithm asset would put a finding on every Windows machine ever built. */
+  providers?: SubmitProjectEndpointBodyHostsItemProvidersItem[];
+};
+
+export interface SubmitProjectEndpointBody {
+  /**
+   * One entry per host. Every section within a host is optional; absent means "not collected" and leaves that slot's prior assets alone.
+   * @maxItems 500
+   */
+  hosts: SubmitProjectEndpointBodyHostsItem[];
+}
+
+/**
+ * Why this host was not ingested. `placeholder-machine-id` — a cleared `MachineGuid` or an all-zero machine-id, which is the absence of an identity wearing the shape of one. `duplicate-machine-id` — two hosts in this submission reported the same identity, so both were refused rather than merged into one machine's asset set. `nothing-collected` — the host reported no section at all. Null when the host was ingested.
+ */
+export type EndpointHostResultSkipped =
+  | (typeof EndpointHostResultSkipped)[keyof typeof EndpointHostResultSkipped]
+  | null;
+
+export const EndpointHostResultSkipped = {
+  "placeholder-machine-id": "placeholder-machine-id",
+  "duplicate-machine-id": "duplicate-machine-id",
+  "nothing-collected": "nothing-collected",
+} as const;
+
+export type EndpointHostResultSuppressedSuitesItem = {
+  suite: string;
+  disabledBy: string;
+};
+
+/**
+ * What one submitted host produced — including the hosts that produced nothing, which the caller has to be able to see by name.
+ */
+export interface EndpointHostResult {
+  machineId: string;
+  hostname: string | null;
+  /** Why this host was not ingested. `placeholder-machine-id` — a cleared `MachineGuid` or an all-zero machine-id, which is the absence of an identity wearing the shape of one. `duplicate-machine-id` — two hosts in this submission reported the same identity, so both were refused rather than merged into one machine's asset set. `nothing-collected` — the host reported no section at all. Null when the host was ingested. */
+  skipped: EndpointHostResultSkipped;
+  observationsCreated: number;
+  /** Certificates seen in this host's stores, including the ones whose key algorithm produced no observation. */
+  certificatesRead: number;
+  /** Algorithms this host's enabled, un-suppressed cipher suites state. One suite normally states three. */
+  cipherSuiteDeclarations: number;
+  /** Suites the policy enables but a `disabledAlgorithms` entry makes unnegotiable, with the entry responsible. Reported rather than merely applied — a suppression nobody can see is indistinguishable from a collector that missed the suite. */
+  suppressedSuites: EndpointHostResultSuppressedSuitesItem[];
+  /** Enabled suites that named no algorithm this product catalogues — ChaCha20, Camellia, a post-quantum suite. A known silence, reported so it is not mistaken for a clean result. */
+  undecodedSuites: string[];
+  /** `disabledAlgorithms` entries this collector does not recognise and therefore could not act on. The one input whose misreading risks a false positive rather than an omission, so it is surfaced instead of swallowed. */
+  unrecognisedDisabledAlgorithms: string[];
+  enabledProtocols: string[];
+  disabledProtocols: string[];
+  /** Protocols the policy names without stating an `enabled` value — the OS default applies and this product does not claim to know it. */
+  undeterminedProtocols: string[];
+}
+
+export interface EndpointIngestSummary {
+  projectId: number;
+  hostsSubmitted: number;
+  /** Hosts with a usable identity and something collected. Zero means no collection run was recorded and the endpoint surface is still un-examined for this project — a host that was read and declares nothing reportable still counts here, because it was examined. */
+  hostsIngested: number;
+  /** Null when no run was recorded (`hostsIngested` is 0). */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Facts previously read from a slot this submission re-read and no longer present in it — a certificate removed from a store, a suite pruned from the registry. Scoped to exactly the (host, section) slots this submission spoke about, so a host or a section it said nothing about is untouched. */
+  assetsMarkedGone: number;
+  hosts: EndpointHostResult[];
+  /** Stated on every response: this reads a report a host agent submitted, no agent ships with the product yet, an enabled suite is not a negotiated one, a suite the host disabled is not reported, no protocol version or loaded provider becomes an asset, and an unrecognised token contributes nothing rather than a guess. */
+  evidenceCaveat: string;
+}
+
+export type ProjectEndpointComponentStrength =
+  (typeof ProjectEndpointComponentStrength)[keyof typeof ProjectEndpointComponentStrength];
+
+export const ProjectEndpointComponentStrength = {
+  permitted: "permitted",
+  materialised: "materialised",
+} as const;
+
+/**
+ * Present when the component is a certificate store.
+ */
+export type ProjectEndpointComponentCertificate = {
+  store: string;
+  thumbprint: string;
+  /** The store's own string, kept beside the canonical algorithm derived from it so the canonicalisation is auditable. */
+  reportedAlgorithm: string;
+  subject?: string | null;
+  issuer?: string | null;
+  serialNumber?: string | null;
+  notBefore?: string | null;
+  notAfter?: string | null;
+  hasPrivateKey?: boolean | null;
+} | null;
+
+/**
+ * One crypto fact read off a host, as it is stored.
+ */
+export interface ProjectEndpointComponent {
+  /** The slot on the host — `certificate-store:LocalMachine\My`, `tls-cipher-suites`. */
+  component: string;
+  /** The suite name or the store thumbprint verbatim, as the host wrote it. Part of the asset identity. */
+  observedToken: string;
+  algorithm: string;
+  /** Null means the evidence stated none — never a defaulted value (G-05). */
+  keySize: number | null;
+  strength: ProjectEndpointComponentStrength;
+  /** `active`, `gone`, `remediated` or `waived`. A `gone` entry is a fact that was read and is no longer present. */
+  status: string;
+  firstSeen: string;
+  lastSeen: string;
+  /** Present when the component is a certificate store. */
+  certificate: ProjectEndpointComponentCertificate;
+}
+
+export type ProjectEndpointHostOs = {
+  family: string;
+  name?: string | null;
+  version?: string | null;
+  build?: string | null;
+} | null;
+
+export type ProjectEndpointHostTlsPolicy = {
+  provider: string;
+  enabledProtocols: string[];
+  disabledProtocols: string[];
+  undeterminedProtocols: string[];
+} | null;
+
+export type ProjectEndpointHostProvidersItem = {
+  name: string;
+  kind?: string | null;
+  loaded?: boolean | null;
+  version?: string | null;
+};
+
+export interface ProjectEndpointHost {
+  machineId: string;
+  machineIdSource: string | null;
+  /** As of the most recent report. Not identity — a rename does not orphan the host's assets. */
+  hostname: string | null;
+  os: ProjectEndpointHostOs;
+  tlsPolicy: ProjectEndpointHostTlsPolicy;
+  /** Loaded cryptographic providers. Context — no provider produced any of the components below. */
+  providers: ProjectEndpointHostProvidersItem[];
+  lastSeen: string;
+  components: ProjectEndpointComponent[];
+}
+
+export interface ProjectEndpointFleet {
+  projectId: number;
+  generatedAt: string;
+  hosts: ProjectEndpointHost[];
+  evidenceCaveat: string;
+}
+
 export type RateLimitedResponse = {
   error: string;
 };

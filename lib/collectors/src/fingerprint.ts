@@ -177,6 +177,45 @@ import type { RawObservation } from "./types";
  * for the same reason, as `data-at-rest`: a service that moves off RSA reads as
  * the RSA asset going `gone` at that slot and a new one appearing, which is
  * what a migration is.
+ *
+ * **The `endpoint` variant (EP)** is `repo + machineId + component + algorithm
+ * + token`. The architecture table prescribes no shape for this surface either,
+ * and the first component is the one worth arguing about.
+ *
+ *  - **`machineId`, and deliberately not `hostname`.** A host is a long-lived
+ *    thing that gets renamed, re-addressed, rebuilt and re-imaged, and the
+ *    identity has to survive the first three while changing on the last. A
+ *    hostname survives none of them and, worse, is *reused*: a decommissioned
+ *    `web-01` and its replacement would be one asset with one history, so the
+ *    replacement's certificates would silently overwrite the retired machine's
+ *    and the estate would never show the change. An IP is worse and faster. A
+ *    hardware serial or MAC is the opposite failure — it survives the re-image
+ *    that genuinely does make it a different machine. What has the right
+ *    lifetime is the identifier the OS mints at install and never changes:
+ *    Windows' `MachineGuid`, Linux' `/etc/machine-id`. See
+ *    `endpoint-report.ts`'s `resolveHostIdentity` for the clone-collision case
+ *    and what is rejected.
+ *  - **`component`**, the slot on the host — `certificate-store:LocalMachine\My`,
+ *    `tls-cipher-suites`. It is `config`'s `directive` argument applied to a
+ *    machine: the same certificate sitting in the personal store and in the
+ *    trust anchors is two different facts about the host, and remediating one
+ *    does not remediate the other.
+ *  - **`token` alongside `algorithm`**, for exactly the reason B6 carries one:
+ *    without it a suite list collapses to a single `AES` asset whose `keySize`
+ *    is whichever suite the deduplication saw last, so a machine offering both
+ *    AES-128 and AES-256 reports one of them at random. The token is the suite
+ *    name or the certificate's store thumbprint — never a digest of the report,
+ *    so a re-run that changes nothing changes no fingerprint.
+ *
+ * Absent from the identity, and each for a reason: `hostname`, the OS build,
+ * the loaded providers and the enabled/disabled protocol lists (all of which
+ * change on the same machine — they are context, carried on `locationDetail`),
+ * and `keySize` (a rekey is one asset re-measured, the same anti-requirement as
+ * every variant above).
+ *
+ * `repo` is present for the same reason as everywhere else: two projects
+ * describing the same server must not collide into one row whose `location` can
+ * name only one of them.
  */
 export type FingerprintInput =
   | { surface: "source"; repo: string; path: string; algorithm: string; symbol: string }
@@ -196,6 +235,7 @@ export type FingerprintInput =
       algorithm: string;
     }
   | { surface: "ot"; fleetId: string; algorithm: string }
+  | { surface: "endpoint"; repo: string; machineId: string; component: string; algorithm: string; token: string }
   | {
       surface: "binary";
       targetOrRepository: string;
@@ -240,6 +280,8 @@ function orderedFields(input: FingerprintInput): string[] {
       ];
     case "ot":
       return [input.surface, input.fleetId, input.algorithm];
+    case "endpoint":
+      return [input.surface, input.repo, input.machineId, input.component, input.algorithm, input.token];
     case "binary":
       return [
         input.surface,
@@ -413,6 +455,20 @@ export function fingerprintForObservation(
         surface: "ot",
         fleetId: detail.ot.fleetId,
         algorithm: observation.algorithm,
+      };
+    case "endpoint":
+      // Like `kms` and unlike `network`, this discriminator identifies exactly
+      // one surface, so no disambiguation is needed. `machineId` is the
+      // machine, `component` the slot on it and `observedToken` the suite name
+      // or store thumbprint — see the `endpoint` variant's comment above for
+      // why the hostname is deliberately not any of them.
+      return {
+        surface: "endpoint",
+        repo: context.repo,
+        machineId: detail.endpoint.machineId,
+        component: detail.endpoint.component,
+        algorithm: observation.algorithm,
+        token: detail.endpoint.observedToken,
       };
     case "network": {
       const { hostname, destinationPort } = detail.network;

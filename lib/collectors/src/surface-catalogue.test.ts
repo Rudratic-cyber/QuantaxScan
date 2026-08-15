@@ -54,17 +54,24 @@ describe("collector surface catalogue", () => {
     expect(unrecordable).toEqual([]);
   });
 
-  it("has exactly nine live collectors, the ninth being network conversations", () => {
+  it("has exactly ten live collectors, the last two being conversations and the host fleet", () => {
     // `dependency` became live when B2's ingest path landed, `tls` when B3's
     // did (`POST /projects/:id/tls`), `certificate` when B4's did
     // (`POST /projects/:id/certificates`), `kms` when B5's did
     // (`POST /projects/:id/kms`), `config` when B6's did
     // (`POST /projects/:id/protocol-config`), `data-at-rest` when B7's did
-    // (`POST /projects/:id/data-at-rest`), and `network-flow` when B11's did
-    // (`POST /projects/:id/network-flows`). A collector with nowhere to write
+    // (`POST /projects/:id/data-at-rest`), `network-flow` when B11's did
+    // (`POST /projects/:id/network-flows`), and `endpoint` when EP's did
+    // (`POST /projects/:id/endpoint`). A collector with nowhere to write
     // is not a live surface — the whole point of this list is that it is the
     // denominator of an honesty claim, so an entry earns `live` by being able
     // to record a collection run, not by existing in the repo.
+    //
+    // The last two landed as separate lanes and each shipped marking its own
+    // surface `live` and the other `planned`. Taking either side of that
+    // conflict whole demotes the other lane's surface while its own tests stay
+    // green — this assertion is the thing that catches it, which is why it
+    // names a count and not just a set.
     expect(LIVE_COLLECTOR_SURFACES.map((entry) => entry.id)).toEqual([
       "source",
       "dependency",
@@ -75,6 +82,7 @@ describe("collector surface catalogue", () => {
       "data-at-rest",
       "ot",
       "network-flow",
+      "endpoint",
     ]);
   });
 

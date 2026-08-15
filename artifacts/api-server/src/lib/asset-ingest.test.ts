@@ -7,13 +7,14 @@ import { eq, and } from "drizzle-orm";
 import { assetsTable, observationsTable, collectionRunsTable } from "@workspace/db/schema";
 import type { ScopedTx } from "@workspace/db/org-scope";
 import { createTestDb, type TestDb } from "@workspace/db/test-support";
-import type { DataAtRestStoreInput } from "@workspace/collectors";
+import type { DataAtRestStoreInput, EndpointHostReport } from "@workspace/collectors";
 import type { DataClassification } from "@workspace/db/classification";
 import {
   ingestSourceObservations,
   ingestCertificateObservations,
   ingestDataAtRestObservations,
   ingestProtocolConfigObservations,
+  ingestEndpointObservations,
 } from "./asset-ingest";
 
 const ORG_ID = 1;
@@ -776,5 +777,187 @@ describe("ingestProtocolConfigObservations — B6", () => {
         confidence: 0.6,
       },
     ]);
+  });
+});
+
+/**
+ * EP — the endpoint/host ingest. Against real migrations, the real `surface`
+ * `CHECK` (which is what proves `'endpoint'` is actually a storable value and
+ * not merely a TypeScript literal) and real RLS through pglite.
+ */
+describe("ingestEndpointObservations — EP", () => {
+  let harness: TestDb | undefined;
+  afterEach(async () => {
+    await harness?.close();
+    harness = undefined;
+  });
+
+  async function start(): Promise<void> {
+    harness = await createTestDb({ asRole: "quantaxscan_app" });
+  }
+
+  function ingest(hosts: EndpointHostReport[], repo = "project:1") {
+    return harness!.scope.withOrg(ORG, (tx) => ingestEndpointObservations(tx, { repo, hosts, organizationId: ORG_ID }));
+  }
+
+  function read<T>(fn: (tx: ScopedTx) => Promise<T>): Promise<T> {
+    return harness!.scope.withOrg(ORG, fn);
+  }
+
+  const MACHINE = "9f5a1e2c-4b6d-4f21-9c11-6a7b8c9d0e1f";
+
+  const dc01: EndpointHostReport = {
+    machineId: MACHINE,
+    machineIdSource: "windows-machine-guid",
+    hostname: "DC-01",
+    os: { family: "windows", name: "Windows Server 2022 Datacenter", build: "20348.2402" },
+    certificateStores: [
+      { store: "LocalMachine\\My", certificates: [{ thumbprint: "AA11", publicKeyAlgorithm: "RSA", keySize: 2048 }] },
+    ],
+    tlsPolicy: {
+      provider: "schannel",
+      protocols: [{ name: "TLS 1.0", role: "Server", enabled: false }],
+      cipherSuites: [{ name: "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", enabled: true }],
+    },
+    providers: [{ name: "Microsoft Platform Crypto Provider", kind: "cng-ksp", loaded: true }],
+  };
+
+  it("persists a host's certificates and enabled suites on the endpoint surface", async () => {
+    await start();
+
+    const result = await ingest([dc01]);
+    // One certificate (RSA) plus the suite's three algorithms.
+    expect(result.assetsCreated).toBe(4);
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets.every((a) => a.surface === "endpoint")).toBe(true);
+    expect(assets.every((a) => a.location.startsWith(`project:1:endpoint:${MACHINE}:`))).toBe(true);
+    expect(assets.map((a) => a.algorithm).sort()).toEqual(["AES", "ECDH/DH", "RSA", "RSA"]);
+    expect(assets.find((a) => a.algorithm === "AES")?.keySize).toBe(256);
+
+    const [run] = await read((tx) => tx.select().from(collectionRunsTable).where(eq(collectionRunsTable.id, result.collectionRunId)));
+    expect(run.surface).toBe("endpoint");
+    expect(run.collector).toBe("endpoint-host-report");
+    expect(run.status).toBe("completed");
+
+    const obs = await read((tx) => tx.select().from(observationsTable).where(eq(observationsTable.collectionRunId, run.id)));
+    // The first collector in the product to use the modality SP 1800-38B
+    // defined for cryptography read off the host itself.
+    expect(obs.every((o) => o.discoveryModality === "endpoint_monitoring")).toBe(true);
+    expect(obs.every((o) => Number(o.confidence) < 1)).toBe(true);
+  });
+
+  it("retires a certificate removed from a store, and leaves a section the agent did not re-read alone", async () => {
+    await start();
+
+    await ingest([
+      {
+        ...dc01,
+        certificateStores: [
+          {
+            store: "LocalMachine\\My",
+            certificates: [
+              { thumbprint: "AA11", publicKeyAlgorithm: "RSA", keySize: 2048 },
+              { thumbprint: "BB22", publicKeyAlgorithm: "ECC", keySize: 384 },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    // The agent re-reads only the store, and one certificate has been removed.
+    const second = await ingest([
+      {
+        machineId: MACHINE,
+        certificateStores: [
+          { store: "LocalMachine\\My", certificates: [{ thumbprint: "AA11", publicKeyAlgorithm: "RSA", keySize: 2048 }] },
+        ],
+      },
+    ]);
+    expect(second.assetsMarkedGone).toBe(1);
+
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets.find((a) => a.algorithm === "ECDSA")?.status).toBe("gone");
+    // The suite list was NOT re-read, so its assets must be untouched. Marking
+    // them gone because a partial agent run omitted them would be a silent
+    // false remediation.
+    expect(assets.filter((a) => a.algorithm === "AES").every((a) => a.status === "active")).toBe(true);
+    expect(assets.find((a) => a.algorithm === "ECDH/DH")?.status).toBe("active");
+  });
+
+  it("retires a suite pruned from a registry that now declares nothing this product reports", async () => {
+    await start();
+
+    await ingest([
+      {
+        machineId: MACHINE,
+        tlsPolicy: { provider: "schannel", cipherSuites: [{ name: "TLS_RSA_WITH_AES_128_CBC_SHA", enabled: true }] },
+      },
+    ]);
+
+    // The administrator prunes the list to a suite naming nothing this product
+    // catalogues beyond its key exchange and signature. A scope built from
+    // observations rather than from the slot that was read would leave the old
+    // assets active forever.
+    const second = await ingest([
+      {
+        machineId: MACHINE,
+        tlsPolicy: { provider: "schannel", cipherSuites: [{ name: "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", enabled: true }] },
+      },
+    ]);
+    expect(second.observationsCreated).toBe(2);
+    // RSA, AES-128 and SHA-1 retire; ECDH/DH and ECDSA are the new suite's.
+    expect(second.assetsMarkedGone).toBe(3);
+    expect(second.collectionRunId).toBeGreaterThan(0);
+  });
+
+  it("records a run for a host that was read and declares nothing reportable", async () => {
+    await start();
+
+    // Examined and found nothing — the state `collection_runs` exists to make
+    // sayable, and the opposite of never having looked.
+    const result = await ingest([
+      {
+        machineId: MACHINE,
+        certificateStores: [{ store: "LocalMachine\\My", certificates: [] }],
+        tlsPolicy: { provider: "schannel", cipherSuites: [] },
+      },
+    ]);
+    expect(result.observationsCreated).toBe(0);
+    expect(result.collectionRunId).toBeGreaterThan(0);
+    expect(result.hosts[0].skipped).toBeUndefined();
+  });
+
+  it("refuses to record a run when no host could be identified", async () => {
+    await start();
+
+    // Examined nothing. Writing a `completed` run here would make the D3 meter
+    // report the endpoint surface as "examined, nothing found".
+    await expect(
+      ingest([
+        { machineId: "00000000-0000-0000-0000-000000000000", tlsPolicy: { provider: "schannel", cipherSuites: [] } },
+        { machineId: "CLONE", tlsPolicy: { provider: "schannel", cipherSuites: [] } },
+        { machineId: "clone", tlsPolicy: { provider: "schannel", cipherSuites: [] } },
+      ]),
+    ).rejects.toThrow(/no host it could identify/);
+
+    const runs = await read((tx) => tx.select().from(collectionRunsTable));
+    expect(runs).toHaveLength(0);
+  });
+
+  it("writes nothing for a refused host while ingesting the rest of the submission", async () => {
+    await start();
+
+    const suite = { provider: "schannel" as const, cipherSuites: [{ name: "TLS_AES_256_GCM_SHA384", enabled: true }] };
+    const result = await ingest([
+      { machineId: "CLONE", hostname: "vm-a", tlsPolicy: suite },
+      { machineId: "CLONE", hostname: "vm-b", tlsPolicy: suite },
+      { machineId: "REAL", hostname: "vm-c", tlsPolicy: suite },
+    ]);
+
+    expect(result.hosts.map((h) => h.skipped)).toEqual(["duplicate-machine-id", "duplicate-machine-id", undefined]);
+    const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
+    expect(assets).toHaveLength(1);
+    expect(assets[0].location).toBe("project:1:endpoint:REAL:tls-cipher-suites");
   });
 });
