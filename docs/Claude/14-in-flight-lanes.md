@@ -1,7 +1,8 @@
 # 14 — In-flight lanes (wave 3)
 
-**Status: six branches exist, all committed, none merged. Read this before starting new work,
-because the thing you are about to build may already be sitting on one of them.**
+**Status: six branches exist, all committed. One is merged, five are not. Read this before
+starting new work, because the thing you are about to build may already be sitting on one of
+them.**
 
 Wave 3 was fanned out on 2026-08-15 against `main` at `3a33eeb` — six agents, six branches, one
 brief. The session driving them ended while all six were still working. Every lane's work existed
@@ -17,7 +18,7 @@ pointed at it.
 
 | Branch | Snapshot | Reserved migration | What it builds |
 |---|---|---|---|
-| `feat/qx-f4-secret-handling` | `bdabf12` | `0009` | F4 — encrypted `credentials` table and the credential-reference contract; the blocker every credentialed collector waits on |
+| ~~`feat/qx-f4-secret-handling`~~ | ~~`bdabf12`~~ | `0009` | **Merged 2026-08-15 (`6edf282`)** — F4, both halves: ephemeral scan retention and the credential store |
 | `feat/qx-discovery` | `aa40122` | `0010` | CT-log host discovery + DNS corroboration into `discovered_targets`; the first thing that names a host the customer did not supply |
 | `feat/qx-network-flow` | `cb4f3a2` | `0011` | The `network-flow` surface — conversations, from flow/session records the estate already produces. No packet capture |
 | `feat/qx-m3-continuity` | `f54175a` | `0013` | D4 drift (computed, never persisted) + scheduled re-collection |
@@ -25,6 +26,30 @@ pointed at it.
 | `feat/qx-endpoint` | `6b02fb9` | none | The `endpoint` surface — host fleet certificate stores and TLS policy. No agent ships; this is the report format one would report against |
 
 `0012` was reserved and never used.
+
+## What merging one actually costs
+
+F4 went in first and was measured deliberately, because five more follow and the cost was
+unknown. It was the **cheapest possible case** — treat it as a floor, not an average:
+
+| Step | Result |
+|---|---|
+| Three-way merge | Clean. `main` had moved only by a docs commit |
+| `codegen` against the merged spec | No further diff — the lane had already done `openapi.yaml`, the manifest and the generated clients |
+| Writing the missing e2e spec | The bulk of the work |
+| `ci --quick` | Green — typecheck 19s, libs 86s, api 86s, scripts 3s, standards 2s |
+| `test:ui` | 15 passed |
+| New e2e spec | 7 passed against the real stack |
+
+Roughly half an hour, and **nothing in it was a conflict**. The five that remain are more
+expensive for reasons already visible: they conflict with each other rather than with `main` (five
+touch `asset-ingest.ts`, `openapi.yaml` and `cross-tenant.test.ts`), two flip a surface to `live`
+and so must be counted together, and `f1-authentication` needs an entire `openapi.yaml` pass
+written from scratch before it can go green at all.
+
+One thing to watch as they land: the e2e suite already outgrew the S6/S7 rate-limit budget once
+(`aa7110a`) and had to raise it. Five more specs may re-trip it, and no single-spec run can reveal
+that — only a full-suite run with no filter.
 
 ## What every one of them is missing
 
@@ -55,14 +80,17 @@ when resolving; do not renumber to "the next free number".
 
 Suggested order, by what other lanes depend on:
 
-1. **`f4-secret-handling`** — lowest reserved index, and the credential contract is what F1 and any
-   future credentialed collector build against.
-2. **`f1-authentication`** — largest outstanding defect (the spec drift), and it is the platform
-   feature the audit-logging and RBAC work needs underneath it.
-3. **`discovery`**, then **`network-flow`**, **`endpoint`** — the three coverage lanes. The last
+1. ~~**`f4-secret-handling`**~~ — done. Lowest reserved index, and the credential contract is what
+   F1 and any future credentialed collector build against.
+2. **`discovery`**, then **`network-flow`** and **`endpoint`** — the three coverage lanes. The last
    two both flip a surface to `live`, so **both** must be reflected in the live-collector count
    test; taking either side whole silently demotes the other.
-4. **`m3-continuity`** — touches the fewest shared collector files.
+3. **`m3-continuity`** — touches the fewest shared collector files.
+4. **`f1-authentication` last**, and not for its size. It is the only lane that modifies the
+   request-authentication path itself (`principal.ts`, `app.ts`, `auth.ts`) and the only one adding
+   a runtime dependency. Landing it early means every later lane's verification runs against a
+   just-changed auth path, so a red would not say whether the lane or F1 caused it. Take it against
+   a tree that is otherwise settled.
 
 ## Status drift found while writing this
 
