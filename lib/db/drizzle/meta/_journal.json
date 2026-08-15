@@ -64,6 +64,13 @@
       "when": 1786751055517,
       "tag": "0008_dusty_tempest",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786753400529,
+      "tag": "0011_old_shadow_king",
+      "breakpoints": true
     }
   ]
 }

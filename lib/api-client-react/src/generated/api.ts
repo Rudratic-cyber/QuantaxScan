@@ -48,6 +48,7 @@ import type {
   ListCommunityPostsParams,
   MultiScanBody,
   MultiScanResult,
+  NetworkFlowIngestSummary,
   OtFleet,
   PostureTimeline,
   Project,
@@ -55,6 +56,7 @@ import type {
   ProjectCoverage,
   ProjectDataAtRest,
   ProjectKmsKeys,
+  ProjectNetworkFlows,
   ProtocolConfigIngestSummary,
   RateLimitedResponse,
   ReadinessSummary,
@@ -64,6 +66,7 @@ import type {
   SubmitProjectDataAtRestBody,
   SubmitProjectDependenciesBody,
   SubmitProjectKmsBody,
+  SubmitProjectNetworkFlowsBody,
   SubmitProjectProtocolConfigBody,
   SubmitProjectTlsBody,
   TlsProbeSummary,
@@ -4231,6 +4234,197 @@ export function useGetProjectDataAtRest<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetProjectDataAtRestQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Records **conversations between endpoints** — both ends of each one — from flow and session records the caller's own infrastructure already produces: a VPC flow log, a load-balancer access log, a service-mesh telemetry export, a firewall session log.
+
+**No packet capture and no network tap.** Real-time traffic interception is an explicit twelve-month non-goal for this product; this route is the passive alternative, and it reads records that already exist rather than creating a new observation point.
+
+**Cryptography is recorded only when a record actually names a cipher suite.** Most flow-log formats carry none. Such a conversation is persisted with `cryptoState: undetermined` — which is a real inventory entry meaning "we saw this conversation and do not know what protected it", not a clean result. `flowsWithUndeterminedCryptography` in the response is how much of the project is in that state. The port is never used to infer anything: 443 is not evidence of TLS 1.3, or of TLS.
+
+**A TLS 1.3 suite name records no key exchange.** `TLS_AES_128_GCM_SHA256` names the AEAD and the hash and nothing else (RFC 8446 §1.2), so only the AES observation is recorded; the mandated (EC)DHE exchange is reported as a `key-exchange-not-named` gap rather than assumed.
+
+**The source port is discarded.** It is accepted so a raw record can be submitted unchanged, and then dropped: it changes on every connection, and keying a conversation on it would mint a new row per TCP handshake. A conversation's identity is transport + source identity + destination identity + destination port; the *cryptography* is identified at the destination service endpoint only, so many clients dialling one service produce many conversations and one set of assets.
+ * @summary Submit flow/session records for network-conversation collection (B11)
+ */
+export const getSubmitProjectNetworkFlowsUrl = (id: number) => {
+  return `/api/projects/${id}/network-flows`;
+};
+
+export const submitProjectNetworkFlows = async (
+  id: number,
+  submitProjectNetworkFlowsBody: SubmitProjectNetworkFlowsBody,
+  options?: RequestInit,
+): Promise<NetworkFlowIngestSummary> => {
+  return customFetch<NetworkFlowIngestSummary>(
+    getSubmitProjectNetworkFlowsUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(submitProjectNetworkFlowsBody),
+    },
+  );
+};
+
+export const getSubmitProjectNetworkFlowsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectNetworkFlows>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectNetworkFlowsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectNetworkFlows>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectNetworkFlowsBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectNetworkFlows"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectNetworkFlows>>,
+    { id: number; data: BodyType<SubmitProjectNetworkFlowsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectNetworkFlows(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectNetworkFlowsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectNetworkFlows>>
+>;
+export type SubmitProjectNetworkFlowsMutationBody =
+  BodyType<SubmitProjectNetworkFlowsBody>;
+export type SubmitProjectNetworkFlowsMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit flow/session records for network-conversation collection (B11)
+ */
+export const useSubmitProjectNetworkFlows = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectNetworkFlows>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectNetworkFlowsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectNetworkFlows>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectNetworkFlowsBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectNetworkFlowsMutationOptions(options));
+};
+
+/**
+ * Every conversation recorded for this project, with both endpoints and the cryptography observed at the far end joined on — so one response answers the whole question rather than half of it.
+
+A conversation with `cryptoState: undetermined` comes back with an empty `cryptography` array. That is the honest reading and it is deliberately not hidden: `flowsWithUndeterminedCryptography` counts them, because a coverage meter that only sees a completed run with zero observations would render the surface as examined-and-nothing-found, which reads as clean.
+ * @summary The project's network conversations and the cryptography protecting them (B11)
+ */
+export const getGetProjectNetworkFlowsUrl = (id: number) => {
+  return `/api/projects/${id}/network-flows`;
+};
+
+export const getProjectNetworkFlows = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProjectNetworkFlows> => {
+  return customFetch<ProjectNetworkFlows>(getGetProjectNetworkFlowsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectNetworkFlowsQueryKey = (id: number) => {
+  return [`/api/projects/${id}/network-flows`] as const;
+};
+
+export const getGetProjectNetworkFlowsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectNetworkFlows>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectNetworkFlows>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProjectNetworkFlowsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectNetworkFlows>>
+  > = ({ signal }) => getProjectNetworkFlows(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectNetworkFlows>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectNetworkFlowsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectNetworkFlows>>
+>;
+export type GetProjectNetworkFlowsQueryError = ErrorType<void>;
+
+/**
+ * @summary The project's network conversations and the cryptography protecting them (B11)
+ */
+
+export function useGetProjectNetworkFlows<
+  TData = Awaited<ReturnType<typeof getProjectNetworkFlows>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectNetworkFlows>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectNetworkFlowsQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

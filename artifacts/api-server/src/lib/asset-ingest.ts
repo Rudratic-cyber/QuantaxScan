@@ -1,4 +1,4 @@
-import { assetsTable, observationsTable, collectionRunsTable } from "@workspace/db/schema";
+import { assetsTable, observationsTable, collectionRunsTable, networkFlowsTable } from "@workspace/db/schema";
 import type { ScopedTx } from "@workspace/db/org-scope";
 import {
   collectSourceObservations,
@@ -21,6 +21,9 @@ import {
   protocolConfigLocation,
   protocolConfigsIn,
   classifyKmsKeys,
+  collectNetworkFlowObservations,
+  type NetworkFlowCollectionResult,
+  type NetworkFlowRecordInput,
   observationsFromOtFleet,
   OT_FLEET_LOCATION_PREFIX,
   type OtFleetInput,
@@ -843,6 +846,175 @@ export async function ingestKmsObservations(
   });
 
   return { ...result, outcomes };
+}
+
+export interface NetworkFlowIngestResult extends IngestResult, NetworkFlowCollectionResult {
+  /** Conversations this submission had never seen before. */
+  flowsCreated: number;
+  /** Conversations already on record that this submission saw again. */
+  flowsUpdated: number;
+  /**
+   * Conversations recorded with **no cryptography determined**, after this
+   * submission. Surfaced as a first-class number rather than left to be
+   * inferred, because `GET /projects/:id/coverage` cannot express it: a
+   * submission of a thousand cipher-free VPC-flow rows writes a completed run
+   * with zero observations, and the coverage meter renders that as
+   * `examined-nothing-found` — which reads as *clean*. It is not clean; it is a
+   * thousand conversations nobody has determined the cryptography of. This is
+   * the number that says so, and both network-flow routes return it.
+   */
+  flowsWithUndeterminedCryptography: number;
+}
+
+/**
+ * B11 — persist a network-flow collection (docs/Claude/03-features.md §B11).
+ * `POST /projects/:id/network-flows` is the caller.
+ *
+ * Two things are written, and the split is the point of the lane:
+ *
+ *  1. **Every conversation**, into `network_flows`, with both endpoints —
+ *     including the ones whose cryptography nothing named. See that table's
+ *     header for why a conversation is not an `assets` row (`assets.algorithm`
+ *     is `NOT NULL`, and a sentinel algorithm would be a fabricated value).
+ *  2. **The cryptography**, into `assets`/`observations` on the `network-flow`
+ *     surface, only for conversations where a record actually named a cipher
+ *     suite.
+ *
+ * **The gate for recording a run is parseable *records*, not observations** —
+ * B6's rule, not B7's, and for B6's reason. A thousand VPC-flow rows that name
+ * no cipher are a genuine examination with a genuine result: a thousand
+ * conversations now on record, none of whose cryptography is known. Refusing
+ * the run would tell a CISO the surface had never been looked at, which is
+ * false. What must not write a run is a submission where *no* record could be
+ * turned into a conversation at all — garbage, or every row missing an endpoint
+ * — and that is what the throw below covers.
+ *
+ * **The reobservation scope carries only the slots a cipher was actually named
+ * at.** The rule and the failure it prevents live in
+ * `collectNetworkFlowObservations`; the short version is that a nightly
+ * cipher-free export would otherwise mark every asset a load-balancer log
+ * established `gone`, on a schedule.
+ */
+export async function ingestNetworkFlowObservations(
+  tx: ScopedTx,
+  params: {
+    repo: string;
+    /** Confirmed visible inside the caller's scope before this is called — a foreign key is not subject to RLS. */
+    projectId: number;
+    records: NetworkFlowRecordInput[];
+    organizationId: number;
+  },
+): Promise<NetworkFlowIngestResult> {
+  const collected = collectNetworkFlowObservations(params.repo, params.records);
+  if (collected.conversations.length === 0) {
+    throw new Error("network-flow ingest was given no record it could read as a conversation — a run must not be recorded");
+  }
+
+  const now = new Date();
+  const flowValues = collected.conversations.map((conversation) => ({
+    organizationId: params.organizationId,
+    projectId: params.projectId,
+    flowKey: conversation.flowKey,
+    sourceIdentity: conversation.sourceIdentity,
+    sourceAddress: conversation.source.address ?? null,
+    sourceHostname: conversation.source.hostname ?? null,
+    sourceWorkload: conversation.source.workload ?? null,
+    destinationIdentity: conversation.destinationIdentity,
+    destinationAddress: conversation.destination.address ?? null,
+    destinationHostname: conversation.destination.hostname ?? null,
+    destinationWorkload: conversation.destination.workload ?? null,
+    destinationPort: conversation.destinationPort,
+    transport: conversation.transport,
+    applicationProtocol: conversation.applicationProtocol,
+    cryptoState: conversation.cryptoState,
+    reportedCipherSuite: conversation.reportedCipherSuite,
+    reportedTlsVersion: conversation.reportedTlsVersion,
+    cryptoReportedAt: conversation.cryptoState === "observed" ? now : null,
+    recordFormat: conversation.recordFormat,
+    recordCount: conversation.recordCount,
+  }));
+
+  const existing = await tx
+    .select({ flowKey: networkFlowsTable.flowKey })
+    .from(networkFlowsTable)
+    .where(
+      and(
+        eq(networkFlowsTable.organizationId, params.organizationId),
+        inArray(networkFlowsTable.flowKey, flowValues.map((f) => f.flowKey)),
+      ),
+    );
+  const flowsUpdated = existing.length;
+  const flowsCreated = flowValues.length - flowsUpdated;
+
+  await tx
+    .insert(networkFlowsTable)
+    .values(flowValues)
+    .onConflictDoUpdate({
+      target: [networkFlowsTable.organizationId, networkFlowsTable.flowKey],
+      set: {
+        lastSeen: now,
+        // Cumulative across submissions: this column counts how many raw
+        // records have ever collapsed into this conversation.
+        recordCount: sql`${networkFlowsTable.recordCount} + excluded.record_count`,
+        // COALESCE, never `excluded.*`, for every descriptive field. A VPC flow
+        // log carries addresses and no hostnames; a mesh export carries
+        // workloads and no addresses. Whichever arrives second must not blank
+        // what the first one established — "this export did not carry a
+        // hostname" is not "this endpoint has no hostname".
+        sourceAddress: sql`COALESCE(excluded.source_address, ${networkFlowsTable.sourceAddress})`,
+        sourceHostname: sql`COALESCE(excluded.source_hostname, ${networkFlowsTable.sourceHostname})`,
+        sourceWorkload: sql`COALESCE(excluded.source_workload, ${networkFlowsTable.sourceWorkload})`,
+        destinationAddress: sql`COALESCE(excluded.destination_address, ${networkFlowsTable.destinationAddress})`,
+        destinationHostname: sql`COALESCE(excluded.destination_hostname, ${networkFlowsTable.destinationHostname})`,
+        destinationWorkload: sql`COALESCE(excluded.destination_workload, ${networkFlowsTable.destinationWorkload})`,
+        applicationProtocol: sql`COALESCE(excluded.application_protocol, ${networkFlowsTable.applicationProtocol})`,
+        // The same rule the collector applies within one submission, applied
+        // across submissions: a record that names no cipher cannot retract one
+        // another record stated. Silence is not a denial, and letting a nightly
+        // cipher-free export flip a conversation back to `undetermined` would
+        // erase a real reading because a different pipeline has fewer fields.
+        cryptoState: sql`CASE WHEN excluded.crypto_state = 'observed' THEN 'observed' ELSE ${networkFlowsTable.cryptoState} END`,
+        reportedCipherSuite: sql`COALESCE(excluded.reported_cipher_suite, ${networkFlowsTable.reportedCipherSuite})`,
+        reportedTlsVersion: sql`COALESCE(excluded.reported_tls_version, ${networkFlowsTable.reportedTlsVersion})`,
+        // Only advanced when this submission actually carried a suite — which
+        // is what makes a stale reading visible as stale rather than as fresh.
+        cryptoReportedAt: sql`CASE WHEN excluded.reported_cipher_suite IS NOT NULL THEN excluded.crypto_reported_at ELSE ${networkFlowsTable.cryptoReportedAt} END`,
+        recordFormat: sql`excluded.record_format`,
+      },
+    });
+
+  const result = await ingestObservations(tx, {
+    organizationId: params.organizationId,
+    repo: params.repo,
+    collector: "network-flow-records",
+    collectorVersion: "1.0.0",
+    surface: "network-flow",
+    observations: collected.conversations.flatMap((conversation) => conversation.observations),
+    reobserved: { kind: "locations", locations: collected.reobservedLocations },
+  });
+
+  // Counted from what is now on record for this project, not from this
+  // submission alone: the question a reader asks is "how much of my network
+  // inventory has no cryptography determined", and a submission that adds one
+  // determined conversation has not answered it for the other nine hundred.
+  const [undetermined] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(networkFlowsTable)
+    .where(
+      and(
+        eq(networkFlowsTable.organizationId, params.organizationId),
+        eq(networkFlowsTable.projectId, params.projectId),
+        eq(networkFlowsTable.cryptoState, "undetermined"),
+      ),
+    );
+
+  return {
+    ...result,
+    ...collected,
+    flowsCreated,
+    flowsUpdated,
+    flowsWithUndeterminedCryptography: undetermined?.n ?? 0,
+  };
 }
 
 /**

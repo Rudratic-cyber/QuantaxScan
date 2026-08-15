@@ -96,7 +96,19 @@ export const COLLECTOR_SURFACES = [
   // rather than listed as unexamined — see `SURFACE_VALUES` for why that is the
   // worse of the two errors. Each is a real part of an enterprise estate that
   // no collector reaches today.
-  { id: "network-flow", name: "Network conversations", status: "planned", surface: "network-flow" },
+  // `live` since B11's ingest path landed — `POST /projects/:id/network-flows`.
+  // Same bar as every entry above: a collector alone never earns it, a route
+  // that persists what it finds does. Two qualifications this surface has to
+  // state, because `live` here claims less than it does elsewhere. First, it
+  // reads flow/session records the customer's own infrastructure produced — no
+  // packet capture and no tap, which is the roadmap's stated posture, so the
+  // surface counts as examined for the conversations a caller sent. Second,
+  // most flow-log formats carry no cipher at all: such a conversation is
+  // recorded with its cryptography **undetermined**, which is a real inventory
+  // entry and not a clean one. `flowsWithUndeterminedCryptography` on both
+  // network-flow routes is the number that says how much of the surface is in
+  // that state.
+  { id: "network-flow", name: "Network conversations", status: "live", surface: "network-flow" },
   { id: "endpoint", name: "Endpoint & host fleet", status: "planned", surface: "endpoint" },
   { id: "identity", name: "Identity & authentication", status: "planned", surface: "identity" },
 ] as const satisfies readonly CollectorSurfaceEntry[];

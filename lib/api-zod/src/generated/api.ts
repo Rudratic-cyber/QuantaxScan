@@ -5335,3 +5335,444 @@ export const GetProjectDataAtRestResponse = zod.object({
     .string()
     .describe("Mandatory wherever a scenario year is shown."),
 });
+
+/**
+ * Records **conversations between endpoints** — both ends of each one — from flow and session records the caller's own infrastructure already produces: a VPC flow log, a load-balancer access log, a service-mesh telemetry export, a firewall session log.
+
+**No packet capture and no network tap.** Real-time traffic interception is an explicit twelve-month non-goal for this product; this route is the passive alternative, and it reads records that already exist rather than creating a new observation point.
+
+**Cryptography is recorded only when a record actually names a cipher suite.** Most flow-log formats carry none. Such a conversation is persisted with `cryptoState: undetermined` — which is a real inventory entry meaning "we saw this conversation and do not know what protected it", not a clean result. `flowsWithUndeterminedCryptography` in the response is how much of the project is in that state. The port is never used to infer anything: 443 is not evidence of TLS 1.3, or of TLS.
+
+**A TLS 1.3 suite name records no key exchange.** `TLS_AES_128_GCM_SHA256` names the AEAD and the hash and nothing else (RFC 8446 §1.2), so only the AES observation is recorded; the mandated (EC)DHE exchange is reported as a `key-exchange-not-named` gap rather than assumed.
+
+**The source port is discarded.** It is accepted so a raw record can be submitted unchanged, and then dropped: it changes on every connection, and keying a conversation on it would mint a new row per TCP handshake. A conversation's identity is transport + source identity + destination identity + destination port; the *cryptography* is identified at the destination service endpoint only, so many clients dialling one service produce many conversations and one set of assets.
+ * @summary Submit flow/session records for network-conversation collection (B11)
+ */
+export const SubmitProjectNetworkFlowsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const submitProjectNetworkFlowsBodyRecordsItemSourcePortMin = 0;
+export const submitProjectNetworkFlowsBodyRecordsItemSourcePortMax = 65535;
+
+export const submitProjectNetworkFlowsBodyRecordsItemDestinationPortMin = 0;
+export const submitProjectNetworkFlowsBodyRecordsItemDestinationPortMax = 65535;
+
+export const SubmitProjectNetworkFlowsBody = zod.object({
+  records: zod.array(
+    zod.object({
+      source: zod
+        .object({
+          address: zod
+            .string()
+            .nullish()
+            .describe("IP address, v4 or v6, verbatim."),
+          hostname: zod.string().nullish(),
+          workload: zod
+            .string()
+            .nullish()
+            .describe(
+              "Service\/workload name, as a mesh telemetry export names the peer. Preferred as the endpoint's identity because it survives a redeploy that renumbers pod IPs; hostname is the second choice and address the third.",
+            ),
+          port: zod
+            .number()
+            .min(submitProjectNetworkFlowsBodyRecordsItemSourcePortMin)
+            .max(submitProjectNetworkFlowsBodyRecordsItemSourcePortMax)
+            .nullish()
+            .describe(
+              "Required on the destination — it is the service. Accepted and then \*\*discarded\*\* on the source: an ephemeral port changes on every connection, and keying a conversation on it would create a new row per TCP handshake.",
+            ),
+        })
+        .describe(
+          "One end of a conversation. Every field is optional because every record format carries a different subset — but at least one of `workload`, `hostname` or `address` must be present, or the record is rejected as unidentified rather than recorded against a guess.",
+        ),
+      destination: zod
+        .object({
+          address: zod
+            .string()
+            .nullish()
+            .describe("IP address, v4 or v6, verbatim."),
+          hostname: zod.string().nullish(),
+          workload: zod
+            .string()
+            .nullish()
+            .describe(
+              "Service\/workload name, as a mesh telemetry export names the peer. Preferred as the endpoint's identity because it survives a redeploy that renumbers pod IPs; hostname is the second choice and address the third.",
+            ),
+          port: zod
+            .number()
+            .min(submitProjectNetworkFlowsBodyRecordsItemDestinationPortMin)
+            .max(submitProjectNetworkFlowsBodyRecordsItemDestinationPortMax)
+            .nullish()
+            .describe(
+              "Required on the destination — it is the service. Accepted and then \*\*discarded\*\* on the source: an ephemeral port changes on every connection, and keying a conversation on it would create a new row per TCP handshake.",
+            ),
+        })
+        .describe(
+          "One end of a conversation. Every field is optional because every record format carries a different subset — but at least one of `workload`, `hostname` or `address` must be present, or the record is rejected as unidentified rather than recorded against a guess.",
+        ),
+      transport: zod
+        .enum(["tcp", "udp", "other"])
+        .optional()
+        .describe(
+          "Defaults to `tcp`. Part of the conversation's identity: 443\/tcp and 443\/udp are different services protected by different machinery.",
+        ),
+      applicationProtocol: zod
+        .string()
+        .nullish()
+        .describe(
+          "The record's own field — `https`, `h2`, `grpc`. Recorded as evidence. Never derived from the port, and never used to infer cryptography.",
+        ),
+      recordFormat: zod
+        .enum([
+          "vpc-flow-log",
+          "load-balancer-access-log",
+          "service-mesh-telemetry",
+          "firewall-session-log",
+          "other",
+        ])
+        .optional()
+        .describe(
+          "Which export this row came from. Evidence and caveat only, deliberately not part of any identity — one conversation legitimately appears in two formats.",
+        ),
+      tlsVersion: zod
+        .string()
+        .nullish()
+        .describe(
+          "e.g. `TLSv1.2`. Recorded as evidence; on its own it produces no asset, because a protocol version is not an algorithm.",
+        ),
+      cipherSuite: zod
+        .string()
+        .nullish()
+        .describe(
+          "The negotiated suite, IANA (`TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`) or OpenSSL (`ECDHE-RSA-AES128-GCM-SHA256`) spelling. Absent in most flow-log formats, and that absence is recorded as `undetermined` rather than filled in.",
+        ),
+      recordCount: zod
+        .number()
+        .min(1)
+        .nullish()
+        .describe(
+          "How many raw records this row stands for, when the caller has pre-aggregated. Defaults to 1.",
+        ),
+      observedAt: zod
+        .string()
+        .nullish()
+        .describe(
+          "The record's own timestamp, ISO 8601. Evidence only, never identity.",
+        ),
+    }),
+  ),
+});
+
+export const SubmitProjectNetworkFlowsResponse = zod.object({
+  projectId: zod.number(),
+  recordsSubmitted: zod.number(),
+  conversationsRecorded: zod.number(),
+  flowsCreated: zod.number(),
+  flowsUpdated: zod.number(),
+  flowsWithUndeterminedCryptography: zod
+    .number()
+    .describe(
+      "Conversations on record for this project whose cryptography nothing has determined. Reported as a first-class number because `GET \/projects\/{id}\/coverage` cannot say it: a submission of cipher-free rows writes a completed run with zero observations, which the coverage meter renders as examined-and-nothing-found — and that reads as clean when it is not.",
+    ),
+  collectionRunId: zod.number().nullable(),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod.number(),
+  conversations: zod.array(
+    zod
+      .object({
+        flowKey: zod
+          .string()
+          .describe(
+            "Deterministic identity — transport + source identity + destination identity + destination port. The source port is not in it.",
+          ),
+        transport: zod.enum(["tcp", "udp", "other"]),
+        sourceIdentity: zod
+          .string()
+          .describe(
+            "The string the near end resolved to — workload, else hostname, else address.",
+          ),
+        sourceAddress: zod.string().nullable(),
+        sourceHostname: zod.string().nullable(),
+        sourceWorkload: zod.string().nullable(),
+        destinationIdentity: zod.string(),
+        destinationAddress: zod.string().nullable(),
+        destinationHostname: zod.string().nullable(),
+        destinationWorkload: zod.string().nullable(),
+        destinationPort: zod.number(),
+        applicationProtocol: zod.string().nullable(),
+        recordFormat: zod.enum([
+          "vpc-flow-log",
+          "load-balancer-access-log",
+          "service-mesh-telemetry",
+          "firewall-session-log",
+          "other",
+        ]),
+        cryptoState: zod
+          .enum(["observed", "undetermined"])
+          .describe(
+            '`undetermined` means the evidence did not state the cryptography. It is \*\*not\*\* \"unencrypted\" — no flow record this product reads can make that claim.',
+          ),
+        reportedCipherSuite: zod
+          .string()
+          .nullable()
+          .describe(
+            "The suite name verbatim, beside the canonical algorithms derived from it, so the decomposition stays auditable.",
+          ),
+        reportedTlsVersion: zod.string().nullable(),
+        cryptoReportedAt: zod.coerce
+          .date()
+          .nullish()
+          .describe(
+            "When a record naming a cipher was last ingested for this conversation. A later cipher-free export deliberately does not blank the suite (silence is not a denial), so this is how a stale reading is visible as stale.",
+          ),
+        recordCount: zod.number(),
+        firstSeen: zod.coerce.date().nullish(),
+        lastSeen: zod.coerce.date().nullish(),
+        cryptography: zod
+          .array(
+            zod
+              .object({
+                assetId: zod
+                  .number()
+                  .nullish()
+                  .describe(
+                    "Null on the POST response, which reports what was collected before the asset ids are joined back.",
+                  ),
+                role: zod
+                  .enum(["key-exchange", "authentication", "bulk-cipher"])
+                  .describe(
+                    "Which part of the session this is. Part of the asset identity, because one suite name can state the same algorithm twice — `TLS_RSA_WITH_AES_256_CBC_SHA` names RSA as both the key exchange and the authentication, and they are remediated separately.",
+                  ),
+                algorithm: zod.string(),
+                keySize: zod
+                  .number()
+                  .nullable()
+                  .describe(
+                    "Only ever present for the bulk cipher, and only because the suite name states it. `ECDHE` names no group and `RSA` names no modulus length, so those roles carry no key size from a flow record — ever (G-05).",
+                  ),
+                location: zod.string(),
+                status: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    "Asset lifecycle status. Null on the POST response.",
+                  ),
+                quantumVulnerable: zod
+                  .boolean()
+                  .nullish()
+                  .describe(
+                    "Resolved from the standards data at read time, never stored. Null when the algorithm resolves to no entry.",
+                  ),
+              })
+              .describe(
+                "One piece of cryptography recorded at a conversation's destination service endpoint.",
+              ),
+          )
+          .describe("Empty when `cryptoState` is `undetermined`."),
+        gaps: zod
+          .array(
+            zod
+              .object({
+                reason: zod.enum([
+                  "cipher-suite-not-reported",
+                  "cipher-suite-not-recognised",
+                  "cipher-suite-component-not-resolved",
+                ]),
+                component: zod
+                  .enum([
+                    "key-exchange-not-named",
+                    "authentication-not-named",
+                    "bulk-cipher-not-recognised",
+                    "bulk-cipher-none",
+                    "suite-name-not-recognised",
+                  ])
+                  .nullable()
+                  .describe(
+                    "The suite parser's own reason. `key-exchange-not-named` on a TLS 1.3 suite is the normal case, not a defect: the name does not carry one.",
+                  ),
+                reported: zod
+                  .string()
+                  .nullable()
+                  .describe(
+                    "The suite string the caller supplied, when there was one.",
+                  ),
+              })
+              .describe(
+                "Something the evidence did not state, reported rather than filled in.",
+              ),
+          )
+          .optional(),
+      })
+      .describe(
+        "One conversation, with both endpoints and whatever is known about what protected it.",
+      ),
+  ),
+  rejected: zod.array(
+    zod
+      .object({
+        index: zod
+          .number()
+          .describe("Position in the submitted `records` array."),
+        reason: zod.enum([
+          "destination-not-identified",
+          "destination-port-missing",
+          "source-not-identified",
+        ]),
+      })
+      .describe(
+        "A submitted record that could not be read as a conversation. Reported back, never silently dropped.",
+      ),
+  ),
+  evidenceCaveat: zod.string(),
+});
+
+/**
+ * Every conversation recorded for this project, with both endpoints and the cryptography observed at the far end joined on — so one response answers the whole question rather than half of it.
+
+A conversation with `cryptoState: undetermined` comes back with an empty `cryptography` array. That is the honest reading and it is deliberately not hidden: `flowsWithUndeterminedCryptography` counts them, because a coverage meter that only sees a completed run with zero observations would render the surface as examined-and-nothing-found, which reads as clean.
+ * @summary The project's network conversations and the cryptography protecting them (B11)
+ */
+export const GetProjectNetworkFlowsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectNetworkFlowsResponse = zod.object({
+  projectId: zod.number(),
+  generatedAt: zod.coerce.date(),
+  conversationsRecorded: zod.number(),
+  flowsWithUndeterminedCryptography: zod.number(),
+  conversations: zod.array(
+    zod
+      .object({
+        flowKey: zod
+          .string()
+          .describe(
+            "Deterministic identity — transport + source identity + destination identity + destination port. The source port is not in it.",
+          ),
+        transport: zod.enum(["tcp", "udp", "other"]),
+        sourceIdentity: zod
+          .string()
+          .describe(
+            "The string the near end resolved to — workload, else hostname, else address.",
+          ),
+        sourceAddress: zod.string().nullable(),
+        sourceHostname: zod.string().nullable(),
+        sourceWorkload: zod.string().nullable(),
+        destinationIdentity: zod.string(),
+        destinationAddress: zod.string().nullable(),
+        destinationHostname: zod.string().nullable(),
+        destinationWorkload: zod.string().nullable(),
+        destinationPort: zod.number(),
+        applicationProtocol: zod.string().nullable(),
+        recordFormat: zod.enum([
+          "vpc-flow-log",
+          "load-balancer-access-log",
+          "service-mesh-telemetry",
+          "firewall-session-log",
+          "other",
+        ]),
+        cryptoState: zod
+          .enum(["observed", "undetermined"])
+          .describe(
+            '`undetermined` means the evidence did not state the cryptography. It is \*\*not\*\* \"unencrypted\" — no flow record this product reads can make that claim.',
+          ),
+        reportedCipherSuite: zod
+          .string()
+          .nullable()
+          .describe(
+            "The suite name verbatim, beside the canonical algorithms derived from it, so the decomposition stays auditable.",
+          ),
+        reportedTlsVersion: zod.string().nullable(),
+        cryptoReportedAt: zod.coerce
+          .date()
+          .nullish()
+          .describe(
+            "When a record naming a cipher was last ingested for this conversation. A later cipher-free export deliberately does not blank the suite (silence is not a denial), so this is how a stale reading is visible as stale.",
+          ),
+        recordCount: zod.number(),
+        firstSeen: zod.coerce.date().nullish(),
+        lastSeen: zod.coerce.date().nullish(),
+        cryptography: zod
+          .array(
+            zod
+              .object({
+                assetId: zod
+                  .number()
+                  .nullish()
+                  .describe(
+                    "Null on the POST response, which reports what was collected before the asset ids are joined back.",
+                  ),
+                role: zod
+                  .enum(["key-exchange", "authentication", "bulk-cipher"])
+                  .describe(
+                    "Which part of the session this is. Part of the asset identity, because one suite name can state the same algorithm twice — `TLS_RSA_WITH_AES_256_CBC_SHA` names RSA as both the key exchange and the authentication, and they are remediated separately.",
+                  ),
+                algorithm: zod.string(),
+                keySize: zod
+                  .number()
+                  .nullable()
+                  .describe(
+                    "Only ever present for the bulk cipher, and only because the suite name states it. `ECDHE` names no group and `RSA` names no modulus length, so those roles carry no key size from a flow record — ever (G-05).",
+                  ),
+                location: zod.string(),
+                status: zod
+                  .string()
+                  .nullish()
+                  .describe(
+                    "Asset lifecycle status. Null on the POST response.",
+                  ),
+                quantumVulnerable: zod
+                  .boolean()
+                  .nullish()
+                  .describe(
+                    "Resolved from the standards data at read time, never stored. Null when the algorithm resolves to no entry.",
+                  ),
+              })
+              .describe(
+                "One piece of cryptography recorded at a conversation's destination service endpoint.",
+              ),
+          )
+          .describe("Empty when `cryptoState` is `undetermined`."),
+        gaps: zod
+          .array(
+            zod
+              .object({
+                reason: zod.enum([
+                  "cipher-suite-not-reported",
+                  "cipher-suite-not-recognised",
+                  "cipher-suite-component-not-resolved",
+                ]),
+                component: zod
+                  .enum([
+                    "key-exchange-not-named",
+                    "authentication-not-named",
+                    "bulk-cipher-not-recognised",
+                    "bulk-cipher-none",
+                    "suite-name-not-recognised",
+                  ])
+                  .nullable()
+                  .describe(
+                    "The suite parser's own reason. `key-exchange-not-named` on a TLS 1.3 suite is the normal case, not a defect: the name does not carry one.",
+                  ),
+                reported: zod
+                  .string()
+                  .nullable()
+                  .describe(
+                    "The suite string the caller supplied, when there was one.",
+                  ),
+              })
+              .describe(
+                "Something the evidence did not state, reported rather than filled in.",
+              ),
+          )
+          .optional(),
+      })
+      .describe(
+        "One conversation, with both endpoints and whatever is known about what protected it.",
+      ),
+  ),
+  evidenceCaveat: zod.string(),
+});

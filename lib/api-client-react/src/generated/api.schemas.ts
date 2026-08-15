@@ -2299,6 +2299,250 @@ export interface ProjectDataAtRest {
   framing: string;
 }
 
+/**
+ * One end of a conversation. Every field is optional because every record format carries a different subset — but at least one of `workload`, `hostname` or `address` must be present, or the record is rejected as unidentified rather than recorded against a guess.
+ */
+export interface NetworkFlowEndpointSubmission {
+  /** IP address, v4 or v6, verbatim. */
+  address?: string | null;
+  hostname?: string | null;
+  /** Service/workload name, as a mesh telemetry export names the peer. Preferred as the endpoint's identity because it survives a redeploy that renumbers pod IPs; hostname is the second choice and address the third. */
+  workload?: string | null;
+  /**
+   * Required on the destination — it is the service. Accepted and then **discarded** on the source: an ephemeral port changes on every connection, and keying a conversation on it would create a new row per TCP handshake.
+   * @minimum 0
+   * @maximum 65535
+   */
+  port?: number | null;
+}
+
+/**
+ * Defaults to `tcp`. Part of the conversation's identity: 443/tcp and 443/udp are different services protected by different machinery.
+ */
+export type NetworkFlowRecordSubmissionTransport =
+  (typeof NetworkFlowRecordSubmissionTransport)[keyof typeof NetworkFlowRecordSubmissionTransport];
+
+export const NetworkFlowRecordSubmissionTransport = {
+  tcp: "tcp",
+  udp: "udp",
+  other: "other",
+} as const;
+
+/**
+ * Which export this row came from. Evidence and caveat only, deliberately not part of any identity — one conversation legitimately appears in two formats.
+ */
+export type NetworkFlowRecordSubmissionRecordFormat =
+  (typeof NetworkFlowRecordSubmissionRecordFormat)[keyof typeof NetworkFlowRecordSubmissionRecordFormat];
+
+export const NetworkFlowRecordSubmissionRecordFormat = {
+  "vpc-flow-log": "vpc-flow-log",
+  "load-balancer-access-log": "load-balancer-access-log",
+  "service-mesh-telemetry": "service-mesh-telemetry",
+  "firewall-session-log": "firewall-session-log",
+  other: "other",
+} as const;
+
+export interface NetworkFlowRecordSubmission {
+  source: NetworkFlowEndpointSubmission;
+  destination: NetworkFlowEndpointSubmission;
+  /** Defaults to `tcp`. Part of the conversation's identity: 443/tcp and 443/udp are different services protected by different machinery. */
+  transport?: NetworkFlowRecordSubmissionTransport;
+  /** The record's own field — `https`, `h2`, `grpc`. Recorded as evidence. Never derived from the port, and never used to infer cryptography. */
+  applicationProtocol?: string | null;
+  /** Which export this row came from. Evidence and caveat only, deliberately not part of any identity — one conversation legitimately appears in two formats. */
+  recordFormat?: NetworkFlowRecordSubmissionRecordFormat;
+  /** e.g. `TLSv1.2`. Recorded as evidence; on its own it produces no asset, because a protocol version is not an algorithm. */
+  tlsVersion?: string | null;
+  /** The negotiated suite, IANA (`TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`) or OpenSSL (`ECDHE-RSA-AES128-GCM-SHA256`) spelling. Absent in most flow-log formats, and that absence is recorded as `undetermined` rather than filled in. */
+  cipherSuite?: string | null;
+  /**
+   * How many raw records this row stands for, when the caller has pre-aggregated. Defaults to 1.
+   * @minimum 1
+   */
+  recordCount?: number | null;
+  /** The record's own timestamp, ISO 8601. Evidence only, never identity. */
+  observedAt?: string | null;
+}
+
+export interface SubmitProjectNetworkFlowsBody {
+  records: NetworkFlowRecordSubmission[];
+}
+
+export type NetworkFlowGapReason =
+  (typeof NetworkFlowGapReason)[keyof typeof NetworkFlowGapReason];
+
+export const NetworkFlowGapReason = {
+  "cipher-suite-not-reported": "cipher-suite-not-reported",
+  "cipher-suite-not-recognised": "cipher-suite-not-recognised",
+  "cipher-suite-component-not-resolved": "cipher-suite-component-not-resolved",
+} as const;
+
+/**
+ * The suite parser's own reason. `key-exchange-not-named` on a TLS 1.3 suite is the normal case, not a defect: the name does not carry one.
+ */
+export type NetworkFlowGapComponent =
+  | (typeof NetworkFlowGapComponent)[keyof typeof NetworkFlowGapComponent]
+  | null;
+
+export const NetworkFlowGapComponent = {
+  "key-exchange-not-named": "key-exchange-not-named",
+  "authentication-not-named": "authentication-not-named",
+  "bulk-cipher-not-recognised": "bulk-cipher-not-recognised",
+  "bulk-cipher-none": "bulk-cipher-none",
+  "suite-name-not-recognised": "suite-name-not-recognised",
+} as const;
+
+/**
+ * Something the evidence did not state, reported rather than filled in.
+ */
+export interface NetworkFlowGap {
+  reason: NetworkFlowGapReason;
+  /** The suite parser's own reason. `key-exchange-not-named` on a TLS 1.3 suite is the normal case, not a defect: the name does not carry one. */
+  component: NetworkFlowGapComponent;
+  /** The suite string the caller supplied, when there was one. */
+  reported: string | null;
+}
+
+export type NetworkFlowRejectionReason =
+  (typeof NetworkFlowRejectionReason)[keyof typeof NetworkFlowRejectionReason];
+
+export const NetworkFlowRejectionReason = {
+  "destination-not-identified": "destination-not-identified",
+  "destination-port-missing": "destination-port-missing",
+  "source-not-identified": "source-not-identified",
+} as const;
+
+/**
+ * A submitted record that could not be read as a conversation. Reported back, never silently dropped.
+ */
+export interface NetworkFlowRejection {
+  /** Position in the submitted `records` array. */
+  index: number;
+  reason: NetworkFlowRejectionReason;
+}
+
+/**
+ * Which part of the session this is. Part of the asset identity, because one suite name can state the same algorithm twice — `TLS_RSA_WITH_AES_256_CBC_SHA` names RSA as both the key exchange and the authentication, and they are remediated separately.
+ */
+export type NetworkFlowCryptographyRole =
+  (typeof NetworkFlowCryptographyRole)[keyof typeof NetworkFlowCryptographyRole];
+
+export const NetworkFlowCryptographyRole = {
+  "key-exchange": "key-exchange",
+  authentication: "authentication",
+  "bulk-cipher": "bulk-cipher",
+} as const;
+
+/**
+ * One piece of cryptography recorded at a conversation's destination service endpoint.
+ */
+export interface NetworkFlowCryptography {
+  /** Null on the POST response, which reports what was collected before the asset ids are joined back. */
+  assetId?: number | null;
+  /** Which part of the session this is. Part of the asset identity, because one suite name can state the same algorithm twice — `TLS_RSA_WITH_AES_256_CBC_SHA` names RSA as both the key exchange and the authentication, and they are remediated separately. */
+  role: NetworkFlowCryptographyRole;
+  algorithm: string;
+  /** Only ever present for the bulk cipher, and only because the suite name states it. `ECDHE` names no group and `RSA` names no modulus length, so those roles carry no key size from a flow record — ever (G-05). */
+  keySize: number | null;
+  location: string;
+  /** Asset lifecycle status. Null on the POST response. */
+  status?: string | null;
+  /** Resolved from the standards data at read time, never stored. Null when the algorithm resolves to no entry. */
+  quantumVulnerable?: boolean | null;
+}
+
+export type NetworkFlowConversationTransport =
+  (typeof NetworkFlowConversationTransport)[keyof typeof NetworkFlowConversationTransport];
+
+export const NetworkFlowConversationTransport = {
+  tcp: "tcp",
+  udp: "udp",
+  other: "other",
+} as const;
+
+export type NetworkFlowConversationRecordFormat =
+  (typeof NetworkFlowConversationRecordFormat)[keyof typeof NetworkFlowConversationRecordFormat];
+
+export const NetworkFlowConversationRecordFormat = {
+  "vpc-flow-log": "vpc-flow-log",
+  "load-balancer-access-log": "load-balancer-access-log",
+  "service-mesh-telemetry": "service-mesh-telemetry",
+  "firewall-session-log": "firewall-session-log",
+  other: "other",
+} as const;
+
+/**
+ * `undetermined` means the evidence did not state the cryptography. It is **not** "unencrypted" — no flow record this product reads can make that claim.
+ */
+export type NetworkFlowConversationCryptoState =
+  (typeof NetworkFlowConversationCryptoState)[keyof typeof NetworkFlowConversationCryptoState];
+
+export const NetworkFlowConversationCryptoState = {
+  observed: "observed",
+  undetermined: "undetermined",
+} as const;
+
+/**
+ * One conversation, with both endpoints and whatever is known about what protected it.
+ */
+export interface NetworkFlowConversation {
+  /** Deterministic identity — transport + source identity + destination identity + destination port. The source port is not in it. */
+  flowKey: string;
+  transport: NetworkFlowConversationTransport;
+  /** The string the near end resolved to — workload, else hostname, else address. */
+  sourceIdentity: string;
+  sourceAddress: string | null;
+  sourceHostname: string | null;
+  sourceWorkload: string | null;
+  destinationIdentity: string;
+  destinationAddress: string | null;
+  destinationHostname: string | null;
+  destinationWorkload: string | null;
+  destinationPort: number;
+  applicationProtocol: string | null;
+  recordFormat: NetworkFlowConversationRecordFormat;
+  /** `undetermined` means the evidence did not state the cryptography. It is **not** "unencrypted" — no flow record this product reads can make that claim. */
+  cryptoState: NetworkFlowConversationCryptoState;
+  /** The suite name verbatim, beside the canonical algorithms derived from it, so the decomposition stays auditable. */
+  reportedCipherSuite: string | null;
+  reportedTlsVersion: string | null;
+  /** When a record naming a cipher was last ingested for this conversation. A later cipher-free export deliberately does not blank the suite (silence is not a denial), so this is how a stale reading is visible as stale. */
+  cryptoReportedAt?: string | null;
+  recordCount: number;
+  firstSeen?: string | null;
+  lastSeen?: string | null;
+  /** Empty when `cryptoState` is `undetermined`. */
+  cryptography: NetworkFlowCryptography[];
+  gaps?: NetworkFlowGap[];
+}
+
+export interface NetworkFlowIngestSummary {
+  projectId: number;
+  recordsSubmitted: number;
+  conversationsRecorded: number;
+  flowsCreated: number;
+  flowsUpdated: number;
+  /** Conversations on record for this project whose cryptography nothing has determined. Reported as a first-class number because `GET /projects/{id}/coverage` cannot say it: a submission of cipher-free rows writes a completed run with zero observations, which the coverage meter renders as examined-and-nothing-found — and that reads as clean when it is not. */
+  flowsWithUndeterminedCryptography: number;
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  assetsMarkedGone: number;
+  conversations: NetworkFlowConversation[];
+  rejected: NetworkFlowRejection[];
+  evidenceCaveat: string;
+}
+
+export interface ProjectNetworkFlows {
+  projectId: number;
+  generatedAt: string;
+  conversationsRecorded: number;
+  flowsWithUndeterminedCryptography: number;
+  conversations: NetworkFlowConversation[];
+  evidenceCaveat: string;
+}
+
 export type RateLimitedResponse = {
   error: string;
 };

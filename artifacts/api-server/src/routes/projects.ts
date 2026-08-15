@@ -8,6 +8,7 @@ import {
   assetsTable,
   observationsTable,
   collectionRunsTable,
+  networkFlowsTable,
   projectRepoId,
 } from "@workspace/db";
 import {
@@ -20,6 +21,7 @@ import {
   SubmitProjectProtocolConfigBody,
   SubmitProjectKmsBody,
   SubmitProjectDataAtRestBody,
+  SubmitProjectNetworkFlowsBody,
 } from "@workspace/api-zod";
 import {
   lockfilesIn,
@@ -29,9 +31,12 @@ import {
   type KmsKeyDescription,
   type KmsKeyOutcome,
   collectDataAtRestObservations,
+  collectNetworkFlowObservations,
   type DataAtRestStoreInput,
   type DataAtRestStoreResult,
   type LocationDetail,
+  type NetworkFlowConversation,
+  type NetworkFlowRecordInput,
 } from "@workspace/collectors";
 import { scanCode, computeScanResult } from "../lib/scanner";
 import { summariseProjectCoverage } from "../lib/coverage";
@@ -43,6 +48,7 @@ import {
   ingestProtocolConfigObservations,
   ingestKmsObservations,
   ingestDataAtRestObservations,
+  ingestNetworkFlowObservations,
   type CertificateSummary,
 } from "../lib/asset-ingest";
 import { evaluateCertificateExpiryAgainstQDay } from "../lib/certificate-risk";
@@ -1544,6 +1550,364 @@ router.get("/projects/:id/data-at-rest", async (req, res): Promise<void> => {
     }),
     scenarios: DEFAULT_QDAY_SCENARIOS,
     framing: QDAY_FRAMING,
+  });
+});
+
+/**
+ * B11 — `POST /api/projects/:id/network-flows` and
+ * `GET /api/projects/:id/network-flows`. docs/Claude/03-features.md §B11:
+ * "Network conversations — both endpoints, and whatever protected them".
+ *
+ * Same shape as the six ingest routes above — org-scoped, parent confirmed
+ * inside the scope, a run recorded only when something was actually examined —
+ * with three differences that are the point of the lane.
+ *
+ * **It ingests records, it does not intercept traffic.** `docs/Claude/02-roadmap.md`
+ * lists real-time network traffic interception as an explicit twelve-month
+ * non-goal with "passive scanning only" as the posture. So the caller submits
+ * flow and session records their own infrastructure already writes — a VPC flow
+ * log, a load-balancer access log, a mesh telemetry export, a firewall session
+ * log — and this product creates no new observation point.
+ *
+ * **It writes to two places, and that is deliberate.** Conversations go to
+ * `network_flows` (both endpoints, always). Cryptography goes to `assets` on the
+ * `network-flow` surface, only when a record actually named a cipher suite. A
+ * conversation with undetermined cryptography has nothing to put in
+ * `assets.algorithm`, which is `NOT NULL`, and a sentinel algorithm there would
+ * be the fabricated value this whole surface exists to refuse — see
+ * `lib/db/src/schema/network_flows.ts`'s header.
+ *
+ * **The GET joins them back together.** The customer's question is "for this
+ * conversation, what protected it and who were the two ends" — one question, so
+ * one response. Returning the conversations bare and leaving the crypto in
+ * `/inventory/assets` would ship two halves of a feature.
+ */
+
+/** Mirrors `MAX_DATA_AT_REST_STORES_PER_SUBMISSION` — a bound on work, not on request size. A flow export is naturally larger than a store list, hence the higher ceiling. */
+const MAX_NETWORK_FLOW_RECORDS_PER_SUBMISSION = 5000;
+
+const NETWORK_FLOW_EVIDENCE_CAVEAT =
+  "These conversations come from flow and session records the customer's own infrastructure produced. " +
+  "This product captured no packets and initiated no connection, so every negotiated parameter here is as " +
+  "the record stated it, not as we measured it. A conversation with cryptoState 'undetermined' means the " +
+  "record named no cipher suite — it does NOT mean the conversation was unencrypted, and nothing here " +
+  "infers cryptography from a port number. A TLS 1.3 suite name states only the AEAD and hash (RFC 8446 " +
+  "§1.2), so its mandated key exchange is reported as not named rather than assumed.";
+
+type NetworkFlowSubmissionRecord = zod.infer<typeof SubmitProjectNetworkFlowsBody>["records"][number];
+
+/**
+ * The generated body type's nullable fields are `T | null | undefined`; the
+ * collector's inputs are the same shape, so this is a narrowing rather than a
+ * transformation. The one real decision it encodes is that the **source port is
+ * carried through and then dropped by the collector** rather than being
+ * stripped here — so there is exactly one place in the codebase that decides an
+ * ephemeral port is not part of a conversation's identity, and it is the place
+ * with the comment explaining why.
+ */
+function toFlowRecordInput(record: NetworkFlowSubmissionRecord): NetworkFlowRecordInput {
+  return {
+    source: record.source,
+    destination: record.destination,
+    transport: record.transport,
+    applicationProtocol: record.applicationProtocol,
+    recordFormat: record.recordFormat,
+    tlsVersion: record.tlsVersion,
+    cipherSuite: record.cipherSuite,
+    recordCount: record.recordCount,
+    observedAt: record.observedAt,
+  };
+}
+
+/** The POST's view of a conversation: what was collected, before asset ids exist to join on. */
+function toCollectedConversation(conversation: NetworkFlowConversation) {
+  return {
+    flowKey: conversation.flowKey,
+    transport: conversation.transport,
+    sourceIdentity: conversation.sourceIdentity,
+    sourceAddress: conversation.source.address ?? null,
+    sourceHostname: conversation.source.hostname ?? null,
+    sourceWorkload: conversation.source.workload ?? null,
+    destinationIdentity: conversation.destinationIdentity,
+    destinationAddress: conversation.destination.address ?? null,
+    destinationHostname: conversation.destination.hostname ?? null,
+    destinationWorkload: conversation.destination.workload ?? null,
+    destinationPort: conversation.destinationPort,
+    applicationProtocol: conversation.applicationProtocol,
+    recordFormat: conversation.recordFormat,
+    cryptoState: conversation.cryptoState,
+    reportedCipherSuite: conversation.reportedCipherSuite,
+    reportedTlsVersion: conversation.reportedTlsVersion,
+    cryptoReportedAt: null,
+    recordCount: conversation.recordCount,
+    firstSeen: null,
+    lastSeen: null,
+    cryptography: conversation.observations.map((observation) => {
+      const detail = observation.locationDetail;
+      if (detail?.kind !== "network-flow") {
+        // Cannot happen: every observation here came from
+        // `collectNetworkFlowObservations`, which always sets this. Thrown
+        // rather than defaulted — a defaulted `role` would label a key exchange
+        // as an authentication, which is the one confusion that would make two
+        // separately-remediated facts read as one.
+        throw new Error(`network-flow observation at ${observation.location} carries no network-flow locationDetail`);
+      }
+      return {
+        assetId: null,
+        role: detail.networkFlow.role,
+        algorithm: observation.algorithm,
+        keySize: observation.keySize ?? null,
+        location: observation.location,
+        status: null,
+        quantumVulnerable: null,
+      };
+    }),
+    gaps: conversation.gaps.map((gap) => ({
+      reason: gap.reason,
+      component: gap.component ?? null,
+      reported: gap.reported ?? null,
+    })),
+  };
+}
+
+router.post("/projects/:id/network-flows", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(raw, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const body = SubmitProjectNetworkFlowsBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+  const submitted = body.data.records;
+
+  if (submitted.length > MAX_NETWORK_FLOW_RECORDS_PER_SUBMISSION) {
+    res.status(400).json({
+      error: `Too many records in one submission (${submitted.length} > ${MAX_NETWORK_FLOW_RECORDS_PER_SUBMISSION}). Split the request rather than truncating it.`,
+    });
+    return;
+  }
+
+  const records = submitted.map(toFlowRecordInput);
+  // Run the pure collector before the scope is opened, the same reason
+  // `lockfilesIn`/`certificatesIn` are called there: it decides whether there is
+  // anything to write at all, and it supplies the per-record rejections the
+  // response reports even in the branch where nothing is written.
+  const collected = collectNetworkFlowObservations(repo, records);
+
+  const ctx = orgContextFor(req);
+  const outcome = await withOrg(ctx, async (tx) => {
+    // A foreign key is not subject to RLS — PostgreSQL checks referential
+    // integrity with policies bypassed — so `network_flows.project_id` being a
+    // real FK does not make this check optional. The parent must be confirmed
+    // visible *inside* the scope before a child row is written.
+    const [parent] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!parent) return null;
+
+    // Not one record could be read as a conversation: no endpoint pair, or
+    // garbage. Writing a collection run here would make
+    // `GET /projects/:id/coverage` report network-flow as "examined — nothing
+    // found", a different and false statement. Note what this does NOT gate on:
+    // a submission of a thousand cipher-free rows produces zero observations
+    // and IS a real examination — a thousand conversations now on record — so
+    // it records a run.
+    if (collected.conversations.length === 0) return { kind: "nothing-readable" as const };
+
+    return {
+      kind: "ingested" as const,
+      result: await ingestNetworkFlowObservations(tx, {
+        repo,
+        projectId: id,
+        records,
+        organizationId: ctx.organizationId,
+      }),
+    };
+  });
+
+  if (outcome === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  if (outcome.kind === "nothing-readable") {
+    res.json({
+      projectId: id,
+      recordsSubmitted: submitted.length,
+      conversationsRecorded: 0,
+      flowsCreated: 0,
+      flowsUpdated: 0,
+      flowsWithUndeterminedCryptography: 0,
+      collectionRunId: null,
+      assetsCreated: 0,
+      assetsUpdated: 0,
+      observationsCreated: 0,
+      assetsMarkedGone: 0,
+      conversations: [],
+      rejected: collected.rejected,
+      evidenceCaveat: NETWORK_FLOW_EVIDENCE_CAVEAT,
+    });
+    return;
+  }
+
+  const { result } = outcome;
+  logger.info(
+    {
+      projectId: id,
+      recordsSubmitted: submitted.length,
+      conversationsRecorded: result.conversations.length,
+      undetermined: result.flowsWithUndeterminedCryptography,
+      observations: result.observationsCreated,
+      route: "POST /projects/:id/network-flows",
+    },
+    "network-flow collection complete",
+  );
+
+  res.json({
+    projectId: id,
+    recordsSubmitted: submitted.length,
+    conversationsRecorded: result.conversations.length,
+    flowsCreated: result.flowsCreated,
+    flowsUpdated: result.flowsUpdated,
+    flowsWithUndeterminedCryptography: result.flowsWithUndeterminedCryptography,
+    collectionRunId: result.collectionRunId,
+    assetsCreated: result.assetsCreated,
+    assetsUpdated: result.assetsUpdated,
+    observationsCreated: result.observationsCreated,
+    assetsMarkedGone: result.assetsMarkedGone,
+    conversations: result.conversations.map(toCollectedConversation),
+    rejected: result.rejected,
+    evidenceCaveat: NETWORK_FLOW_EVIDENCE_CAVEAT,
+  });
+});
+
+router.get("/projects/:id/network-flows", async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetProjectParams.safeParse({ id: parseInt(rawId, 10) });
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+  const id = params.data.id;
+  const repo = projectRepoId(id);
+  const now = new Date();
+
+  const found = await withOrg(orgContextFor(req), async (tx) => {
+    const [project] = await tx.select({ id: projectsTable.id }).from(projectsTable).where(eq(projectsTable.id, id));
+    if (!project) return null;
+
+    const flows = await tx
+      .select()
+      .from(networkFlowsTable)
+      .where(eq(networkFlowsTable.projectId, id))
+      .orderBy(networkFlowsTable.destinationIdentity, networkFlowsTable.destinationPort, networkFlowsTable.sourceIdentity);
+
+    const assets = await tx
+      .select({
+        id: assetsTable.id,
+        algorithm: assetsTable.algorithm,
+        keySize: assetsTable.keySize,
+        location: assetsTable.location,
+        locationDetail: assetsTable.locationDetail,
+        status: assetsTable.status,
+      })
+      .from(assetsTable)
+      .where(and(eq(assetsTable.surface, "network-flow"), like(assetsTable.location, `${repo}:%`)))
+      .orderBy(assetsTable.location);
+
+    return { flows, assets };
+  });
+
+  if (found === null) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  // Assets are keyed by the destination service endpoint, not by conversation
+  // — that is the whole reason five hundred clients dialling one load balancer
+  // do not produce five hundred copies of the same crypto. Joining them back on
+  // here is what lets one response answer "what protected this conversation,
+  // and who were its two ends" rather than half of it.
+  const cryptoByEndpoint = new Map<string, Array<(typeof found.assets)[number]>>();
+  for (const asset of found.assets) {
+    const detail = asset.locationDetail;
+    if (detail?.kind !== "network-flow") {
+      // Defensive, not expected: every row on this surface was written by
+      // `ingestNetworkFlowObservations`. Skipping rather than throwing keeps one
+      // malformed historical row from taking the whole inventory read down — the
+      // same call `GET /projects/:id/data-at-rest` makes.
+      logger.warn({ assetId: asset.id }, "network-flow asset has no network-flow locationDetail — skipped");
+      continue;
+    }
+    const key = JSON.stringify([
+      detail.networkFlow.transport,
+      detail.networkFlow.destinationIdentity,
+      detail.networkFlow.destination.destinationPort ?? null,
+    ]);
+    const held = cryptoByEndpoint.get(key);
+    if (held === undefined) cryptoByEndpoint.set(key, [asset]);
+    else held.push(asset);
+  }
+
+  const conversations = found.flows.map((flow) => {
+    const endpointKey = JSON.stringify([flow.transport, flow.destinationIdentity, flow.destinationPort]);
+    const cryptography = (cryptoByEndpoint.get(endpointKey) ?? []).map((asset) => {
+      const detail = asset.locationDetail as Extract<LocationDetail, { kind: "network-flow" }>;
+      // Derived on read, never stored — the same discipline `lib/compliance.ts`
+      // applies to findings, so a 2026 row cannot disagree with a 2028 read.
+      const compliance = resolveCompliance(asset.algorithm, { asOf: now });
+      return {
+        assetId: asset.id,
+        role: detail.networkFlow.role,
+        algorithm: asset.algorithm,
+        keySize: asset.keySize,
+        location: asset.location,
+        status: asset.status,
+        quantumVulnerable: compliance?.quantumVulnerable ?? null,
+      };
+    });
+
+    return {
+      flowKey: flow.flowKey,
+      transport: flow.transport,
+      sourceIdentity: flow.sourceIdentity,
+      sourceAddress: flow.sourceAddress,
+      sourceHostname: flow.sourceHostname,
+      sourceWorkload: flow.sourceWorkload,
+      destinationIdentity: flow.destinationIdentity,
+      destinationAddress: flow.destinationAddress,
+      destinationHostname: flow.destinationHostname,
+      destinationWorkload: flow.destinationWorkload,
+      destinationPort: flow.destinationPort,
+      applicationProtocol: flow.applicationProtocol,
+      recordFormat: flow.recordFormat,
+      cryptoState: flow.cryptoState,
+      reportedCipherSuite: flow.reportedCipherSuite,
+      reportedTlsVersion: flow.reportedTlsVersion,
+      cryptoReportedAt: flow.cryptoReportedAt?.toISOString() ?? null,
+      recordCount: flow.recordCount,
+      firstSeen: flow.firstSeen.toISOString(),
+      lastSeen: flow.lastSeen.toISOString(),
+      cryptography,
+      // The POST reports per-submission gaps; a stored conversation's gap is
+      // simply its `cryptoState`, so this stays empty rather than being
+      // reconstructed from a suite name that is no longer being parsed.
+      gaps: [],
+    };
+  });
+
+  res.json({
+    projectId: id,
+    generatedAt: now.toISOString(),
+    conversationsRecorded: conversations.length,
+    flowsWithUndeterminedCryptography: conversations.filter((c) => c.cryptoState === "undetermined").length,
+    conversations,
+    evidenceCaveat: NETWORK_FLOW_EVIDENCE_CAVEAT,
   });
 });
 
