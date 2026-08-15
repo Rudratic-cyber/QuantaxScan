@@ -22,12 +22,14 @@ import type {
   ChatBody,
   CommunityPost,
   CreateCommunityPostBody,
+  CreateCredentialBody,
   CreateOtFleetBody,
   CreateProjectBody,
   CreateScanBody,
   CreateSharedReportBody,
   CreateSharedReportResponse,
   CreateVendorAssessmentBody,
+  Credential,
   DataAtRestIngestSummary,
   DemoRepo,
   DemoScanResult,
@@ -3860,6 +3862,256 @@ export const useDeleteVendorAssessment = <
   TContext
 > => {
   return useMutation(getDeleteVendorAssessmentMutationOptions(options));
+};
+
+/**
+ * Metadata only. The stored secret is never returned by this route, and there is no route that returns it — the only way out of the store is `redeemCredential()` inside the server process, which hands a collector an opaque handle rather than a string. `keyId` names the `QUANTAXSCAN_CREDENTIAL_KEYS` entry that encrypted the row, so an operator can tell which rows still need re-encrypting after a rotation; it is not itself secret.
+ * @summary List this organisation's stored credentials (F4)
+ */
+export const getListCredentialsUrl = () => {
+  return `/api/credentials`;
+};
+
+export const listCredentials = async (
+  options?: RequestInit,
+): Promise<Credential[]> => {
+  return customFetch<Credential[]>(getListCredentialsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCredentialsQueryKey = () => {
+  return [`/api/credentials`] as const;
+};
+
+export const getListCredentialsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCredentials>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCredentials>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListCredentialsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listCredentials>>> = ({
+    signal,
+  }) => listCredentials({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCredentials>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCredentialsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCredentials>>
+>;
+export type ListCredentialsQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary List this organisation's stored credentials (F4)
+ */
+
+export function useListCredentials<
+  TData = Awaited<ReturnType<typeof listCredentials>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCredentials>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCredentialsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * The secret is encrypted with AES-256-GCM under a key read from the environment and never stored in the database, then discarded from memory. The response carries the same metadata as the list route and no secret. A deployment that has configured no credential key answers 503 rather than storing anything.
+ * @summary Register a third-party credential (F4)
+ */
+export const getCreateCredentialUrl = () => {
+  return `/api/credentials`;
+};
+
+export const createCredential = async (
+  createCredentialBody: CreateCredentialBody,
+  options?: RequestInit,
+): Promise<Credential> => {
+  return customFetch<Credential>(getCreateCredentialUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createCredentialBody),
+  });
+};
+
+export const getCreateCredentialMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCredential>>,
+    TError,
+    { data: BodyType<CreateCredentialBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCredential>>,
+  TError,
+  { data: BodyType<CreateCredentialBody> },
+  TContext
+> => {
+  const mutationKey = ["createCredential"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCredential>>,
+    { data: BodyType<CreateCredentialBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createCredential(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCredentialMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCredential>>
+>;
+export type CreateCredentialMutationBody = BodyType<CreateCredentialBody>;
+export type CreateCredentialMutationError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Register a third-party credential (F4)
+ */
+export const useCreateCredential = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCredential>>,
+    TError,
+    { data: BodyType<CreateCredentialBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCredential>>,
+  TError,
+  { data: BodyType<CreateCredentialBody> },
+  TContext
+> => {
+  return useMutation(getCreateCredentialMutationOptions(options));
+};
+
+/**
+ * Sets `revokedAt` and nulls the ciphertext, IV, tag and key id in the same statement, so revocation is a destruction of the material rather than a flag a later query could forget to check. The row survives, because "this organisation held this credential between these dates" is what an incident review needs. Idempotent: re-revoking returns the credential with its original `revokedAt`. There is no un-revoke — register a new one.
+ * @summary Revoke a credential and destroy its stored material (F4)
+ */
+export const getRevokeCredentialUrl = (id: number) => {
+  return `/api/credentials/${id}/revoke`;
+};
+
+export const revokeCredential = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Credential> => {
+  return customFetch<Credential>(getRevokeCredentialUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRevokeCredentialMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeCredential>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revokeCredential>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["revokeCredential"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revokeCredential>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return revokeCredential(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevokeCredentialMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revokeCredential>>
+>;
+
+export type RevokeCredentialMutationError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Revoke a credential and destroy its stored material (F4)
+ */
+export const useRevokeCredential = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeCredential>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof revokeCredential>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRevokeCredentialMutationOptions(options));
 };
 
 /**

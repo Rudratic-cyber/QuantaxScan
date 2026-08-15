@@ -63,6 +63,11 @@ const { testDb, testScope, seedAsSuperuser, closeTestDb } = await vi.hoisted(asy
   // unlisted key is a startup error rather than a silent fall-back to
   // organisation 1.
   process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "2,3";
+  // F4 — the credential store fails closed at use rather than at startup, so
+  // without a key configured the credential routes would answer 503 and the
+  // cross-tenant assertions below would pass for the wrong reason.
+  const { randomBytes } = await import("node:crypto");
+  process.env.QUANTAXSCAN_CREDENTIAL_KEYS = `ka:${randomBytes(32).toString("base64")}`;
   const { createTestDb } = await import("@workspace/db/test-support");
   // Default is [1, 2]; the third organisation is this file's own fixture for
   // the second-key tests below, so it has to be seeded explicitly too.
@@ -249,6 +254,14 @@ describe("route manifest — a new route cannot ship without being considered", 
     // foreign-key-under-RLS check to make. Which suppliers a company assesses,
     // and what those suppliers admitted about their cryptography, is as
     // tenant-private as a scan result.
+    // F4 — the credential store. No parent id is accepted on register, so
+    // there is no foreign-key-under-RLS check to make: the row is stamped with
+    // the caller's organisation. The revoke route DOES take a client-supplied
+    // id, and it is resolved inside the scope — another organisation's id is
+    // invisible and comes back 404 rather than 403.
+    "GET /credentials": "org-scoped",
+    "POST /credentials": "org-scoped",
+    "POST /credentials/:id/revoke": "org-scoped",
     "GET /vendor-assessments": "org-scoped",
     "POST /vendor-assessments": "org-scoped",
     "GET /vendor-assessments/:id": "org-scoped",
@@ -934,5 +947,70 @@ describe("the vendor register is tenant-private (B9)", () => {
     await auth2(request.delete(`/api/vendor-assessments/${created.body.id}`));
     const stillOurs = await auth(request.get(`/api/vendor-assessments/${created.body.id}`));
     expect(stillOurs.status).toBe(200);
+  });
+});
+
+describe("the credential store is tenant-private (F4)", () => {
+  /**
+   * The highest-stakes cross-tenant assertion in this file. Every other row
+   * here is a *description* of a customer's estate; this one is a working
+   * read-only key into it. A leak is not a disclosure about their
+   * infrastructure — it is access to it.
+   *
+   * Written against the two configured keys rather than the shared fixture, the
+   * same as the vendor block above, so it seeds nothing another test can see.
+   */
+  const SECRET = "cross-tenant-credential-plaintext-9e2f7a4c1b8d-NEVER-CROSS";
+
+  it("a credential one key registers is invisible to the other, by list and by revoke", async () => {
+    const created = await auth(
+      request.post("/api/credentials").send({
+        name: "our production KMS",
+        kind: "cloud_kms_readonly",
+        secret: SECRET,
+        description: "our account, nobody else's",
+      }),
+    );
+    expect(created.status).toBe(201);
+    expect(created.body.organizationId).toBe(OUR_ORG);
+    // Belt and braces on the register response itself, in the one suite that
+    // runs the whole middleware stack.
+    expect(JSON.stringify(created.body)).not.toContain(SECRET);
+
+    const theirList = await auth2(request.get("/api/credentials"));
+    expect(theirList.status).toBe(200);
+    expect(theirList.body).toEqual([]);
+    expect(JSON.stringify(theirList.body)).not.toContain("our production KMS");
+    expect(JSON.stringify(theirList.body)).not.toContain(SECRET);
+
+    // 404, not 403: a 403 confirms the row exists, and which cloud accounts a
+    // company has connected is itself commercially sensitive.
+    const revokeAttempt = await auth2(request.post(`/api/credentials/${created.body.id}/revoke`));
+    expect(revokeAttempt.status).toBe(404);
+
+    // And it really is unchanged, not merely unreadable by them — a revoke that
+    // silently succeeded would destroy our material while returning 404.
+    const stillOurs = await auth(request.get("/api/credentials"));
+    expect(stillOurs.body).toHaveLength(1);
+    expect(stillOurs.body[0].status).toBe("active");
+    expect(stillOurs.body[0].revokedAt).toBeNull();
+    expect(stillOurs.body[0].keyId).not.toBeNull();
+  });
+
+  it("both organisations may hold a credential with the same name, and neither sees the other's", async () => {
+    const name = "shared name, different secret";
+    const ourCredential = await auth(
+      request.post("/api/credentials").send({ name, kind: "database_readonly", secret: `${SECRET}-ours` }),
+    );
+    const theirCredential = await auth2(
+      request.post("/api/credentials").send({ name, kind: "database_readonly", secret: `${SECRET}-theirs` }),
+    );
+    expect(ourCredential.status).toBe(201);
+    expect(theirCredential.status).toBe(201);
+    expect(ourCredential.body.organizationId).toBe(OUR_ORG);
+    expect(theirCredential.body.organizationId).toBe(THIRD_ORG);
+
+    const ourList = await auth(request.get("/api/credentials"));
+    expect(ourList.body.map((c: { id: number }) => c.id)).not.toContain(theirCredential.body.id);
   });
 });

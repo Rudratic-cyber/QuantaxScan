@@ -22,7 +22,7 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Coverage Summariser Suite** | Vitest | `artifacts/api-server/src/lib/coverage.test.ts` | Pure — no database, no HTTP |
 | **Posture Timeline Suite** | Vitest | `artifacts/api-server/src/lib/posture-timeline.test.ts` | Pure — no database, `now` injected (D7's whole subject is time) |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts`, `tests/ui/timeline-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
-| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (twelve files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
+| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (thirteen files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
 | **Continuous Integration** | GitHub Actions | `.github/workflows/ci.yml` | Ubuntu runner (`ubuntu-latest`) |
 
 The UI suite always starts its own Vite dev server (`reuseExistingServer: false`) so it can never
@@ -224,6 +224,7 @@ mid-run.
 | `10-protocol-config` (B6) | What a config *declares*, never conflated with what B3 observed being negotiated |
 | `11-data-at-rest` (B7) | A Regulated archive reaches the risk engine with X = 25 and `xAssumed: false`; "encrypted, cipher unknown" produces no asset; a blank resubmission does not retire a recorded cipher |
 | `12-vendor` (B9) | A vendor's claim never reads as an observation; "no clause" and "nobody read the contract" stay distinguishable in both directions |
+| `13-credentials` (F4) | The credential store *withholds*: every assertion greps the raw response text for the secret rather than checking named fields, because a leak arrives through the field nobody listed. Covers the 400 that must not echo its rejected input, revocation destroying material while keeping the audit row, and the 409 a wrapped unique violation would otherwise answer 500 |
 
 † needs `QUANTAXSCAN_TLS_PROBE_ALLOW_PRIVATE_TARGETS=1` — it must handshake with
 a server on loopback, which production correctly refuses.

@@ -529,7 +529,7 @@ Detail: [07-reports.md](07-reports.md)
 | F1 | Authentication + RBAC | `partial` | **P0**† |
 | F2 | Multi-tenancy with hard isolation | `partial` | **P0**† |
 | F3 | Audit logging | `planned` | **P1** |
-| F4 | Source-code handling controls (ephemeral, no-retention mode) | `planned` | **P0**† |
+| F4 | Source-code handling controls (ephemeral mode) + credential store | `built` | **P0**† |
 | F5 | Self-hosted / on-prem deployment | `planned` | **P1**‡ |
 | F6 | SSO / SAML | `planned` | **P2** |
 | F7 | Secrets management (no `.env` in git) | `partial` | **P0** |
@@ -557,6 +557,36 @@ through the real stack (`cross-tenant.test.ts`, `tests/e2e/07-multi-org.spec.ts`
 everything that needs a *person* rather than a machine key — self-serve organisation creation over
 HTTP, and per-user membership — both of which need F1's sign-in first. Detail and deploy order:
 [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §5, §9, §10.
+
+**F4 `built` — two controls that turned out to be one feature.** The catalogue listed F4 as
+source-code handling; the lane that built it found the same rule underneath both halves, so they
+shipped together.
+
+*Ephemeral mode*: `POST /scans` takes a `retentionMode`, and `persistedSnippet()` is the single
+choke point every finding row is written through, so a future third writer that forgets the mode
+fails to typecheck rather than silently retaining code. Absent means `retained` — what every
+existing submission already did — and the default is written at the route rather than left to the
+column default, because the column default describes rows written before the feature existed and
+that is a different statement. `findings.code_snippet` is `NOT NULL`, so an ephemeral finding
+carries a self-describing marker instead of an empty string: "nothing was kept" and "we kept an
+empty line" must not look alike.
+
+*Credential store*: an org-scoped `credentials` table holding AES-256-GCM ciphertext under a key
+from the environment, three routes (register, list, revoke) and **no read-back route** — the only
+way a secret leaves is `redeemCredential()` inside the process, which hands a collector a
+`SecretHandle` whose coercion hooks render `[redacted]` in any interpolation. Six of the eight live
+surfaces are submission-based precisely because there was nowhere to hold a customer credential;
+this is that place, and wave two's credentialed KMS polling and live database reads build on it.
+Deliberately absent: no plaintext hash, length, prefix or last-four, because each is an oracle a
+database dump can test guesses against and nothing needs one. Revocation nulls the material rather
+than setting a flag, so the audit trail survives with nothing left to decrypt.
+
+Both halves rest on the same rule — a secret must not be reachable from a place nobody thought to
+look — which is why the route logs an error's *class* rather than the error object (a driver error
+echoes the failing statement's bind parameters) and why the 400 branch does not return zod's
+message (it serialises the input it rejected). `secret-redaction.test.ts` greps the real logger's
+output; `tests/e2e/13-credentials.spec.ts` greps the raw HTTP response text rather than asserting
+on named fields, because a leak arrives through the field nobody listed.
 
 **F7 `partial`** — `.env` is out of git and gitignored (S5/G-13). Secret scanning in CI is not
 done.

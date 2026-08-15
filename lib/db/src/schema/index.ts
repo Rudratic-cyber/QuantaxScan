@@ -13,3 +13,4 @@ export * from "./assets";
 export * from "./observations";
 export * from "./ot_fleets";
 export * from "./vendor_assessments";
+export * from "./credentials";

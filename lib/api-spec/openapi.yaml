@@ -32,6 +32,10 @@ tags:
     description: AI assistant
   - name: ot-fleets
     description: Manual OT/embedded device fleet register (B8)
+  - name: credentials
+    description: >-
+      Third-party credentials a customer entrusts to us for credentialed collectors (F4). No
+      operation in this tag ever returns a stored secret, and there is no route that can.
 
 # Interim shared-key authentication (S1 / G-12). Applies to every operation
 # unless overridden with `security: []`. This carries no per-user identity and
@@ -1222,6 +1226,90 @@ paths:
         "204":
           description: Deleted
 
+  /credentials:
+    get:
+      operationId: listCredentials
+      tags: [credentials]
+      summary: List this organisation's stored credentials (F4)
+      description: >-
+        Metadata only. The stored secret is never returned by this route, and there is no route
+        that returns it — the only way out of the store is `redeemCredential()` inside the server
+        process, which hands a collector an opaque handle rather than a string. `keyId` names the
+        `QUANTAXSCAN_CREDENTIAL_KEYS` entry that encrypted the row, so an operator can tell which
+        rows still need re-encrypting after a rotation; it is not itself secret.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Stored credentials, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Credential"
+    post:
+      operationId: createCredential
+      tags: [credentials]
+      summary: Register a third-party credential (F4)
+      description: >-
+        The secret is encrypted with AES-256-GCM under a key read from the environment and never
+        stored in the database, then discarded from memory. The response carries the same
+        metadata as the list route and no secret. A deployment that has configured no credential
+        key answers 503 rather than storing anything.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCredentialBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "400":
+          description: Invalid body
+        "409":
+          description: A credential with that name already exists in this organisation
+        "503":
+          description: The deployment has configured no credential key, so nothing can be stored
+        "201":
+          description: Registered credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+
+  /credentials/{id}/revoke:
+    post:
+      operationId: revokeCredential
+      tags: [credentials]
+      summary: Revoke a credential and destroy its stored material (F4)
+      description: >-
+        Sets `revokedAt` and nulls the ciphertext, IV, tag and key id in the same statement, so
+        revocation is a destruction of the material rather than a flag a later query could forget
+        to check. The row survives, because "this organisation held this credential between these
+        dates" is what an incident review needs. Idempotent: re-revoking returns the credential
+        with its original `revokedAt`. There is no un-revoke — register a new one.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "400":
+          description: Invalid credential ID
+        "404":
+          description: Not found in this organisation
+        "200":
+          description: Revoked credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+
   /projects/{id}/kms:
     post:
       operationId: submitProjectKms
@@ -1573,7 +1661,19 @@ components:
         code:
           type: string
           nullable: true
-          description: The submitted source, as persisted on the row. Null on rows written before it was captured.
+          description: >-
+            The submitted source, as persisted on the row. Null on rows written before it was
+            captured, and **always** null when `retentionMode` is `ephemeral`.
+        retentionMode:
+          $ref: "#/components/schemas/RetentionMode"
+        sourceDiscardedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            When the submitted source was discarded. Set at insert time for an `ephemeral` scan,
+            because there is no later moment — the body is never written. Null on a `retained`
+            scan, where the source is still there.
         language:
           type: string
           nullable: true
@@ -1606,10 +1706,23 @@ components:
         - cleanCount
         - totalEffortHours
         - estimatedCost
+        - retentionMode
         - pqc
         - hygiene
         - mosca
         - createdAt
+
+    RetentionMode:
+      type: string
+      enum: [retained, ephemeral]
+      description: >-
+        F4 — which source-handling tier a submission was processed under, recorded per submission
+        so a customer can be told which one their data went through
+        (docs/Claude/08-security.md §"Source code handling"). `retained`: the body is persisted on
+        `scans.code` and matched lines are persisted as evidence. `ephemeral`: the submission is
+        scanned in memory and no source is written anywhere — no `code`, no finding code snippets,
+        no `evidence.codeSnippet`. The findings themselves are still persisted; none of them is
+        source.
 
     SubmitProjectDependenciesBody:
       type: object
@@ -1923,6 +2036,14 @@ components:
           type: string
         language:
           type: string
+        retentionMode:
+          allOf:
+            - $ref: "#/components/schemas/RetentionMode"
+          description: >-
+            Omitted means `retained`, which is what every submission did before F4. Send
+            `ephemeral` to have the source scanned in memory and never written — the findings come
+            back in the response exactly as they would otherwise, with their code snippets
+            replaced by a fixed marker in the persisted rows.
       required:
         - projectId
         - mode
@@ -2883,6 +3004,13 @@ components:
           minItems: 1
           items:
             $ref: "#/components/schemas/MultiScanFile"
+        retentionMode:
+          allOf:
+            - $ref: "#/components/schemas/RetentionMode"
+          description: >-
+            Omitted means `retained`. Applies to the whole submission: every scan row this
+            request creates carries the same mode, because a customer's answer to "what did you
+            do with my source" cannot differ per file within one upload.
       required:
         - projectName
         - language
@@ -2971,6 +3099,8 @@ components:
           type: integer
         filesScanned:
           type: integer
+        retentionMode:
+          $ref: "#/components/schemas/RetentionMode"
         pqc:
           $ref: "#/components/schemas/PqcExposure"
         hygiene:
@@ -2992,6 +3122,7 @@ components:
         - totalLines
         - findingsCount
         - filesScanned
+        - retentionMode
         - pqc
         - hygiene
         - mosca
@@ -5474,3 +5605,128 @@ components:
         - stores
         - scenarios
         - framing
+
+    CredentialKind:
+      type: string
+      enum: [cloud_kms_readonly, database_readonly, secrets_manager_token, idp_client_secret]
+      description: >-
+        What a stored credential is *for* (F4). Each value names a wave-two consumer that could
+        not ship until the credential store existed. `kind` is not decoration: a redemption whose
+        kind does not match the stored row is refused, so a bug cannot send the identity
+        provider's client secret to a cloud KMS. There is deliberately no `generic` member.
+
+    CredentialStatus:
+      type: string
+      enum: [active, expired, revoked]
+      description: >-
+        Derived on read, never stored: `revoked` when the material has been destroyed, `expired`
+        when the customer told us the third-party credential expires and that instant has passed,
+        `active` otherwise. A credential with no `expiresAt` reads `active` because the customer
+        did not say when it expires — never because it does not.
+
+    Credential:
+      type: object
+      description: >-
+        A stored third-party credential, as a client may see it (F4). **There is no secret field
+        and no route that can produce one.** The secret exists only as AES-256-GCM ciphertext in
+        the database and as a disposable handle inside a collector's callback; see
+        `lib/db/src/credentials.ts` for what that encryption does and does not protect against.
+        There is also deliberately no hash, length, prefix or last-four of the plaintext anywhere
+        in the schema, because each would be an oracle an attacker with a database dump could test
+        guesses against.
+      properties:
+        id:
+          type: integer
+        organizationId:
+          type: integer
+        name:
+          type: string
+          description: The customer's label, unique within the organisation.
+        kind:
+          $ref: "#/components/schemas/CredentialKind"
+        description:
+          type: string
+          nullable: true
+          description: Free text — which account, tenant or endpoint it belongs to. Never the secret.
+        keyId:
+          type: string
+          nullable: true
+          description: >-
+            Which `QUANTAXSCAN_CREDENTIAL_KEYS` entry encrypted this row. Not secret; an operator
+            reads it to see which rows still need re-encrypting after a rotation. Null once
+            revoked, along with the material itself.
+        status:
+          $ref: "#/components/schemas/CredentialStatus"
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            When the *third-party* credential expires, as the customer told us. Null means they
+            did not say — never "does not expire".
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRedeemedAt:
+          type: string
+          format: date-time
+          nullable: true
+        redemptionCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        createdByUserId:
+          type: string
+          nullable: true
+          description: >-
+            Null for the shared API key, which has no person behind it. Populated once per-user
+            sign-in (F1) lands; a default here would manufacture an attribution that does not
+            exist.
+      required:
+        - id
+        - organizationId
+        - name
+        - kind
+        - description
+        - keyId
+        - status
+        - expiresAt
+        - revokedAt
+        - lastRedeemedAt
+        - redemptionCount
+        - createdAt
+        - createdByUserId
+
+    CreateCredentialBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        kind:
+          $ref: "#/components/schemas/CredentialKind"
+        secret:
+          type: string
+          minLength: 1
+          description: >-
+            The credential itself. Sent once, encrypted immediately, and never returned by any
+            route. It must be the narrowest read-only credential that does the job
+            (docs/Claude/08-security.md §"Least privilege for collectors") — this product never
+            needs write access to a customer's key store.
+        description:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            When the third-party credential expires, if the customer knows. Omit rather than
+            guessing: a wrong expiry makes a working credential unusable, and a fabricated one
+            makes an expired credential look live.
+      required:
+        - name
+        - kind
+        - secret

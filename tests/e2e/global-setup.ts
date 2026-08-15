@@ -14,6 +14,7 @@ import {
   API_KEY_ORG_ID,
   API_PORT,
   API_URL,
+  CREDENTIAL_KEYS,
   HOST,
   SECOND_API_KEY,
   SECOND_ORG_ENABLED,
@@ -93,6 +94,11 @@ export default async function globalSetup(): Promise<void> {
             QUANTAXSCAN_API_KEYS: API_KEY,
             QUANTAXSCAN_API_KEY_ORG_ID: API_KEY_ORG_ID,
           }),
+      // F4's credential store. Configured here because an unconfigured store
+      // answers 503 by design, so without this the credential spec would be
+      // asserting a deployment that has not enabled the feature rather than
+      // the feature — see support/config.ts.
+      QUANTAXSCAN_CREDENTIAL_KEYS: CREDENTIAL_KEYS,
       // The frontend is served from a different origin, so this is what makes
       // the browser's requests legal. Character-for-character: `localhost` and
       // `127.0.0.1` are different origins.

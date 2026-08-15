@@ -36,6 +36,11 @@ export const ORG_SCOPED_TABLES = [
   "organization_members",
   "ot_fleets",
   "vendor_assessments",
+  // F4 — the credential store. Scoped like everything else, and additionally
+  // encrypted at rest; RLS is what stops one tenant addressing another's
+  // credential id, encryption is what survives a database-only compromise.
+  // Neither substitutes for the other.
+  "credentials",
 ] as const;
 
 export type OrgScopedTable = (typeof ORG_SCOPED_TABLES)[number];

@@ -75,6 +75,22 @@ export const API_KEY = process.env["E2E_API_KEY"] ?? randomBytes(32).toString("b
 /** Organisation the API-key principal acts as — seeded by `apply-tenancy`. */
 export const API_KEY_ORG_ID = "1";
 
+/**
+ * F4's credential-store key, and the id the server stamps on every row it
+ * encrypts. Generated per run for the same reason `API_KEY` is.
+ *
+ * This is deployment configuration, not a test fixture: without it the server
+ * answers 503 to `POST /credentials`, which is a real and reachable state
+ * (`routes/credentials.ts` — there is deliberately no startup gate). Setting it
+ * here does not hide that branch: it is asserted against the real handler in
+ * `artifacts/api-server/src/secret-redaction.test.ts`, which is the right level
+ * for it — proving it end to end would need a second API server started with
+ * the variable unset, for one status code.
+ */
+export const CREDENTIAL_KEY_ID = "e2e";
+export const CREDENTIAL_KEYS =
+  process.env["E2E_CREDENTIAL_KEYS"] ?? `${CREDENTIAL_KEY_ID}:${randomBytes(32).toString("base64")}`;
+
 /** `apply-tenancy` refuses to run without this; it owns organisation 1. */
 export const CAPTAIN_EMAIL = "e2e-captain@quantaxscan.invalid";
 
