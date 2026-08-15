@@ -36,6 +36,12 @@ tags:
     description: >-
       Third-party credentials a customer entrusts to us for credentialed collectors (F4). No
       operation in this tag ever returns a stored secret, and there is no route that can.
+  - name: waivers
+    description: >-
+      The waivers / exceptions register (C8). A waiver records that somebody accepted a risk,
+      with an expiry and a name — it never removes the asset from the inventory, the CBOM or any
+      coverage number. Suppressing a finding from a working list is legitimate; making an estate
+      read as cleaner than it is, is not.
 
 # Interim shared-key authentication (S1 / G-12). Applies to every operation
 # unless overridden with `security: []`. This carries no per-user identity and
@@ -2427,6 +2433,96 @@ paths:
           description: Not a member of this organisation
         "409":
           description: That would leave the organisation with no owner
+
+  /waivers:
+    get:
+      operationId: listWaivers
+      tags: [waivers]
+      summary: The waivers / exceptions register (C8)
+      description: >-
+        Every waiver, **expired and revoked included**, each with a computed `status`. There is
+        no `where expires_at > now()` behind this route: an exceptions register that forgets the
+        exceptions that lapsed cannot answer "what have we been accepting?", which is the only
+        question an auditor asks it. `status` is computed on read rather than stored, so it
+        cannot go stale at exactly the expiry the feature turns on. `counts` is always over the
+        whole register, never over the filtered slice.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, expired, revoked]
+          description: Return only waivers in this state. Omit for all of them.
+      responses:
+        "200":
+          description: The register
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WaiverRegister"
+    post:
+      operationId: createWaiver
+      tags: [waivers]
+      summary: Accept a risk, in writing, with an end date (admin)
+      description: >-
+        Admin-gated. The person best placed to silence an inconvenient finding is the member who
+        submitted the scan that raised it, and self-service risk acceptance is how an inventory
+        becomes fiction. `expiresAt` is required and has no "never" spelling; it must be in the
+        future and at most 730 days away. The asset id is confirmed visible inside the tenant
+        scope before the row is written, because a foreign key is checked with row-level security
+        bypassed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWaiverBody"
+      responses:
+        "201":
+          description: The granted waiver
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Waiver"
+        "400":
+          description: >-
+            Missing or empty `justification`/`signedOffBy`, a missing/invalid `expiresAt`, an
+            expiry in the past, or one more than 730 days away.
+        "403":
+          description: Not an admin
+        "404":
+          description: No such asset in this organisation
+
+  /waivers/{id}/revoke:
+    post:
+      operationId: revokeWaiver
+      tags: [waivers]
+      summary: Withdraw an acceptance early (member)
+      description: >-
+        Deliberately **not** admin-gated, unlike granting one: revoking restores a finding to the
+        working list, which is the fail-safe direction, and un-silencing must not be harder than
+        silencing. The waiver is closed, never deleted — a register you can delete from records
+        only what nobody minded recording. Revoking an already-expired waiver is allowed and is
+        not a no-op: it says the acceptance was withdrawn rather than merely lapsed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The revoked waiver
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Waiver"
+        "400":
+          description: Invalid waiver id
+        "404":
+          description: No such waiver in this organisation
+        "409":
+          description: Already revoked
 
 components:
   responses:
@@ -5070,6 +5166,17 @@ components:
             - $ref: "#/components/schemas/FindingCompliance"
           nullable: true
           description: Null when the mapping data has no entry for this algorithm.
+        waiver:
+          allOf:
+            - $ref: "#/components/schemas/ActiveWaiver"
+          nullable: true
+          description: >-
+            C8 — the active waiver on this asset, or null. **An annotation and nothing more.**
+            The asset appears here whether or not it is waived, and `mosca`, `compliance`,
+            `status`, `statusCounts` and every coverage and readiness figure are computed with no
+            knowledge that this field exists. A client may fold a waived row out of a working
+            list; nothing may use it to make the estate read as smaller or cleaner. Null the
+            instant the waiver expires — there is no cached "waived" flag to go stale.
         mosca:
           $ref: "#/components/schemas/InventoryMoscaSummary"
       required:
@@ -5089,6 +5196,7 @@ components:
         - classificationSource
         - latestConfidence
         - compliance
+        - waiver
         - mosca
 
     InventoryAssetsSummary:
@@ -5108,6 +5216,13 @@ components:
           description: >-
             Every asset status in the organisation, `gone` included — so drift can be
             reported without a removed asset ever appearing in `assets` as if still present.
+            Unaffected by waivers: a waived asset counts once, under the status it actually has.
+        waivedAssets:
+          type: integer
+          description: >-
+            C8 — how many of the assets listed above carry an active waiver. A count *beside* the
+            inventory, never subtracted from it. A rising figure is a governance signal, and
+            hiding it would be the same mistake as hiding the assets.
         scenarios:
           type: array
           items:
@@ -5125,8 +5240,176 @@ components:
         - generatedAt
         - assets
         - statusCounts
+        - waivedAssets
         - scenarios
         - framing
+
+    ActiveWaiver:
+      type: object
+      description: >-
+        C8 — the waiver currently in force on an asset, as attached to an inventory row. When an
+        asset has collected several, this is the active one that runs longest, so an
+        about-to-lapse waiver cannot hide a fresh one and produce a finding re-appearing on a day
+        nobody chose.
+      properties:
+        id:
+          type: integer
+        justification:
+          type: string
+        signedOffBy:
+          type: string
+          description: Who accepted the risk, as stated by the caller who wrote the waiver.
+        attribution:
+          type: string
+          enum: [authenticated, asserted]
+          description: >-
+            Whether the platform verified the name in `signedOffBy` (`authenticated` — a
+            signed-in user wrote the row) or is only repeating it (`asserted` — the shared API
+            key, which has no person behind it). Reported rather than hidden: calling an
+            assertion a signature is the same mistake as storing a resolved obligation on a row.
+        signedOffAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        daysRemaining:
+          type: integer
+          description: Never recomputed by the client from `expiresAt` and a local clock.
+      required:
+        - id
+        - justification
+        - signedOffBy
+        - attribution
+        - signedOffAt
+        - expiresAt
+        - daysRemaining
+
+    Waiver:
+      type: object
+      description: A register entry. `status` is computed on read, never stored.
+      properties:
+        id:
+          type: integer
+        assetId:
+          type: integer
+        divisionId:
+          type: integer
+          nullable: true
+          description: >-
+            Copied from the asset at sign-off, never taken from the caller. A waiver whose
+            division disagreed with its asset's would be visible to people who cannot see what it
+            waives.
+        justification:
+          type: string
+        signedOffBy:
+          type: string
+        attribution:
+          type: string
+          enum: [authenticated, asserted]
+        signedOffAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [active, expired, revoked]
+          description: >-
+            `revoked` beats `expired`: a waiver revoked in March and due to expire in June was
+            revoked, and reporting "expired" in July would misstate why it stopped applying. Only
+            `active` suppresses anything.
+        daysRemaining:
+          type: integer
+          description: Negative once expired.
+        asset:
+          allOf:
+            - $ref: "#/components/schemas/WaiverAsset"
+          nullable: true
+          description: >-
+            The asset this waiver names, so the register reads as a list of accepted risks rather
+            than a list of integers. Present on `GET /waivers` only.
+      required:
+        - id
+        - assetId
+        - divisionId
+        - justification
+        - signedOffBy
+        - attribution
+        - signedOffAt
+        - expiresAt
+        - revokedAt
+        - status
+        - daysRemaining
+
+    WaiverAsset:
+      type: object
+      properties:
+        id: { type: integer }
+        fingerprint: { type: string }
+        surface: { type: string }
+        algorithm: { type: string }
+        location: { type: string }
+        status: { type: string }
+      required: [id, fingerprint, surface, algorithm, location, status]
+
+    WaiverRegister:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        waivers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Waiver"
+        counts:
+          type: object
+          description: Over the whole register, never over a `?status=` slice.
+          properties:
+            active: { type: integer }
+            expired: { type: integer }
+            revoked: { type: integer }
+          required: [active, expired, revoked]
+      required:
+        - generatedAt
+        - waivers
+        - counts
+
+    CreateWaiverBody:
+      type: object
+      properties:
+        assetId:
+          type: integer
+          description: The asset whose risk is being accepted. Confirmed visible inside the tenant scope.
+        justification:
+          type: string
+          maxLength: 4000
+          description: >-
+            Why the risk was accepted. Required and non-empty — a risk accepted for no stated
+            reason has not been accepted, it has been ignored.
+        signedOffBy:
+          type: string
+          description: >-
+            Who accepted it. Required — a waiver attributed to nobody is an anonymous
+            suppression. See `attribution` for whether the platform verified this name.
+        expiresAt:
+          type: string
+          format: date-time
+          description: >-
+            When it stops being a waiver. Required, must be in the future, and at most 730 days
+            away. There is no "never": a waiver that does not expire is not an exception, it is a
+            silent edit to the inventory.
+      required:
+        - assetId
+        - justification
+        - signedOffBy
+        - expiresAt
 
     SubmitProjectCertificatesBody:
       type: object

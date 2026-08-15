@@ -399,7 +399,7 @@ Four decisions worth stating:
 | C5 | CNSA 2.0 timeline mapping | `planned` | **P1** |
 | C6 | CISA quantum-readiness roadmap alignment | `planned` | **P1** |
 | C7 | NSM-10 / OMB M-23-02 inventory format | `planned` | **P2** |
-| C8 | Waivers / exceptions register | `planned` | **P1** |
+| C8 | Waivers / exceptions register | `built`‡ | **P1** |
 | C9 | Control framework crosswalk (ISO 27001, SOC 2, PCI DSS 4, DORA) | `planned` | **P3** |
 
 \* C3 exists as a static by-name lookup over `mappings/algorithms.json`
@@ -413,6 +413,35 @@ confidence and draft status, plus a report bucket and a use-condition table. Not
 TypeScript names an algorithm, a date or a citation — even the deadline-type vocabulary is a data
 block. Obligations resolve on every findings *read* (`api-server/src/lib/compliance.ts`), so a
 mappings update reaches historical findings without a migration.
+
+‡ **C8 is `waivers` + three routes, and one rule that outranks all of them: a waiver never makes
+an asset read as clean.** `GET/POST /api/waivers` and `POST /api/waivers/:id/revoke`
+(`api-server/src/routes/waivers.ts`), over the `waivers` table (migration `0016`), which is
+organisation- *and* division-scoped like every other row.
+
+- **It annotates; it does not filter.** `GET /api/inventory/assets` gains a `waiver` field per
+  asset and a `waivedAssets` count *beside* the inventory. The asset stays in the list, in the
+  CBOM, in `statusCounts`, and in every coverage, readiness and Mosca figure — all of which are
+  computed with no knowledge that waivers exist. `tests/e2e/20-waivers.spec.ts` grants a waiver
+  and asserts `/inventory/readiness`, `/inventory/cbom` and `/stats` come back identical field
+  for field. An accepted risk is still a risk that was accepted.
+- **It expires, and there is no "never".** `expires_at` is `NOT NULL`, must be in the future and
+  at most 730 days out; a `CHECK` refuses a row expiring before its own sign-off. Expiry is
+  decided by one pure function, `resolveWaiverStatus()` (`@workspace/db/waivers`), called on every
+  read — and by **no `WHERE` clause anywhere**, so the register and the inventory annotation
+  cannot come to disagree, and an expired waiver stays visible in the register with `status:
+  "expired"` rather than vanishing from the history that is the register's point.
+- **Granting is `admin`; revoking is not.** The asymmetry is deliberate: the person best placed to
+  silence an inconvenient finding is the member who submitted the scan that raised it, while
+  revoking restores a finding to the working list and must not be harder than suppressing one.
+- **Revoked, never deleted.** There is no `DELETE` route. `signed_off_by` is required, and
+  `attribution: "authenticated" | "asserted"` says whether the platform verified that name or is
+  only repeating it (the shared API key has no person behind it).
+- **Not covered:** the legacy `findings` read path (`routes/scans.ts`, `/projects.ts`,
+  `/stats.ts`) is deliberately not waiver-aware — that table is pre-cutover and being deleted, and
+  teaching it the expiry rule would buy one release of consistency for a second implementation of
+  the thing most likely to drift. Waivers attach to `assets`, which is where the read is going.
+  There is no waiver UI yet, and no expiring-soon digest.
 
 **Acceptance (M2 exit): met.** `lib/mappings/src/engine.test.ts` changes a date, adds an algorithm
 and adds a deadline type in cloned data and asserts the output follows with no code change.

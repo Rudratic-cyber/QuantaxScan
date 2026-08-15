@@ -1477,6 +1477,33 @@ export const EnrichedInventoryAssetClassificationSource = {
   default: "default",
 } as const;
 
+/**
+ * Whether the platform verified the name in `signedOffBy` (`authenticated` — a signed-in user wrote the row) or is only repeating it (`asserted` — the shared API key, which has no person behind it). Reported rather than hidden: calling an assertion a signature is the same mistake as storing a resolved obligation on a row.
+ */
+export type ActiveWaiverAttribution =
+  (typeof ActiveWaiverAttribution)[keyof typeof ActiveWaiverAttribution];
+
+export const ActiveWaiverAttribution = {
+  authenticated: "authenticated",
+  asserted: "asserted",
+} as const;
+
+/**
+ * C8 — the waiver currently in force on an asset, as attached to an inventory row. When an asset has collected several, this is the active one that runs longest, so an about-to-lapse waiver cannot hide a fresh one and produce a finding re-appearing on a day nobody chose.
+ */
+export interface ActiveWaiver {
+  id: number;
+  justification: string;
+  /** Who accepted the risk, as stated by the caller who wrote the waiver. */
+  signedOffBy: string;
+  /** Whether the platform verified the name in `signedOffBy` (`authenticated` — a signed-in user wrote the row) or is only repeating it (`asserted` — the shared API key, which has no person behind it). Reported rather than hidden: calling an assertion a signature is the same mistake as storing a resolved obligation on a row. */
+  attribution: ActiveWaiverAttribution;
+  signedOffAt: string;
+  expiresAt: string;
+  /** Never recomputed by the client from `expiresAt` and a local clock. */
+  daysRemaining: number;
+}
+
 export interface EnrichedInventoryAsset {
   id: number;
   fingerprint: string;
@@ -1498,11 +1525,13 @@ export interface EnrichedInventoryAsset {
   latestConfidence: number | null;
   /** Null when the mapping data has no entry for this algorithm. */
   compliance: FindingCompliance | null;
+  /** C8 — the active waiver on this asset, or null. **An annotation and nothing more.** The asset appears here whether or not it is waived, and `mosca`, `compliance`, `status`, `statusCounts` and every coverage and readiness figure are computed with no knowledge that this field exists. A client may fold a waived row out of a working list; nothing may use it to make the estate read as smaller or cleaner. Null the instant the waiver expires — there is no cached "waived" flag to go stale. */
+  waiver: ActiveWaiver | null;
   mosca: InventoryMoscaSummary;
 }
 
 /**
- * Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present.
+ * Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present. Unaffected by waivers: a waived asset counts once, under the status it actually has.
  */
 export type InventoryAssetsSummaryStatusCounts = { [key: string]: number };
 
@@ -1516,11 +1545,93 @@ export type InventoryAssetsSummaryScenariosItem = {
 export interface InventoryAssetsSummary {
   generatedAt: string;
   assets: EnrichedInventoryAsset[];
-  /** Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present. */
+  /** Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present. Unaffected by waivers: a waived asset counts once, under the status it actually has. */
   statusCounts: InventoryAssetsSummaryStatusCounts;
+  /** C8 — how many of the assets listed above carry an active waiver. A count *beside* the inventory, never subtracted from it. A rising figure is a governance signal, and hiding it would be the same mistake as hiding the assets. */
+  waivedAssets: number;
   scenarios: InventoryAssetsSummaryScenariosItem[];
   /** Mandatory wherever a scenario year is shown. */
   framing: string;
+}
+
+export type WaiverAttribution =
+  (typeof WaiverAttribution)[keyof typeof WaiverAttribution];
+
+export const WaiverAttribution = {
+  authenticated: "authenticated",
+  asserted: "asserted",
+} as const;
+
+/**
+ * `revoked` beats `expired`: a waiver revoked in March and due to expire in June was revoked, and reporting "expired" in July would misstate why it stopped applying. Only `active` suppresses anything.
+ */
+export type WaiverStatus = (typeof WaiverStatus)[keyof typeof WaiverStatus];
+
+export const WaiverStatus = {
+  active: "active",
+  expired: "expired",
+  revoked: "revoked",
+} as const;
+
+export interface WaiverAsset {
+  id: number;
+  fingerprint: string;
+  surface: string;
+  algorithm: string;
+  location: string;
+  status: string;
+}
+
+/**
+ * A register entry. `status` is computed on read, never stored.
+ */
+export interface Waiver {
+  id: number;
+  assetId: number;
+  /** Copied from the asset at sign-off, never taken from the caller. A waiver whose division disagreed with its asset's would be visible to people who cannot see what it waives. */
+  divisionId: number | null;
+  justification: string;
+  signedOffBy: string;
+  attribution: WaiverAttribution;
+  signedOffAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  /** `revoked` beats `expired`: a waiver revoked in March and due to expire in June was revoked, and reporting "expired" in July would misstate why it stopped applying. Only `active` suppresses anything. */
+  status: WaiverStatus;
+  /** Negative once expired. */
+  daysRemaining: number;
+  /** The asset this waiver names, so the register reads as a list of accepted risks rather than a list of integers. Present on `GET /waivers` only. */
+  asset?: WaiverAsset | null;
+}
+
+/**
+ * Over the whole register, never over a `?status=` slice.
+ */
+export type WaiverRegisterCounts = {
+  active: number;
+  expired: number;
+  revoked: number;
+};
+
+export interface WaiverRegister {
+  generatedAt: string;
+  waivers: Waiver[];
+  /** Over the whole register, never over a `?status=` slice. */
+  counts: WaiverRegisterCounts;
+}
+
+export interface CreateWaiverBody {
+  /** The asset whose risk is being accepted. Confirmed visible inside the tenant scope. */
+  assetId: number;
+  /**
+   * Why the risk was accepted. Required and non-empty — a risk accepted for no stated reason has not been accepted, it has been ignored.
+   * @maxLength 4000
+   */
+  justification: string;
+  /** Who accepted it. Required — a waiver attributed to nobody is an anonymous suppression. See `attribution` for whether the platform verified this name. */
+  signedOffBy: string;
+  /** When it stops being a waiver. Required, must be in the future, and at most 730 days away. There is no "never": a waiver that does not expire is not an exception, it is a silent edit to the inventory. */
+  expiresAt: string;
 }
 
 export type SubmitProjectCertificatesBodyFilesItem = {
@@ -3642,3 +3753,19 @@ export const UpdateOrganizationMemberRoleBodyRole = {
 export type UpdateOrganizationMemberRoleBody = {
   role: UpdateOrganizationMemberRoleBodyRole;
 };
+
+export type ListWaiversParams = {
+  /**
+   * Return only waivers in this state. Omit for all of them.
+   */
+  status?: ListWaiversStatus;
+};
+
+export type ListWaiversStatus =
+  (typeof ListWaiversStatus)[keyof typeof ListWaiversStatus];
+
+export const ListWaiversStatus = {
+  active: "active",
+  expired: "expired",
+  revoked: "revoked",
+} as const;

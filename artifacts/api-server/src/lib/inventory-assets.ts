@@ -6,6 +6,7 @@ import {
   type QDayScenario,
 } from "@workspace/risk";
 import { resolveSecrecyLifetime, type DataClassification } from "@workspace/db/classification";
+import { activeWaiver, waiverAttribution } from "@workspace/db/waivers";
 import { resolveCompliance, type FindingCompliance } from "./compliance";
 
 /**
@@ -51,6 +52,27 @@ export interface InventoryProjectRow {
   secrecyLifetimeYears: number | null;
 }
 
+/**
+ * C8 — the waiver rows for these assets, unfiltered.
+ *
+ * Every waiver is passed in, expired and revoked included, and
+ * `activeWaiver()` decides which (if any) applies at `now`. The route must not
+ * pre-filter with `where expires_at > now()`: that would be a second copy of
+ * the expiry rule, able to disagree with the register's, and it is exactly the
+ * shape of "an expired waiver quietly keeps suppressing" that C8 was told not
+ * to build.
+ */
+export interface InventoryWaiverRow {
+  id: number;
+  assetId: number;
+  justification: string;
+  signedOffBy: string;
+  signedOffByUserId: string | null;
+  signedOffAt: Date | string;
+  expiresAt: Date | string;
+  revokedAt: Date | string | null;
+}
+
 /** Latest observation per asset — the same "one point, most recent wins" rule `coverage.ts` uses. */
 export interface InventoryObservationRow {
   assetId: number;
@@ -78,6 +100,28 @@ export interface EnrichedInventoryAsset {
   latestConfidence: number | null;
   /** Null when the mapping data has no entry for this algorithm — same contract as `withCompliance`. */
   compliance: FindingCompliance | null;
+  /**
+   * C8 — the active waiver on this asset, or null.
+   *
+   * **An annotation, and nothing more.** The asset is here whether or not it is
+   * waived; `mosca`, `compliance`, `status`, `statusCounts` and every coverage
+   * and readiness figure are computed with no knowledge that this field exists.
+   * A client may use it to fold a row out of a working list. Nothing may use it
+   * to make an estate look smaller or cleaner than it is.
+   *
+   * Null the instant the waiver expires, because the field is derived from the
+   * `now` this whole summary is computed at — there is no cached "waived" flag
+   * to go stale.
+   */
+  waiver: {
+    id: number;
+    justification: string;
+    signedOffBy: string;
+    attribution: "authenticated" | "asserted";
+    signedOffAt: string;
+    expiresAt: string;
+    daysRemaining: number;
+  } | null;
   mosca: {
     x: number;
     y: number;
@@ -93,6 +137,15 @@ export interface InventoryAssetsSummary {
   assets: EnrichedInventoryAsset[];
   /** Every status this organisation's assets hold, including `gone` — so Row 6 (drift) can report removals without listing them as present. */
   statusCounts: Record<string, number>;
+  /**
+   * C8 — how many of the assets listed above carry an active waiver.
+   *
+   * A count *beside* the inventory, never subtracted from it. Reported so a
+   * reader can see how much of the estate is being lived with on purpose, which
+   * is a number worth watching: a rising one is a governance signal, and hiding
+   * it would be the same mistake as hiding the assets.
+   */
+  waivedAssets: number;
   scenarios: readonly QDayScenario[];
   framing: string;
 }
@@ -110,12 +163,21 @@ export function summariseInventoryAssets(input: {
   allAssetsStatus: string[];
   projects: InventoryProjectRow[];
   observations: InventoryObservationRow[];
+  /** C8. Optional so every existing caller keeps compiling and keeps meaning "no waivers". */
+  waivers?: InventoryWaiverRow[];
   scenarios?: readonly QDayScenario[];
   now?: Date;
 }): InventoryAssetsSummary {
   const now = input.now ?? new Date();
   const scenarios = input.scenarios ?? DEFAULT_QDAY_SCENARIOS;
   const projectById = new Map(input.projects.map((p) => [p.id, p]));
+
+  const waiversByAsset = new Map<number, InventoryWaiverRow[]>();
+  for (const waiver of input.waivers ?? []) {
+    const held = waiversByAsset.get(waiver.assetId);
+    if (held === undefined) waiversByAsset.set(waiver.assetId, [waiver]);
+    else held.push(waiver);
+  }
 
   const latestByAsset = new Map<number, InventoryObservationRow>();
   for (const observation of input.observations) {
@@ -140,6 +202,9 @@ export function summariseInventoryAssets(input: {
     });
     const compliance = resolveCompliance(row.algorithm, { asOf: now });
     const y = migrationYearsFromEffortHours(row.effortHours ?? 0);
+    // Computed with no reference to `waived` below, and it must stay that way:
+    // the moment a waiver reaches this call, accepting a risk starts improving
+    // a score.
     const assessment = assessMoscaRisk({
       secrecyLifetimeYears: lifetime.years,
       migrationYears: y,
@@ -147,6 +212,8 @@ export function summariseInventoryAssets(input: {
       now,
       scenarios,
     });
+
+    const waived = activeWaiver(waiversByAsset.get(row.id) ?? [], now);
 
     return {
       id: row.id,
@@ -165,6 +232,18 @@ export function summariseInventoryAssets(input: {
       classificationSource: lifetime.classificationSource,
       latestConfidence: latestByAsset.get(row.id)?.confidence ?? null,
       compliance,
+      waiver:
+        waived === null
+          ? null
+          : {
+              id: waived.id,
+              justification: waived.justification,
+              signedOffBy: waived.signedOffBy,
+              attribution: waiverAttribution(waived.signedOffByUserId),
+              signedOffAt: toIso(waived.signedOffAt),
+              expiresAt: toIso(waived.expiresAt),
+              daysRemaining: Math.ceil((toMillis(waived.expiresAt) - now.getTime()) / 86_400_000),
+            },
       mosca: {
         x: lifetime.years,
         y,
@@ -183,7 +262,11 @@ export function summariseInventoryAssets(input: {
   return {
     generatedAt: now.toISOString(),
     assets,
+    // Built from `allAssetsStatus`, which is every asset's status regardless of
+    // waiver. A waived asset counts exactly once, under the status it actually
+    // has.
     statusCounts,
+    waivedAssets: assets.filter((asset) => asset.waiver !== null).length,
     scenarios,
     framing: QDAY_FRAMING,
   };

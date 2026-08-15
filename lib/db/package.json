@@ -9,6 +9,7 @@
     "./classification": "./src/classification.ts",
     "./roles": "./src/schema/auth-enums.ts",
     "./credentials": "./src/credentials.ts",
+    "./waivers": "./src/waivers.ts",
     "./org-scope": "./src/org-scope.ts",
     "./tenant-isolation": "./src/tenant-isolation.ts",
     "./test-support": "./src/test-support/test-db.ts"

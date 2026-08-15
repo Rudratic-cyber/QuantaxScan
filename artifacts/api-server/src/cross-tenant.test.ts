@@ -250,6 +250,13 @@ describe("route manifest — a new route cannot ship without being considered", 
     "DELETE /divisions/:id/grants/:userId": "org-scoped",
     "GET /organization/members": "org-scoped",
     "PATCH /organization/members/:userId": "org-scoped",
+    // C8 — the waivers register. Org-scoped and division-scoped: a waiver names
+    // an asset, why somebody was willing to live with it, and until when.
+    // Granting one is admin (below); revoking one is deliberately not, because
+    // un-silencing must not be harder than silencing.
+    "GET /waivers": "org-scoped",
+    "POST /waivers": "org-scoped",
+    "POST /waivers/:id/revoke": "org-scoped",
     "GET /community/posts": "unscoped-public-content",
     "GET /community/leaderboard": "unscoped-public-content",
     "POST /community/posts": "unscoped-public-content",
@@ -427,6 +434,9 @@ describe("route manifest — a new route cannot ship without being considered", 
       "POST /divisions",
       "POST /divisions/:id/grants",
       "POST /reports",
+      // C8. Granting a waiver accepts a risk on the organisation's behalf.
+      // `POST /waivers/:id/revoke` is absent on purpose — see require-role.ts.
+      "POST /waivers",
     ].sort();
 
     it("names exactly the routes that require admin", () => {

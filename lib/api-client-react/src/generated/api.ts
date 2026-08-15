@@ -37,6 +37,7 @@ import type {
   CreateSharedReportBody,
   CreateSharedReportResponse,
   CreateVendorAssessmentBody,
+  CreateWaiverBody,
   Credential,
   DataAtRestIngestSummary,
   DeleteDivision200,
@@ -65,6 +66,7 @@ import type {
   KmsIngestSummary,
   LeaderboardEntry,
   ListCommunityPostsParams,
+  ListWaiversParams,
   MultiScanBody,
   MultiScanResult,
   NetworkFlowIngestSummary,
@@ -104,6 +106,8 @@ import type {
   UpdateVendorAssessmentBody,
   VendorAssessment,
   VoteBody,
+  Waiver,
+  WaiverRegister,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -6943,4 +6947,271 @@ export const useUpdateOrganizationMemberRole = <
   TContext
 > => {
   return useMutation(getUpdateOrganizationMemberRoleMutationOptions(options));
+};
+
+/**
+ * Every waiver, **expired and revoked included**, each with a computed `status`. There is no `where expires_at > now()` behind this route: an exceptions register that forgets the exceptions that lapsed cannot answer "what have we been accepting?", which is the only question an auditor asks it. `status` is computed on read rather than stored, so it cannot go stale at exactly the expiry the feature turns on. `counts` is always over the whole register, never over the filtered slice.
+ * @summary The waivers / exceptions register (C8)
+ */
+export const getListWaiversUrl = (params?: ListWaiversParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/waivers?${stringifiedParams}`
+    : `/api/waivers`;
+};
+
+export const listWaivers = async (
+  params?: ListWaiversParams,
+  options?: RequestInit,
+): Promise<WaiverRegister> => {
+  return customFetch<WaiverRegister>(getListWaiversUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListWaiversQueryKey = (params?: ListWaiversParams) => {
+  return [`/api/waivers`, ...(params ? [params] : [])] as const;
+};
+
+export const getListWaiversQueryOptions = <
+  TData = Awaited<ReturnType<typeof listWaivers>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListWaiversParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWaivers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListWaiversQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listWaivers>>> = ({
+    signal,
+  }) => listWaivers(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listWaivers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListWaiversQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listWaivers>>
+>;
+export type ListWaiversQueryError = ErrorType<unknown>;
+
+/**
+ * @summary The waivers / exceptions register (C8)
+ */
+
+export function useListWaivers<
+  TData = Awaited<ReturnType<typeof listWaivers>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListWaiversParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWaivers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListWaiversQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Admin-gated. The person best placed to silence an inconvenient finding is the member who submitted the scan that raised it, and self-service risk acceptance is how an inventory becomes fiction. `expiresAt` is required and has no "never" spelling; it must be in the future and at most 730 days away. The asset id is confirmed visible inside the tenant scope before the row is written, because a foreign key is checked with row-level security bypassed.
+ * @summary Accept a risk, in writing, with an end date (admin)
+ */
+export const getCreateWaiverUrl = () => {
+  return `/api/waivers`;
+};
+
+export const createWaiver = async (
+  createWaiverBody: CreateWaiverBody,
+  options?: RequestInit,
+): Promise<Waiver> => {
+  return customFetch<Waiver>(getCreateWaiverUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createWaiverBody),
+  });
+};
+
+export const getCreateWaiverMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createWaiver>>,
+    TError,
+    { data: BodyType<CreateWaiverBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createWaiver>>,
+  TError,
+  { data: BodyType<CreateWaiverBody> },
+  TContext
+> => {
+  const mutationKey = ["createWaiver"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createWaiver>>,
+    { data: BodyType<CreateWaiverBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createWaiver(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateWaiverMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createWaiver>>
+>;
+export type CreateWaiverMutationBody = BodyType<CreateWaiverBody>;
+export type CreateWaiverMutationError = ErrorType<void>;
+
+/**
+ * @summary Accept a risk, in writing, with an end date (admin)
+ */
+export const useCreateWaiver = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createWaiver>>,
+    TError,
+    { data: BodyType<CreateWaiverBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createWaiver>>,
+  TError,
+  { data: BodyType<CreateWaiverBody> },
+  TContext
+> => {
+  return useMutation(getCreateWaiverMutationOptions(options));
+};
+
+/**
+ * Deliberately **not** admin-gated, unlike granting one: revoking restores a finding to the working list, which is the fail-safe direction, and un-silencing must not be harder than silencing. The waiver is closed, never deleted — a register you can delete from records only what nobody minded recording. Revoking an already-expired waiver is allowed and is not a no-op: it says the acceptance was withdrawn rather than merely lapsed.
+ * @summary Withdraw an acceptance early (member)
+ */
+export const getRevokeWaiverUrl = (id: number) => {
+  return `/api/waivers/${id}/revoke`;
+};
+
+export const revokeWaiver = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Waiver> => {
+  return customFetch<Waiver>(getRevokeWaiverUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRevokeWaiverMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeWaiver>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revokeWaiver>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["revokeWaiver"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revokeWaiver>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return revokeWaiver(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevokeWaiverMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revokeWaiver>>
+>;
+
+export type RevokeWaiverMutationError = ErrorType<void>;
+
+/**
+ * @summary Withdraw an acceptance early (member)
+ */
+export const useRevokeWaiver = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revokeWaiver>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof revokeWaiver>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRevokeWaiverMutationOptions(options));
 };
