@@ -75,6 +75,14 @@ export interface TimelineAssetRow {
   secrecyLifetimeYears: number | null;
   /** Y's raw input. Null across the board today — see `migrationYearsBasis` below. */
   effortHours: number | null;
+  /**
+   * G-22. Only the `certificate` variant is read, and only for its `notAfter`.
+   * Typed loosely on purpose: this comes back from `jsonb` and the timeline
+   * must not assume a shape the row does not have — an asset whose detail is
+   * absent, a different variant, or a `notAfter` that does not parse is
+   * *undetermined*, which is a counted state rather than a dropped row.
+   */
+  locationDetail?: { kind?: string; certificate?: { notAfter?: unknown } } | null;
 }
 
 /** A `projects` row. Only the A3 defaults and the name are needed. */
@@ -214,6 +222,47 @@ export interface EstateRollup {
   presentAssets: number;
 }
 
+/**
+ * G-22 — doc 06's Row 5 "certificate expiry against Q-Day", computed
+ * estate-wide.
+ *
+ * The question is narrow and needs no assumption: will the trust anchored in
+ * this certificate's public-key algorithm still be in force on the day the
+ * certificate itself says it expires? `certificate-risk.ts` answers it per
+ * certificate for the project route; this is the same comparison rolled up.
+ *
+ * **Three buckets, and the third is the point.** A certificate whose `notAfter`
+ * is missing, is on a non-certificate detail, or does not parse is
+ * `undetermined` — never folded into `expiresBeforeQDay`, which is the
+ * reassuring answer. `new Date("nonsense").getTime()` is `NaN` and every
+ * comparison against `NaN` is false, so an unguarded parse lands a bad string
+ * in the comforting bucket silently. That is the failure this product exists
+ * to avoid, and it is one `Number.isNaN` away.
+ */
+export interface CertificateExpiryOutlook {
+  /** Non-`gone` assets on the `certificate` surface. The denominator. */
+  certificates: number;
+  /** Of those, how many carry a `notAfter` this could read at all. */
+  withKnownExpiry: number;
+  /**
+   * Of those, how many do not. Counted rather than dropped: a certificate we
+   * cannot date is not a certificate that expires safely.
+   */
+  undetermined: number;
+  perScenario: Array<{
+    scenario: QDayScenarioName;
+    qDayYear: number;
+    /** Certificates still valid on 1 January of `qDayYear` — the finding that matters. */
+    outlivesQDay: number;
+    /** Certificates that expire before it, and so get replaced on their own renewal cycle. */
+    expiresBeforeQDay: number;
+    /** Carried per scenario so a reader never sees a count without knowing what it is not. */
+    undetermined: number;
+  }>;
+  /** Stated on the page, not in a tooltip. */
+  caveat: string;
+}
+
 export interface PostureTimelineInputs {
   secrecyLifetime: {
     /** How many present assets resolved X at each level. `default`/`project` mean the value was assumed. */
@@ -238,15 +287,21 @@ export interface PostureTimeline {
   framing: string;
   scenarios: Array<{ name: QDayScenarioName; qDayYear: number; rationale: string; confidence: string }>;
   estate: EstateRollup;
+  /** G-22 — doc 06 Row 5. */
+  certificateExpiry: CertificateExpiryOutlook;
   observed: ObservedHistory;
   projected: ProjectedHorizon;
   deadlines: DeadlineMarker[];
   inputs: PostureTimelineInputs;
   /**
    * Facts a reader will expect on a time-pressure panel that this product
-   * cannot produce. Stated on the page rather than silently omitted — doc 06's
-   * certificate-expiry chart needs a `notAfter` the asset model has no column
-   * for, and no certificate collector has shipped.
+   * cannot produce. Stated on the page rather than silently omitted.
+   *
+   * The certificate-expiry row used to live here, and its removal is worth a
+   * note: it was correct discipline when written — B4 had not shipped and
+   * `notAfter` had nowhere to live — and it stayed correct for exactly one
+   * week. A refusal has to be re-checked when the thing it was waiting for
+   * arrives, or it becomes its own kind of false statement (G-22).
    */
   notCollected: Array<{ id: string; label: string; reason: string }>;
 }
@@ -263,6 +318,61 @@ function toMillis(value: Date | string): number {
 
 function toIso(value: Date | string): string {
   return new Date(toMillis(value)).toISOString();
+}
+
+export const CERTIFICATE_EXPIRY_CAVEAT =
+  "Counts certificates this inventory currently holds, on their own stated notAfter. A certificate " +
+  "whose expiry we could not read is reported as undetermined and never as expiring safely. " +
+  "Retired certificates are excluded, so this is what the estate has now rather than everything it " +
+  "ever had — and it says nothing about certificates nobody has submitted.";
+
+/**
+ * The `notAfter` a certificate asset states, or `null` when it states none we
+ * can read. Every branch that returns `null` is a real case seen in the data:
+ * an asset with no detail at all, a detail of a different variant, a missing
+ * field, and a string that is not a date.
+ */
+function certificateNotAfter(row: TimelineAssetRow): number | null {
+  const detail = row.locationDetail;
+  if (!detail || detail.kind !== "certificate") return null;
+  const raw = detail.certificate?.notAfter;
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  const parsed = new Date(raw).getTime();
+  // NaN >= anything is false, so an unparseable date would otherwise land
+  // silently in "expires before Q-Day" — the reassuring bucket.
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function buildCertificateExpiry(
+  assets: readonly TimelineAssetRow[],
+  scenarios: readonly QDayScenario[],
+): CertificateExpiryOutlook {
+  // `gone` is excluded on purpose: an asset the estate no longer holds must
+  // not be counted as outliving anything. B3/B4 never mark an unreachable
+  // target `gone` — a timeout is not evidence of absence — so this one rule
+  // also covers "not re-examined recently" without a second heuristic.
+  const certificates = assets.filter((a) => a.surface === "certificate" && a.status !== "gone");
+  const dated = certificates.map(certificateNotAfter);
+  const known = dated.filter((v): v is number => v !== null);
+  const undetermined = dated.length - known.length;
+
+  return {
+    certificates: certificates.length,
+    withKnownExpiry: known.length,
+    undetermined,
+    perScenario: scenarios.map((scenario) => {
+      const qDay = Date.UTC(scenario.qDayYear, 0, 1);
+      const outlives = known.filter((notAfter) => notAfter >= qDay).length;
+      return {
+        scenario: scenario.name,
+        qDayYear: scenario.qDayYear,
+        outlivesQDay: outlives,
+        expiresBeforeQDay: known.length - outlives,
+        undetermined,
+      };
+    }),
+    caveat: CERTIFICATE_EXPIRY_CAVEAT,
+  };
 }
 
 function emptyCounts(scenarios: readonly QDayScenario[]): ScenarioCounts {
@@ -650,17 +760,12 @@ export function summarisePostureTimeline(input: PostureTimelineInput): PostureTi
       confidence: s.confidence,
     })),
     estate,
+    certificateExpiry: buildCertificateExpiry(input.assets, scenarios),
     observed,
     projected,
     deadlines,
     inputs,
     notCollected: [
-      {
-        id: "certificate-expiry",
-        label: "Certificate expiry against Q-Day",
-        reason:
-          "Not available. A certificate's notAfter has nowhere to live in the asset model and no certificate collector has shipped, so no count of certificates outliving their cryptography can be produced. An estimate here would be invented.",
-      },
       {
         id: "asset-refresh-cycle",
         label: "Renewal cycles remaining before each deadline",

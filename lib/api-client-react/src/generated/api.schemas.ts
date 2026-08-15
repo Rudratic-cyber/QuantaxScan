@@ -1300,6 +1300,34 @@ export interface PostureTimelineInputs {
   migrationYears: PostureTimelineInputsMigrationYears;
 }
 
+export type CertificateExpiryOutlookPerScenarioItem = {
+  scenario: string;
+  qDayYear: number;
+  /** Certificates still valid on 1 January of `qDayYear` — the finding that matters. */
+  outlivesQDay: number;
+  /** Certificates replaced on their own renewal cycle before that date. */
+  expiresBeforeQDay: number;
+  /** Repeated per scenario so a count is never read without knowing what it excludes. */
+  undetermined: number;
+};
+
+/**
+ * G-22 / doc 06 Row 5 — how many certificates the estate currently holds are still valid on each Q-Day scenario. A narrow question that needs no assumption: will the trust anchored in this certificate's public-key algorithm still be in force on the day the certificate itself says it expires? This is not Mosca (`X + Y > Z`) — a certificate has no secrecy lifetime of its own.
+
+**Three buckets, and the third is the point.** A certificate whose `notAfter` is missing, sits on a non-certificate detail, or does not parse is `undetermined` — never folded into `expiresBeforeQDay`, which is the reassuring answer. Retired (`gone`) certificates are excluded, so this describes the estate as it is rather than everything it ever held.
+ */
+export interface CertificateExpiryOutlook {
+  /** Non-retired assets on the `certificate` surface. The denominator. */
+  certificates: number;
+  /** Of those, how many state a `notAfter` this could read. */
+  withKnownExpiry: number;
+  /** Of those, how many do not. Counted rather than dropped — a certificate we cannot date is not a certificate that expires safely. */
+  undetermined: number;
+  perScenario: CertificateExpiryOutlookPerScenarioItem[];
+  /** Shown on the page, not in a tooltip. */
+  caveat: string;
+}
+
 export type PostureTimelineScenariosItem = {
   name: string;
   qDayYear: number;
@@ -1320,6 +1348,7 @@ export interface PostureTimeline {
   framing: string;
   scenarios: PostureTimelineScenariosItem[];
   estate: EstateRollup;
+  certificateExpiry: CertificateExpiryOutlook;
   observed: ObservedHistory;
   projected: ProjectedHorizon;
   deadlines: DeadlineMarker[];

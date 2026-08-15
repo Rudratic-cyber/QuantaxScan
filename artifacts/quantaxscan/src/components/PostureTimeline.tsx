@@ -122,6 +122,20 @@ interface TimelineResponse {
     secrecyLifetime: { bySource: Record<string, number>; assumedForAssets: number; bases: string[] };
     migrationYears: { defaultValue: number; assetsWithRecordedEffort: number; basis: string };
   };
+  /** G-22 — doc 06 Row 5. */
+  certificateExpiry: {
+    certificates: number;
+    withKnownExpiry: number;
+    undetermined: number;
+    perScenario: Array<{
+      scenario: string;
+      qDayYear: number;
+      outlivesQDay: number;
+      expiresBeforeQDay: number;
+      undetermined: number;
+    }>;
+    caveat: string;
+  };
   notCollected: Array<{ id: string; label: string; reason: string }>;
 }
 
@@ -756,6 +770,47 @@ export function PostureTimeline() {
             have no project and are counted separately rather than dropped.
           </p>
         </div>
+      </div>
+
+      {/* ── G-22: certificates against Q-Day (doc 06 Row 5) ── */}
+      <div className="mt-5 rounded-xl border border-[#eceef2] bg-white p-4">
+        <Eyebrow>Certificates against Q-Day</Eyebrow>
+        {data.certificateExpiry.certificates === 0 ? (
+          <p className="mt-2 text-[11px] leading-relaxed text-[#6b7280]" data-testid="certificate-expiry-empty">
+            No certificates in this inventory yet. This counts what has been submitted — it is not a
+            statement that the estate has none.
+          </p>
+        ) : (
+          <>
+            <p className="mt-1 text-[11px] text-[#6b7280]">
+              <span className="font-semibold text-[#0a0e1a]">{data.certificateExpiry.certificates}</span> certificate
+              {data.certificateExpiry.certificates === 1 ? "" : "s"} held
+              {data.certificateExpiry.undetermined > 0 && (
+                <>
+                  {" · "}
+                  <span className="font-semibold text-[#b45309]" data-testid="certificate-expiry-undetermined">
+                    {data.certificateExpiry.undetermined} with an expiry we could not read
+                  </span>
+                </>
+              )}
+            </p>
+            <ul className="mt-2 space-y-1.5" data-testid="certificate-expiry-scenarios">
+              {data.certificateExpiry.perScenario.map((row) => (
+                <li key={row.scenario} className="flex items-baseline justify-between gap-3">
+                  <span className="text-[11px] text-[#374151]">
+                    {row.scenario} <span className="font-mono text-[10px] text-[#9aa3b2]">({row.qDayYear})</span>
+                  </span>
+                  <span className="shrink-0 font-mono text-[10px] text-[#6b7280]">
+                    <span className="font-semibold text-[#0a0e1a]">{row.outlivesQDay}</span> still valid ·{" "}
+                    {row.expiresBeforeQDay} expire first
+                    {row.undetermined > 0 && <> · {row.undetermined} undetermined</>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        <p className="mt-2 font-mono text-[9px] leading-relaxed text-[#9aa3b2]">{data.certificateExpiry.caveat}</p>
       </div>
 
       {/* ── what this panel cannot compute ── */}

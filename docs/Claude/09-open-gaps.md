@@ -37,7 +37,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | ~~G-19~~ | ~~`attached_assets/` unaudited, 4 MB of Replit scraps~~ | **Closed in the tree; history caveat stands** | Done 2026-08-14 | Gate 2 |
 | G-20 | Dependency findings do not distinguish direct from transitive | Medium | Lockfile format | B2 follow-up — caveat shipped, detection not |
 | G-21 | The package table applies one claim to every version of a package | Medium | Design | B2 follow-up |
-| G-22 | **The estate timeline tells the customer we have no certificate collector** | **High** | Nothing — B4 already supplies the data | Compute the certificate-expiry row estate-wide |
+| ~~G-22~~ | ~~The estate timeline tells the customer we have no certificate collector~~ | **Closed** | Done 2026-08-15 | — |
 | G-23 | A collection schedule's `host` is validated only by its description | Medium | Nothing | Enforce hostname/IP-literal at the boundary |
 
 ---
@@ -750,7 +750,7 @@ to answer "unknown version, version-gated claim" before the field is worth havin
 
 ---
 
-## G-22 — The estate timeline says we have no certificate collector `High` `found 2026-08-15`
+## G-22 — The estate timeline said we have no certificate collector — **CLOSED 2026-08-15**
 
 **This is the register's first gap where the product understates itself to the customer's face,
 and it is the inverse of every other entry here.** The rest of this file exists because a claim
@@ -776,16 +776,28 @@ side of that discipline: **a refusal has to be re-checked when the thing it was 
 arrives**, or it silently becomes its own kind of false statement. A customer reading that
 sentence with certificates already in their inventory concludes we cannot do something we can.
 
-**What closes it**
+**Closed by** `certificateExpiry` on `GET /api/inventory/timeline`, computed from `assets`
+carrying a certificate `locationDetail`, one row per Q-Day scenario and never blended.
 
-- Compute the row estate-wide from `assets` carrying a certificate `locationDetail`, per Q-Day
-  scenario, never blended — the same three-scenario rule the rest of the timeline follows.
-- Keep the refusal for the second unavailable figure (renewal cycles remaining), which is still
-  genuinely uncomputable — nothing records a refresh interval.
-- Certificates the estate holds but has never had examined must not be counted as "expires after
-  Q-Day"; absence of a `notAfter` is undetermined, not safe.
+Three populations, and the third is what makes it honest: a certificate whose `notAfter` is
+missing, sits on a different `locationDetail` variant, or does not parse is **undetermined** —
+counted and rendered, never folded into `expiresBeforeQDay`. That bucket is not defensive
+programming: `new Date("nonsense").getTime()` is `NaN` and every comparison against `NaN` is
+false, so an unguarded parse puts an unreadable certificate in the *reassuring* bucket silently.
+`gone` certificates are excluded, so the figure describes the estate as it is; because B3/B4 never
+mark an unreachable target `gone`, that single rule also keeps "not re-examined lately" out of the
+count without a second staleness heuristic.
 
-**Blocks:** doc 06 Row 5, and D7 moving off `partial`.
+Proven three ways: the arithmetic in `posture-timeline.test.ts` (including an unparseable date, a
+non-certificate detail and a retired certificate), the rendering in
+`tests/ui/timeline-journey.spec.ts`, and end to end in `tests/e2e/04-certificates.spec.ts` against
+certificates `openssl` generates at test time.
+
+**One refusal remains and is still true:** renewal cycles remaining before a deadline, because
+nothing records a refresh interval.
+
+**Unblocked:** doc 06 Row 5. D7 stays `partial` on its own merits — see its note in
+[03-features.md](03-features.md).
 
 **Cross-ref:** the same stale-refusal check should be run over every "not available" string in the
 product, not just this one — three other status claims went stale in the same week

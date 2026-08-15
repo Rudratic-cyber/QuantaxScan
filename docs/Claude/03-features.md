@@ -540,13 +540,19 @@ and draws no line at all, because a flat line through one measurement asserts a 
 observed. And the projection lives in a separate branch of the payload, hatched and dashed on the
 page, with its assumption restated on every projected frame.
 
-Two figures doc 06's time-pressure row asks for are labelled **not computable on the page**, and
-one of those labels is now **wrong**: certificate expiry against Q-Day said there was no `notAfter`
-in the asset model and no certificate collector, which B4 falsified the same week — `notAfter`
-travels on `assets.location_detail` and `evaluateCertificateExpiryAgainstQDay` already computes the
-verdict for the per-project route. The estate-wide roll-up is a build, not an edit, and is tracked
-as G-22 in [09-open-gaps.md](09-open-gaps.md). The second label stands: renewal cycles remaining
-before a deadline is still not computable, because nothing records a refresh interval.
+Doc 06's time-pressure row asks for two figures this panel could not produce. **One of them now is
+(G-22, closed 2026-08-15):** `certificateExpiry` counts the certificates the estate currently holds
+against each Q-Day scenario — how many are still valid on that date, how many expire first, and how
+many carry an expiry we could not read. That third bucket is the honest part: an unparseable
+`notAfter` compared numerically lands in "expires before Q-Day", the reassuring answer, so it is
+guarded and counted instead. Retired certificates are excluded.
+
+That row had been labelled uncomputable on the grounds that no certificate collector had shipped —
+correct when written, false a week later when B4 landed. **A refusal has to be re-checked when the
+thing it was waiting for arrives**, or it becomes its own kind of false statement.
+
+The second label stands: renewal cycles remaining before a deadline is still not computable,
+because nothing records a refresh interval.
 
 **D2 stays `planned`.** The scrub readout does render doc 06's three-column exposure panel — a
 count and a share per scenario, with X's provenance beside it — but D2's actual requirement is

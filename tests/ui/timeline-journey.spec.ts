@@ -78,13 +78,29 @@ function projectedPoints(breaches: Counts, present: number, pqc: number) {
 const PROJECTED_ASSUMPTION =
   "Projection, not measurement. It holds the inventory exactly as it stands today and advances only the clock, so it shows when today's assets fall out of compliance if nothing is migrated and nothing new is introduced. Neither of those will be true.";
 
+const CERTIFICATE_EXPIRY_CAVEAT =
+  "Counts certificates this inventory currently holds, on their own stated notAfter. A certificate whose expiry we could not read is reported as undetermined and never as expiring safely. Retired certificates are excluded, so this is what the estate has now rather than everything it ever had — and it says nothing about certificates nobody has submitted.";
+
+/** No certificates submitted at all — the panel must say so rather than print zeroes. */
+const NO_CERTIFICATES = {
+  certificates: 0,
+  withKnownExpiry: 0,
+  undetermined: 0,
+  perScenario: SCENARIOS.map((s) => ({
+    scenario: s.name,
+    qDayYear: s.qDayYear,
+    outlivesQDay: 0,
+    expiresBeforeQDay: 0,
+    undetermined: 0,
+  })),
+  caveat: CERTIFICATE_EXPIRY_CAVEAT,
+};
+
 const NOT_COLLECTED = [
-  {
-    id: "certificate-expiry",
-    label: "Certificate expiry against Q-Day",
-    reason:
-      "Not available. A certificate's notAfter has nowhere to live in the asset model and no certificate collector has shipped, so no count of certificates outliving their cryptography can be produced. An estimate here would be invented.",
-  },
+  // The certificate-expiry refusal used to be the first entry here. It was
+  // removed with G-22: B4 shipped, `notAfter` travels on the asset, and the
+  // panel now computes the row instead of declining to. What remains is the
+  // one refusal that is still true.
   {
     id: "asset-refresh-cycle",
     label: "Renewal cycles remaining before each deadline",
@@ -124,6 +140,7 @@ const emptyTimeline = {
     secrecyLifetime: { bySource: {}, assumedForAssets: 0, bases: [] },
     migrationYears: { defaultValue: 0, assetsWithRecordedEffort: 0, basis: MIGRATION_BASIS },
   },
+  certificateExpiry: NO_CERTIFICATES,
   notCollected: NOT_COLLECTED,
 };
 
@@ -268,6 +285,7 @@ const populatedTimeline = {
     },
     migrationYears: { defaultValue: 0, assetsWithRecordedEffort: 0, basis: MIGRATION_BASIS },
   },
+  certificateExpiry: NO_CERTIFICATES,
   notCollected: NOT_COLLECTED,
 };
 
@@ -460,8 +478,72 @@ test.describe("D7 — the estate posture timeline", () => {
     await expect(page.getByText(/no collector records a migration effort estimate/i)).toBeVisible();
 
     // ── and what it will not compute ──
-    await expect(page.getByText("Certificate expiry against Q-Day")).toBeVisible();
-    await expect(page.getByText(/no certificate collector has shipped/i)).toBeVisible();
+    // Certificate expiry is no longer on this list — it is computed (G-22).
+    // What remains is the refusal that is still true.
+    await expect(page.getByText("Renewal cycles remaining before each deadline")).toBeVisible();
+    await expect(page.getByText(/no certificate collector has shipped/i)).toHaveCount(0);
+  });
+
+  test("counts certificates against each Q-Day scenario, and names the ones it could not date (G-22)", async ({
+    page,
+  }) => {
+    // Four certificates: two datable, two not. The panel must show all three
+    // populations — an undetermined certificate folded into "expires first"
+    // would be the reassuring answer, and the wrong one.
+    const withCertificates = {
+      ...populatedTimeline,
+      certificateExpiry: {
+        certificates: 4,
+        withKnownExpiry: 2,
+        undetermined: 2,
+        perScenario: SCENARIOS.map((s, i) => ({
+          scenario: s.name,
+          qDayYear: s.qDayYear,
+          outlivesQDay: i === 0 ? 2 : 1,
+          expiresBeforeQDay: i === 0 ? 0 : 1,
+          undetermined: 2,
+        })),
+        caveat: CERTIFICATE_EXPIRY_CAVEAT,
+      },
+    };
+
+    await openTimeline(page, withCertificates, []);
+
+    await expect(page.getByText("Certificates against Q-Day")).toBeVisible();
+
+    // One row per scenario, never a single blended number: the answer depends
+    // entirely on which Q-Day year the reader accepts.
+    const scenarios = page.getByTestId("certificate-expiry-scenarios").locator("li");
+    await expect(scenarios).toHaveCount(SCENARIOS.length);
+    for (const scenario of SCENARIOS) {
+      await expect(page.getByTestId("certificate-expiry-scenarios")).toContainText(scenario.name);
+      await expect(page.getByTestId("certificate-expiry-scenarios")).toContainText(String(scenario.qDayYear));
+    }
+
+    // The bucket that makes the panel honest, in words rather than a footnote.
+    await expect(page.getByTestId("certificate-expiry-undetermined")).toContainText(
+      "2 with an expiry we could not read",
+    );
+
+    // And the caveat is on the page, not in a tooltip.
+    await expect(page.getByText(/never as expiring safely/i)).toBeVisible();
+  });
+
+  test("says an empty certificate inventory is empty rather than printing a reassuring zero (G-22)", async ({
+    page,
+  }) => {
+    // An estate that *has* been collected from and holds no certificates —
+    // which is the real case, since a wholly empty estate renders a
+    // configuration panel instead of this one.
+    await openTimeline(page, populatedTimeline, []);
+
+    // Zero certificates outliving Q-Day, when zero certificates have been
+    // submitted, is a true number that reads as a clean estate. The panel has
+    // to say which it is.
+    await expect(page.getByTestId("certificate-expiry-empty")).toContainText(
+      "not a statement that the estate has none",
+    );
+    await expect(page.getByTestId("certificate-expiry-scenarios")).toHaveCount(0);
   });
 
   test("reports a failed read instead of an empty timeline", async ({ page }) => {

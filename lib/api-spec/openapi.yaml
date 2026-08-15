@@ -4513,6 +4513,59 @@ components:
               description: States plainly that Y is not measured yet, so a reader knows X vs Z decided the verdict.
           required: [defaultValue, assetsWithRecordedEffort, basis]
       required: [secrecyLifetime, migrationYears]
+    CertificateExpiryOutlook:
+      type: object
+      description: >-
+        G-22 / doc 06 Row 5 — how many certificates the estate currently holds are still valid on
+        each Q-Day scenario. A narrow question that needs no assumption: will the trust anchored in
+        this certificate's public-key algorithm still be in force on the day the certificate itself
+        says it expires? This is not Mosca (`X + Y > Z`) — a certificate has no secrecy lifetime of
+        its own.
+
+
+        **Three buckets, and the third is the point.** A certificate whose `notAfter` is missing,
+        sits on a non-certificate detail, or does not parse is `undetermined` — never folded into
+        `expiresBeforeQDay`, which is the reassuring answer. Retired (`gone`) certificates are
+        excluded, so this describes the estate as it is rather than everything it ever held.
+      properties:
+        certificates:
+          type: integer
+          description: Non-retired assets on the `certificate` surface. The denominator.
+        withKnownExpiry:
+          type: integer
+          description: Of those, how many state a `notAfter` this could read.
+        undetermined:
+          type: integer
+          description: >-
+            Of those, how many do not. Counted rather than dropped — a certificate we cannot date
+            is not a certificate that expires safely.
+        perScenario:
+          type: array
+          items:
+            type: object
+            properties:
+              scenario: { type: string }
+              qDayYear: { type: integer }
+              outlivesQDay:
+                type: integer
+                description: Certificates still valid on 1 January of `qDayYear` — the finding that matters.
+              expiresBeforeQDay:
+                type: integer
+                description: Certificates replaced on their own renewal cycle before that date.
+              undetermined:
+                type: integer
+                description: Repeated per scenario so a count is never read without knowing what it excludes.
+            required: [scenario, qDayYear, outlivesQDay, expiresBeforeQDay, undetermined]
+        caveat:
+          type: string
+          description: Shown on the page, not in a tooltip.
+      required:
+        - certificates
+        - withKnownExpiry
+        - undetermined
+        - perScenario
+        - caveat
+
     PostureTimeline:
       type: object
       properties:
@@ -4532,6 +4585,7 @@ components:
               confidence: { type: string }
             required: [name, qDayYear, rationale, confidence]
         estate: { $ref: "#/components/schemas/EstateRollup" }
+        certificateExpiry: { $ref: "#/components/schemas/CertificateExpiryOutlook" }
         observed: { $ref: "#/components/schemas/ObservedHistory" }
         projected: { $ref: "#/components/schemas/ProjectedHorizon" }
         deadlines:
@@ -4554,6 +4608,7 @@ components:
         - framing
         - scenarios
         - estate
+        - certificateExpiry
         - observed
         - projected
         - deadlines

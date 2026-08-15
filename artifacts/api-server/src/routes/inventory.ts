@@ -143,6 +143,10 @@ router.get("/inventory/timeline", async (req, res): Promise<void> => {
           dataClassification: assetsTable.dataClassification,
           secrecyLifetimeYears: assetsTable.secrecyLifetimeYears,
           effortHours: assetsTable.effortHours,
+          // G-22. The only field read from it is a certificate's `notAfter`;
+          // everything else is ignored, and one that cannot be read is counted
+          // as undetermined rather than dropped.
+          locationDetail: assetsTable.locationDetail,
         })
         .from(assetsTable)
         .orderBy(assetsTable.firstSeen),

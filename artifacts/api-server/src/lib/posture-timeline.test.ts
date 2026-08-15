@@ -464,10 +464,136 @@ describe("summarisePostureTimeline — the inputs behind the verdicts", () => {
 });
 
 describe("summarisePostureTimeline — what it declines to compute", () => {
-  it("names certificate expiry as uncollected instead of omitting the panel", () => {
+  it("names an uncomputable figure instead of omitting the panel", () => {
     const result = summarise({});
-    const certificates = result.notCollected.find((n) => n.id === "certificate-expiry");
-    expect(certificates).toBeDefined();
-    expect(certificates!.reason).toMatch(/no certificate collector has shipped/i);
+    const refresh = result.notCollected.find((n) => n.id === "asset-refresh-cycle");
+    expect(refresh).toBeDefined();
+    expect(refresh!.reason).toMatch(/how often an asset is refreshed/i);
+  });
+
+  it("holds only refusals that are still true", () => {
+    // This assertion replaced one that pinned the certificate-expiry refusal.
+    // That refusal was right when it was written — B4 had not shipped — and
+    // false a week later, which is G-22. A test that pins a refusal has to be
+    // retired with it, or it enforces the stale claim.
+    const result = summarise({});
+    expect(result.notCollected.map((n) => n.id)).toEqual(["asset-refresh-cycle"]);
+  });
+});
+
+describe("G-22 — certificate expiry against Q-Day, estate-wide", () => {
+  /** A certificate asset with a stated `notAfter`. */
+  // `firstSeen` is excluded from the overrides: `asset()` requires a `Date`
+  // there, and a spread of the wider `Date | string` would widen it back.
+  const cert = (
+    id: number,
+    notAfter: string | null,
+    over: Partial<Omit<TimelineAssetRow, "firstSeen">> = {},
+  ): TimelineAssetRow =>
+    asset({
+      id,
+      firstSeen: t("2026-01-01T00:00:00Z"),
+      surface: "certificate",
+      algorithm: "RSA",
+      location: `cert:${id}`,
+      locationDetail:
+        notAfter === null ? null : { kind: "certificate", certificate: { notAfter } },
+      ...over,
+    });
+
+  it("splits certificates into outlives / expires-first per scenario, and never blends the scenarios", () => {
+    const result = summarise({
+      assets: [
+        // Well past every scenario's Q-Day.
+        cert(1, "2099-01-01T00:00:00Z"),
+        // Expires before all of them.
+        cert(2, "2027-06-01T00:00:00Z"),
+      ],
+    });
+
+    expect(result.certificateExpiry.certificates).toBe(2);
+    expect(result.certificateExpiry.withKnownExpiry).toBe(2);
+    expect(result.certificateExpiry.undetermined).toBe(0);
+
+    // One row per scenario, each summing to the known population. A single
+    // blended number would hide that the answer depends entirely on which
+    // Q-Day year you accept.
+    expect(result.certificateExpiry.perScenario.length).toBe(result.scenarios.length);
+    for (const row of result.certificateExpiry.perScenario) {
+      expect(row.outlivesQDay + row.expiresBeforeQDay).toBe(2);
+      expect(row.outlivesQDay).toBe(1);
+      expect(row.qDayYear).toBe(result.scenarios.find((s) => s.name === row.scenario)?.qDayYear);
+    }
+  });
+
+  it("counts a certificate whose expiry cannot be read as undetermined, never as expiring safely", () => {
+    const result = summarise({
+      assets: [
+        cert(1, null), // no locationDetail at all
+        cert(2, "not-a-date"), // present, unparseable
+        cert(3, ""), // present, empty
+        // A detail of a different variant — a certificate asset whose detail
+        // was written by something else entirely.
+        cert(4, null, { locationDetail: { kind: "network" } as never }),
+        cert(5, "2099-01-01T00:00:00Z"), // the one good row
+      ],
+    });
+
+    expect(result.certificateExpiry.certificates).toBe(5);
+    expect(result.certificateExpiry.withKnownExpiry).toBe(1);
+    // The whole point of the bucket. `new Date("not-a-date").getTime()` is NaN
+    // and `NaN >= qDay` is false, so an unguarded parse would report four
+    // certificates as expiring safely before Q-Day.
+    expect(result.certificateExpiry.undetermined).toBe(4);
+    for (const row of result.certificateExpiry.perScenario) {
+      expect(row.expiresBeforeQDay).toBe(0);
+      expect(row.undetermined).toBe(4);
+    }
+  });
+
+  it("excludes a retired certificate — the estate no longer holds it", () => {
+    const result = summarise({
+      assets: [
+        cert(1, "2099-01-01T00:00:00Z"),
+        cert(2, "2099-01-01T00:00:00Z", { status: "gone" }),
+      ],
+    });
+
+    // A `gone` asset counted as outliving Q-Day is a claim about a certificate
+    // that is not there. B3/B4 never mark an unreachable target `gone`, so this
+    // one rule also keeps "not re-examined lately" out of the count without a
+    // second staleness heuristic.
+    expect(result.certificateExpiry.certificates).toBe(1);
+    for (const row of result.certificateExpiry.perScenario) expect(row.outlivesQDay).toBe(1);
+  });
+
+  it("ignores assets on every other surface", () => {
+    const result = summarise({
+      assets: [
+        asset({ id: 1, firstSeen: t("2026-01-01T00:00:00Z") }),
+        cert(2, "2099-01-01T00:00:00Z"),
+      ],
+    });
+    expect(result.certificateExpiry.certificates).toBe(1);
+  });
+
+  it("says so in words rather than reporting a bare zero for an estate with no certificates", () => {
+    const result = summarise({ assets: [] });
+
+    expect(result.certificateExpiry.certificates).toBe(0);
+    expect(result.certificateExpiry.caveat.length).toBeGreaterThan(0);
+    for (const row of result.certificateExpiry.perScenario) {
+      expect(row.outlivesQDay).toBe(0);
+      expect(row.expiresBeforeQDay).toBe(0);
+    }
+  });
+
+  it("no longer claims a certificate collector has not shipped", () => {
+    const result = summarise({ assets: [] });
+
+    // The refusal that used to live here was correct when written and false a
+    // week later (G-22). What must remain is the one that is still true.
+    expect(result.notCollected.map((n) => n.id)).not.toContain("certificate-expiry");
+    expect(result.notCollected.map((n) => n.id)).toContain("asset-refresh-cycle");
   });
 });
