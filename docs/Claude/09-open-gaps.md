@@ -1,11 +1,11 @@
 # 09 — Open gap register
 
-Every known gap in one place, with what closes it and what it blocks. Updated 2026-08-14.
+Every known gap in one place, with what closes it and what it blocks. Updated 2026-08-15.
 
 Three families:
 
 - **G-01…G-04** — standards still unverified
-- **G-05…G-11**, **G-20…G-21** — detection quality, surfaced by the verification work
+- **G-05…G-11**, **G-20…G-22** — detection quality, surfaced by the verification work
 - **G-12…G-14** — platform and process
 
 Severity is **for the enterprise product**, not for today's demo.
@@ -37,6 +37,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | ~~G-19~~ | ~~`attached_assets/` unaudited, 4 MB of Replit scraps~~ | **Closed in the tree; history caveat stands** | Done 2026-08-14 | Gate 2 |
 | G-20 | Dependency findings do not distinguish direct from transitive | Medium | Lockfile format | B2 follow-up — caveat shipped, detection not |
 | G-21 | The package table applies one claim to every version of a package | Medium | Design | B2 follow-up |
+| G-22 | **The estate timeline tells the customer we have no certificate collector** | **High** | Nothing — B4 already supplies the data | Compute the certificate-expiry row estate-wide |
 
 ---
 
@@ -745,6 +746,49 @@ against the pinned version at collection time. Cheap to add; the reason it is no
 is that it needs a version-comparison implementation in a package that is deliberately
 dependency-free, and `requirements.txt` ranges resolve to no version at all — so the design has
 to answer "unknown version, version-gated claim" before the field is worth having.
+
+---
+
+## G-22 — The estate timeline says we have no certificate collector `High` `found 2026-08-15`
+
+**This is the register's first gap where the product understates itself to the customer's face,
+and it is the inverse of every other entry here.** The rest of this file exists because a claim
+might say more than the evidence supports. This one says less, in shipped copy, about the feature
+the roadmap calls the strongest visual in the product.
+
+`posture-timeline.ts` renders the doc 06 time-pressure row "Certificate expiry against Q-Day" as
+unavailable, with the reason:
+
+> *"A certificate's notAfter has nowhere to live in the asset model and no certificate collector
+> has shipped, so no count of certificates outliving their cryptography can be produced. An
+> estimate here would be invented."*
+
+Both halves were true when written and neither is true now. B4 shipped on 2026-08-14: `notAfter`
+travels on `assets.location_detail` under the certificate variant, `POST /projects/:id/certificates`
+persists it, and `evaluateCertificateExpiryAgainstQDay` (`artifacts/api-server/src/lib/`) already
+computes the per-scenario verdict for the per-project route. The estate-wide roll-up is the only
+missing piece, and it has every input it needs.
+
+The sentence was correct discipline at the time — refusing to invent an estimate is exactly right,
+and it is why the copy exists at all. What it now demonstrates is the failure mode on the other
+side of that discipline: **a refusal has to be re-checked when the thing it was waiting for
+arrives**, or it silently becomes its own kind of false statement. A customer reading that
+sentence with certificates already in their inventory concludes we cannot do something we can.
+
+**What closes it**
+
+- Compute the row estate-wide from `assets` carrying a certificate `locationDetail`, per Q-Day
+  scenario, never blended — the same three-scenario rule the rest of the timeline follows.
+- Keep the refusal for the second unavailable figure (renewal cycles remaining), which is still
+  genuinely uncomputable — nothing records a refresh interval.
+- Certificates the estate holds but has never had examined must not be counted as "expires after
+  Q-Day"; absence of a `notAfter` is undetermined, not safe.
+
+**Blocks:** doc 06 Row 5, and D7 moving off `partial`.
+
+**Cross-ref:** the same stale-refusal check should be run over every "not available" string in the
+product, not just this one — three other status claims went stale in the same week
+([14-in-flight-lanes.md](14-in-flight-lanes.md)).
 
 ---
 

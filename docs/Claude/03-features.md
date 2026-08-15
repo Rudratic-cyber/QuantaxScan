@@ -214,8 +214,8 @@ another silo.
 | B3 | TLS / cipher suite prober | `built` | **P1** | Active handshake against hosts, recording the *negotiated* key exchange rather than the configured one — `tls-collector.ts` maps the handshake, `tls-probe.ts` opens the socket, and `tls-ssrf-guard.ts` resolves-then-pins so a caller-named host cannot be turned into an SSRF. `POST /projects/:id/tls`. Confidence 1.0, the only collector that earns it. TLS 1.3 records its key-exchange size as undetermined rather than guessing — Node reports no group there |
 | B4 | Certificate / X.509 | `built` | **P1** | Key type, size, expiry, parsed with `node:crypto`'s `X509Certificate` — no third-party dependency, so `lib/collectors` stays shippable as a standalone agent. Every certificate in a submitted chain is read, not just the leaf. `POST` / `GET /projects/:id/certificates`, with the Q-Day verdict derived per scenario on read |
 | B5 | KMS / secret stores | `built` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS — **submission-based, not credentialed**. `POST /api/projects/:id/kms` takes the key inventory your own `describe-key`/`keys list` produced; `GET` returns the persisted inventory with rotation posture. Spec → algorithm resolution is cited data in [`mappings/kms-key-specs.json`](mappings/kms-key-specs.json) (84 specs, four primary sources). **`kms` is the fifth `live` surface** |
-| B6 | Protocol config | `built` | **P2** | `ProtocolConfigCollector` (`lib/collectors/src/protocol-config.ts` + `protocol-config-collector.ts`) parses `sshd_config`/`ssh_config`/`authorized_keys`, `ipsec.conf`/`swanctl.conf`, a JWKS, an OIDC discovery document and SAML metadata, and `POST /api/projects/:id/protocol-config` persists them as `surface: "config"` assets — **`config` is the fifth `live` surface**. Reads what a file *declares*, never what a peer negotiates (that is B3), at `configuration_information` modality and two confidence tiers: `0.6` for a permitted-algorithm list, `0.8` for a materialised key (an `authorized_keys` entry, a published JWK, the method a SAML document was signed with). Whole-token matching only, so hybrid PQC key exchange (`sntrup761x25519-sha512`) is silently absent rather than misreported as vulnerable `ECDH/DH`. `Include` is not followed and an absent directive is not read as the compiled-in default |
-| B7 | Data-at-rest | `built` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets. Submission-based (`POST/GET /api/projects/:id/data-at-rest`), no database credentials. **Two assets per store**: the bulk cipher and the key-wrapping algorithm, because only the second is what Shor breaks. **The only ingest that accepts a data classification**, so a Regulated archive reaches the risk engine with X = 25 rather than an assumed 3. A store reported as encrypted with no cipher named records nothing and is returned as a gap. **`data-at-rest` is the fifth `live` surface** |
+| B6 | Protocol config | `built` | **P2** | `ProtocolConfigCollector` (`lib/collectors/src/protocol-config.ts` + `protocol-config-collector.ts`) parses `sshd_config`/`ssh_config`/`authorized_keys`, `ipsec.conf`/`swanctl.conf`, a JWKS, an OIDC discovery document and SAML metadata, and `POST /api/projects/:id/protocol-config` persists them as `surface: "config"` assets — **`config` is the sixth `live` surface**. Reads what a file *declares*, never what a peer negotiates (that is B3), at `configuration_information` modality and two confidence tiers: `0.6` for a permitted-algorithm list, `0.8` for a materialised key (an `authorized_keys` entry, a published JWK, the method a SAML document was signed with). Whole-token matching only, so hybrid PQC key exchange (`sntrup761x25519-sha512`) is silently absent rather than misreported as vulnerable `ECDH/DH`. `Include` is not followed and an absent directive is not read as the compiled-in default |
+| B7 | Data-at-rest | `built` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets. Submission-based (`POST/GET /api/projects/:id/data-at-rest`), no database credentials. **Two assets per store**: the bulk cipher and the key-wrapping algorithm, because only the second is what Shor breaks. **The only ingest that accepts a data classification**, so a Regulated archive reaches the risk engine with X = 25 rather than an assumed 3. A store reported as encrypted with no cipher named records nothing and is returned as a gap. **`data-at-rest` is the seventh `live` surface** |
 | B8 | Manual OT/embedded register | `built` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first. Since 2026-08-14 it also **records cryptography on the `ot` surface**: an optional structured `cryptoAlgorithm`/`cryptoKeySize` becomes an asset at `manual_attestation` modality and confidence 0.3, while `cryptoInUse` stays free text and is never parsed. A fleet described only in prose produces no asset — the register is still the estate's enumeration, so clearing the claim or deleting the fleet retires the asset |
 | B9 | Vendor / third-party | `built` | **P3** | A *form*, not a scanner — the only route to crypto the customer does not operate. Org-scoped `vendor_assessments` table, CRUD at `/api/vendor-assessments`, register page at `/vendor-register`. Every answer is stamped `manual_attestation` at confidence 0.3 (below every collector's) and `null` when the vendor has answered nothing. The `vendor` surface stays `planned`: nothing here was examined |
 | B10 | Binaries / firmware | `deferred` | **P3** | Hard. Defer until coverage elsewhere is complete |
@@ -429,13 +429,24 @@ Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 
 | # | Feature | Status | Pri |
 |---|---|---|---|
-| D1 | CISA quantum-readiness dashboard | `planned` | **P1** |
+| D1 | CISA quantum-readiness dashboard | `built` | **P1** |
 | D2 | Mosca exposure view (per scenario) | `planned` | **P1** |
 | D3 | Coverage/confidence meter — *what we haven't looked at* | `partial` | **P1** |
 | D4 | Drift detection + alerting | `planned` | **P1** |
 | D5 | Crypto-agility score | `planned` | **P1** |
 | D6 | Migration wave planner | `planned` | **P2** |
 | D7 | Trend/history view | `partial` | **P2** |
+
+### D1 `built` — and it read `planned` here for a day after it shipped
+
+`GET /api/inventory/readiness` bundles the readiness sections with the estate-wide coverage meter
+in one payload, `Readiness.tsx` renders it at `/readiness`, and
+`tests/e2e/06-readiness.spec.ts` exercises it against a real stack. It shipped in the
+2026-08-14 wave and this table still called it `planned` the next day — the third consecutive
+wave in which a lane forgot rule 9 of its own brief. Check the route and the spec before
+believing a row in this file.
+
+Detail: [06-cisa-dashboard.md](06-cisa-dashboard.md)
 
 ### D7 `partial` — the timeline, and what it refuses to draw
 
@@ -455,9 +466,13 @@ and draws no line at all, because a flat line through one measurement asserts a 
 observed. And the projection lives in a separate branch of the payload, hatched and dashed on the
 page, with its assumption restated on every projected frame.
 
-Two figures doc 06's time-pressure row asks for are **not computable and are labelled as such on
-the page**: certificate expiry against Q-Day (no `notAfter` in the asset model, no certificate
-collector) and renewal cycles remaining before a deadline (nothing records a refresh interval).
+Two figures doc 06's time-pressure row asks for are labelled **not computable on the page**, and
+one of those labels is now **wrong**: certificate expiry against Q-Day said there was no `notAfter`
+in the asset model and no certificate collector, which B4 falsified the same week — `notAfter`
+travels on `assets.location_detail` and `evaluateCertificateExpiryAgainstQDay` already computes the
+verdict for the per-project route. The estate-wide roll-up is a build, not an edit, and is tracked
+as G-22 in [09-open-gaps.md](09-open-gaps.md). The second label stands: renewal cycles remaining
+before a deadline is still not computable, because nothing records a refresh interval.
 
 **D2 stays `planned`.** The scrub readout does render doc 06's three-column exposure panel — a
 count and a share per scenario, with X's provenance beside it — but D2's actual requirement is

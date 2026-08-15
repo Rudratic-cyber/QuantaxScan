@@ -48,6 +48,7 @@ its three variables in the codebase. See [01-strategy.md](01-strategy.md).
 | # | Document | What it answers |
 |---|---|---|
 | 11 | [UI defect fixes](11-ui-defect-fixes.md) | What the visual review of `main` found, and what closed each item |
+| 14 | [In-flight lanes](14-in-flight-lanes.md) | **Six committed, unmerged wave-3 branches — read before starting new work** |
 
 ### Data
 
