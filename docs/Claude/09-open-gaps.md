@@ -38,7 +38,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-20 | Dependency findings do not distinguish direct from transitive | Medium | Lockfile format | B2 follow-up — caveat shipped, detection not |
 | G-21 | The package table applies one claim to every version of a package | Medium | Design | B2 follow-up |
 | ~~G-22~~ | ~~The estate timeline tells the customer we have no certificate collector~~ | **Closed** | Done 2026-08-15 | — |
-| G-23 | A collection schedule's `host` is validated only by its description | Medium | Nothing | Enforce hostname/IP-literal at the boundary |
+| ~~G-23~~ | ~~A collection schedule's `host` is validated only by its description~~ | **Closed** | Done 2026-08-15 | — |
 
 ---
 
@@ -805,7 +805,7 @@ product, not just this one — three other status claims went stale in the same 
 
 ---
 
-## G-23 — A schedule's `host` is validated by its documentation `Medium` `found 2026-08-15`
+## G-23 — A schedule's `host` was validated by its documentation — **CLOSED 2026-08-15**
 
 `CreateCollectionScheduleBody.targets[].host` is a bare `string`. Its description says
 *"Hostname or IP literal. Never a URL — no scheme, path or credentials"*, and nothing enforces it:
@@ -821,14 +821,26 @@ returning to: not an error, a silently wrong state. A customer schedules re-coll
 they typed as a URL, the run reports it unreachable forever, and nothing says the target was
 malformed at the point it could have been fixed.
 
-**What closes it:** validate at the boundary (a hostname per RFC 1123 labels, or an IP literal) and
-answer 400 with the reason. `normaliseHostname()` in `lib/collectors/src/discovery.ts` already
-implements exactly this rule for D8 and is dependency-free, so the fix is to reuse it rather than
-write a second definition — a second one that drifts from the first is how a validator becomes a
-lie of its own.
+**Closed by** `artifacts/api-server/src/lib/target-host.ts`, applied on **both** create and
+update — a rule enforced on one and not the other is a rule with a door beside it, and the update
+path was the second half of this gap.
 
-**Pinned:** `tests/e2e/17-continuity.spec.ts` asserts the current `201` with a message that says to
-update it when this closes, so the gap cannot be closed silently or forgotten.
+It is **composed, not reimplemented**: the hostname rule is D8's `normaliseHostname()`, and the
+only thing added is `node:net`'s `isIP` for the case D8 deliberately excludes (discovery discovers
+*names*; a collection target may legitimately be an address). A second hostname validator would
+drift from the first, and a validator that disagrees with the one beside it is a lie of its own.
+
+Two properties beyond refusing bad input:
+
+- **It normalises what it accepts.** `EXAMPLE.test.` and `example.test` are stored as one value, so
+  re-registering cannot mint a second schedule against the same host.
+- **It does not repair.** The tempting behaviour is to strip the path off a URL and keep the host;
+  that acts on a different thing than the caller asked for without saying so. The error names what
+  was wrong with *their* input ("… is a URL") rather than restating the rule.
+
+The spec description now says the rule is enforced rather than merely stating it. Proven in
+`target-host.test.ts` and end to end in `tests/e2e/17-continuity.spec.ts`, where the assertion that
+used to pin the defect now asserts the fix.
 
 ---
 

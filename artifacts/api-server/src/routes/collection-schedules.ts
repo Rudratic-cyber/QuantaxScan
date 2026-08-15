@@ -12,6 +12,7 @@ import {
 import { CreateCollectionScheduleBody, UpdateCollectionScheduleBody } from "@workspace/api-zod";
 import { runDueSchedules } from "../lib/schedule-runner";
 import { orgContextFor } from "../lib/principal";
+import { normaliseTargetHost, targetHostRejection } from "../lib/target-host";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -122,6 +123,22 @@ router.post("/collection-schedules", async (req, res): Promise<void> => {
     return;
   }
 
+  // G-23. `host` is a bare string in the spec and its "never a URL" rule used
+  // to live only in the description, so a URL was accepted and stored — a
+  // schedule that could never succeed, saved as though it were fine. Rejected
+  // at the boundary, where the caller can still fix it, rather than silently
+  // failing every run forever. Normalised on the way in so `EXAMPLE.test.` and
+  // `example.test` cannot become two schedules for one host.
+  const normalisedTargets: Array<{ host: string; port: number }> = [];
+  for (const target of targets) {
+    const host = normaliseTargetHost(target.host);
+    if (host === null) {
+      res.status(400).json({ error: targetHostRejection(target.host) });
+      return;
+    }
+    normalisedTargets.push({ ...target, host });
+  }
+
   const ctx = orgContextFor(req);
   const schedule = await withOrg(ctx, async (tx) => {
     // `collection_schedules.project_id` IS a real foreign key — and a foreign
@@ -138,7 +155,7 @@ router.post("/collection-schedules", async (req, res): Promise<void> => {
         organizationId: ctx.organizationId,
         projectId,
         targetKind,
-        target: { targets },
+        target: { targets: normalisedTargets },
         intervalMinutes,
         enabled: enabled ?? true,
         // Due immediately. A schedule created now and first collected in an
@@ -210,7 +227,21 @@ router.patch("/collection-schedules/:id", async (req, res): Promise<void> => {
   }
 
   const updates: Partial<typeof collectionSchedulesTable.$inferInsert> = {};
-  if (data.targets !== undefined) updates.target = { targets: data.targets };
+  // G-23 again, and this is the half that would otherwise make the check
+  // decorative: a rule enforced on create and not on update is a rule with a
+  // door beside it.
+  if (data.targets !== undefined) {
+    const normalisedTargets: Array<{ host: string; port: number }> = [];
+    for (const target of data.targets) {
+      const host = normaliseTargetHost(target.host);
+      if (host === null) {
+        res.status(400).json({ error: targetHostRejection(target.host) });
+        return;
+      }
+      normalisedTargets.push({ ...target, host });
+    }
+    updates.target = { targets: normalisedTargets };
+  }
   if (data.intervalMinutes !== undefined) updates.intervalMinutes = data.intervalMinutes;
   if (data.enabled !== undefined) updates.enabled = data.enabled;
 

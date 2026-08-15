@@ -53,7 +53,8 @@ interface CollectionSchedule {
   id: number;
   projectId: number;
   targetKind: string;
-  targets: Array<{ host: string; port: number }>;
+  /** The route returns the stored column, which nests the list: `{ targets: [...] }`. */
+  target: { targets: Array<{ host: string; port: number }> };
   intervalMinutes: number;
   enabled: boolean;
   [key: string]: unknown;
@@ -187,14 +188,12 @@ test.describe("M3 — scheduled re-collection", () => {
     });
     expect(tooMany.status()).toBe(400);
 
-    // **G-23, asserted as it actually behaves rather than as documented.** The
-    // spec's `host` says "Hostname or IP literal. Never a URL — no scheme, path
-    // or credentials", but nothing enforces it: `host` is a bare string, so a
-    // URL is accepted and stored. It is not a security hole — B3's
-    // resolve-then-pin guard refuses it at probe time — but it is a schedule
-    // that can never succeed, saved as though it were fine, and the reader of
-    // that description is told otherwise. Pinned here so closing G-23 turns
-    // this assertion red and it gets updated deliberately.
+    // **G-23, closed 2026-08-15.** This assertion used to pin the defect: a URL
+    // was accepted with a 201 because the "never a URL" rule lived only in the
+    // spec's description. Not a security hole — B3's resolve-then-pin guard
+    // refuses it at probe time — but a schedule that could never succeed,
+    // stored as though it were fine. Now refused where the caller can still fix
+    // it, and the error names what was wrong with their input.
     const notAHost = await api.post("/api/collection-schedules", {
       data: {
         projectId,
@@ -203,7 +202,40 @@ test.describe("M3 — scheduled re-collection", () => {
         intervalMinutes: 1440,
       },
     });
-    expect(notAHost.status(), "G-23 appears to be closed — update this assertion to 400").toBe(201);
+    expect(notAHost.status()).toBe(400);
+    expect(((await notAHost.json()) as { error: string }).error).toMatch(/is a URL/);
+  });
+
+  test("the host rule is enforced on update too, and normalises what it accepts (G-23)", async ({ api }) => {
+    const projectId = await createProject(api);
+    const created = await api.post("/api/collection-schedules", {
+      data: {
+        projectId,
+        targetKind: "tls",
+        // Upper case and a trailing root dot: legal, and the same host as
+        // `example.test`. Stored canonically so re-registering cannot mint a
+        // second schedule against one host.
+        targets: [{ host: "EXAMPLE.test.", port: 443 }],
+        intervalMinutes: 1440,
+      },
+    });
+    expect(created.status()).toBe(201);
+    const schedule = (await created.json()) as CollectionSchedule;
+    expect(schedule.target.targets[0]!.host).toBe("example.test");
+
+    // A rule enforced on create and not on update is a rule with a door beside
+    // it — the update path was the second half of this gap.
+    const patched = await api.patch(`/api/collection-schedules/${schedule.id}`, {
+      data: { targets: [{ host: "https://example.test/path", port: 443 }] },
+    });
+    expect(patched.status()).toBe(400);
+
+    // ...and the schedule still holds what it held before the refused edit.
+    const list = (await (await api.get("/api/collection-schedules")).json()) as
+      | CollectionSchedule[]
+      | { schedules: CollectionSchedule[] };
+    const schedules = Array.isArray(list) ? list : list.schedules;
+    expect(schedules.find((s) => s.id === schedule.id)?.target.targets[0]!.host).toBe("example.test");
   });
 
   test("a schedule naming another organisation's project is refused", async ({ api }) => {

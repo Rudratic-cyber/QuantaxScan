@@ -6821,7 +6821,7 @@ export const CreateCollectionScheduleBody = zod.object({
         host: zod
           .string()
           .describe(
-            "Hostname or IP literal. Never a URL — no scheme, path or credentials.",
+            "Hostname or IP literal — never a URL, and \*\*enforced\*\* rather than merely described (G-23): a scheme, a path, a wildcard, an embedded port or a single label is refused with 400 on both create and update. Normalised before it is stored (lower-cased, one trailing root dot stripped, IPv6 unbracketed), so `EXAMPLE.test.` and `example.test` are one target rather than two schedules against the same host.",
           ),
         port: zod
           .number()
@@ -6901,7 +6901,11 @@ export const UpdateCollectionScheduleBody = zod.object({
   targets: zod
     .array(
       zod.object({
-        host: zod.string(),
+        host: zod
+          .string()
+          .describe(
+            "Same rule as on create, enforced the same way (G-23) — a rule applied on create and not on update is a rule with a door beside it.",
+          ),
         port: zod
           .number()
           .min(1)

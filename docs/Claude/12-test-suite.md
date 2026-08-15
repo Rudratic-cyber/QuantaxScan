@@ -19,6 +19,7 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Cross-Tenant HTTP Suite** | Vitest + Supertest | `artifacts/api-server/src/cross-tenant.test.ts` | As above, through the real Express app |
 | **Scope-Discipline Guard** | Vitest | `artifacts/api-server/src/db-import.test.ts` | Static — reads `routes/*.ts` source |
 | **OpenAPI Drift Guard** | Vitest | `artifacts/api-server/src/openapi-drift.test.ts` | Express route table + `lib/api-spec/openapi.yaml`; the database is stubbed, no pglite |
+| **Target-Host Validator Suite** | Vitest | `artifacts/api-server/src/lib/target-host.test.ts` | Pure — G-23's hostname/IP rule, including that it refuses a URL rather than repairing it |
 | **Coverage Summariser Suite** | Vitest | `artifacts/api-server/src/lib/coverage.test.ts` | Pure — no database, no HTTP |
 | **Posture Timeline Suite** | Vitest | `artifacts/api-server/src/lib/posture-timeline.test.ts` | Pure — no database, `now` injected (D7's whole subject is time) |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts`, `tests/ui/timeline-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
