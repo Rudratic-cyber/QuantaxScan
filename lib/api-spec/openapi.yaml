@@ -32,6 +32,8 @@ tags:
     description: AI assistant
   - name: ot-fleets
     description: Manual OT/embedded device fleet register (B8)
+  - name: continuity
+    description: Scheduled re-collection and drift (M3 / D4)
 
 # Interim shared-key authentication (S1 / G-12). Applies to every operation
 # unless overridden with `security: []`. This carries no per-user identity and
@@ -1401,6 +1403,180 @@ paths:
           description: Invalid project ID
         "404":
           description: Not found
+
+  /collection-schedules:
+    get:
+      operationId: listCollectionSchedules
+      tags: [continuity]
+      summary: List this organisation's re-collection schedules (M3)
+      description: >-
+        Every schedule, with its recent attempts. `lastRunAt` and `lastSucceededAt` are two
+        different facts and both are reported: a schedule attempted hourly for a week whose host
+        has been unreachable all week has a recent `lastRunAt` and a week-old `lastSucceededAt`,
+        and reporting only the first would make an unobserved estate read as freshly verified.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Collection schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CollectionSchedule"
+    post:
+      operationId: createCollectionSchedule
+      tags: [continuity]
+      summary: Schedule a collection target for re-collection (M3)
+      description: >-
+        `targetKind` is deliberately a much smaller vocabulary than `surface`. Only `tls` is
+        schedulable, because it is the one collector that observes the world on its own rather
+        than reading a file a human uploaded; replaying a stored upload would re-derive the
+        identical result and keep `lastSeen` moving on assets nobody has actually looked at.
+
+
+        A new schedule is due immediately (`nextRunAt` = now), so the first `run-due` call after
+        creation collects it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCollectionScheduleBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "400":
+          description: Invalid body, or an interval below the 15-minute minimum
+        "404":
+          description: Project not found
+        "201":
+          description: Created schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollectionSchedule"
+
+  /collection-schedules/run-due:
+    post:
+      operationId: runDueCollectionSchedules
+      tags: [continuity]
+      summary: Execute every schedule of this organisation that is due (M3)
+      description: >-
+        The runner. Org-scoped on purpose — finding due work across every tenant would mean
+        reading an organisation-scoped table outside any organisation scope, which this codebase
+        forbids — so an external scheduler calls this per organisation with that organisation's
+        credential.
+
+
+        Every attempt is recorded, including the ones that produced nothing. An attempt whose
+        targets were all unreachable is reported as `no_evidence`, writes no collection run, and
+        **cannot mark any asset `gone`**: reobservation scope is paired with what was actually
+        observed, so an unreached host is never reported as remediated.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: What the runner executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunDueSchedulesResult"
+
+  /collection-schedules/{id}:
+    patch:
+      operationId: updateCollectionSchedule
+      tags: [continuity]
+      summary: Pause, retarget or re-cadence a schedule (M3)
+      description: >-
+        Only the fields present in the body change. Disabling a schedule keeps it and its history
+        rather than deleting it, so a noisy target can be paused without losing the target list.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCollectionScheduleBody"
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollectionSchedule"
+        "400":
+          description: Invalid schedule ID or body
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteCollectionSchedule
+      tags: [continuity]
+      summary: Remove a schedule (M3)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "204":
+          description: Deleted
+        "400":
+          description: Invalid schedule ID
+
+  /drift:
+    get:
+      operationId: getDrift
+      tags: [continuity]
+      summary: What appeared, changed and stopped being observed since a timestamp (D4)
+      description: >-
+        Drift, derived entirely on read from the `assets` lifecycle. Nothing here is persisted:
+        a stored drift verdict would go stale the moment a standard or a Q-Day scenario moved,
+        which is the C1 failure this product exists to fix.
+
+
+        **Read `surfaces[]` before reading any list as empty.** A surface with
+        `observedInWindow: false` was not collected during the window, so an empty
+        `disappeared` list says nothing about it. Empty-because-nothing-changed and
+        empty-because-nobody-looked are different statements and this payload keeps them apart.
+
+
+        **Nothing here is called remediated.** Every `disappeared` entry carries
+        `meaning: "not-observed"` and the id of the collection run that failed to observe it, so
+        the claim can be audited. A collector that did not run, an expired credential, a host
+        behind a firewall and a submission nobody repeated all produce the same absence, and only
+        a human who has checked can call one of them fixed.
+      parameters:
+        - name: since
+          in: query
+          required: false
+          description: >-
+            ISO-8601 instant the window starts at. Defaults to seven days before now.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "400":
+          description: Invalid `since`
+        "200":
+          description: Drift over the window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriftFeed"
 components:
   responses:
     RateLimited:
@@ -5474,3 +5650,420 @@ components:
         - stores
         - scenarios
         - framing
+
+    # ── M3 — scheduled re-collection and drift ────────────────────────────────
+
+    CollectionScheduleAttempt:
+      type: object
+      description: >-
+        One execution attempt. `succeeded` is the only status that makes a later absence
+        meaningful — `no_evidence` (nothing was reachable) and `failed` (the attempt threw)
+        both mean the estate was not examined, and neither may be read as a remediation.
+      properties:
+        id:
+          type: integer
+        scheduleId:
+          type: integer
+        status:
+          type: string
+          enum: [succeeded, no_evidence, failed]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: [string, "null"]
+          format: date-time
+        collectionRunId:
+          type: [integer, "null"]
+          description: The collection run this attempt produced. Null for `no_evidence` and `failed` — there was nothing to record.
+        targetsAttempted:
+          type: integer
+        targetsObserved:
+          type: integer
+        error:
+          type: [string, "null"]
+      required:
+        - id
+        - scheduleId
+        - status
+        - startedAt
+        - finishedAt
+        - collectionRunId
+        - targetsAttempted
+        - targetsObserved
+        - error
+
+    CollectionSchedule:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        targetKind:
+          type: string
+          enum: [tls]
+        target:
+          type: object
+          description: The collector's stored input, in the shape that collector already accepts.
+          properties:
+            targets:
+              type: array
+              items:
+                type: object
+                properties:
+                  host: { type: string }
+                  port: { type: integer }
+                required: [host, port]
+          required: [targets]
+        intervalMinutes:
+          type: integer
+        enabled:
+          type: boolean
+        nextRunAt:
+          type: string
+          format: date-time
+        lastRunAt:
+          type: [string, "null"]
+          format: date-time
+          description: When the runner last attempted this schedule. Null until the first attempt — never defaulted, which would claim a run that never happened.
+        lastSucceededAt:
+          type: [string, "null"]
+          format: date-time
+          description: When an attempt last produced evidence. The gap between this and `lastRunAt` is how long the estate has gone unobserved.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        recentAttempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CollectionScheduleAttempt"
+      required:
+        - id
+        - projectId
+        - targetKind
+        - target
+        - intervalMinutes
+        - enabled
+        - nextRunAt
+        - lastRunAt
+        - lastSucceededAt
+        - createdAt
+        - updatedAt
+        - recentAttempts
+
+    CreateCollectionScheduleBody:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        targetKind:
+          type: string
+          enum: [tls]
+        targets:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            properties:
+              host:
+                type: string
+                description: Hostname or IP literal. Never a URL — no scheme, path or credentials.
+              port:
+                type: integer
+                minimum: 1
+                maximum: 65535
+            required: [host, port]
+        intervalMinutes:
+          type: integer
+          minimum: 15
+          description: >-
+            Minimum 15. Not a performance guard: the only re-collectable target opens sockets to
+            a customer's own hosts, and a one-minute schedule pointed at production is a
+            self-inflicted denial of service.
+        enabled:
+          type: boolean
+      required:
+        - projectId
+        - targetKind
+        - targets
+        - intervalMinutes
+
+    UpdateCollectionScheduleBody:
+      type: object
+      properties:
+        targets:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            properties:
+              host: { type: string }
+              port: { type: integer, minimum: 1, maximum: 65535 }
+            required: [host, port]
+        intervalMinutes:
+          type: integer
+          minimum: 15
+        enabled:
+          type: boolean
+
+    ScheduleExecution:
+      type: object
+      properties:
+        scheduleId: { type: integer }
+        projectId: { type: integer }
+        targetKind: { type: string }
+        status:
+          type: string
+          enum: [succeeded, no_evidence, failed]
+        scheduleRunId: { type: integer }
+        collectionRunId: { type: [integer, "null"] }
+        targetsAttempted: { type: integer }
+        targetsObserved: { type: integer }
+        observationsCreated: { type: integer }
+        assetsCreated: { type: integer }
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Only ever non-zero for a `succeeded` attempt. An attempt that observed nothing
+            reconciles nothing, which is what stops an unreachable host being reported as fixed.
+        targets:
+          type: array
+          items:
+            type: object
+            properties:
+              host: { type: string }
+              port: { type: integer }
+              outcome: { type: string }
+            required: [host, port, outcome]
+        error: { type: [string, "null"] }
+        nextRunAt: { type: string, format: date-time }
+      required:
+        - scheduleId
+        - projectId
+        - targetKind
+        - status
+        - scheduleRunId
+        - collectionRunId
+        - targetsAttempted
+        - targetsObserved
+        - observationsCreated
+        - assetsCreated
+        - assetsMarkedGone
+        - targets
+        - error
+        - nextRunAt
+
+    RunDueSchedulesResult:
+      type: object
+      properties:
+        ranAt:
+          type: string
+          format: date-time
+        due:
+          type: integer
+          description: How many schedules were due. Capped per call, so this can be lower than the number actually waiting.
+        executed:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScheduleExecution"
+      required: [ranAt, due, executed]
+
+    DriftAsset:
+      type: object
+      properties:
+        assetId: { type: integer }
+        surface: { type: string }
+        surfaceId: { type: [string, "null"] }
+        algorithm: { type: string }
+        keySize:
+          type: [integer, "null"]
+          description: Null means undetermined. Never a guessed default (G-05).
+        location: { type: string }
+        status: { type: string }
+        firstSeen: { type: string, format: date-time }
+        lastSeen: { type: string, format: date-time }
+        compliance:
+          type: [object, "null"]
+          description: >-
+            Obligations, deadlines and citations resolved through C1 on this read, never stored.
+            Null for an algorithm the mapping data does not know — an absent obligation, never an
+            invented one.
+          additionalProperties: true
+      required:
+        - assetId
+        - surface
+        - surfaceId
+        - algorithm
+        - keySize
+        - location
+        - status
+        - firstSeen
+        - lastSeen
+        - compliance
+
+    DriftNotObservedEvidence:
+      type: object
+      description: The collection run behind an absence. Without it, an absence is unauditable.
+      properties:
+        collectionRunId: { type: integer }
+        collector: { type: [string, "null"] }
+        runCompletedAt: { type: [string, "null"], format: date-time }
+        runTarget: { type: [string, "null"] }
+      required: [collectionRunId, collector, runCompletedAt, runTarget]
+
+    DriftAppearance:
+      allOf:
+        - $ref: "#/components/schemas/DriftAsset"
+        - type: object
+          properties:
+            appearedAt: { type: string, format: date-time }
+          required: [appearedAt]
+
+    DriftDisappearance:
+      allOf:
+        - $ref: "#/components/schemas/DriftAsset"
+        - type: object
+          properties:
+            meaning:
+              type: string
+              enum: [not-observed]
+              description: >-
+                A fixed literal, not a label. It is the only statement this payload makes about
+                an absence, and it is not "remediated".
+            notObservedAt:
+              type: string
+              format: date-time
+              description: When the collection that did not find it ran — not when the asset stopped existing, which nobody knows.
+            lastObservedAt:
+              type: string
+              format: date-time
+              description: When it was last actually observed. Never advanced by the run that missed it.
+            evidence:
+              oneOf:
+                - $ref: "#/components/schemas/DriftNotObservedEvidence"
+                - type: "null"
+          required: [meaning, notObservedAt, lastObservedAt, evidence]
+
+    DriftReappearance:
+      allOf:
+        - $ref: "#/components/schemas/DriftAsset"
+        - type: object
+          properties:
+            reappearedAt: { type: string, format: date-time }
+            evidence:
+              oneOf:
+                - $ref: "#/components/schemas/DriftNotObservedEvidence"
+                - type: "null"
+          required: [reappearedAt, evidence]
+
+    DriftLocationChange:
+      type: object
+      description: >-
+        The same location serving different cryptography. A correlation computed on read: an
+        asset's identity includes its algorithm, so a changed algorithm is necessarily two rows,
+        and both halves stay in `appeared`/`disappeared` as well.
+      properties:
+        surface: { type: string }
+        location: { type: string }
+        from: { $ref: "#/components/schemas/DriftAsset" }
+        to: { $ref: "#/components/schemas/DriftAsset" }
+      required: [surface, location, from, to]
+
+    SurfaceObservability:
+      type: object
+      description: Whether anybody actually looked at this surface during the window.
+      properties:
+        surface: { type: string }
+        surfaceId: { type: [string, "null"] }
+        completedRunsInWindow: { type: integer }
+        unproductiveAttemptsInWindow:
+          type: integer
+          description: Scheduled attempts in the window that produced no evidence (`failed` or `no_evidence`).
+        lastCollectedAt:
+          type: [string, "null"]
+          format: date-time
+          description: The last completed run on this surface at any time. Null means never examined at all.
+        observedInWindow:
+          type: boolean
+          description: >-
+            False means every empty list in this response is empty because nobody collected, not
+            because nothing changed.
+      required:
+        - surface
+        - surfaceId
+        - completedRunsInWindow
+        - unproductiveAttemptsInWindow
+        - lastCollectedAt
+        - observedInWindow
+
+    DriftOverdueSchedule:
+      type: object
+      properties:
+        scheduleId: { type: integer }
+        projectId: { type: integer }
+        targetKind: { type: string }
+        dueAt: { type: string, format: date-time }
+        minutesOverdue: { type: integer }
+        lastSucceededAt: { type: [string, "null"], format: date-time }
+        neverSucceeded: { type: boolean }
+      required: [scheduleId, projectId, targetKind, dueAt, minutesOverdue, lastSucceededAt, neverSucceeded]
+
+    DriftFeed:
+      type: object
+      properties:
+        window:
+          type: object
+          properties:
+            since: { type: string, format: date-time }
+            until: { type: string, format: date-time }
+          required: [since, until]
+        appeared:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriftAppearance"
+        disappeared:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriftDisappearance"
+        reappeared:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriftReappearance"
+        changed:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriftLocationChange"
+        surfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/SurfaceObservability"
+        schedules:
+          type: object
+          properties:
+            attempts:
+              type: array
+              items:
+                $ref: "#/components/schemas/CollectionScheduleAttempt"
+            overdue:
+              type: array
+              items:
+                $ref: "#/components/schemas/DriftOverdueSchedule"
+          required: [attempts, overdue]
+        caveat:
+          type: string
+          description: Stated in the payload rather than only in the docs, so a report built from this can quote it.
+      required:
+        - window
+        - appeared
+        - disappeared
+        - reappeared
+        - changed
+        - surfaces
+        - schedules
+        - caveat

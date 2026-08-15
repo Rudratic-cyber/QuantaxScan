@@ -74,6 +74,7 @@ GRANT USAGE ON SCHEMA public TO quantaxscan_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   projects, scans, findings, assets, observations, collection_runs,
   activity, shared_reports, community_posts, ot_fleets, vendor_assessments,
+  collection_schedules, collection_schedule_runs,
   organizations, organization_members, user_identities, users, sessions
 TO quantaxscan_app;
 
@@ -168,6 +169,24 @@ ALTER TABLE vendor_assessments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vendor_assessments FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS vendor_assessments_org_isolation ON vendor_assessments;
 CREATE POLICY vendor_assessments_org_isolation ON vendor_assessments AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+-- M3 — scheduled re-collection. Standard shape for both. Which hosts a company
+-- has told us to re-probe, and how often, is an inventory of that company's
+-- estate in its own right; the attempt log beside it says when we last actually
+-- reached them, which is the fact the drift feed's honesty rests on.
+ALTER TABLE collection_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE collection_schedules FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS collection_schedules_org_isolation ON collection_schedules;
+CREATE POLICY collection_schedules_org_isolation ON collection_schedules AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+ALTER TABLE collection_schedule_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE collection_schedule_runs FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS collection_schedule_runs_org_isolation ON collection_schedule_runs;
+CREATE POLICY collection_schedule_runs_org_isolation ON collection_schedule_runs AS PERMISSIVE FOR ALL TO quantaxscan_app
   USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 

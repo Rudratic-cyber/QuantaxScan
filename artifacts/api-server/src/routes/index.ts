@@ -11,6 +11,8 @@ import reportsRouter from "./reports";
 import inventoryRouter from "./inventory";
 import otFleetsRouter from "./ot-fleets";
 import vendorAssessmentsRouter from "./vendor-assessments";
+import collectionSchedulesRouter from "./collection-schedules";
+import driftRouter from "./drift";
 
 const router: IRouter = Router();
 
@@ -26,5 +28,7 @@ router.use(reportsRouter);
 router.use(inventoryRouter);
 router.use(otFleetsRouter);
 router.use(vendorAssessmentsRouter);
+router.use(collectionSchedulesRouter);
+router.use(driftRouter);
 
 export default router;

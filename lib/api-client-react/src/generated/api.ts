@@ -20,7 +20,9 @@ import type {
   CbomDocument,
   CertificateIngestSummary,
   ChatBody,
+  CollectionSchedule,
   CommunityPost,
+  CreateCollectionScheduleBody,
   CreateCommunityPostBody,
   CreateOtFleetBody,
   CreateProjectBody,
@@ -32,7 +34,9 @@ import type {
   DemoRepo,
   DemoScanResult,
   DependencyIngestSummary,
+  DriftFeed,
   Finding,
+  GetDriftParams,
   GetInventoryAssetsParams,
   GetLeaderboardParams,
   GithubFetchResult,
@@ -58,6 +62,7 @@ import type {
   ProtocolConfigIngestSummary,
   RateLimitedResponse,
   ReadinessSummary,
+  RunDueSchedulesResult,
   Scan,
   SharedReport,
   SubmitProjectCertificatesBody,
@@ -67,6 +72,7 @@ import type {
   SubmitProjectProtocolConfigBody,
   SubmitProjectTlsBody,
   TlsProbeSummary,
+  UpdateCollectionScheduleBody,
   UpdateOtFleetBody,
   UpdateVendorAssessmentBody,
   VendorAssessment,
@@ -4231,6 +4237,533 @@ export function useGetProjectDataAtRest<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetProjectDataAtRestQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Every schedule, with its recent attempts. `lastRunAt` and `lastSucceededAt` are two different facts and both are reported: a schedule attempted hourly for a week whose host has been unreachable all week has a recent `lastRunAt` and a week-old `lastSucceededAt`, and reporting only the first would make an unobserved estate read as freshly verified.
+ * @summary List this organisation's re-collection schedules (M3)
+ */
+export const getListCollectionSchedulesUrl = () => {
+  return `/api/collection-schedules`;
+};
+
+export const listCollectionSchedules = async (
+  options?: RequestInit,
+): Promise<CollectionSchedule[]> => {
+  return customFetch<CollectionSchedule[]>(getListCollectionSchedulesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCollectionSchedulesQueryKey = () => {
+  return [`/api/collection-schedules`] as const;
+};
+
+export const getListCollectionSchedulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCollectionSchedules>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCollectionSchedules>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCollectionSchedulesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCollectionSchedules>>
+  > = ({ signal }) => listCollectionSchedules({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCollectionSchedules>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCollectionSchedulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCollectionSchedules>>
+>;
+export type ListCollectionSchedulesQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary List this organisation's re-collection schedules (M3)
+ */
+
+export function useListCollectionSchedules<
+  TData = Awaited<ReturnType<typeof listCollectionSchedules>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCollectionSchedules>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCollectionSchedulesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * `targetKind` is deliberately a much smaller vocabulary than `surface`. Only `tls` is schedulable, because it is the one collector that observes the world on its own rather than reading a file a human uploaded; replaying a stored upload would re-derive the identical result and keep `lastSeen` moving on assets nobody has actually looked at.
+
+A new schedule is due immediately (`nextRunAt` = now), so the first `run-due` call after creation collects it.
+ * @summary Schedule a collection target for re-collection (M3)
+ */
+export const getCreateCollectionScheduleUrl = () => {
+  return `/api/collection-schedules`;
+};
+
+export const createCollectionSchedule = async (
+  createCollectionScheduleBody: CreateCollectionScheduleBody,
+  options?: RequestInit,
+): Promise<CollectionSchedule> => {
+  return customFetch<CollectionSchedule>(getCreateCollectionScheduleUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createCollectionScheduleBody),
+  });
+};
+
+export const getCreateCollectionScheduleMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCollectionSchedule>>,
+    TError,
+    { data: BodyType<CreateCollectionScheduleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCollectionSchedule>>,
+  TError,
+  { data: BodyType<CreateCollectionScheduleBody> },
+  TContext
+> => {
+  const mutationKey = ["createCollectionSchedule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCollectionSchedule>>,
+    { data: BodyType<CreateCollectionScheduleBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createCollectionSchedule(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCollectionScheduleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCollectionSchedule>>
+>;
+export type CreateCollectionScheduleMutationBody =
+  BodyType<CreateCollectionScheduleBody>;
+export type CreateCollectionScheduleMutationError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Schedule a collection target for re-collection (M3)
+ */
+export const useCreateCollectionSchedule = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCollectionSchedule>>,
+    TError,
+    { data: BodyType<CreateCollectionScheduleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCollectionSchedule>>,
+  TError,
+  { data: BodyType<CreateCollectionScheduleBody> },
+  TContext
+> => {
+  return useMutation(getCreateCollectionScheduleMutationOptions(options));
+};
+
+/**
+ * The runner. Org-scoped on purpose — finding due work across every tenant would mean reading an organisation-scoped table outside any organisation scope, which this codebase forbids — so an external scheduler calls this per organisation with that organisation's credential.
+
+Every attempt is recorded, including the ones that produced nothing. An attempt whose targets were all unreachable is reported as `no_evidence`, writes no collection run, and **cannot mark any asset `gone`**: reobservation scope is paired with what was actually observed, so an unreached host is never reported as remediated.
+ * @summary Execute every schedule of this organisation that is due (M3)
+ */
+export const getRunDueCollectionSchedulesUrl = () => {
+  return `/api/collection-schedules/run-due`;
+};
+
+export const runDueCollectionSchedules = async (
+  options?: RequestInit,
+): Promise<RunDueSchedulesResult> => {
+  return customFetch<RunDueSchedulesResult>(getRunDueCollectionSchedulesUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRunDueCollectionSchedulesMutationOptions = <
+  TError = ErrorType<RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runDueCollectionSchedules>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runDueCollectionSchedules>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["runDueCollectionSchedules"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runDueCollectionSchedules>>,
+    void
+  > = () => {
+    return runDueCollectionSchedules(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunDueCollectionSchedulesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runDueCollectionSchedules>>
+>;
+
+export type RunDueCollectionSchedulesMutationError =
+  ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Execute every schedule of this organisation that is due (M3)
+ */
+export const useRunDueCollectionSchedules = <
+  TError = ErrorType<RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runDueCollectionSchedules>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runDueCollectionSchedules>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRunDueCollectionSchedulesMutationOptions(options));
+};
+
+/**
+ * Only the fields present in the body change. Disabling a schedule keeps it and its history rather than deleting it, so a noisy target can be paused without losing the target list.
+ * @summary Pause, retarget or re-cadence a schedule (M3)
+ */
+export const getUpdateCollectionScheduleUrl = (id: number) => {
+  return `/api/collection-schedules/${id}`;
+};
+
+export const updateCollectionSchedule = async (
+  id: number,
+  updateCollectionScheduleBody: UpdateCollectionScheduleBody,
+  options?: RequestInit,
+): Promise<CollectionSchedule> => {
+  return customFetch<CollectionSchedule>(getUpdateCollectionScheduleUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateCollectionScheduleBody),
+  });
+};
+
+export const getUpdateCollectionScheduleMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCollectionSchedule>>,
+    TError,
+    { id: number; data: BodyType<UpdateCollectionScheduleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCollectionSchedule>>,
+  TError,
+  { id: number; data: BodyType<UpdateCollectionScheduleBody> },
+  TContext
+> => {
+  const mutationKey = ["updateCollectionSchedule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCollectionSchedule>>,
+    { id: number; data: BodyType<UpdateCollectionScheduleBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateCollectionSchedule(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCollectionScheduleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCollectionSchedule>>
+>;
+export type UpdateCollectionScheduleMutationBody =
+  BodyType<UpdateCollectionScheduleBody>;
+export type UpdateCollectionScheduleMutationError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Pause, retarget or re-cadence a schedule (M3)
+ */
+export const useUpdateCollectionSchedule = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCollectionSchedule>>,
+    TError,
+    { id: number; data: BodyType<UpdateCollectionScheduleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateCollectionSchedule>>,
+  TError,
+  { id: number; data: BodyType<UpdateCollectionScheduleBody> },
+  TContext
+> => {
+  return useMutation(getUpdateCollectionScheduleMutationOptions(options));
+};
+
+/**
+ * @summary Remove a schedule (M3)
+ */
+export const getDeleteCollectionScheduleUrl = (id: number) => {
+  return `/api/collection-schedules/${id}`;
+};
+
+export const deleteCollectionSchedule = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteCollectionScheduleUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteCollectionScheduleMutationOptions = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCollectionSchedule>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteCollectionSchedule>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteCollectionSchedule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteCollectionSchedule>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteCollectionSchedule(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteCollectionScheduleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteCollectionSchedule>>
+>;
+
+export type DeleteCollectionScheduleMutationError =
+  ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary Remove a schedule (M3)
+ */
+export const useDeleteCollectionSchedule = <
+  TError = ErrorType<void | RateLimitedResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCollectionSchedule>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteCollectionSchedule>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteCollectionScheduleMutationOptions(options));
+};
+
+/**
+ * Drift, derived entirely on read from the `assets` lifecycle. Nothing here is persisted: a stored drift verdict would go stale the moment a standard or a Q-Day scenario moved, which is the C1 failure this product exists to fix.
+
+**Read `surfaces[]` before reading any list as empty.** A surface with `observedInWindow: false` was not collected during the window, so an empty `disappeared` list says nothing about it. Empty-because-nothing-changed and empty-because-nobody-looked are different statements and this payload keeps them apart.
+
+**Nothing here is called remediated.** Every `disappeared` entry carries `meaning: "not-observed"` and the id of the collection run that failed to observe it, so the claim can be audited. A collector that did not run, an expired credential, a host behind a firewall and a submission nobody repeated all produce the same absence, and only a human who has checked can call one of them fixed.
+ * @summary What appeared, changed and stopped being observed since a timestamp (D4)
+ */
+export const getGetDriftUrl = (params?: GetDriftParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/drift?${stringifiedParams}`
+    : `/api/drift`;
+};
+
+export const getDrift = async (
+  params?: GetDriftParams,
+  options?: RequestInit,
+): Promise<DriftFeed> => {
+  return customFetch<DriftFeed>(getGetDriftUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDriftQueryKey = (params?: GetDriftParams) => {
+  return [`/api/drift`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetDriftQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDrift>>,
+  TError = ErrorType<void | RateLimitedResponse>,
+>(
+  params?: GetDriftParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDrift>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDriftQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDrift>>> = ({
+    signal,
+  }) => getDrift(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDrift>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDriftQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDrift>>
+>;
+export type GetDriftQueryError = ErrorType<void | RateLimitedResponse>;
+
+/**
+ * @summary What appeared, changed and stopped being observed since a timestamp (D4)
+ */
+
+export function useGetDrift<
+  TData = Awaited<ReturnType<typeof getDrift>>,
+  TError = ErrorType<void | RateLimitedResponse>,
+>(
+  params?: GetDriftParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDrift>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDriftQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

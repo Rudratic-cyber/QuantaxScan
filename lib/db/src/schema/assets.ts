@@ -38,6 +38,31 @@ export const assetsTable = pgTable(
     status: text("status").notNull().default("active"), // active | remediated | waived | gone
     firstSeen: timestamp("first_seen", { withTimezone: true }).notNull().defaultNow(),
     lastSeen: timestamp("last_seen", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * M3 — when this asset last *changed* status, and the collection run that
+     * changed it. Both null until the first transition, with no default: an
+     * asset that has never left the status it was created in has no transition
+     * to report, and stamping one at creation would make every asset look like
+     * it had just changed. Same "null means not supplied" rule as `keySize`.
+     *
+     * These exist because the difference between `lastSeen` and "went `gone`"
+     * is not derivable from anything else on the row, and the drift feed
+     * (`GET /api/drift`) has to be able to say *when* an asset stopped being
+     * observed and *which run* failed to observe it. Without the run id a
+     * reader cannot check that a real collection happened at all — and an
+     * absence with no run behind it is the false remediation D4 exists to
+     * avoid.
+     *
+     * `statusChangedByRunId` is the run whose reobservation scope covered this
+     * asset and did *not* see it (for `active` → `gone`), or the run that saw
+     * it again (for `gone` → `active`). It is deliberately **not** a foreign
+     * key: `collection_runs` rows are organisation-scoped and a FK is checked
+     * with RLS bypassed, so an FK here would add a cross-tenant write path for
+     * no benefit — the column is only ever written from `asset-ingest.ts` with
+     * the id of a run that function just created inside the same scope.
+     */
+    statusChangedAt: timestamp("status_changed_at", { withTimezone: true }),
+    statusChangedByRunId: integer("status_changed_by_run_id"),
 
     // ownership + risk inputs
     ownerId: integer("owner_id"),
@@ -64,6 +89,11 @@ export const assetsTable = pgTable(
     // Supports the per-scan "which assets at these locations did this run not
     // reobserve?" reconciliation, which runs on every scan submission.
     index("assets_org_location_status_idx").on(table.organizationId, table.location, table.status),
+    // M3 — the two columns `GET /api/drift` windows on. Both reads are
+    // estate-wide ("everything that appeared or changed since T"), so neither
+    // can lean on the location index above.
+    index("assets_org_first_seen_idx").on(table.organizationId, table.firstSeen),
+    index("assets_org_status_changed_idx").on(table.organizationId, table.statusChangedAt),
     check("assets_surface_check", oneOf(table.surface, SURFACE_VALUES)),
     check("assets_status_check", oneOf(table.status, ASSET_STATUS_VALUES)),
     // Nullable, so NULL satisfies both of these — "not supplied" stays sayable.
