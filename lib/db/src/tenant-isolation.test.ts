@@ -396,6 +396,130 @@ describe("the shapes that are deliberately not the standard one", () => {
     expect(orgs).toEqual([{ id: 1 }]);
   });
 
+  it("organizations: sign-up can create a personal organisation for the acting user, and nothing else", async () => {
+    harness = await createTestDb({ asRole: RUNTIME_DB_ROLE });
+    await harness.seedAsSuperuser(async (client) => {
+      await client.exec(`insert into users (id, email) values ('user-a', 'a@example.com'), ('user-b', 'b@example.com')`);
+    });
+    const { withUserScope } = harness.scope;
+
+    // The bootstrap, exactly as sign-up runs it: create the organisation with
+    // no organisation GUC set, read its id back, promote the SAME transaction
+    // to it, then write the owner membership.
+    const created = await withUserScope("user-a", async ({ tx, enterOrganization }) => {
+      const [org] = await executeRows<{ id: number }>(
+        tx,
+        sql`insert into organizations (name, slug, personal, created_by_user_id)
+              values ('user-a', 'user-a-personal', true, 'user-a') returning id`,
+      );
+      // Reading the id back is itself subject to the policy — RETURNING is a
+      // SELECT. Without the created_by_user_id branch this line is where
+      // sign-up fails, and it fails as a rejected insert rather than as an
+      // empty result, which is why it is asserted separately.
+      expect(org.id).toBeGreaterThan(0);
+
+      await enterOrganization(org.id);
+      await tx.execute(
+        sql`insert into organization_members (organization_id, user_id, role)
+              values (${org.id}, 'user-a', 'owner')`,
+      );
+      return org.id;
+    });
+
+    // And on the next request, with only the user GUC, the membership and the
+    // organisation are both visible — that is the login bootstrap.
+    const memberships = await withUserScope("user-a", ({ tx }) =>
+      executeRows<{ organization_id: number }>(tx, sql`select organization_id from organization_members`),
+    );
+    expect(memberships).toEqual([{ organization_id: created }]);
+
+    // user-b cannot see any of it.
+    const asB = await withUserScope("user-b", ({ tx }) =>
+      executeRows(tx, sql`select id from organizations`),
+    );
+    expect(asB).toEqual([]);
+  });
+
+  it("organizations: the WITH CHECK refuses a shared organisation, one attributed to someone else, and an anonymous one", async () => {
+    harness = await createTestDb({ asRole: RUNTIME_DB_ROLE });
+    await harness.seedAsSuperuser(async (client) => {
+      await client.exec(`insert into users (id, email) values ('user-a', 'a@example.com')`);
+    });
+    const { withUserScope, withoutOrgScope } = harness.scope;
+
+    // `personal = false` — a signed-in user may not mint a shared tenant.
+    await expectRejection(
+      withUserScope("user-a", ({ tx }) =>
+        tx.execute(sql`insert into organizations (name, slug, personal, created_by_user_id)
+                         values ('shared', 'shared', false, 'user-a')`),
+      ),
+      /row-level security policy/,
+    );
+
+    // Attributed to another user — the row must carry the acting user, so an
+    // organisation cannot be planted under someone else's provenance.
+    await expectRejection(
+      withUserScope("user-a", ({ tx }) =>
+        tx.execute(sql`insert into organizations (name, slug, personal, created_by_user_id)
+                         values ('impostor', 'impostor', true, 'user-b')`),
+      ),
+      /row-level security policy/,
+    );
+
+    // No user GUC at all — an unauthenticated caller creates nothing.
+    await expectRejection(
+      withoutOrgScope("test", (tx) =>
+        tx.execute(sql`insert into organizations (name, slug, personal, created_by_user_id)
+                         values ('anon', 'anon', true, null)`),
+      ),
+      /row-level security policy/,
+    );
+  });
+
+  it("organization_members: a signed-in user cannot join an organisation they were never added to", async () => {
+    // The escalation this whole shape exists to refuse. `withUserScope` sets
+    // the user GUC and no organisation GUC, which is exactly the state a
+    // request is in between sign-in and organisation resolution.
+    harness = await createTestDb({ asRole: RUNTIME_DB_ROLE });
+    await harness.seedAsSuperuser(async (client) => {
+      await client.exec(`
+        insert into users (id, email) values ('user-a', 'a@example.com'), ('user-b', 'b@example.com');
+        insert into organization_members (organization_id, user_id, role) values (1, 'user-a', 'owner');
+      `);
+    });
+
+    await expectRejection(
+      harness.scope.withUserScope("user-b", ({ tx }) =>
+        tx.execute(sql`insert into organization_members (organization_id, user_id, role)
+                         values (1, 'user-b', 'owner')`),
+      ),
+      /row-level security policy/,
+    );
+
+    const stillOnlyA = await harness.scope.withOrg({ organizationId: 1, userId: "user-a" }, (tx) =>
+      executeRows<{ user_id: string }>(tx, sql`select user_id from organization_members`),
+    );
+    expect(stillOnlyA).toEqual([{ user_id: "user-a" }]);
+  });
+
+  it("withUserScope refuses to nest, and refuses the API-key principal's empty user id", async () => {
+    harness = await createTestDb({ asRole: RUNTIME_DB_ROLE });
+    const { withOrg, withUserScope } = harness.scope;
+
+    await expect(
+      withOrg({ organizationId: 1, userId: "user-a" }, () => withUserScope("user-a", async () => 1)),
+    ).rejects.toThrow(/cannot nest/);
+
+    await expect(
+      withUserScope("user-a", () => withOrg({ organizationId: 1, userId: "user-a" }, async () => 1)),
+    ).rejects.toThrow(/cannot nest/);
+
+    // "" is the machine principal. It has no memberships by construction, and
+    // silently returning none would look like a user with no access rather
+    // than a caller that should never have asked.
+    await expect(withUserScope("", async () => 1)).rejects.toThrow(/non-empty userId/);
+  });
+
   it("organization_members: one user's membership row is invisible to another user in another organisation", async () => {
     harness = await createTestDb({ asRole: RUNTIME_DB_ROLE });
     await harness.seedAsSuperuser(async (client) => {

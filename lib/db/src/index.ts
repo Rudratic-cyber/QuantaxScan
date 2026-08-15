@@ -20,7 +20,7 @@ export const db = drizzle(pool, { schema });
  * on `db` inside a `withOrg` callback runs outside the transaction, and so
  * outside the GUC the policies read.
  */
-export const { withOrg, withPublicShare, withoutOrgScope } = createOrgScope(db, {
+export const { withOrg, withUserScope, withPublicShare, withoutOrgScope } = createOrgScope(db, {
   // Public community content is read on every page load, so its use of the
   // escape hatch is routine by design. Declaring it keeps the warning channel
   // meaningful: anything NOT on this list is genuinely worth looking at.

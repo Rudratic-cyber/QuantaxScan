@@ -135,8 +135,36 @@ async function assertNotNested(tx: ScopedTx, opening: string): Promise<void> {
   }
 }
 
+/**
+ * The handle a `withUserScope` callback is given: a transaction scoped to a
+ * *person* and to no organisation yet.
+ */
+export interface UserScopedTx {
+  tx: ScopedTx;
+  /**
+   * Promote this same transaction to also act inside `organizationId`.
+   *
+   * **This is the write authority, and it is why it is deliberately awkward.**
+   * The row-level-security policies compare `organization_id` against
+   * `app.current_org_id`; whatever is passed here becomes that value, so a
+   * caller that promotes to an organisation the user is not a member of gets
+   * exactly the access of a member. Verified: a second user given a forged org
+   * GUC can insert their own membership row into a stranger's organisation.
+   * The database cannot tell the difference, so confirming membership *before*
+   * calling this is the entire control.
+   *
+   * There are exactly two legitimate callers:
+   *   1. sign-up, promoting to an organisation this same transaction just
+   *      created (so no caller-supplied id is involved at all); and
+   *   2. nothing else — an ordinary request uses `withOrg`, whose organisation
+   *      came from `resolvePrincipal` re-reading `organization_members`.
+   */
+  enterOrganization(organizationId: number): Promise<void>;
+}
+
 export interface OrgScope {
   withOrg<T>(ctx: OrgContext, fn: (tx: ScopedTx) => Promise<T>): Promise<T>;
+  withUserScope<T>(userId: string, fn: (scope: UserScopedTx) => Promise<T>): Promise<T>;
   withPublicShare<T>(fn: (tx: ScopedTx) => Promise<T>): Promise<T>;
   withoutOrgScope<T>(reason: string, fn: (tx: ScopedTx) => Promise<T>): Promise<T>;
 }
@@ -147,7 +175,18 @@ export interface OrgScope {
  * a reason belongs here only when the table it touches is genuinely not
  * organisation-scoped (`users`, `sessions`, `community_posts`).
  */
-export const UNSCOPED_BY_DESIGN = ["public community content"] as const;
+export const UNSCOPED_BY_DESIGN = [
+  "public community content",
+  // The three auth tables that genuinely have no organisation: a session is
+  // read before anyone knows who the caller is, and a user and their provider
+  // identities are read before anyone knows which tenant they act in. All
+  // three happen on ordinary authenticated requests, so an undeclared warning
+  // here would fire on every one of them and stop being a signal. Membership
+  // is NOT on this list — it is organisation-scoped and goes through
+  // `withUserScope`.
+  "session store",
+  "sign-in identity resolution",
+] as const;
 
 export interface OrgScopeOptions {
   /**
@@ -210,6 +249,71 @@ export function createOrgScope(database: AppDatabase, options: OrgScopeOptions =
   }
 
   /**
+   * The sign-in scope: a transaction that knows *who* the caller is and not
+   * yet *which organisation* they are acting in.
+   *
+   * This is the one thing `withOrg` cannot express. Two reads happen before an
+   * organisation is known, and both are the authorisation decision rather than
+   * a consequence of it:
+   *
+   *   * "which organisations does this user belong to" —
+   *     `organization_members`' policy has a `user_id` branch precisely so
+   *     this works with no organisation GUC set; and
+   *   * sign-up creating a personal organisation for a user who is, at that
+   *     instant, a member of nothing.
+   *
+   * It is NOT `withoutOrgScope`. Both of those tables ARE organisation-scoped
+   * and stay under their policies here — what changes is only that the
+   * `app.current_user_id` branch is the one doing the work. Using the escape
+   * hatch instead would drop the policy on the very read that decides which
+   * tenant the rest of the request sees.
+   */
+  async function withUserScope<T>(userId: string, fn: (scope: UserScopedTx) => Promise<T>): Promise<T> {
+    if (typeof userId !== "string" || userId === "") {
+      throw new Error(
+        "withUserScope needs a non-empty userId. The empty string is the API-key principal, " +
+          "which has no person behind it and therefore no memberships to read.",
+      );
+    }
+
+    assertNotNestedInProcess("withUserScope");
+
+    return activeScope.run({ opening: "withUserScope" }, () =>
+      database.transaction(async (tx) => {
+        const scoped = tx as ScopedTx;
+        await assertNotNested(scoped, "withUserScope");
+        await scoped.execute(sql`select
+          set_config('app.current_user_id', ${userId}, true),
+          set_config(${SCOPE_SENTINEL},     '1',       true)`);
+
+        let entered: number | undefined;
+        const enterOrganization = async (organizationId: number): Promise<void> => {
+          if (!Number.isInteger(organizationId)) {
+            throw new Error(`enterOrganization needs an integer organizationId, got ${String(organizationId)}`);
+          }
+          if (entered !== undefined) {
+            throw new Error(
+              `enterOrganization was already called with organization ${entered} in this scope. ` +
+                `Re-pointing a live transaction at a second organisation is the savepoint bug by another route — ` +
+                `finish this scope and open a new one.`,
+            );
+          }
+          entered = organizationId;
+          // The in-process guard's record is updated too, so a nested scope's
+          // error message names the organisation this transaction is now in.
+          const store = activeScope.getStore();
+          if (store) store.organizationId = organizationId;
+          await scoped.execute(
+            sql`select set_config('app.current_org_id', ${String(organizationId)}, true)`,
+          );
+        };
+
+        return fn({ tx: scoped, enterOrganization });
+      }),
+    );
+  }
+
+  /**
    * Anonymous access to a public share link. Sets no organisation GUC, so the
    * only branch of `shared_reports_org_isolation` that can match is the public
    * one — `visibility = 'public' AND revoked_at IS NULL AND expires_at > now()`.
@@ -261,5 +365,5 @@ export function createOrgScope(database: AppDatabase, options: OrgScopeOptions =
     );
   }
 
-  return { withOrg, withPublicShare, withoutOrgScope };
+  return { withOrg, withUserScope, withPublicShare, withoutOrgScope };
 }

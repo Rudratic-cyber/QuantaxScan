@@ -11,10 +11,12 @@ import reportsRouter from "./reports";
 import inventoryRouter from "./inventory";
 import otFleetsRouter from "./ot-fleets";
 import vendorAssessmentsRouter from "./vendor-assessments";
+import authRouter from "./auth";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(authRouter);
 router.use(projectsRouter);
 router.use(scansRouter);
 router.use(communityRouter);
