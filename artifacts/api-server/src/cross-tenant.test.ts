@@ -593,6 +593,62 @@ describe("list routes return this organisation's rows and only this organisation
     expect(serialised).not.toContain("secrets/their_key.py");
   });
 
+  it("GET /api/report-packs/regulator submits our inventory and no trace of theirs", async () => {
+    // The most sensitive payload in the product: every asset, with its
+    // location, its provenance and its obligations, in one document meant for
+    // a regulator. Same adversarial fixture as the timeline and readiness
+    // tests — their completed run and their asset are addressed at OUR
+    // project's identity, and this handler reads the whole organisation with
+    // no where clause of its own, so only the policy separates them.
+    const res = await auth(request.get("/api/report-packs/regulator"));
+    expect(res.status).toBe(200);
+
+    expect(res.body.inventory).toHaveLength(1);
+    expect(res.body.inventory[0].fingerprint).toBe("our-asset-fingerprint");
+    expect(res.body.inventory[0].algorithm).toBe("MD5");
+    expect(res.body.scope.statusCounts).toEqual({ active: 1 });
+
+    // Their collection run must not become our provenance, and their
+    // observation must not become our evidence — the two fields an auditor
+    // would read as "somebody looked at this on our behalf".
+    expect(res.body.header.collectors).toEqual([]);
+    expect(res.body.methodology.discoveryModalities).toEqual([]);
+    expect(res.body.inventory[0].provenance.collector).toBeNull();
+    expect(res.body.inventory[0].provenance.note).not.toBeNull();
+    expect(res.body.coverageLimitations.assetsWithoutObservation).toBe(1);
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain("their-asset-fingerprint");
+    expect(serialised).not.toContain("cross-tenant-coverage-fixture");
+    expect(serialised).not.toContain("secrets/their_key.py");
+    expect(serialised).not.toContain("their confidential project");
+    expect(serialised).not.toContain("leak.py");
+  });
+
+  it("GET /api/report-packs/board counts none of another organisation's exposure", async () => {
+    const res = await auth(request.get("/api/report-packs/board"));
+    expect(res.status).toBe(200);
+
+    // Ours is MD5 — classical hygiene, not a post-quantum problem. Theirs is
+    // the only RSA in the fixture, so a non-zero quantum-vulnerable count here
+    // would mean their asset was scored into our board's headline.
+    expect(res.body.page1.exposure.assetsFound).toBe(1);
+    expect(res.body.page1.exposure.quantumVulnerableAssets).toBe(0);
+    expect(res.body.page1.exposure.classicalHygieneAssets).toBe(1);
+    expect(JSON.stringify(res.body.appendices)).not.toContain("RSA");
+
+    // Their completed run must not become an instant we can claim to trend
+    // against. Zero is the honest answer for an organisation nothing has ever
+    // been collected from.
+    expect(res.body.page1.trend.distinctCollectionInstants).toBe(0);
+    expect(res.body.page1.trend.verdict).toBe("baseline");
+    expect(res.body.header.collectors).toEqual([]);
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain("their confidential project");
+    expect(serialised).not.toContain("secrets/their_key.py");
+  });
+
   it("GET /api/projects/:id/findings returns nothing for another organisation's project", async () => {
     const res = await auth(request.get(`/api/projects/${theirs.projectId}/findings`));
     expect(res.status).toBe(200);

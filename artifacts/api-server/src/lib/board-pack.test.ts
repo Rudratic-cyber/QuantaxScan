@@ -244,6 +244,21 @@ describe("E1 — the board pack", () => {
     for (const algorithm of algorithms) {
       expect(appendices, `"${algorithm}" is missing from the appendices`).toContain(algorithm);
     }
+
+    // And the same rule against the artifact a board member actually holds.
+    // The two checks are not the same: the *printed* first page is everything
+    // before the first appendix's page break, which includes the provenance
+    // header — and the header is not part of `page1`. It carries no algorithm
+    // name today, but it is the one place a future field (`/stats` already
+    // computes a `mostCommonAlgorithm`) could put one on the printed page with
+    // the JSON check still green.
+    const printedPageOne = renderBoardPackHtml(pack).split('class="page-break"')[0];
+    expect(printedPageOne.length, "the split must actually find a page break").toBeLessThan(
+      renderBoardPackHtml(pack).length,
+    );
+    for (const algorithm of algorithms) {
+      expect(printedPageOne, `"${algorithm}" is printed on page one`).not.toContain(algorithm);
+    }
   });
 
   it("pins the standards data version and refuses to invent a product version", () => {
