@@ -284,6 +284,18 @@ describe("route manifest — a new route cannot ship without being considered", 
     // foreign key, so the parent is confirmed inside the scope.
     "POST /projects/:id/data-at-rest": "org-scoped",
     "GET /projects/:id/data-at-rest": "org-scoped",
+    // D8 — discovery. `discovered_targets` has a real foreign key to
+    // `projects`, and a foreign key is not subject to RLS, so the parent is
+    // confirmed visible inside the scope before a child row is written — the
+    // same reasoning as POST /scans.
+    "POST /projects/:id/discovery": "org-scoped",
+    "GET /projects/:id/discovered-targets": "org-scoped",
+    // D8 → B3. The one route in this file whose scope check has to happen
+    // *before* the outbound work rather than alongside it: the hostnames come
+    // out of this database, so probing before confirming the ids are visible
+    // would let a caller make this server open sockets to another tenant's
+    // hosts by guessing integers.
+    "POST /projects/:id/discovered-targets/probe": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",

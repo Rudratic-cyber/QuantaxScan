@@ -91,6 +91,36 @@ export const CREDENTIAL_KEY_ID = "e2e";
 export const CREDENTIAL_KEYS =
   process.env["E2E_CREDENTIAL_KEYS"] ?? `${CREDENTIAL_KEY_ID}:${randomBytes(32).toString("base64")}`;
 
+/**
+ * D8's certificate-transparency source, pointed at a stub the discovery spec
+ * starts on this port.
+ *
+ * Using the operator override rather than the real crt.sh is the point, not a
+ * shortcut: a suite that queried a public log would be asserting on whatever
+ * certificates the internet happened to hold that morning, would fail in an
+ * offline CI, and would put load on somebody else's free service on every run.
+ * `ct-log.ts` supports exactly this and warns loudly when it is set, which is
+ * the behaviour a production deployment wants.
+ *
+ * Pointing at loopback additionally needs `..._ALLOW_PRIVATE_SOURCES=1` — the
+ * SSRF guard that otherwise refuses a source resolving into a private range.
+ * That it must be set explicitly here is the guard working.
+ */
+export const CT_STUB_PORT = port("E2E_CT_STUB_PORT", 5713);
+export const CT_STUB_URL = `http://${HOST}:${CT_STUB_PORT}`;
+
+/**
+ * A resolver address with nothing listening on it.
+ *
+ * D8's sharpest false-positive control is that an unreachable resolver yields
+ * `undetermined` and never `not-resolved` — "we could not check" must not read
+ * as "this host does not exist", because the second sentence retires a target.
+ * Pointing DNS at a dead port is the cheapest way to exercise that against the
+ * real resolver rather than a stub of one, so the mapping under test is Node's
+ * actual error code and not a fixture's idea of it.
+ */
+export const DEAD_DNS_SERVER = process.env["E2E_DEAD_DNS_SERVER"] ?? `${HOST}:59`;
+
 /** `apply-tenancy` refuses to run without this; it owns organisation 1. */
 export const CAPTAIN_EMAIL = "e2e-captain@quantaxscan.invalid";
 

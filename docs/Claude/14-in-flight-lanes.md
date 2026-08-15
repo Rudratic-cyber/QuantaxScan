@@ -1,6 +1,6 @@
 # 14 — In-flight lanes (wave 3)
 
-**Status: six branches exist, all committed. One is merged, five are not. Read this before
+**Status: six branches exist, all committed. Two are merged, four are not. Read this before
 starting new work, because the thing you are about to build may already be sitting on one of
 them.**
 
@@ -19,7 +19,7 @@ pointed at it.
 | Branch | Snapshot | Reserved migration | What it builds |
 |---|---|---|---|
 | ~~`feat/qx-f4-secret-handling`~~ | ~~`bdabf12`~~ | `0009` | **Merged 2026-08-15 (`6edf282`)** — F4, both halves: ephemeral scan retention and the credential store |
-| `feat/qx-discovery` | `aa40122` | `0010` | CT-log host discovery + DNS corroboration into `discovered_targets`; the first thing that names a host the customer did not supply |
+| ~~`feat/qx-discovery`~~ | ~~`aa40122`~~ | `0010` | **Merged 2026-08-15** — D8, CT-log host discovery + DNS corroboration into `discovered_targets` |
 | `feat/qx-network-flow` | `cb4f3a2` | `0011` | The `network-flow` surface — conversations, from flow/session records the estate already produces. No packet capture |
 | `feat/qx-m3-continuity` | `f54175a` | `0013` | D4 drift (computed, never persisted) + scheduled re-collection |
 | `feat/qx-f1-authentication` | `a835ca2` | `0014` | F1 — identity providers, sessions, `/auth/*`. GitHub implemented; Google and Microsoft deliberately deferred |
@@ -46,6 +46,24 @@ expensive for reasons already visible: they conflict with each other rather than
 touch `asset-ingest.ts`, `openapi.yaml` and `cross-tenant.test.ts`), two flip a surface to `live`
 and so must be counted together, and `f1-authentication` needs an entire `openapi.yaml` pass
 written from scratch before it can go green at all.
+
+**Discovery (D8) was the second, and it is the more representative number.** Seven conflicts, all
+in the files CLAUDE.md names: `routes/index.ts`, `_journal.json`, `tenant-isolation.sql`,
+`schema/index.ts`, `tenant-isolation.ts`, `openapi.yaml` and one generated client. Two of them were
+the documented shared-boundary trap exactly as described — the journal's two entries share their
+`{` and `"breakpoints": true }`, and the two RLS policies share their `USING`/`WITH CHECK` lines,
+so keeping "both sides" would have produced one policy assembled from two tables' halves. Both were
+rebuilt as whole blocks rather than hunk-merged. The generated clients were never hand-merged:
+`openapi.yaml` was spliced by key and `codegen` re-run.
+
+Two things the merge had to fix that no test would have caught:
+
+- **The lane called itself D7 in 25 places**, which is the trend view's id. Renamed to D8 across
+  its own files, line-by-line in the six files where both features are discussed. Two features
+  sharing an id is how a status table stops being readable.
+- The lane's e2e spec had to be written from scratch, and two of its assumptions about the payload
+  were wrong in ways only a real run revealed (`rejected[].rawName`, not `.name`). That is the
+  argument for the spec being non-optional rather than a formality.
 
 One thing to watch as they land: the e2e suite already outgrew the S6/S7 rate-limit budget once
 (`aa7110a`) and had to raise it. Five more specs may re-trip it, and no single-spec run can reveal

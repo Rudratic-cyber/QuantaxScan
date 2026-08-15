@@ -436,6 +436,48 @@ Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 | D5 | Crypto-agility score | `planned` | **P1** |
 | D6 | Migration wave planner | `planned` | **P2** |
 | D7 | Trend/history view | `partial` | **P2** |
+| D8 | Asset & host discovery (certificate transparency) | `built` | **P1** |
+
+### D8 `built` — the first thing that names a host nobody told us about
+
+Every collector in this repository is *handed* its targets: the customer names each host, uploads
+each certificate, exports each key list. Nothing enumerated anything, which made total coverage
+impossible by construction — you cannot inventory what nobody remembered to mention, and D3's
+meter could not tell "we looked and found nothing" apart from "nobody told us this existed".
+`POST /api/projects/:id/discovery` reads a domain's certificates out of Certificate Transparency
+and produces names the customer never supplied.
+
+**A discovered name is a lead, not an asset, and the whole design turns on that.** A CT entry
+(RFC 6962) proves exactly one thing: at the logged timestamp, some CA issued a certificate
+carrying this name. It does not prove a host ever existed there, that anything is there now, or
+that the customer owns it. So discovery has **no `Surface` value, no fingerprint case, no
+catalogue entry and no `collection_runs` row** — leads live on their own `discovered_targets`
+table and nothing enters `assets` until a real collector examines the target. `POST
+/projects/:id/discovered-targets/probe` is that hand-off, to B3.
+
+Three refusals carry the feature:
+
+- **Label-boundary matching, never substring.** `example.com.evil.test` and `notexample.com` are
+  rejected `out-of-scope`, and every rejection is *reported with its reason* rather than dropped —
+  a name we declined to act on is information, and a silent drop is indistinguishable from a
+  parser that never saw it.
+- **A wildcard is not a host.** `*.example.com` covers a set and is evidence for no member of it.
+- **DNS is corroboration, not enumeration, and it is three-state.** NXDOMAIN is `not-resolved`,
+  but a SERVFAIL, a timeout or an unreachable resolver is `undetermined` — never `not-resolved`.
+  The distinction is the difference between "this host is gone" and "our resolver was down", and
+  only the first is grounds for retiring a target. A name never looked up stays NULL: nobody
+  looked is a third state again.
+
+Egress is guarded like B3's prober: an allowlisted source host, a resolve-then-pin check that
+refuses a private range unless an explicit escape hatch is set, a timeout and a response byte cap.
+A truncated CT response fails to parse rather than half-loading, because half an estate that looks
+whole is this feature's worst outcome.
+
+**Naming note:** the lane wrote itself up as "D7" throughout its source, which is the trend view's
+id. Renamed to D8 on merge — two features sharing an id is how a status table stops being
+readable.
+
+Detail: `tests/e2e/14-discovery.spec.ts`
 
 ### D1 `built` — and it read `planned` here for a day after it shipped
 

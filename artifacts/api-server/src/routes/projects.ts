@@ -8,6 +8,7 @@ import {
   assetsTable,
   observationsTable,
   collectionRunsTable,
+  discoveredTargetsTable,
   projectRepoId,
 } from "@workspace/db";
 import {
@@ -35,6 +36,7 @@ import {
 } from "@workspace/collectors";
 import { scanCode, computeScanResult } from "../lib/scanner";
 import { summariseProjectCoverage } from "../lib/coverage";
+import { examinedHostPorts, summariseDiscoveryCoverage } from "../lib/discovery-coverage";
 import { withComplianceAll, resolveCompliance } from "../lib/compliance";
 import {
   ingestDependencyObservations,
@@ -228,10 +230,32 @@ router.get("/projects/:id/coverage", async (req, res): Promise<void> => {
         .from(collectionRunsTable)
         .where(eq(collectionRunsTable.target, repo)),
       tx
-        .select({ id: assetsTable.id, surface: assetsTable.surface, status: assetsTable.status })
+        .select({
+          id: assetsTable.id,
+          surface: assetsTable.surface,
+          status: assetsTable.status,
+          location: assetsTable.location,
+        })
         .from(assetsTable)
         .where(like(assetsTable.location, `${repo}:%`)),
     ]);
+
+    // D8 — the denominator this meter has never had. Absent, not zero, when
+    // discovery has never run for this project: see `ProjectCoverage.discovery`.
+    const discovered = await tx
+      .select({ hostname: discoveredTargetsTable.hostname })
+      .from(discoveredTargetsTable)
+      .where(eq(discoveredTargetsTable.projectId, id));
+    const discovery =
+      discovered.length === 0
+        ? undefined
+        : summariseDiscoveryCoverage({
+            hostnames: discovered.map((d) => d.hostname),
+            examinedHostnames: examinedHostPorts(
+              repo,
+              assets.filter((a) => a.surface === "tls").map((a) => a.location),
+            ).keys(),
+          });
 
     // Observations are fetched per asset rather than aggregated in SQL because
     // the "one point per asset, latest observation wins" rule lives in the pure
@@ -251,7 +275,7 @@ router.get("/projects/:id/coverage", async (req, res): Promise<void> => {
           .from(observationsTable)
           .where(inArray(observationsTable.assetId, assetIds));
 
-    return summariseProjectCoverage({ runs, assets, observations });
+    return summariseProjectCoverage({ runs, assets, observations, discovery });
   });
 
   if (!coverage) {

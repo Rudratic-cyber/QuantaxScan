@@ -103,6 +103,16 @@ export const BUDGETS = {
   tls: { windowMs: 5 * MINUTE, max: budget("RATE_LIMIT_TLS_MAX", 15) },
   /** Billed per token by a third party, and streams for as long as it runs. */
   chat: { windowMs: 60 * MINUTE, max: budget("RATE_LIMIT_CHAT_MAX", 30) },
+  /**
+   * D8's certificate-transparency query. Tighter than `tls` for a reason that
+   * has nothing to do with this server's load: crt.sh is a free public service
+   * that rate-limits its own callers, and a customer who exhausts its patience
+   * takes the feature down for every other customer on this deployment. One
+   * call also fans out into up to `MAX_DNS_LOOKUPS_PER_RUN` DNS queries.
+   * Discovery is a thing an estate owner does occasionally, not continuously,
+   * so a low ceiling costs nothing real.
+   */
+  discovery: { windowMs: 60 * MINUTE, max: budget("RATE_LIMIT_DISCOVERY_MAX", 10) },
 } as const;
 
 /**
@@ -189,6 +199,7 @@ const githubRemoteLimiter = limiter(BUDGETS.githubRemote, principalKey);
 const scanLimiter = limiter(BUDGETS.scan, principalKey);
 const chatLimiter = limiter(BUDGETS.chat, principalKey);
 const tlsLimiter = limiter(BUDGETS.tls, principalKey);
+const discoveryLimiter = limiter(BUDGETS.discovery, principalKey);
 
 /**
  * Per-route budgets. Paths are **mount-relative** — the router is mounted at
@@ -216,6 +227,14 @@ const ROUTE_BUDGETS: ReadonlyArray<{
   { method: "POST", path: /^\/scans\/multi$/, limiter: scanLimiter },
   // Real outbound connections to caller-named hosts — see BUDGETS.tls.
   { method: "POST", path: /^\/projects\/[^/]+\/tls$/, limiter: tlsLimiter },
+  // D8. Egress to a free public service that rations its own callers, fanning
+  // out into a few hundred DNS queries — see BUDGETS.discovery. Ordered before
+  // the probe entry below because `/discovery` and `/discovered-targets/probe`
+  // are distinct paths and first match wins.
+  { method: "POST", path: /^\/projects\/[^/]+\/discovery$/, limiter: discoveryLimiter },
+  // The D8 → B3 handoff opens the same sockets `POST /projects/:id/tls` does,
+  // so it draws on the same budget rather than a laxer one of its own.
+  { method: "POST", path: /^\/projects\/[^/]+\/discovered-targets\/probe$/, limiter: tlsLimiter },
   // Public: scans a hard-coded repository from memory, but still runs the full
   // regex pass, and no key is required so this is IP-keyed in practice.
   { method: "POST", path: /^\/demo\/repos\/[^/]+\/scan$/, limiter: scanLimiter },

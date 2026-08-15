@@ -142,6 +142,50 @@ export type AssetStatus = (typeof ASSET_STATUS_VALUES)[number];
  * a value here needs no migration — `assets.location_detail` is `jsonb`, with
  * the shape validated at the application boundary rather than by a `CHECK`.
  */
+/**
+ * D8 — how a *target* was discovered. Not a `Surface` and not a
+ * `DiscoveryModality`: both of those describe an observation of cryptography,
+ * and a discovered host is not one. It is a lead — a name somebody might want
+ * to point a collector at — and until a collector actually examines it, this
+ * product knows nothing about the cryptography behind it. See
+ * `discovery.ts` in this package for the whole argument.
+ *
+ * `certificate_transparency` is the one method implemented: names appearing in
+ * publicly logged certificates (RFC 6962). It needs no customer credential,
+ * which is the point — credentialed enumeration of a cloud account is a
+ * separate, later capability.
+ *
+ * **DNS is deliberately not a value here.** Without a wordlist (guessing) or a
+ * zone transfer (a credential, and refused by every competently run
+ * nameserver), DNS cannot *enumerate* names — it can only answer questions
+ * about names you already have. So DNS is used in this feature purely to
+ * corroborate a CT-derived name, recorded in `DNS_RESOLUTION_VALUES` below,
+ * and never as a source of names. Adding a `dns_enumeration` value here would
+ * be claiming a capability that does not exist.
+ */
+export const DISCOVERY_METHOD_VALUES = ["certificate_transparency"] as const;
+
+export type DiscoveryMethod = (typeof DISCOVERY_METHOD_VALUES)[number];
+
+/**
+ * What a DNS lookup of a discovered name established, as three states rather
+ * than a boolean.
+ *
+ * The third value is the one that matters. A resolver that times out, returns
+ * SERVFAIL, or cannot be reached at all has told us **nothing** about whether
+ * the name exists — and recording that as "does not resolve" would be a
+ * fabricated negative, the mirror image of the fabricated positives this lane
+ * is mostly guarding against. `ENODATA` (the name exists but has no A/AAAA
+ * record) is likewise `undetermined` for our purposes rather than
+ * `not-resolved`: it is a real name.
+ *
+ * A column carrying this is nullable with no default, and NULL means the
+ * lookup was never attempted — a fourth state, and distinct from all three.
+ */
+export const DNS_RESOLUTION_VALUES = ["resolved", "not-resolved", "undetermined"] as const;
+
+export type DnsResolution = (typeof DNS_RESOLUTION_VALUES)[number];
+
 export const LOCATION_DETAIL_KIND_VALUES = [
   "source",
   "network",

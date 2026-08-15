@@ -41,6 +41,7 @@ export const ORG_SCOPED_TABLES = [
   // credential id, encryption is what survives a database-only compromise.
   // Neither substitutes for the other.
   "credentials",
+  "discovered_targets",
 ] as const;
 
 export type OrgScopedTable = (typeof ORG_SCOPED_TABLES)[number];

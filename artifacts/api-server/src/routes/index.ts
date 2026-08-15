@@ -12,6 +12,7 @@ import inventoryRouter from "./inventory";
 import otFleetsRouter from "./ot-fleets";
 import vendorAssessmentsRouter from "./vendor-assessments";
 import credentialsRouter from "./credentials";
+import discoveryRouter from "./discovery";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(inventoryRouter);
 router.use(otFleetsRouter);
 router.use(vendorAssessmentsRouter);
 router.use(credentialsRouter);
+router.use(discoveryRouter);
 
 export default router;

@@ -15,6 +15,8 @@ import {
   API_PORT,
   API_URL,
   CREDENTIAL_KEYS,
+  CT_STUB_URL,
+  DEAD_DNS_SERVER,
   HOST,
   SECOND_API_KEY,
   SECOND_ORG_ENABLED,
@@ -99,6 +101,13 @@ export default async function globalSetup(): Promise<void> {
       // asserting a deployment that has not enabled the feature rather than
       // the feature — see support/config.ts.
       QUANTAXSCAN_CREDENTIAL_KEYS: CREDENTIAL_KEYS,
+      // D8's discovery source and resolver. Both point somewhere deliberate:
+      // the CT stub the discovery spec runs, and a resolver port with nothing
+      // on it. Neither reaches the internet, which is what keeps the suite
+      // runnable offline and off crt.sh's free service. See support/config.ts.
+      QUANTAXSCAN_CT_LOG_BASE_URL: CT_STUB_URL,
+      QUANTAXSCAN_DISCOVERY_ALLOW_PRIVATE_SOURCES: "1",
+      QUANTAXSCAN_DISCOVERY_DNS_SERVERS: DEAD_DNS_SERVER,
       // The frontend is served from a different origin, so this is what makes
       // the browser's requests legal. Character-for-character: `localhost` and
       // `127.0.0.1` are different origins.
