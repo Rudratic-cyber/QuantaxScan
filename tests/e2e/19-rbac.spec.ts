@@ -193,3 +193,21 @@ test.describe("RBAC — does not break what came before", () => {
     expect((await api.get("/api/credentials")).status()).toBe(200);
   });
 });
+
+test.describe("RBAC — the Access page against the real stack", () => {
+  test("renders divisions and members created through the real API", async ({ api, credentialed }) => {
+    // Created over HTTP, read back through the browser: this is the one
+    // assertion that would fail if the page and the API disagreed about the
+    // payload shape, which no mocked UI test can catch.
+    const slug = `ui-division-${Date.now()}`;
+    expect((await api.post("/api/divisions", { data: { name: "UI Division", slug } })).status()).toBe(201);
+
+    await credentialed.goto("/access");
+    await expect(credentialed.getByRole("heading", { name: "Access" })).toBeVisible({ timeout: 15000 });
+
+    await expect(credentialed.getByTestId("divisions-list")).toContainText(slug, { timeout: 15000 });
+    // The admin key reaches the members panel, so the refusal must NOT be
+    // showing — that state belongs to a role that cannot read it.
+    await expect(credentialed.getByTestId("access-refused")).toHaveCount(0);
+  });
+});

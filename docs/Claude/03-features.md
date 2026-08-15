@@ -615,7 +615,10 @@ Detail: [07-reports.md](07-reports.md)
 | F7 | Secrets management (no `.env` in git) | `partial` | **P0** |
 | F8 | Ticket sync (Jira / ServiceNow) | `deferred` | **P3** |
 
-† **F1 `partial` — a person can now sign in; RBAC is still a role on a row.**
+† **F1 `built` — a person can sign in, the role is enforced, and it can be administered.**
+The row said `built` while this footnote still said `partial`, from the day RBAC's enforcement
+landed and nobody reconciled the two halves; the enforcement is real (stage 3/5 of the RBAC
+series), so the row was right and the footnote was stale.
 Organisation-scoped authorisation is enforced in the database (see F2), and the shared API key
 still protects `/api` exactly as before. What landed 2026-08-15 is the authentication half: an
 identity-provider registry, sessions, and six `/auth/*` routes including organisation switching. A
@@ -647,9 +650,16 @@ breaks — because without it RBAC would be bypassable by the credential every d
 holds. Full design, including why `assets` needed a denormalised `division_id`:
 [15-rbac-design.md](15-rbac-design.md).
 
-**Not built:** the management *UI*. Divisions, grants and member roles are administered over HTTP
-(`/api/divisions`, `/api/organization/members`); no screen exists yet. Member *invites* are gated
-but unimplemented — adding a person needs an email flow.
+**The management screen landed 2026-08-15** at `/access` (`pages/Access.tsx`), against the same
+routes an operator would curl (`/api/divisions`, `/api/organization/members`). Two things on it are
+wording decisions rather than layout ones, and both are asserted in `tests/ui/access-journey.spec.ts`
+rather than left to a reviewer: **a role is rendered as the sentence describing what it may do**,
+because "viewer" tells the person choosing it nothing; and **dissolving a division says that its
+projects become organisation-wide**, because that is a widening of access disguised as a tidy-up and
+"are you sure?" hides it. A role that cannot read the page sees the server's refusal, never an empty
+table that reads as an organisation with no members.
+
+**Not built:** member *invites* are gated but unimplemented — adding a person needs an email flow.
 
 **A deployment with no `SESSION_SECRET` is unchanged**, byte for byte: no session middleware is
 installed, no cookie is parsed, and every `/auth/*` route answers 501. Configuring a provider
