@@ -85,3 +85,94 @@ particular: `openapi.yaml` is merged **by key**, never by hunk, and the generate
 
 Suggested order: **B** (touches nothing else), then **D**, then **A**, then **C** last because it
 carries the migration and the snapshot relink.
+
+---
+
+# What actually happened
+
+All five lanes finished overnight on **2026-08-16**. Written by the driving session *after* the
+lanes reported and *before* any merge, so the merge starts from evidence rather than from five
+final messages nobody kept.
+
+| Lane | Branch | Commits | Verified green |
+|---|---|---|---|
+| A | `feat/qx-e1-e2-reports` | 7 | `ci --quick`, `build`, `test:ui` 24, **e2e 136 passed / 13 skipped** |
+| B | `feat/qx-c4-c5-c6-mappings` | 5 | `ci --quick`, `check:standards` (69 dated entries) |
+| C | `feat/qx-c8-waivers` | 7 | `ci --quick`, `test:ui` 24, **e2e 130 passed / 13 skipped** |
+| D | `feat/qx-dep-ecosystems` | 1 | `ci --quick`, **e2e 122 passed / 13 skipped** |
+| E | `docs/qx-discovery-design` | 2 | docs only |
+
+**The failure this whole scheme exists to prevent did not recur.** Verified from `main`, not taken
+on report: the snapshot chain walks cleanly across all sixteen entries, and
+`git diff --name-only main..<branch> -- lib/db/drizzle` is empty for A, B and D. C was the only
+generator, so its `0016_snapshot.json` already pointed at `0015`'s `id` and needed no relink — the
+wave-3 fork came from five lanes generating off one common parent, not from the index scheme.
+`asset-ingest.ts` was touched by nobody.
+
+## The one interaction that no test catches
+
+**Lane C makes lane A's regulator submission lie.** E2 prints
+`exceptions.registerAvailable: false` with the statement *"this product operates no waiver
+register"* — deliberately, because an empty `waivers: []` would read as "there are no exceptions",
+a different and unsupported claim. C builds that register. The moment both are on `main`, a
+regulator-facing document asserts the absence of a feature the product ships.
+
+Four files change together, and **nothing fails if they don't**: `regulator-submission.ts`
+(`NO_WAIVER_REGISTER_STATEMENT` and the `exceptions` block), `openapi.yaml` (`registerAvailable` is
+`enum: [false]`), `07-reports.md` and `03-features.md`. Do this in the same change that merges the
+second of the two, not afterwards.
+
+A related trap in the same pair: **both lanes add a field named `waivedAssets`, to different
+schemas** — A's inside the regulator pack's `exceptions` block, C's on `InventoryAssetsSummary`.
+They do not collide textually and they do not mean the same thing. After the merge they will
+disagree, which is the same defect wearing a second face.
+
+## Cross-lane collisions, by file
+
+Everything below is a same-shaped-block file: **splice the other lane's block in as a unit, never
+concatenate both sides** (CLAUDE.md §"Merging two parallel collector lanes").
+
+- **`openapi.yaml`** — A, C and D. Merge **by key**, then one `codegen` run at the end; never
+  hand-merge `lib/api-client-react` or `lib/api-zod`, which all three also carry.
+- **`inventory-assets.ts` + `EnrichedInventoryAsset`** — A adds `effortHours`, C adds `waiver`.
+  Both are field-level spec edits, which is the half `openapi-drift.test.ts` cannot see. If A's is
+  dropped, cost silently falls back to derived-only and the *only* alarm is `board-pack.test.ts`'s
+  "prefers an effort figure recorded against the asset".
+- **`03-features.md`** — all four. Merge by row.
+- **`cross-tenant.test.ts`** — A (+6 entries, 2 probes) and C (+3).
+- **`routes/index.ts`** — A and C. **`routes/projects.ts`** — D, four hunks inside one function,
+  one of them a name on the shared `@workspace/collectors` import line.
+- **Three specs are all numbered `20-`** (`20-report-packs`, `20-waivers`,
+  `20-dependency-ecosystems`). No file conflict; renumber to 20/21/22 on the way in.
+- **`AGENTS.md`** — C appended one paragraph, a clean standalone append.
+
+## Two defects opened, both pinned rather than fixed
+
+- **G-24** (lane B) — a finite-field DH modulus is banded as if it were a curve order and silently
+  loses its 2030 deprecation. Confirmed independently: `resolveToken("diffie-hellman-group14-sha256")`
+  yields `{ algorithm: "ECDH/DH", keySize: 2048 }` against an entry whose `keySizeKind` is
+  `"curve"`. A G-05-class wrong answer — no error, no caveat. Pinned by a test that asserts the
+  wrong answer on purpose, so the fix cannot land silently. The fix is three collector files.
+- **Nothing in the product can record a failed collection run** (lane E, confirmed).
+  `asset-ingest.ts:309` hardcodes `status: "completed"` and is the only production insert into
+  `collection_runs`, while `coverage.ts:214` branches on `"failed"` — unreachable code today. A
+  collection that fails is filed as one that succeeded. In a product whose defining property is
+  refusing to claim coverage it does not have, this is the wrong literal to hardcode. It belongs in
+  a stage-0 commit nobody owns, before the credentialed lanes start.
+
+Lane E's document lists five more stale claims in the docs (three feature rows still naming F4 as
+the blocker for credentialed collection, which shipped; `13-auth-and-tenancy.md` §5.2's `GRANT`
+list nine tables short of `ORG_SCOPED_TABLES`). None were fixed — four lanes were live in those
+files at the time. They are the morning's doc sweep, not a lane's job.
+
+## What tonight did not buy
+
+Discovery and credentialed collection — the actual critical path — did not move, deliberately:
+every piece of that work touches `asset-ingest.ts`. Wave 4 bought breadth (four more dependency
+ecosystems, three standards mappings), the two regulator artifacts, and the waivers register.
+**M2's last exit criterion is closed** by lane A: a real PDF, generated from real inventory,
+asserted as `200` + `%PDF-` + `%%EOF` rather than tolerating the documented 503 fallback — which
+would have left the criterion open while the suite went green.
+
+The design for what comes next is [17-discovery-design.md](17-discovery-design.md), written by a
+lane that wrote no code, so tomorrow's build lane starts from a specification.
