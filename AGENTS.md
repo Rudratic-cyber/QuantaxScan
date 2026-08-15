@@ -251,6 +251,19 @@ clients.
 `0006_*` produce a conflict no merge can resolve. Land the schema change ahead
 of the lanes, in one migration nobody owns.
 
+**Reserving an index per lane is necessary and not sufficient — reconcile the
+snapshot chain too.** Wave 3 gave each lane its own index, which made the
+journal mergeable and every lane's tests pass. What nobody reconciled was
+`drizzle/meta/NNNN_snapshot.json`: each lane wrote one whose `prevId` pointed at
+the *common parent*, so after the merge the chain forked five ways and
+`drizzle-kit generate` refused to run at all — `are pointing to a parent
+snapshot ... which is a collision`. Nothing catches this until the next person
+tries to add a column, which was three weeks of lanes later. The repair is
+mechanical when the lanes touched disjoint tables (check first, with a script):
+walk the snapshots in journal order, apply each lane's delta against the common
+parent onto a running cumulative state, and relink `prevId` to the previous
+snapshot's `id`.
+
 ## Local dev ports collide with other concurrent worktrees
 
 The README's example ports (Postgres `55432`, API `5055`, frontend `5199`) and the Playwright UI
