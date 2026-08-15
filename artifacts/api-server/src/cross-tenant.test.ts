@@ -86,6 +86,8 @@ vi.mock("@workspace/db", async () => {
 import { executeRows } from "@workspace/db/org-scope";
 import { projectRepoId } from "@workspace/db/schema";
 import app from "./app";
+import { requiredRoleFor } from "./lib/require-role";
+import { roleAtLeast } from "@workspace/db/roles";
 import router from "./routes";
 
 const request = supertest(app);
@@ -388,6 +390,68 @@ describe("route manifest — a new route cannot ship without being considered", 
 
     const stale = declared.filter((r) => !mounted.includes(r));
     expect(stale, "the manifest names routes that no longer exist").toEqual([]);
+  });
+
+  /**
+   * RBAC stage 3. The manifest above decides whether a route is org-scoped;
+   * these two decide what role it needs. Together they are why a new route
+   * cannot ship without someone having thought about both.
+   */
+  describe("every route's required role is a decision, not an accident", () => {
+    /**
+     * The complete set of routes that need `admin`. Declared here rather than
+     * derived, so adding or removing an administrative gate is a visible diff
+     * in a test somebody reviews — not a quiet edit to a regex list.
+     */
+    const ADMIN_ONLY = [
+      "DELETE /projects/:id",
+      "GET /credentials",
+      "POST /credentials",
+      "POST /credentials/:id/revoke",
+      "POST /reports",
+    ].sort();
+
+    it("names exactly the routes that require admin", () => {
+      const mounted = routesOf((router as unknown as { stack: unknown[] }).stack);
+      const admin = mounted
+        .filter((route) => {
+          const [method, path] = route.split(" ");
+          return requiredRoleFor(method, path.replace(/:[^/]+/g, (m) => m)) === "admin";
+        })
+        .sort();
+
+      // Compared as a set in both directions: a gate added without declaring
+      // it, and a gate removed without noticing, both fail here.
+      expect(admin).toEqual(ADMIN_ONLY);
+    });
+
+    it("closes every write to a viewer, including routes nobody has considered", () => {
+      const mounted = routesOf((router as unknown as { stack: unknown[] }).stack);
+      const writes = mounted.filter((route) => {
+        const [method] = route.split(" ");
+        return method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+      });
+
+      expect(writes.length).toBeGreaterThan(0);
+      for (const route of writes) {
+        const [method, path] = route.split(" ");
+        // The default is the design: anything that is not a read needs at
+        // least `member`, so a route added without touching require-role.ts is
+        // closed to read-only accounts rather than open to them. Asserted as
+        // "a viewer cannot reach it" rather than "a member can" — an
+        // admin-only write is also correct here, and the property that matters
+        // is the floor, not the ceiling.
+        expect(roleAtLeast("viewer", requiredRoleFor(method, path)), `${route} is reachable by a viewer`).toBe(
+          false,
+        );
+      }
+    });
+
+    it("lets a viewer read", () => {
+      expect(requiredRoleFor("GET", "/projects")).toBe("viewer");
+      expect(requiredRoleFor("GET", "/inventory/timeline")).toBe("viewer");
+      expect(roleAtLeast("viewer", requiredRoleFor("GET", "/projects"))).toBe(true);
+    });
   });
 });
 

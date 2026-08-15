@@ -106,7 +106,8 @@ export function assertApiKeysConfigured(): void {
   }
 }
 
-function isPublic(method: string, path: string): boolean {
+/** Exported so the role gate can share one definition of "public" rather than keep a second list that can drift. */
+export function isPublic(method: string, path: string): boolean {
   return PUBLIC_ROUTES.some(
     (route) => route.method === method && route.path.test(path),
   );

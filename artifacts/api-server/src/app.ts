@@ -6,6 +6,7 @@ import { logger } from "./lib/logger";
 import { csrfFetchMetadata, requireAuth } from "./lib/auth";
 import { createSessionMiddleware } from "./lib/auth/session";
 import { resolvePrincipal } from "./lib/principal";
+import { enforceRole } from "./lib/require-role";
 import { configureTrustProxy, edgeRateLimit, perRouteRateLimit } from "./lib/rate-limit";
 
 const app: Express = express();
@@ -98,6 +99,13 @@ app.use("/api", resolvePrincipal);
 // Authenticate before the body parsers, so an unauthenticated request is
 // rejected without first buffering and parsing up to 10 MB of JSON.
 app.use("/api", requireAuth);
+
+// RBAC stage 3 — one gate for every route, mounted after authentication has
+// established who the caller is. Reads need `viewer`, writes need `member`, and
+// anything needing more is named in `ROUTE_ROLE_OVERRIDES`. A route nobody
+// thinks about is closed to viewers rather than open to them, which is the
+// whole point of putting the default here — see lib/require-role.ts.
+app.use("/api", enforceRole);
 
 // CSRF (§3.9). Only bites a state-changing request that carries a session
 // cookie: an API-key or anonymous caller has no ambient credential for a
