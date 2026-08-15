@@ -2027,6 +2027,180 @@ paths:
               schema:
                 $ref: "#/components/schemas/DriftFeed"
 
+  # ── F1 — sign-in ────────────────────────────────────────────────────────
+  # Five of these six carry `security: []`, and it is not an oversight: every
+  # one of them is how a caller *becomes* authenticated, so requiring a
+  # credential to reach them would be a deadlock. They agree with
+  # `PUBLIC_ROUTES` in `artifacts/api-server/src/lib/auth.ts`, which
+  # `openapi-drift.test.ts` checks in both directions.
+
+  /auth/providers:
+    get:
+      operationId: listAuthProviders
+      tags: [auth]
+      security: []
+      summary: Identity providers this deployment can sign a person in with (F1)
+      description: >-
+        Empty when sessions are not configured, which is a real deployment state rather than an
+        error — the product ran on a shared API key alone before F1 and still can. A provider
+        absent from this list is one nobody can sign in with, whatever the documentation says:
+        Google and Microsoft are deliberately unimplemented (see 13-auth-and-tenancy.md §3.3), so
+        they do not appear here.
+      responses:
+        "200":
+          description: The configured providers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthProviderList"
+
+  /auth/{provider}/start:
+    get:
+      operationId: startAuthFlow
+      tags: [auth]
+      security: []
+      summary: Begin an authorization-code sign-in (F1)
+      description: >-
+        Mints `state`, a PKCE verifier and (where the provider uses one) a nonce, stores them on
+        the session, and redirects to the provider. The session row is created *here* rather than
+        on first contact — `saveUninitialized: false`, so a visitor who never clicks sign-in never
+        touches the database. The save is explicit and awaited, because a redirect racing the
+        session write lands the callback before the transaction it must match against exists.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Where to land after a successful sign-in. Validated as a same-site relative path; anything else is ignored rather than followed.
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [link]
+          description: Link this provider to the already-signed-in account. Ignored unless a session already exists.
+      responses:
+        "302":
+          description: Redirect to the provider's authorization endpoint
+        "404":
+          description: >-
+            Unknown *or unconfigured* provider. Deliberately the same answer for both — which
+            providers a deployment has configured is not something an anonymous caller should be
+            able to enumerate.
+        "503":
+          description: Sessions are not configured on this deployment
+
+  /auth/{provider}/callback:
+    get:
+      operationId: completeAuthFlow
+      tags: [auth]
+      security: []
+      summary: Complete an authorization-code sign-in (F1)
+      description: >-
+        Verifies `state` against the stored transaction, exchanges the code with PKCE, and
+        establishes the session. The transaction is single-use: a replayed callback finds nothing
+        to match and fails. This is the one code path that decides who a request is, so it fails
+        closed on every branch rather than falling through to an anonymous session.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Signed in; redirected to `returnTo` or the default landing path
+        "400":
+          description: Missing, mismatched or already-used `state`, a provider-reported error, or a failed exchange
+        "404":
+          description: Unknown or unconfigured provider
+        "409":
+          description: The identity belongs to another account and linking was not requested
+        "503":
+          description: Sessions are not configured on this deployment
+
+  /auth/session:
+    get:
+      operationId: getAuthSession
+      tags: [auth]
+      security: []
+      summary: Who the caller is, if anyone (F1)
+      description: >-
+        Answers **200 with `user: null`** for an anonymous visitor rather than 401. This is called
+        on every page load, including by people who have never signed in, and an anonymous visitor
+        is a normal state — a 401 here would be indistinguishable from a real failure and would
+        make the client treat "not signed in yet" as an error.
+
+
+        The active organisation is reported as an id and a role, never a name: a solo user is an
+        organisation of one and should never meet the concept, which the client implements by
+        rendering nothing when there is a single membership.
+      responses:
+        "200":
+          description: The current session, or the anonymous shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSession"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      security: []
+      summary: End the local session (F1)
+      description: >-
+        Idempotent, and public on purpose: signing out of an already-expired session must succeed
+        rather than 401 the one action whose whole job is to end it. Local only — RP-initiated
+        logout at the provider is not implemented (13-auth-and-tenancy.md §3.10).
+      responses:
+        "204":
+          description: Signed out, whether or not a session existed
+
+  /auth/organizations/{id}/select:
+    post:
+      operationId: selectOrganization
+      tags: [auth]
+      summary: Switch the active organisation for this session (F1)
+      description: >-
+        The **only** route in this group that is not public, because it is the only one that acts
+        on behalf of somebody already signed in. Membership is re-checked here rather than trusted
+        from the session: a membership revoked since sign-in must take effect on the next request,
+        not at the next sign-in.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The newly active organisation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveOrganization"
+        "400":
+          description: Invalid organisation id
+        "403":
+          description: Not signed in, or not a member of that organisation
+
 components:
   responses:
     RateLimited:
@@ -7865,3 +8039,118 @@ components:
         - surfaces
         - schedules
         - caveat
+
+    # ── F1 — sign-in ────────────────────────────────────────────────────────
+
+    AuthProvider:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Stable identifier used in the `/auth/{provider}/…` paths.
+        label:
+          type: string
+          description: Display name. Presentation only — never matched on.
+      required:
+        - id
+        - label
+
+    AuthProviderList:
+      type: object
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthProvider"
+          description: >-
+            Empty when sessions are not configured. A provider missing from this array cannot be
+            signed in with, whatever any documentation says.
+      required:
+        - providers
+
+    AuthUser:
+      type: object
+      description: >-
+        The signed-in person. Every field but `id` is nullable because a provider supplies what it
+        supplies — GitHub may return no email at all, and a name is not guaranteed anywhere.
+        Absent means the provider did not tell us, never that the person has no name.
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          nullable: true
+        firstName:
+          type: string
+          nullable: true
+        lastName:
+          type: string
+          nullable: true
+        profileImageUrl:
+          type: string
+          nullable: true
+      required:
+        - id
+        - email
+        - firstName
+        - lastName
+        - profileImageUrl
+
+    ActiveOrganization:
+      type: object
+      properties:
+        organization:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+            role:
+              type: string
+          required:
+            - id
+            - role
+      required:
+        - organization
+
+    OrganizationMembership:
+      type: object
+      properties:
+        organizationId:
+          type: integer
+        role:
+          type: string
+      required:
+        - organizationId
+        - role
+
+    AuthSession:
+      type: object
+      description: >-
+        `user: null` with an empty `memberships` array is the anonymous shape, returned with a 200.
+        It is a state, not a failure.
+      properties:
+        user:
+          allOf:
+            - $ref: "#/components/schemas/AuthUser"
+          nullable: true
+        organization:
+          type: object
+          nullable: true
+          description: The active organisation, as an id and a role. Never a name — see the route description.
+          properties:
+            id:
+              type: integer
+            role:
+              type: string
+          required:
+            - id
+            - role
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrganizationMembership"
+      required:
+        - user
+        - organization
+        - memberships

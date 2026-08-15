@@ -600,7 +600,7 @@ Detail: [07-reports.md](07-reports.md)
 
 | # | Feature | Status | Pri |
 |---|---|---|---|
-| F1 | Authentication + RBAC | `partial` | **P0**† |
+| F1 | Authentication + RBAC | `partial`† | **P0** |
 | F2 | Multi-tenancy with hard isolation | `partial` | **P0**† |
 | F3 | Audit logging | `planned` | **P1** |
 | F4 | Source-code handling controls (ephemeral mode) + credential store | `built` | **P0**† |
@@ -609,13 +609,34 @@ Detail: [07-reports.md](07-reports.md)
 | F7 | Secrets management (no `.env` in git) | `partial` | **P0** |
 | F8 | Ticket sync (Jira / ServiceNow) | `deferred` | **P3** |
 
-† **F1 `partial` — the authorisation half exists, the authentication half does not.**
-Organisation-scoped authorisation is enforced in the database (see F2), and a default-deny shared
-API key protects `/api`. There is still **no per-user identity**: no sign-in, no sessions, no
-identity providers, so a person cannot be a principal and no action can be attributed to one. The
-sign-in design is specified in [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §3 and is not
-built. Do not read `partial` as "nearly done" — it is the larger and more visible half that
-remains.
+† **F1 `partial` — a person can now sign in; RBAC is still a role on a row.**
+Organisation-scoped authorisation is enforced in the database (see F2), and the shared API key
+still protects `/api` exactly as before. What landed 2026-08-15 is the authentication half: an
+identity-provider registry, sessions, and six `/auth/*` routes including organisation switching. A
+session principal now exists *beside* the API-key principal rather than replacing it — every
+existing deployment and every other spec depends on that, and `18-auth.spec.ts` asserts it.
+
+**Only GitHub is implemented, and the reason is testability rather than scope.** `openid-client`
+validates an `id_token`'s signature, `iss`, `aud` and `nonce`, so a flow test for Google needs a
+stub that serves a JWKS and mints signed tokens; without one the Google path would ship with no
+test that could fail — which, for the single code path that decides who a request is, is worse
+than shipping it absent. GitHub is plain authorisation-code OAuth with no token signing, so its
+stub is an `http` server and its test genuinely exercises `state`, PKCE, single-use and replay.
+Microsoft is out of scope by [13-auth-and-tenancy.md](13-auth-and-tenancy.md) §10's own ordering.
+The registry documents all three anyway, because the properties that differ (`oid` rather than
+`sub`; Microsoft's `email_verified` always false) belong written down next to each other — and
+`/auth/providers` returns only what is implemented, so the deferral cannot be mistaken for a
+button a user could press.
+
+**Still `partial`, and this is the half that remains:** there are no *roles* worth the name. A
+membership carries a role string and nothing consumes it — no route is gated on it, there is no
+admin/member/viewer distinction in behaviour, and no UI for managing members. Sign-in without RBAC
+means the product knows who you are and not what you may do.
+
+**A deployment with no `SESSION_SECRET` is unchanged**, byte for byte: no session middleware is
+installed, no cookie is parsed, and every `/auth/*` route answers 501. Configuring a provider
+*without* a secret is a startup error rather than a silent downgrade, because that combination is
+a sign-in flow that completes and leaves the caller anonymous.
 
 **F2 `partial` — the isolation is real, and a second tenant can now exist.** Every
 organisation-scoped table carries `organization_id` under a PostgreSQL row-level-security policy,

@@ -46,6 +46,32 @@ function requestWithKey(key: string): Request {
   return { headers: { "x-api-key": key } } as unknown as Request;
 }
 
+/**
+ * Run a key-bearing request through the real `resolvePrincipal` middleware, so
+ * `orgContextFor` sees the `req.principal` it now reads.
+ *
+ * F1 moved the key → organisation resolution out of `orgContextFor` and into
+ * the middleware: `orgContextFor` reads `req.principal` and throws if it is
+ * absent, because a route reaching it without one is a bug in the route rather
+ * than a reachable state. The property under test is unchanged — *which*
+ * configured key was presented decides the organisation — so the test drives it
+ * where it now lives instead of asserting the old call shape.
+ */
+async function principalFor(
+  principal: typeof import("./principal"),
+  key: string,
+): Promise<Request> {
+  const req = requestWithKey(key);
+  await new Promise<void>((resolve, reject) => {
+    principal.resolvePrincipal(
+      req,
+      { status: () => ({ json: () => undefined }) } as never,
+      ((err?: unknown) => (err ? reject(err) : resolve())) as never,
+    );
+  });
+  return req;
+}
+
 describe("principal.ts — API key to organisation binding (F1)", () => {
   it("no QUANTAXSCAN_API_KEY_ORG_IDS, one key: defaults to organisation 1 (unchanged pre-F1 behaviour)", async () => {
     process.env.QUANTAXSCAN_API_KEYS = "solo-key-abcdefghijklmnopqrstuvwx";
@@ -97,12 +123,12 @@ describe("principal.ts — API key to organisation binding (F1)", () => {
     process.env.QUANTAXSCAN_API_KEYS = "key-one-abcdefghijklmnopqrstuvwx,key-two-abcdefghijklmnopqrstuvwx";
     process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "10,20";
 
-    const { orgContextFor } = await importPrincipal();
-    expect(orgContextFor(requestWithKey("key-one-abcdefghijklmnopqrstuvwx"))).toEqual({
+    const principal = await importPrincipal();
+    expect(principal.orgContextFor(await principalFor(principal, "key-one-abcdefghijklmnopqrstuvwx"))).toEqual({
       organizationId: 10,
       userId: "",
     });
-    expect(orgContextFor(requestWithKey("key-two-abcdefghijklmnopqrstuvwx"))).toEqual({
+    expect(principal.orgContextFor(await principalFor(principal, "key-two-abcdefghijklmnopqrstuvwx"))).toEqual({
       organizationId: 20,
       userId: "",
     });

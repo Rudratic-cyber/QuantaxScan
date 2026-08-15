@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN "created_by_user_id" varchar;

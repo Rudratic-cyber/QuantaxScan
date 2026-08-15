@@ -230,7 +230,29 @@ CREATE POLICY collection_schedule_runs_org_isolation ON collection_schedule_runs
 -- --- Three tables that need a different shape --------------------------------
 
 -- organization_members: the caller must be able to see their OWN memberships
--- before any organisation has been selected — that is the login bootstrap.
+-- before any organisation has been selected — that is the login bootstrap, and
+-- it is re-read on EVERY authenticated request (§6.3), because the session's
+-- organisation id is a cache and never a grant.
+--
+-- The WITH CHECK is deliberately still `organization_id = app.current_org_id`
+-- alone, and it must stay that way. Two attempts to widen it for sign-up are
+-- recorded here so they are not retried:
+--
+--   * `OR user_id = app.current_user_id` would let any signed-in user insert
+--     their own membership into ANY organisation — a one-request cross-tenant
+--     join. Never.
+--   * `OR (user_id = app.current_user_id AND organization_id IN (SELECT id
+--     FROM organizations WHERE personal AND created_by_user_id = ...))` is
+--     rejected by PostgreSQL outright: organizations' USING already reads
+--     organization_members, so this closes the loop and the insert fails with
+--     `infinite recursion detected in policy for relation
+--     "organization_members"`. Measured under PGlite, not reasoned about.
+--
+-- Sign-up therefore creates the organisation first and only then promotes the
+-- SAME transaction to that organisation (`withUserScope`'s `enterOrganization`
+-- in lib/db/src/org-scope.ts), at which point this unchanged WITH CHECK
+-- accepts the owner row. The organisation id it promotes to is one the same
+-- transaction just created, never one supplied by a caller.
 ALTER TABLE organization_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organization_members FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS organization_members_org_isolation ON organization_members;
@@ -240,21 +262,43 @@ CREATE POLICY organization_members_org_isolation ON organization_members AS PERM
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id',  true), '')::int);
 
 -- organizations: the active organisation, plus the ones the caller belongs to
--- (the switcher). The subquery is evaluated under organization_members' own
--- policy, whose `user_id` branch satisfies it without referencing
--- `organizations` — so there is no recursion.
+-- (the switcher). The membership subquery is evaluated under
+-- organization_members' own policy, whose `user_id` branch satisfies it
+-- without referencing `organizations` — so there is no recursion.
 --
--- No WITH CHECK, deliberately: PostgreSQL then applies USING as the check, so
--- a runtime INSERT of a new organisation is rejected (its id is not the
--- current GUC). Organisations are created by `apply-tenancy` and, from P2, by
--- the sign-up path through withoutOrgScope().
+-- The third USING branch and the WITH CHECK are what let sign-up create a
+-- personal organisation (§3.7 step 1), and both are narrower than they look.
+--
+--   * WITH CHECK admits ONLY `personal = true` rows stamped with the acting
+--     user. A signed-in caller can therefore mint their own personal
+--     organisation and nothing else: a shared organisation, or one attributed
+--     to somebody else, is refused by the policy rather than by a route.
+--     Verified under PGlite — a second user inserting `personal = false`, or
+--     `created_by_user_id` naming another user, is rejected; so is an
+--     anonymous insert, which has no user GUC at all.
+--
+--   * `created_by_user_id = app.current_user_id` in USING exists because
+--     `INSERT ... RETURNING id` is subject to the SELECT half of this policy,
+--     and at that instant the creator is a member of nothing — both other
+--     branches are false, and the RETURNING is refused. Verified. Its only
+--     lasting effect is that a user can still see an organisation they
+--     created, which for a personal organisation is the one they are a member
+--     of anyway.
+--
+-- Before this, there was no WITH CHECK at all: PostgreSQL then applied USING
+-- as the check, so no runtime INSERT could succeed and organisations could
+-- only be created by `apply-tenancy` / `create-organization` as the migrator.
+-- That is still true of every organisation except a user's own personal one.
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS organizations_org_isolation ON organizations;
 CREATE POLICY organizations_org_isolation ON organizations AS PERMISSIVE FOR ALL TO quantaxscan_app
   USING (id = nullif(current_setting('app.current_org_id', true), '')::int
       OR id IN (SELECT m.organization_id FROM organization_members m
-                 WHERE m.user_id = nullif(current_setting('app.current_user_id', true), '')));
+                 WHERE m.user_id = nullif(current_setting('app.current_user_id', true), ''))
+      OR created_by_user_id = nullif(current_setting('app.current_user_id', true), ''))
+  WITH CHECK (personal = true
+          AND created_by_user_id = nullif(current_setting('app.current_user_id', true), ''));
 
 -- shared_reports: the public-share rule lives IN the policy, so the anonymous
 -- share-link route goes THROUGH the choke point rather than around it.

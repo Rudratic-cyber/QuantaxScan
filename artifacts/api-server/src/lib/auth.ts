@@ -1,17 +1,26 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { RequestHandler } from "express";
 import { logger } from "./logger";
+// Side-effect import: brings `req.principal` and the session payload's shape
+// into scope. Without it both read as `any`/absent here.
+import "./auth/types";
 
 /**
- * Interim API authentication — closes S1 / G-12.
+ * API authentication — the default-deny gate and the key half of the two
+ * principals behind it.
  *
- * Every route under `/api` requires a shared API key unless it appears in
- * PUBLIC_ROUTES below. This is deliberately *not* the F1 design: there is no
- * per-user identity and no organisation scoping, so it cannot enforce tenant
- * isolation. It exists to stop anonymous reads and deletes of production data
- * on the live deployment while F1 is built.
+ * Every route under `/api` requires a principal unless it appears in
+ * PUBLIC_ROUTES below. `resolvePrincipal` (`lib/principal.ts`) decides which
+ * one; this file decides whether "none" is acceptable for the route.
  *
- * See docs/Claude/08-security.md (S1) and docs/Claude/09-open-gaps.md (G-12).
+ * The shared API key remains exactly what it was — a break-glass and machine
+ * credential, matched here by constant-time digest comparison. F1 added a
+ * second principal (a signed-in person) *beside* it, changing none of the
+ * behaviour below: the same headers, the same 401, the same
+ * `WWW-Authenticate`.
+ *
+ * See docs/Claude/08-security.md (S1), docs/Claude/09-open-gaps.md (G-12), and
+ * docs/Claude/13-auth-and-tenancy.md §6.1–6.2.
  */
 
 const ENV_VAR = "QUANTAXSCAN_API_KEYS";
@@ -42,6 +51,21 @@ export const PUBLIC_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
   // Share links are public-by-link by design. The ID is the only control, so it
   // must stay cryptographically random — see generateId() in routes/reports.ts.
   { method: "GET", path: /^\/reports\/[^/]+$/ },
+  // F1 — the sign-in routes. Every one of these is how a caller *becomes*
+  // authenticated, so requiring authentication to reach them would be a
+  // deadlock. `:provider` matches any segment here and is validated in the
+  // handler, which 404s an unknown or unconfigured one.
+  { method: "GET", path: /^\/auth\/providers$/ },
+  { method: "GET", path: /^\/auth\/[^/]+\/start$/ },
+  { method: "GET", path: /^\/auth\/[^/]+\/callback$/ },
+  // Called on every page load, including for visitors who have never signed
+  // in. It answers 200 with `{ user: null }` rather than 401 — an anonymous
+  // visitor is a normal state, and a 401 here would be indistinguishable from
+  // a real failure.
+  { method: "GET", path: /^\/auth\/session$/ },
+  // Idempotent, and public so that signing out of an already-expired session
+  // succeeds rather than 401ing the one action that is supposed to end it.
+  { method: "POST", path: /^\/auth\/logout$/ },
 ];
 
 function sha256(value: string): Buffer {
@@ -135,16 +159,24 @@ export function matchedKeyIndex(presented: string): number | null {
   return matched;
 }
 
-function isValidKey(presented: string): boolean {
-  return matchedKeyIndex(presented) !== null;
-}
-
 /**
- * Default-deny API key middleware. Mount it on the `/api` router *after*
- * `cors()`, so that OPTIONS preflight requests terminate in the CORS handler
- * and are never rejected with a 401.
+ * Default-deny authentication middleware. Mount it on the `/api` router
+ * *after* `cors()`, so that OPTIONS preflight requests terminate in the CORS
+ * handler and are never rejected with a 401, and after `resolvePrincipal`,
+ * which is what decides who the caller is.
+ *
+ * Two rejections, and they are different states:
+ *
+ *   * **401** — no principal at all. Identical in status, body and
+ *     `WWW-Authenticate` header to what shipped before sessions existed, so a
+ *     key-only caller cannot tell this middleware changed.
+ *   * **403** — a signed-in person who belongs to no organisation. They are
+ *     authenticated; there is simply nothing for them to act in. Answering 401
+ *     would tell them to sign in again, which would not help, and falling back
+ *     to some default organisation would be the cross-tenant read this whole
+ *     mechanism exists to prevent.
  */
-export const requireApiKey: RequestHandler = (req, res, next) => {
+export const requireAuth: RequestHandler = (req, res, next) => {
   if (isPublic(req.method, req.path)) {
     next();
     return;
@@ -158,9 +190,10 @@ export const requireApiKey: RequestHandler = (req, res, next) => {
     return;
   }
 
-  const presented = presentedKey(req.headers);
+  const principal = req.principal;
 
-  if (!presented || !isValidKey(presented)) {
+  if (!principal || principal.kind === "anonymous") {
+    const presented = presentedKey(req.headers);
     logger.warn(
       { method: req.method, path: req.path, presented: presented ? "invalid" : "absent" },
       "Rejected unauthenticated API request",
@@ -170,5 +203,72 @@ export const requireApiKey: RequestHandler = (req, res, next) => {
     return;
   }
 
+  if (principal.kind === "session" && principal.organizationId === null) {
+    res.status(403).json({ error: "No organisation" });
+    return;
+  }
+
   next();
 };
+
+/**
+ * CSRF — docs/Claude/13-auth-and-tenancy.md §3.9, layer 2.
+ *
+ * `SameSite=Lax` is necessary and not sufficient: it permits top-level GET
+ * navigations, and it is a browser-side control a server should not rely on
+ * alone. So every state-changing method is additionally checked against the
+ * Fetch-metadata headers the browser sets and a page cannot forge.
+ *
+ * **The check applies only to a request carrying a session cookie.** That is
+ * narrower than §3.9's "every state-changing method", and deliberately:
+ *
+ *   * §3.9 already exempts API-key requests — they are not browser-driven and
+ *     carry no ambient credential.
+ *   * A request with no session cookie carries no ambient credential either,
+ *     so there is nothing for a cross-site page to ride. Checking it anyway
+ *     would 403 the genuinely public writes (`POST /demo/repos/:slug/scan`,
+ *     `POST /community/posts`) for every non-browser caller — curl, CI, the
+ *     e2e suite — which sends neither header. That is a behaviour change with
+ *     no security gain, and this lane's rule is that the pre-session paths
+ *     behave exactly as they did.
+ *
+ * Per the Fetch standard the browser sets `Origin` on every non-`GET`/`HEAD`
+ * request, so a legitimate browser call always presents one of the two signals.
+ */
+export function csrfFetchMetadata(allowedOrigins: readonly string[]): RequestHandler {
+  const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
+
+  return (req, res, next) => {
+    if (safeMethods.has(req.method)) {
+      next();
+      return;
+    }
+    // No session on the request means no ambient credential to abuse.
+    if (!req.session?.userId) {
+      next();
+      return;
+    }
+    if (req.principal?.kind === "apiKey") {
+      next();
+      return;
+    }
+
+    const site = req.get("sec-fetch-site");
+    if (site === "same-origin" || site === "none") {
+      next();
+      return;
+    }
+
+    const origin = req.get("origin");
+    if (origin && allowedOrigins.includes(origin.replace(/\/+$/, ""))) {
+      next();
+      return;
+    }
+
+    logger.warn(
+      { method: req.method, path: req.path, site: site ?? "absent", origin: origin ?? "absent" },
+      "Rejected cross-site state-changing request from a session-authenticated caller",
+    );
+    res.status(403).json({ error: "Cross-site request refused" });
+  };
+}

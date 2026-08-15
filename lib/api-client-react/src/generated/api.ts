@@ -17,11 +17,15 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  ActiveOrganization,
+  AuthProviderList,
+  AuthSession,
   CbomDocument,
   CertificateIngestSummary,
   ChatBody,
   CollectionSchedule,
   CommunityPost,
+  CompleteAuthFlowParams,
   CreateCollectionScheduleBody,
   CreateCommunityPostBody,
   CreateCredentialBody,
@@ -76,6 +80,7 @@ import type {
   RunProjectDiscoveryBody,
   Scan,
   SharedReport,
+  StartAuthFlowParams,
   SubmitProjectCertificatesBody,
   SubmitProjectDataAtRestBody,
   SubmitProjectDependenciesBody,
@@ -5707,3 +5712,550 @@ export function useGetDrift<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Empty when sessions are not configured, which is a real deployment state rather than an error — the product ran on a shared API key alone before F1 and still can. A provider absent from this list is one nobody can sign in with, whatever the documentation says: Google and Microsoft are deliberately unimplemented (see 13-auth-and-tenancy.md §3.3), so they do not appear here.
+ * @summary Identity providers this deployment can sign a person in with (F1)
+ */
+export const getListAuthProvidersUrl = () => {
+  return `/api/auth/providers`;
+};
+
+export const listAuthProviders = async (
+  options?: RequestInit,
+): Promise<AuthProviderList> => {
+  return customFetch<AuthProviderList>(getListAuthProvidersUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAuthProvidersQueryKey = () => {
+  return [`/api/auth/providers`] as const;
+};
+
+export const getListAuthProvidersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAuthProviders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAuthProviders>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAuthProvidersQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAuthProviders>>
+  > = ({ signal }) => listAuthProviders({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAuthProviders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAuthProvidersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAuthProviders>>
+>;
+export type ListAuthProvidersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Identity providers this deployment can sign a person in with (F1)
+ */
+
+export function useListAuthProviders<
+  TData = Awaited<ReturnType<typeof listAuthProviders>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listAuthProviders>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAuthProvidersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Mints `state`, a PKCE verifier and (where the provider uses one) a nonce, stores them on the session, and redirects to the provider. The session row is created *here* rather than on first contact — `saveUninitialized: false`, so a visitor who never clicks sign-in never touches the database. The save is explicit and awaited, because a redirect racing the session write lands the callback before the transaction it must match against exists.
+ * @summary Begin an authorization-code sign-in (F1)
+ */
+export const getStartAuthFlowUrl = (
+  provider: string,
+  params?: StartAuthFlowParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/auth/${provider}/start?${stringifiedParams}`
+    : `/api/auth/${provider}/start`;
+};
+
+export const startAuthFlow = async (
+  provider: string,
+  params?: StartAuthFlowParams,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getStartAuthFlowUrl(provider, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getStartAuthFlowQueryKey = (
+  provider: string,
+  params?: StartAuthFlowParams,
+) => {
+  return [`/api/auth/${provider}/start`, ...(params ? [params] : [])] as const;
+};
+
+export const getStartAuthFlowQueryOptions = <
+  TData = Awaited<ReturnType<typeof startAuthFlow>>,
+  TError = ErrorType<void>,
+>(
+  provider: string,
+  params?: StartAuthFlowParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof startAuthFlow>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getStartAuthFlowQueryKey(provider, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof startAuthFlow>>> = ({
+    signal,
+  }) => startAuthFlow(provider, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!provider,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof startAuthFlow>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type StartAuthFlowQueryResult = NonNullable<
+  Awaited<ReturnType<typeof startAuthFlow>>
+>;
+export type StartAuthFlowQueryError = ErrorType<void>;
+
+/**
+ * @summary Begin an authorization-code sign-in (F1)
+ */
+
+export function useStartAuthFlow<
+  TData = Awaited<ReturnType<typeof startAuthFlow>>,
+  TError = ErrorType<void>,
+>(
+  provider: string,
+  params?: StartAuthFlowParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof startAuthFlow>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getStartAuthFlowQueryOptions(provider, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Verifies `state` against the stored transaction, exchanges the code with PKCE, and establishes the session. The transaction is single-use: a replayed callback finds nothing to match and fails. This is the one code path that decides who a request is, so it fails closed on every branch rather than falling through to an anonymous session.
+ * @summary Complete an authorization-code sign-in (F1)
+ */
+export const getCompleteAuthFlowUrl = (
+  provider: string,
+  params?: CompleteAuthFlowParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/auth/${provider}/callback?${stringifiedParams}`
+    : `/api/auth/${provider}/callback`;
+};
+
+export const completeAuthFlow = async (
+  provider: string,
+  params?: CompleteAuthFlowParams,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getCompleteAuthFlowUrl(provider, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getCompleteAuthFlowQueryKey = (
+  provider: string,
+  params?: CompleteAuthFlowParams,
+) => {
+  return [
+    `/api/auth/${provider}/callback`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getCompleteAuthFlowQueryOptions = <
+  TData = Awaited<ReturnType<typeof completeAuthFlow>>,
+  TError = ErrorType<void>,
+>(
+  provider: string,
+  params?: CompleteAuthFlowParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof completeAuthFlow>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getCompleteAuthFlowQueryKey(provider, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof completeAuthFlow>>
+  > = ({ signal }) =>
+    completeAuthFlow(provider, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!provider,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof completeAuthFlow>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type CompleteAuthFlowQueryResult = NonNullable<
+  Awaited<ReturnType<typeof completeAuthFlow>>
+>;
+export type CompleteAuthFlowQueryError = ErrorType<void>;
+
+/**
+ * @summary Complete an authorization-code sign-in (F1)
+ */
+
+export function useCompleteAuthFlow<
+  TData = Awaited<ReturnType<typeof completeAuthFlow>>,
+  TError = ErrorType<void>,
+>(
+  provider: string,
+  params?: CompleteAuthFlowParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof completeAuthFlow>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getCompleteAuthFlowQueryOptions(
+    provider,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Answers **200 with `user: null`** for an anonymous visitor rather than 401. This is called on every page load, including by people who have never signed in, and an anonymous visitor is a normal state — a 401 here would be indistinguishable from a real failure and would make the client treat "not signed in yet" as an error.
+
+The active organisation is reported as an id and a role, never a name: a solo user is an organisation of one and should never meet the concept, which the client implements by rendering nothing when there is a single membership.
+ * @summary Who the caller is, if anyone (F1)
+ */
+export const getGetAuthSessionUrl = () => {
+  return `/api/auth/session`;
+};
+
+export const getAuthSession = async (
+  options?: RequestInit,
+): Promise<AuthSession> => {
+  return customFetch<AuthSession>(getGetAuthSessionUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAuthSessionQueryKey = () => {
+  return [`/api/auth/session`] as const;
+};
+
+export const getGetAuthSessionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAuthSession>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAuthSession>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAuthSessionQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAuthSession>>> = ({
+    signal,
+  }) => getAuthSession({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAuthSession>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAuthSessionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAuthSession>>
+>;
+export type GetAuthSessionQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Who the caller is, if anyone (F1)
+ */
+
+export function useGetAuthSession<
+  TData = Awaited<ReturnType<typeof getAuthSession>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAuthSession>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAuthSessionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Idempotent, and public on purpose: signing out of an already-expired session must succeed rather than 401 the one action whose whole job is to end it. Local only — RP-initiated logout at the provider is not implemented (13-auth-and-tenancy.md §3.10).
+ * @summary End the local session (F1)
+ */
+export const getLogoutUrl = () => {
+  return `/api/auth/logout`;
+};
+
+export const logout = async (options?: RequestInit): Promise<void> => {
+  return customFetch<void>(getLogoutUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getLogoutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logout>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof logout>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["logout"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof logout>>,
+    void
+  > = () => {
+    return logout(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LogoutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof logout>>
+>;
+
+export type LogoutMutationError = ErrorType<unknown>;
+
+/**
+ * @summary End the local session (F1)
+ */
+export const useLogout = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logout>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof logout>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getLogoutMutationOptions(options));
+};
+
+/**
+ * The **only** route in this group that is not public, because it is the only one that acts on behalf of somebody already signed in. Membership is re-checked here rather than trusted from the session: a membership revoked since sign-in must take effect on the next request, not at the next sign-in.
+ * @summary Switch the active organisation for this session (F1)
+ */
+export const getSelectOrganizationUrl = (id: number) => {
+  return `/api/auth/organizations/${id}/select`;
+};
+
+export const selectOrganization = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ActiveOrganization> => {
+  return customFetch<ActiveOrganization>(getSelectOrganizationUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getSelectOrganizationMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof selectOrganization>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof selectOrganization>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["selectOrganization"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof selectOrganization>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return selectOrganization(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SelectOrganizationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof selectOrganization>>
+>;
+
+export type SelectOrganizationMutationError = ErrorType<void>;
+
+/**
+ * @summary Switch the active organisation for this session (F1)
+ */
+export const useSelectOrganization = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof selectOrganization>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof selectOrganization>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getSelectOrganizationMutationOptions(options));
+};

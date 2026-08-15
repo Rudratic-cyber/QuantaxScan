@@ -1,8 +1,7 @@
 # 14 — In-flight lanes (wave 3)
 
-**Status: six branches exist, all committed. Five are merged, one is not. Read this before
-starting new work, because the thing you are about to build may already be sitting on one of
-them.**
+**Status: all six wave-3 branches are merged into `main`, each verified. This file is kept as the
+record of what they were and what merging them cost — the branches themselves are now history.**
 
 Wave 3 was fanned out on 2026-08-15 against `main` at `3a33eeb` — six agents, six branches, one
 brief. The session driving them ended while all six were still working. Every lane's work existed
@@ -22,7 +21,7 @@ pointed at it.
 | ~~`feat/qx-discovery`~~ | ~~`aa40122`~~ | `0010` | **Merged 2026-08-15** — D8, CT-log host discovery + DNS corroboration into `discovered_targets` |
 | ~~`feat/qx-network-flow`~~ | ~~`cb4f3a2`~~ | `0011` | **Merged 2026-08-15** — B11, the `network-flow` surface, ninth `live` |
 | ~~`feat/qx-m3-continuity`~~ | ~~`f54175a`~~ | `0013` | **Merged 2026-08-15** — D4 drift (computed, never persisted) + scheduled re-collection |
-| `feat/qx-f1-authentication` | `a835ca2` | `0014` | F1 — identity providers, sessions, `/auth/*`. GitHub implemented; Google and Microsoft deliberately deferred |
+| ~~`feat/qx-f1-authentication`~~ | ~~`a835ca2`~~ | `0014` | **Merged 2026-08-15** — F1, identity providers, sessions, `/auth/*` |
 | ~~`feat/qx-endpoint`~~ | ~~`6b02fb9`~~ | none | **Merged 2026-08-15** — B12, the `endpoint` surface, tenth `live` |
 
 `0012` was reserved and never used.
@@ -71,19 +70,22 @@ that — only a full-suite run with no filter.
 
 ## What every one of them is missing
 
-The brief made three things mandatory and **no lane completed any of them**, because all six were
-interrupted at roughly the same moment:
+The brief made three things mandatory and **no lane shipped any of them**, because all six were
+interrupted at roughly the same moment. All three were supplied during the merges, so none of this
+is outstanding on `main` — it is recorded because it is what a wave costs when it is cut short:
 
-- **No e2e spec.** `tests/e2e/` is untouched on all six branches.
-- **No row in [03-features.md](03-features.md).** This is the third consecutive wave to miss it,
-  which is why that file cannot currently be trusted as a status source — see below.
-- **No verification.** `pnpm run ci --quick` was never run against any of these trees, let alone
-  `test:ui` or an e2e run.
+- **No e2e spec** on any branch. Six were written during the merges
+  (`13-credentials` … `18-auth`), and writing them found five real payload mistakes that no amount
+  of reading would have caught.
+- **No row in [03-features.md](03-features.md)** — the third consecutive wave to miss it, which is
+  why that file could not be trusted as a status source. Rows were added or corrected per lane.
+- **No verification.** `pnpm run ci --quick` had never been run against any of these trees.
 
-One lane is missing something worse: `feat/qx-f1-authentication` adds **six routes and no
-`lib/api-spec/openapi.yaml` entry**, so no generated client can see them and
-`openapi-drift.test.ts` fails as it stands. It also carries `lib/db/rls-probe-f1.mjs`, a scratch
-probe committed only so it would not be lost, which must not survive the merge.
+`feat/qx-f1-authentication` was missing something worse: **six routes and no
+`lib/api-spec/openapi.yaml` entry**, so no generated client could see them. The spec entries and
+schemas were written from what the handlers actually return, and the five public ones now carry
+`security: []` matching `PUBLIC_ROUTES` in both directions. Its scratch `lib/db/rls-probe-f1.mjs`
+was deleted rather than merged.
 
 ## Merging them
 

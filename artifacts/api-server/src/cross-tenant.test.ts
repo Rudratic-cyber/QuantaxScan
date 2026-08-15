@@ -224,6 +224,19 @@ describe("route manifest — a new route cannot ship without being considered", 
     "GET /demo/repos": "public",
     "POST /demo/repos/:slug/scan": "public",
     "GET /reports/:id": "public",
+    // F1 — the sign-in routes. `public` because each is how a caller *becomes*
+    // authenticated, so requiring authentication to reach one would deadlock.
+    // None of them reads project, scan or finding data; `/auth/session` reads
+    // the caller's own identity and their own memberships and nothing else.
+    "GET /auth/providers": "public",
+    "GET /auth/:provider/start": "public",
+    "GET /auth/:provider/callback": "public",
+    "GET /auth/session": "public",
+    "POST /auth/logout": "public",
+    // The one that is not: it acts for somebody already signed in, and
+    // re-checks membership rather than trusting the session, so a revocation
+    // takes effect on the next request instead of the next sign-in.
+    "POST /auth/organizations/:id/select": "org-scoped",
     "GET /community/posts": "unscoped-public-content",
     "GET /community/leaderboard": "unscoped-public-content",
     "POST /community/posts": "unscoped-public-content",

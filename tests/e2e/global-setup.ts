@@ -17,7 +17,10 @@ import {
   CREDENTIAL_KEYS,
   CT_STUB_URL,
   DEAD_DNS_SERVER,
+  GITHUB_OAUTH_CLIENT_ID,
+  GITHUB_OAUTH_CLIENT_SECRET,
   HOST,
+  SESSION_SECRET,
   SECOND_API_KEY,
   SECOND_ORG_ENABLED,
   STATE_FILE,
@@ -108,6 +111,19 @@ export default async function globalSetup(): Promise<void> {
       QUANTAXSCAN_CT_LOG_BASE_URL: CT_STUB_URL,
       QUANTAXSCAN_DISCOVERY_ALLOW_PRIVATE_SOURCES: "1",
       QUANTAXSCAN_DISCOVERY_DNS_SERVERS: DEAD_DNS_SERVER,
+      // F1. Without these every `/auth/*` route answers 501 and the auth spec
+      // would only be asserting that sign-in is switched off — see
+      // support/config.ts. The registration is fake and no exchange is ever
+      // completed; these make the session middleware and the transaction
+      // checks real.
+      SESSION_SECRET,
+      GITHUB_OAUTH_CLIENT_ID,
+      GITHUB_OAUTH_CLIENT_SECRET,
+      // The public origin the provider redirects back to. Required whenever a
+      // provider is configured — the server refuses to start without it rather
+      // than build a callback URL nobody registered, which is the right
+      // failure and one this stack has to satisfy like any deployment.
+      AUTH_REDIRECT_BASE_URL: API_URL,
       // The frontend is served from a different origin, so this is what makes
       // the browser's requests legal. Character-for-character: `localhost` and
       // `127.0.0.1` are different origins.

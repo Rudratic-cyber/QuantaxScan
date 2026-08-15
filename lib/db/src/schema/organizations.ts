@@ -25,6 +25,27 @@ export const organizationsTable = pgTable(
     slug: text("slug").notNull(),
     /** True for the organisation auto-created for a solo user. Never surfaced in the UI — a solo user is an organisation of one and should never meet the concept. */
     personal: boolean("personal").notNull().default(false),
+    /**
+     * Who created this organisation, when a person did. NULL for the ones an
+     * operator creates (`apply-tenancy`, `create-organization`), which is why
+     * it is nullable with no default — null means "not created by a user",
+     * never "created by nobody in particular".
+     *
+     * It is also load-bearing for row-level security, which is the reason it
+     * exists at all rather than being nice-to-have provenance. Sign-up creates
+     * a personal organisation for a user who is, by definition, not yet a
+     * member of anything — so neither branch of `organizations_org_isolation`'s
+     * `USING` can see the row it just inserted, and `INSERT ... RETURNING id`
+     * is subject to that policy (verified under PGlite: the RETURNING is
+     * refused). This column is the third branch, and it is what lets the
+     * bootstrap read back the id it needs.
+     *
+     * No foreign key to `users`, deliberately: deleting a user must not
+     * cascade-delete an organisation, and `ON DELETE SET NULL` would erase the
+     * provenance F3's audit log wants. The value is a `users.id` and is read
+     * as such.
+     */
+    createdByUserId: varchar("created_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("organizations_slug_idx").on(table.slug)],

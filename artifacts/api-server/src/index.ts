@@ -2,9 +2,24 @@ import app from "./app";
 import { db, assertTenantIsolationInstalled } from "@workspace/db";
 import { logger } from "./lib/logger";
 import { assertApiKeysConfigured } from "./lib/auth";
+import { assertSessionConfigured } from "./lib/auth/session";
+import { assertProvidersConfigured, configuredProviders } from "./lib/auth/providers";
 
 // Fail closed: refuse to start rather than serve an unauthenticated API.
 assertApiKeysConfigured();
+
+/**
+ * Fail closed on the sign-in half too.
+ *
+ * Sign-in is opt-in — a deployment with no `SESSION_SECRET` and no provider
+ * simply has none, and the API-key path is untouched. What is refused is a
+ * *half*-configured one: a weak session secret, an identity provider with no
+ * session to put anyone in, or a provider with no `AUTH_REDIRECT_BASE_URL` to
+ * come back to. Each of those produces a sign-in that appears to work and
+ * authenticates nobody, which is exactly the failure §13.4 records.
+ */
+assertSessionConfigured(configuredProviders().length > 0);
+assertProvidersConfigured();
 
 /**
  * Fail closed again, on the other half of the guarantee.

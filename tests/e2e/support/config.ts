@@ -121,6 +121,27 @@ export const CT_STUB_URL = `http://${HOST}:${CT_STUB_PORT}`;
  */
 export const DEAD_DNS_SERVER = process.env["E2E_DEAD_DNS_SERVER"] ?? `${HOST}:59`;
 
+/**
+ * F1's session secret and a GitHub provider registration.
+ *
+ * Configured here because **an unconfigured deployment answers 501 to every
+ * `/auth/*` route**, and a spec run against that state asserts only that the
+ * feature is switched off. With these set, `/auth/providers` really lists what
+ * the registry resolved, `/auth/session` really runs the session middleware,
+ * and a forged callback is really rejected by the transaction check rather than
+ * by a feature flag.
+ *
+ * The client id and secret are deliberately fake and never leave the process:
+ * nothing in the suite completes an authorization-code exchange, because doing
+ * so honestly would need a token-minting stub — that flow is proven at the unit
+ * level (see `routes/auth.ts`'s header on why GitHub rather than Google).
+ * `assertSessionConfigured` refuses to start with a provider and no secret, so
+ * these two must be set together.
+ */
+export const SESSION_SECRET = process.env["E2E_SESSION_SECRET"] ?? randomBytes(32).toString("base64url");
+export const GITHUB_OAUTH_CLIENT_ID = "e2e-client-id-not-a-real-registration";
+export const GITHUB_OAUTH_CLIENT_SECRET = "e2e-client-secret-not-a-real-registration";
+
 /** `apply-tenancy` refuses to run without this; it owns organisation 1. */
 export const CAPTAIN_EMAIL = "e2e-captain@quantaxscan.invalid";
 

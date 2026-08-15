@@ -7209,3 +7209,119 @@ export const GetDriftResponse = zod.object({
       "Stated in the payload rather than only in the docs, so a report built from this can quote it.",
     ),
 });
+
+/**
+ * Empty when sessions are not configured, which is a real deployment state rather than an error — the product ran on a shared API key alone before F1 and still can. A provider absent from this list is one nobody can sign in with, whatever the documentation says: Google and Microsoft are deliberately unimplemented (see 13-auth-and-tenancy.md §3.3), so they do not appear here.
+ * @summary Identity providers this deployment can sign a person in with (F1)
+ */
+export const ListAuthProvidersResponse = zod.object({
+  providers: zod
+    .array(
+      zod.object({
+        id: zod
+          .string()
+          .describe(
+            "Stable identifier used in the `\/auth\/{provider}\/…` paths.",
+          ),
+        label: zod
+          .string()
+          .describe("Display name. Presentation only — never matched on."),
+      }),
+    )
+    .describe(
+      "Empty when sessions are not configured. A provider missing from this array cannot be signed in with, whatever any documentation says.",
+    ),
+});
+
+/**
+ * Mints `state`, a PKCE verifier and (where the provider uses one) a nonce, stores them on the session, and redirects to the provider. The session row is created *here* rather than on first contact — `saveUninitialized: false`, so a visitor who never clicks sign-in never touches the database. The save is explicit and awaited, because a redirect racing the session write lands the callback before the transaction it must match against exists.
+ * @summary Begin an authorization-code sign-in (F1)
+ */
+export const StartAuthFlowParams = zod.object({
+  provider: zod.coerce.string(),
+});
+
+export const StartAuthFlowQueryParams = zod.object({
+  returnTo: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Where to land after a successful sign-in. Validated as a same-site relative path; anything else is ignored rather than followed.",
+    ),
+  mode: zod
+    .enum(["link"])
+    .optional()
+    .describe(
+      "Link this provider to the already-signed-in account. Ignored unless a session already exists.",
+    ),
+});
+
+/**
+ * Verifies `state` against the stored transaction, exchanges the code with PKCE, and establishes the session. The transaction is single-use: a replayed callback finds nothing to match and fails. This is the one code path that decides who a request is, so it fails closed on every branch rather than falling through to an anonymous session.
+ * @summary Complete an authorization-code sign-in (F1)
+ */
+export const CompleteAuthFlowParams = zod.object({
+  provider: zod.coerce.string(),
+});
+
+export const CompleteAuthFlowQueryParams = zod.object({
+  code: zod.coerce.string().optional(),
+  state: zod.coerce.string().optional(),
+});
+
+/**
+ * Answers **200 with `user: null`** for an anonymous visitor rather than 401. This is called on every page load, including by people who have never signed in, and an anonymous visitor is a normal state — a 401 here would be indistinguishable from a real failure and would make the client treat "not signed in yet" as an error.
+
+The active organisation is reported as an id and a role, never a name: a solo user is an organisation of one and should never meet the concept, which the client implements by rendering nothing when there is a single membership.
+ * @summary Who the caller is, if anyone (F1)
+ */
+export const GetAuthSessionResponse = zod
+  .object({
+    user: zod
+      .object({
+        id: zod.string(),
+        email: zod.string().nullable(),
+        firstName: zod.string().nullable(),
+        lastName: zod.string().nullable(),
+        profileImageUrl: zod.string().nullable(),
+      })
+      .describe(
+        "The signed-in person. Every field but `id` is nullable because a provider supplies what it supplies — GitHub may return no email at all, and a name is not guaranteed anywhere. Absent means the provider did not tell us, never that the person has no name.",
+      )
+      .nullable(),
+    organization: zod
+      .object({
+        id: zod.number(),
+        role: zod.string(),
+      })
+      .nullable()
+      .describe(
+        "The active organisation, as an id and a role. Never a name — see the route description.",
+      ),
+    memberships: zod.array(
+      zod.object({
+        organizationId: zod.number(),
+        role: zod.string(),
+      }),
+    ),
+  })
+  .describe(
+    "`user: null` with an empty `memberships` array is the anonymous shape, returned with a 200. It is a state, not a failure.",
+  );
+
+/**
+ * The **only** route in this group that is not public, because it is the only one that acts on behalf of somebody already signed in. Membership is re-checked here rather than trusted from the session: a membership revoked since sign-in must take effect on the next request, not at the next sign-in.
+ * @summary Switch the active organisation for this session (F1)
+ */
+export const SelectOrganizationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SelectOrganizationResponse = zod.object({
+  organization: zod
+    .object({
+      id: zod.number(),
+      role: zod.string(),
+    })
+    .nullable(),
+});

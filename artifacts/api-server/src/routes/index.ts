@@ -15,10 +15,12 @@ import credentialsRouter from "./credentials";
 import discoveryRouter from "./discovery";
 import collectionSchedulesRouter from "./collection-schedules";
 import driftRouter from "./drift";
+import authRouter from "./auth";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(authRouter);
 router.use(projectsRouter);
 router.use(scansRouter);
 router.use(communityRouter);

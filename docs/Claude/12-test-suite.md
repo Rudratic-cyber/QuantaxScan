@@ -22,7 +22,7 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Coverage Summariser Suite** | Vitest | `artifacts/api-server/src/lib/coverage.test.ts` | Pure — no database, no HTTP |
 | **Posture Timeline Suite** | Vitest | `artifacts/api-server/src/lib/posture-timeline.test.ts` | Pure — no database, `now` injected (D7's whole subject is time) |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts`, `tests/ui/timeline-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
-| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (seventeen files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
+| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (eighteen files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
 | **Continuous Integration** | GitHub Actions | `.github/workflows/ci.yml` | Ubuntu runner (`ubuntu-latest`) |
 
 The UI suite always starts its own Vite dev server (`reuseExistingServer: false`) so it can never
@@ -224,6 +224,7 @@ mid-run.
 | `10-protocol-config` (B6) | What a config *declares*, never conflated with what B3 observed being negotiated |
 | `11-data-at-rest` (B7) | A Regulated archive reaches the risk engine with X = 25 and `xAssumed: false`; "encrypted, cipher unknown" produces no asset; a blank resubmission does not retire a recorded cipher |
 | `12-vendor` (B9) | A vendor's claim never reads as an observation; "no clause" and "nobody read the contract" stay distinguishable in both directions |
+| `18-auth` (F1) | Asserted with sessions genuinely enabled, not switched off: `/auth/providers` offers GitHub and **not** Google or Microsoft; an anonymous caller gets 200 with `user: null` rather than 401; a missing or forged `state` establishes no session; logout with no session is 204; organisation switching is the one route here that refuses an anonymous caller; and the API key still authenticates unchanged |
 | `17-continuity` (D4/M3) | An asset that merely stopped being collected is not reported as remediated; a future or unparseable `since` is a 400 rather than an empty feed that reads as "nothing changed"; a schedule refuses a sub-floor interval, an over-cap target list and a URL-as-host; `run-due` runs nothing that is not due |
 | `16-endpoint` (B12) | A suite the host disables produces no asset and the suppression is reported; an unrecognised (ChaCha20) suite is returned undecoded rather than guessed; a placeholder machine id and two hosts claiming one id are refused **by name**, both of the pair rather than one; a host that was read and declares nothing records no run |
 | `15-network-flows` (B11) | A cipher-free flow record stays `undetermined` and produces no asset, and is counted so the meter cannot read the surface as clean; an unidentified endpoint is rejected with its position and reason rather than recorded against a guess; two ephemeral source ports collapse to one conversation |

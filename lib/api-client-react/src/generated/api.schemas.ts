@@ -3380,6 +3380,61 @@ export interface DriftFeed {
   caveat: string;
 }
 
+export interface AuthProvider {
+  /** Stable identifier used in the `/auth/{provider}/…` paths. */
+  id: string;
+  /** Display name. Presentation only — never matched on. */
+  label: string;
+}
+
+export interface AuthProviderList {
+  /** Empty when sessions are not configured. A provider missing from this array cannot be signed in with, whatever any documentation says. */
+  providers: AuthProvider[];
+}
+
+/**
+ * The signed-in person. Every field but `id` is nullable because a provider supplies what it supplies — GitHub may return no email at all, and a name is not guaranteed anywhere. Absent means the provider did not tell us, never that the person has no name.
+ */
+export interface AuthUser {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  profileImageUrl: string | null;
+}
+
+export type ActiveOrganizationOrganization = {
+  id: number;
+  role: string;
+} | null;
+
+export interface ActiveOrganization {
+  organization: ActiveOrganizationOrganization;
+}
+
+export interface OrganizationMembership {
+  organizationId: number;
+  role: string;
+}
+
+/**
+ * The active organisation, as an id and a role. Never a name — see the route description.
+ */
+export type AuthSessionOrganization = {
+  id: number;
+  role: string;
+} | null;
+
+/**
+ * `user: null` with an empty `memberships` array is the anonymous shape, returned with a 200. It is a state, not a failure.
+ */
+export interface AuthSession {
+  user: AuthUser | null;
+  /** The active organisation, as an id and a role. Never a name — see the route description. */
+  organization: AuthSessionOrganization;
+  memberships: OrganizationMembership[];
+}
+
 export type RateLimitedResponse = {
   error: string;
 };
@@ -3416,4 +3471,27 @@ export type GetDriftParams = {
    * ISO-8601 instant the window starts at. Defaults to seven days before now.
    */
   since?: string;
+};
+
+export type StartAuthFlowParams = {
+  /**
+   * Where to land after a successful sign-in. Validated as a same-site relative path; anything else is ignored rather than followed.
+   */
+  returnTo?: string;
+  /**
+   * Link this provider to the already-signed-in account. Ignored unless a session already exists.
+   */
+  mode?: StartAuthFlowMode;
+};
+
+export type StartAuthFlowMode =
+  (typeof StartAuthFlowMode)[keyof typeof StartAuthFlowMode];
+
+export const StartAuthFlowMode = {
+  link: "link",
+} as const;
+
+export type CompleteAuthFlowParams = {
+  code?: string;
+  state?: string;
 };

@@ -3,7 +3,9 @@ import cors, { type CorsOptions } from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { requireApiKey } from "./lib/auth";
+import { csrfFetchMetadata, requireAuth } from "./lib/auth";
+import { createSessionMiddleware } from "./lib/auth/session";
+import { resolvePrincipal } from "./lib/principal";
 import { configureTrustProxy, edgeRateLimit, perRouteRateLimit } from "./lib/rate-limit";
 
 const app: Express = express();
@@ -64,7 +66,7 @@ app.use(
     },
   }),
 );
-// cors() must stay ahead of requireApiKey so OPTIONS preflight terminates here
+// cors() must stay ahead of requireAuth so OPTIONS preflight terminates here
 // rather than being rejected with a 401.
 app.use(cors(corsOptions));
 
@@ -72,9 +74,36 @@ app.use(cors(corsOptions));
 // is itself reachable without a key and would otherwise be free to hammer.
 app.use("/api", edgeRateLimit);
 
+/**
+ * Sessions, when the deployment has configured them.
+ *
+ * Mounted **after** `edgeRateLimit` rather than where §6.1's diagram puts it.
+ * That diagram predates the limiter: with the session ahead of it, an
+ * anonymous flood drives a session-store read per request before the 429 is
+ * ever reached, which turns the cheapest possible rejection into a database
+ * round trip.
+ *
+ * `null` when `SESSION_SECRET` is unset — no cookie is parsed and no session
+ * row is written, so a key-only deployment behaves exactly as it did.
+ */
+const sessionMiddleware = createSessionMiddleware();
+if (sessionMiddleware) {
+  app.use("/api", sessionMiddleware);
+}
+
+// Decide who the caller is, once, before anything asks. This is the only place
+// a request's organisation is resolved — see lib/principal.ts.
+app.use("/api", resolvePrincipal);
+
 // Authenticate before the body parsers, so an unauthenticated request is
 // rejected without first buffering and parsing up to 10 MB of JSON.
-app.use("/api", requireApiKey);
+app.use("/api", requireAuth);
+
+// CSRF (§3.9). Only bites a state-changing request that carries a session
+// cookie: an API-key or anonymous caller has no ambient credential for a
+// cross-site page to ride, and checking them would 403 every non-browser
+// client of the public POST routes.
+app.use("/api", csrfFetchMetadata(allowedOrigins));
 
 // S6, layer 2: principal-keyed per-route budgets. After auth so it can key on
 // the API key, still before the body parsers so an over-budget request is

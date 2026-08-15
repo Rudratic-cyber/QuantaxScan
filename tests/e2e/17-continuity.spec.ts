@@ -40,10 +40,11 @@ import { test, expect } from "./support/fixtures";
 interface DriftFeed {
   window: { since: string; until: string };
   appeared: unknown[];
-  disappeared: unknown[];
+  disappeared: Array<{ location: string; surface: string }>;
   reappeared: unknown[];
   changed: unknown[];
   surfaces: Array<{ surface: string; [key: string]: unknown }>;
+  /** `disappeared` entries carry the asset's `location`, which is prefixed `project:<id>:`. */
   schedules: { attempts: unknown[]; overdue: unknown[] };
   caveat: string;
 }
@@ -93,7 +94,16 @@ test.describe("M3 — the drift feed", () => {
     // The asset was submitted once and never re-submitted. Nothing has been
     // observed to have gone away — only to have stopped being looked at — so
     // it must not appear as a disappearance.
-    expect(feed.disappeared).toEqual([]);
+    //
+    // **Scoped to this project on purpose.** The feed is estate-wide, and when
+    // the whole suite runs against one stack other specs legitimately retire
+    // their own assets — the OT register genuinely marks a fleet's asset `gone`
+    // when the fleet is deleted, which *is* an observed disappearance and
+    // belongs in the feed. Asserting the list is globally empty passed in
+    // isolation and failed the moment the suite ran unfiltered, which is the
+    // argument for running it unfiltered.
+    const mine = feed.disappeared.filter((entry) => entry.location.startsWith(`project:${projectId}:`));
+    expect(mine, "an asset that merely stopped being collected was reported as gone").toEqual([]);
 
     // And the feed says what *was* collected per surface, which is the section
     // that lets a reader tell "nothing changed" apart from "nothing ran".
