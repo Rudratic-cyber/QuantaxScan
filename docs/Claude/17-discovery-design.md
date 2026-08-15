@@ -30,10 +30,16 @@ product reports one of them.
 | **How** | how each is collected | one observes, the rest receive. **0 credentialed, 0 agent** | nowhere |
 | **When** | how often | one-shot everywhere except `tls` (M3 schedules) | `collection_schedule_runs`, and only for `tls` |
 
-The middle row is not an estimate. `collection_schedules.ts` states it directly, as the reason its
-target vocabulary has exactly one value: *"`tls` is the one surface whose collector reaches out and
-observes the world on its own — it opens a socket to a host the customer named and records what that
-host negotiates today."* Everything else is fed by an upload or a form.
+The middle row differs from the gap analysis, which counted **2 observed and 6 submitted against 8
+live surfaces**. Two things moved. The catalogue went to ten live on 2026-08-15 (B11, B12), and on
+re-reading, only one collector actually reaches out — `collection_schedules.ts` states it directly,
+as the reason its target vocabulary has exactly one value:
+
+> *`tls` is the one surface whose collector reaches out and observes the world on its own — it opens
+> a socket to a host the customer named and records what that host negotiates today.*
+
+Everything else is fed by an upload or a form. The revised count is worse than the one that
+prompted this work, which is the direction these corrections keep going.
 
 The verdict was: **nothing in the product discovers a host, a database or a key it was not handed.**
 Nine of the ten live surfaces wait for a customer to hand them something. The critical path named was
@@ -486,8 +492,10 @@ endpoint, no credential and no connection affordance anywhere in the contract.**
 pure function of bytes somebody uploaded.
 
 The consequence is already visible: **only the file-shaped collectors implement `Collector` at
-all.** B1, B2, B4 and B6 do. B3, B5, B7, B8, B11 and B12 do not, and `endpoint-collector.ts` writes
-down the reason:
+all.** There are exactly four `implements Collector` declarations in `lib/collectors/src` —
+`SourceRegexCollector`, `DependencyCollector`, `CertificateCollector`, `ProtocolConfigCollector`,
+i.e. B1, B2, B4, B6. The other six live surfaces (`tls`, `kms`, `data-at-rest`, `ot`,
+`network-flow`, `endpoint`) do not, and `endpoint-collector.ts` writes down the reason:
 
 > *There is no `Collector` class here, which follows B5, B7 and B8 rather than B1/B2/B4/B6: the
 > `Collector` interface is built around `CollectionTarget`, the source/file shape, and a host report
@@ -564,8 +572,10 @@ Three fields on `IngestSpec`, and one hardcoded literal that becomes a parameter
 
 `ingestObservations()` hardcodes `status: "completed"` today. `coverage.ts` reads
 `run.status === "failed"` and deliberately keeps such a run out of `completedRuns` — *"an attempt
-that produced nothing is not coverage"* — but nothing in the product can currently write a `failed`
-run, because the only function that writes `collection_runs` cannot express one.
+that produced nothing is not coverage"* — but **nothing in the product can currently write a
+`failed` run.** `asset-ingest.ts:302` is the only `insert` into `collectionRunsTable` anywhere in
+the tree (verified: every other reference in `artifacts/` and `lib/` is a `select`), and it cannot
+express one. The coverage meter has a branch for a state the database can never reach.
 
 This is the same defect, in the same file, as the one B2 hit:
 
@@ -860,10 +870,16 @@ four later lanes would otherwise each edit. CLAUDE.md already prescribes this sh
 applies verbatim to `asset-ingest.ts`, which is a sequence of same-shaped blocks that git presents
 as alternatives and that **must never be resolved by concatenating both sides**.
 
-1. **The migration** (one index, and the snapshot's `prevId` relinked to the previous snapshot's
-   `id` — wave 3 forked the chain five ways by skipping that): `discovery_runs`;
-   `discovered_targets` gaining `identity`/`target_kind`/`source_scope`/`last_discovered_run_id` and
-   `hostname` becoming nullable; `collection_runs.enumeration`.
+1. **The migration**: `discovery_runs`; `discovered_targets` gaining
+   `identity`/`target_kind`/`source_scope`/`last_discovered_run_id` and `hostname` becoming
+   nullable; `collection_runs.enumeration`.
+
+   **Do not take an index from this document.** Wave 4 reserved `0016` for lane C, which was
+   unmerged when this was written, so the next free index is whatever follows wave 4's *merged*
+   `_journal.json` — re-read it. Relink the new snapshot's `prevId` to the id of whatever snapshot
+   actually precedes it after that merge, not to `0015`'s. Reserving an index is necessary and not
+   sufficient: wave 3 gave every lane its own index, every lane's tests passed, and the chain still
+   forked five ways because nobody relinked `prevId`.
 2. **`ORG_SCOPED_TABLES` + policy + grant** for `discovery_runs`, in `tenant-isolation.sql`, applied
    by `apply-rls` — **not** by `drizzle-kit push`, which writes a NULL `USING` clause and installs
    no isolation while `pg_policies` reports the policy as present.
