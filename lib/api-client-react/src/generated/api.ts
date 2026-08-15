@@ -32,6 +32,7 @@ import type {
   DemoRepo,
   DemoScanResult,
   DependencyIngestSummary,
+  EndpointIngestSummary,
   Finding,
   GetInventoryAssetsParams,
   GetLeaderboardParams,
@@ -54,6 +55,7 @@ import type {
   ProjectCertificates,
   ProjectCoverage,
   ProjectDataAtRest,
+  ProjectEndpointFleet,
   ProjectKmsKeys,
   ProtocolConfigIngestSummary,
   RateLimitedResponse,
@@ -63,6 +65,7 @@ import type {
   SubmitProjectCertificatesBody,
   SubmitProjectDataAtRestBody,
   SubmitProjectDependenciesBody,
+  SubmitProjectEndpointBody,
   SubmitProjectKmsBody,
   SubmitProjectProtocolConfigBody,
   SubmitProjectTlsBody,
@@ -4231,6 +4234,197 @@ export function useGetProjectDataAtRest<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetProjectDataAtRestQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Records what a Windows or Linux host has configured and trusts — its machine certificate stores, its TLS policy (Schannel protocol and cipher-suite settings, or an OpenSSL/GnuTLS configuration), the cryptographic providers it has loaded, and the OS build — and persists it as assets on the `endpoint` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+**No agent ships with this product yet, and that is deliberate.** This route is the contract a host agent reports *against*: a binary running on a customer's domain controller is a packaging and security-review problem far larger than a collector, and it cannot authenticate to anything until credential handling (F4) lands. The format and the ingest exist first, so the agent has a defined thing to send.
+
+**A supported cipher suite is not a used one.** Every observation carries a `strength` — `permitted` (the host would negotiate this if a peer asked; most of a Schannel suite list never is) or `materialised` (a certificate that is in this host's store now) — and both sit well below `POST /projects/{id}/tls`'s observed handshake. **A suite the host disabled is never reported at all**: Windows keeps the suite list and the per-algorithm `Ciphers`/`Hashes` switches in two independent registry locations, so `disabledAlgorithms` suppresses the whole suite, and every suppression is echoed under `suppressedSuites` so it is auditable rather than invisible.
+
+**Host identity is the machine, never the hostname.** `machineId` is the identifier the OS mints at install — Windows' `MachineGuid`, Linux' `/etc/machine-id` — which survives a rename, a reboot and a re-address, and changes on a re-image. Hostnames get reused, which would silently merge a decommissioned server with its replacement. A placeholder identity (a cleared `MachineGuid`, an all-zero machine-id) is refused, and two hosts in one submission reporting the same identity are a clone collision: **both** are refused, because merging them would produce one host whose stores and policy interleave two different machines. Refused hosts are returned by name under `hosts[].skipped` — a host missing from the result would be indistinguishable from one with nothing to report.
+
+**Every section of a host report is optional and absent means "not collected".** An agent that read the TLS policy but not the certificate stores leaves that host's certificates untouched rather than retiring them; a section that is present and empty was read and holds nothing, which correctly marks what used to be there `gone`.
+
+**If no host in the submission can be identified, no collection run is recorded** and `hostsIngested` is 0 — the same "examined nothing, not found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an error. A host that was read and declares nothing reportable is the *other* case and does record a run.
+ * @summary Submit a host agent's endpoint report for the Windows/Linux fleet (EP)
+ */
+export const getSubmitProjectEndpointUrl = (id: number) => {
+  return `/api/projects/${id}/endpoint`;
+};
+
+export const submitProjectEndpoint = async (
+  id: number,
+  submitProjectEndpointBody: SubmitProjectEndpointBody,
+  options?: RequestInit,
+): Promise<EndpointIngestSummary> => {
+  return customFetch<EndpointIngestSummary>(getSubmitProjectEndpointUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(submitProjectEndpointBody),
+  });
+};
+
+export const getSubmitProjectEndpointMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectEndpoint>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectEndpointBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitProjectEndpoint>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectEndpointBody> },
+  TContext
+> => {
+  const mutationKey = ["submitProjectEndpoint"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitProjectEndpoint>>,
+    { id: number; data: BodyType<SubmitProjectEndpointBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return submitProjectEndpoint(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitProjectEndpointMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitProjectEndpoint>>
+>;
+export type SubmitProjectEndpointMutationBody =
+  BodyType<SubmitProjectEndpointBody>;
+export type SubmitProjectEndpointMutationError = ErrorType<void>;
+
+/**
+ * @summary Submit a host agent's endpoint report for the Windows/Linux fleet (EP)
+ */
+export const useSubmitProjectEndpoint = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitProjectEndpoint>>,
+    TError,
+    { id: number; data: BodyType<SubmitProjectEndpointBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitProjectEndpoint>>,
+  TError,
+  { id: number; data: BodyType<SubmitProjectEndpointBody> },
+  TContext
+> => {
+  return useMutation(getSubmitProjectEndpointMutationOptions(options));
+};
+
+/**
+ * Every `endpoint` asset attributed to this project, grouped back into the host it was read from, with that host's OS build, loaded providers and protocol posture.
+
+Not redundant with `GET /inventory/assets?surface=endpoint`, which returns no `locationDetail` — the machine identity, the certificate store an entry sits in, the enabled and disabled protocol lists and the provider inventory all live there, so without this route a host's posture would be write-only.
+
+There is no host row behind this: a host exists only as the assets it produced, so a machine that reported a fully hardened policy and an empty store is recorded as a collection run (`GET /projects/{id}/coverage` shows the surface as examined) but does not appear here. Giving the surface its own host table is a follow-up.
+ * @summary The project's host fleet, reassembled from its endpoint assets (EP)
+ */
+export const getGetProjectEndpointUrl = (id: number) => {
+  return `/api/projects/${id}/endpoint`;
+};
+
+export const getProjectEndpoint = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ProjectEndpointFleet> => {
+  return customFetch<ProjectEndpointFleet>(getGetProjectEndpointUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProjectEndpointQueryKey = (id: number) => {
+  return [`/api/projects/${id}/endpoint`] as const;
+};
+
+export const getGetProjectEndpointQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProjectEndpoint>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectEndpoint>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProjectEndpointQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProjectEndpoint>>
+  > = ({ signal }) => getProjectEndpoint(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProjectEndpoint>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProjectEndpointQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProjectEndpoint>>
+>;
+export type GetProjectEndpointQueryError = ErrorType<void>;
+
+/**
+ * @summary The project's host fleet, reassembled from its endpoint assets (EP)
+ */
+
+export function useGetProjectEndpoint<
+  TData = Awaited<ReturnType<typeof getProjectEndpoint>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProjectEndpoint>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProjectEndpointQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

@@ -276,6 +276,88 @@ export const OtLocationDetailSchema = z.object({
 });
 export type OtLocationDetail = z.infer<typeof OtLocationDetailSchema>;
 
+/**
+ * EP — one crypto fact read off a Windows or Linux host, plus enough of the
+ * host around it that a reader knows whose fact it is.
+ *
+ * Its own kind rather than `config` or `network`, for the reason `kms` is not
+ * `certificate`: none of SP 1800-38B's seven wire-observation elements apply (a
+ * host's certificate store has no IP or port), and `config`'s schema has
+ * nowhere to put a machine identity, an OS build, or the loaded providers —
+ * which are the fields that make an endpoint finding actionable rather than
+ * merely true. `config` describes a file; this describes a machine.
+ *
+ * **The host block is repeated on every observation on purpose.** There is no
+ * `endpoint_hosts` table (see `endpoint-collector.ts`'s header for why that was
+ * left out of this change), so `GET /projects/:id/endpoint` reconstructs the
+ * fleet from the assets. Duplicating `hostname`/`os`/`providers` across a
+ * host's assets is the cost of that; the alternative — a host inventory that
+ * exists only in a response nobody kept — is worse.
+ *
+ * Nothing here is part of the asset identity except `machineId`, `component`
+ * and `observedToken`. `hostname`, `os` and `providers` all legitimately change
+ * on the same machine, which is the definition of context rather than identity.
+ */
+export const EndpointLocationDetailSchema = z.object({
+  /** The OS-install identity (`MachineGuid` / `/etc/machine-id`). Part of the fingerprint — see `endpoint-report.ts`'s `resolveHostIdentity`. */
+  machineId: z.string(),
+  machineIdSource: z.string().optional(),
+  /** Display only. A rename must not orphan the host's assets, so this is deliberately not identity. */
+  hostname: z.string().optional(),
+  os: z
+    .object({
+      family: z.string(),
+      name: z.string().optional(),
+      version: z.string().optional(),
+      build: z.string().optional(),
+    })
+    .optional(),
+  /** The slot on the host this fact was read from — `certificate-store:LocalMachine\\My`, `tls-cipher-suites`. Part of both the location and the fingerprint. */
+  component: z.string(),
+  /** The suite name or certificate thumbprint verbatim, as the host wrote it. Part of the fingerprint. */
+  observedToken: z.string(),
+  /** B6's vocabulary, reused rather than duplicated: `permitted` is a menu, `materialised` is a key that exists on this box. */
+  strength: z.enum(["materialised", "permitted"]),
+  /** Present when the component is a certificate store. */
+  certificate: z
+    .object({
+      store: z.string(),
+      thumbprint: z.string(),
+      /** The store's own string, kept beside the canonical algorithm derived from it so the canonicalisation is auditable. */
+      reportedAlgorithm: z.string(),
+      subject: z.string().optional(),
+      issuer: z.string().optional(),
+      serialNumber: z.string().optional(),
+      notBefore: z.string().optional(),
+      notAfter: z.string().optional(),
+      /** Absent = the agent did not report it. Not the same claim as `false`. */
+      hasPrivateKey: z.boolean().optional(),
+    })
+    .optional(),
+  /**
+   * The host's protocol posture, carried as context because no protocol version
+   * resolves in `algorithms.json` and inventing an entry for one would put the
+   * algorithm vocabulary in two places. `undetermined` is its own list: a
+   * Schannel `Enabled` value that does not exist means the build default
+   * applies, which this product does not claim to know.
+   */
+  tlsPolicy: z
+    .object({
+      provider: z.string(),
+      enabledProtocols: z.array(z.string()),
+      disabledProtocols: z.array(z.string()),
+      undeterminedProtocols: z.array(z.string()),
+    })
+    .optional(),
+  /** Loaded cryptographic providers. Context only — a capability is not a key; see `EndpointProviderReport`. */
+  providers: z
+    .array(z.object({ name: z.string(), kind: z.string().optional(), loaded: z.boolean().optional(), version: z.string().optional() }))
+    .optional(),
+  /** ISO 8601, when the agent read the host. Evidence only. */
+  collectedAt: z.string().optional(),
+});
+export type EndpointLocationDetail = z.infer<typeof EndpointLocationDetailSchema>;
+
 export const LocationDetailSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("source"), source: SourceLocationDetailSchema }),
   z.object({ kind: z.literal("network"), network: NetworkLocationDetailSchema }),
@@ -286,5 +368,6 @@ export const LocationDetailSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("config"), config: ConfigLocationDetailSchema }),
   z.object({ kind: z.literal("kms"), kms: KmsLocationDetailSchema }),
   z.object({ kind: z.literal("data-at-rest"), dataAtRest: DataAtRestLocationDetailSchema }),
+  z.object({ kind: z.literal("endpoint"), endpoint: EndpointLocationDetailSchema }),
 ]);
 export type LocationDetail = z.infer<typeof LocationDetailSchema>;

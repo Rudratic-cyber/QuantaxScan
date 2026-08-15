@@ -54,13 +54,14 @@ describe("collector surface catalogue", () => {
     expect(unrecordable).toEqual([]);
   });
 
-  it("has exactly eight live collectors, the eighth being the manual OT register", () => {
+  it("has exactly nine live collectors, the ninth being the Windows/Linux host fleet", () => {
     // `dependency` became live when B2's ingest path landed, `tls` when B3's
     // did (`POST /projects/:id/tls`), `certificate` when B4's did
     // (`POST /projects/:id/certificates`), `kms` when B5's did
     // (`POST /projects/:id/kms`), `config` when B6's did
     // (`POST /projects/:id/protocol-config`), and `data-at-rest` when B7's did
-    // (`POST /projects/:id/data-at-rest`). A collector with nowhere to write
+    // (`POST /projects/:id/data-at-rest`), and `endpoint` when EP's did
+    // (`POST /projects/:id/endpoint`). A collector with nowhere to write
     // is not a live surface — the whole point of this list is that it is the
     // denominator of an honesty claim, so an entry earns `live` by being able
     // to record a collection run, not by existing in the repo.
@@ -73,6 +74,7 @@ describe("collector surface catalogue", () => {
       "config",
       "data-at-rest",
       "ot",
+      "endpoint",
     ]);
   });
 

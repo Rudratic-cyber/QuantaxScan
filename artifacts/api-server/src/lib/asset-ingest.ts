@@ -27,6 +27,9 @@ import {
   type RecognisedProtocolConfig,
   type KmsKeyDescription,
   type KmsKeyOutcome,
+  collectEndpointObservations,
+  type EndpointHostReport,
+  type EndpointHostResult,
 } from "@workspace/collectors";
 import type { DataClassification } from "@workspace/db/classification";
 import { and, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
@@ -885,4 +888,63 @@ export async function ingestOtObservations(
     observations,
     reobserved: { kind: "prefixes", prefixes: [OT_FLEET_LOCATION_PREFIX] },
   });
+}
+
+export interface EndpointIngestResult extends IngestResult {
+  /** Every host in the submission, in order, including the ones that were refused — see `resolveHostIdentity` for why a skipped host must still be reported. */
+  hosts: EndpointHostResult[];
+}
+
+/**
+ * EP — persist a host endpoint collection (docs/Claude/03-features.md §EP).
+ * `POST /projects/:id/endpoint` is the caller.
+ *
+ * The ninth `IngestSpec` shape through the same shared `ingestObservations()`.
+ *
+ * **The "examined nothing" gate is on *ingestable hosts*, not on
+ * observations**, which puts it alongside B6's (recognised files) rather than
+ * B2/B3/B4's (readable input at all). A fully hardened Windows server whose
+ * machine store is empty and whose suite list contains nothing this product
+ * catalogues produces zero observations and *was examined* — recording a run
+ * for it is the whole point of the D3 meter, and refusing one would tell a CISO
+ * their server fleet had never been looked at. What must not record a run is a
+ * submission where every host was refused: a body of hosts with placeholder or
+ * colliding machine identities examined nothing, however many entries it had.
+ *
+ * **`reobserved` is built from the slots each host's report spoke about**, not
+ * from the observations and not from the hosts. `observationsFromEndpointHost`
+ * is where that is decided, because it is the only place that knows which
+ * sections the agent actually collected — an agent that read the TLS policy but
+ * not the machine stores must leave the host's certificates untouched, and an
+ * agent that read a store and found it empty must retire what used to be in it.
+ * Both are impossible to distinguish from here.
+ */
+export async function ingestEndpointObservations(
+  tx: ScopedTx,
+  params: {
+    repo: string;
+    hosts: EndpointHostReport[];
+    organizationId: number;
+  },
+): Promise<EndpointIngestResult> {
+  const hosts = collectEndpointObservations(params.repo, params.hosts);
+  const ingestable = hosts.filter((host) => host.skipped === undefined);
+  if (ingestable.length === 0) {
+    throw new Error("endpoint ingest was given no host it could identify — a run must not be recorded");
+  }
+
+  const result = await ingestObservations(tx, {
+    organizationId: params.organizationId,
+    repo: params.repo,
+    collector: "endpoint-host-report",
+    collectorVersion: "1.0.0",
+    surface: "endpoint",
+    observations: ingestable.flatMap((host) => host.observations),
+    reobserved: {
+      kind: "locations",
+      locations: [...new Set(ingestable.flatMap((host) => host.reobservedLocations))],
+    },
+  });
+
+  return { ...result, hosts };
 }

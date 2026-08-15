@@ -271,6 +271,12 @@ describe("route manifest — a new route cannot ship without being considered", 
     // foreign key, so the parent is confirmed inside the scope.
     "POST /projects/:id/data-at-rest": "org-scoped",
     "GET /projects/:id/data-at-rest": "org-scoped",
+    // EP — same shape again: a host agent's report becomes assets attributed to
+    // a project only by the `project:<id>:endpoint:` location prefix, never a
+    // foreign key, so the parent is confirmed visible inside the scope. The GET
+    // reads those assets with no where clause of its own.
+    "POST /projects/:id/endpoint": "org-scoped",
+    "GET /projects/:id/endpoint": "org-scoped",
     "POST /scans": "org-scoped",
     "GET /scans/:id": "org-scoped",
     "GET /scans/:id/findings": "org-scoped",
@@ -714,6 +720,41 @@ describe("addressing another organisation's row by id is indistinguishable from 
 
   it("GET /api/projects/:id/data-at-rest → 404 for another organisation's project, not their store inventory", async () => {
     const res = await auth(request.get(`/api/projects/${theirs.projectId}/data-at-rest`));
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /api/projects/:id/endpoint naming another organisation's project writes nothing", async () => {
+    const theirAssetPrefix = `project:${theirs.projectId}:%`;
+    const countTheirEndpointAssets = () =>
+      testScope.withOrg({ organizationId: OTHER_ORG, userId: "" }, (tx) =>
+        executeRows<{ n: number }>(
+          tx,
+          sql`select count(*)::int as n from assets where location like ${theirAssetPrefix} and surface = 'endpoint'`,
+        ),
+      );
+    const before = await countTheirEndpointAssets();
+
+    const res = await auth(
+      request.post(`/api/projects/${theirs.projectId}/endpoint`).send({
+        hosts: [
+          {
+            machineId: "9f5a1e2c-4b6d-4f21-9c11-6a7b8c9d0e1f",
+            hostname: "their-dc-01",
+            tlsPolicy: { provider: "schannel", cipherSuites: [{ name: "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", enabled: true }] },
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const after = await countTheirEndpointAssets();
+    expect(after).toEqual(before);
+  });
+
+  it("GET /api/projects/:id/endpoint → 404 for another organisation's project, not their host fleet", async () => {
+    // A host fleet names every server a customer runs, its OS build and what it
+    // trusts — as bad a thing to leak across a tenant boundary as the CBOM.
+    const res = await auth(request.get(`/api/projects/${theirs.projectId}/endpoint`));
     expect(res.status).toBe(404);
   });
 });

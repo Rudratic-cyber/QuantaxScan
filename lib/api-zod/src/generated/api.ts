@@ -5335,3 +5335,371 @@ export const GetProjectDataAtRestResponse = zod.object({
     .string()
     .describe("Mandatory wherever a scenario year is shown."),
 });
+
+/**
+ * Records what a Windows or Linux host has configured and trusts — its machine certificate stores, its TLS policy (Schannel protocol and cipher-suite settings, or an OpenSSL/GnuTLS configuration), the cryptographic providers it has loaded, and the OS build — and persists it as assets on the `endpoint` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
+
+**No agent ships with this product yet, and that is deliberate.** This route is the contract a host agent reports *against*: a binary running on a customer's domain controller is a packaging and security-review problem far larger than a collector, and it cannot authenticate to anything until credential handling (F4) lands. The format and the ingest exist first, so the agent has a defined thing to send.
+
+**A supported cipher suite is not a used one.** Every observation carries a `strength` — `permitted` (the host would negotiate this if a peer asked; most of a Schannel suite list never is) or `materialised` (a certificate that is in this host's store now) — and both sit well below `POST /projects/{id}/tls`'s observed handshake. **A suite the host disabled is never reported at all**: Windows keeps the suite list and the per-algorithm `Ciphers`/`Hashes` switches in two independent registry locations, so `disabledAlgorithms` suppresses the whole suite, and every suppression is echoed under `suppressedSuites` so it is auditable rather than invisible.
+
+**Host identity is the machine, never the hostname.** `machineId` is the identifier the OS mints at install — Windows' `MachineGuid`, Linux' `/etc/machine-id` — which survives a rename, a reboot and a re-address, and changes on a re-image. Hostnames get reused, which would silently merge a decommissioned server with its replacement. A placeholder identity (a cleared `MachineGuid`, an all-zero machine-id) is refused, and two hosts in one submission reporting the same identity are a clone collision: **both** are refused, because merging them would produce one host whose stores and policy interleave two different machines. Refused hosts are returned by name under `hosts[].skipped` — a host missing from the result would be indistinguishable from one with nothing to report.
+
+**Every section of a host report is optional and absent means "not collected".** An agent that read the TLS policy but not the certificate stores leaves that host's certificates untouched rather than retiring them; a section that is present and empty was read and holds nothing, which correctly marks what used to be there `gone`.
+
+**If no host in the submission can be identified, no collection run is recorded** and `hostsIngested` is 0 — the same "examined nothing, not found nothing" distinction `POST /projects/{id}/dependencies` makes, and it is a 200, not an error. A host that was read and declares nothing reportable is the *other* case and does record a run.
+ * @summary Submit a host agent's endpoint report for the Windows/Linux fleet (EP)
+ */
+export const SubmitProjectEndpointParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const submitProjectEndpointBodyHostsMax = 500;
+
+export const SubmitProjectEndpointBody = zod.object({
+  hosts: zod
+    .array(
+      zod.object({
+        machineId: zod
+          .string()
+          .min(1)
+          .describe(
+            "The identifier the OS mints at install — Windows' `MachineGuid`, Linux' `\/etc\/machine-id`. Survives a rename, a reboot and a re-address; changes on a re-image. There is no hostname fallback, and a placeholder or duplicated value is refused rather than merged — see the route description.",
+          ),
+        machineIdSource: zod
+          .enum(["windows-machine-guid", "linux-machine-id", "other"])
+          .optional(),
+        hostname: zod
+          .string()
+          .optional()
+          .describe(
+            "Display only. Deliberately not identity — hostnames get changed and, worse, reused.",
+          ),
+        os: zod
+          .object({
+            family: zod.enum(["windows", "linux", "other"]),
+            name: zod.string().optional(),
+            version: zod.string().optional(),
+            build: zod.string().optional(),
+          })
+          .optional()
+          .describe(
+            "Carried so a reader knows what the OS defaults \*would\* have been, and for no other purpose. Nothing infers a setting from it: if the report does not state a setting, the setting is undetermined.",
+          ),
+        collectedAt: zod.string().optional(),
+        certificateStores: zod
+          .array(
+            zod.object({
+              store: zod
+                .string()
+                .describe(
+                  "e.g. `LocalMachine\\My`, `LocalMachine\\Root`, `\/etc\/ssl\/certs`. Part of the asset identity — the same certificate in the personal store and in the trust anchors is two different facts about the host.",
+                ),
+              certificates: zod.array(
+                zod
+                  .object({
+                    thumbprint: zod
+                      .string()
+                      .describe(
+                        "The store's stable handle for this certificate (Windows' SHA-1 `Thumbprint`). Part of the asset identity; read as a handle, never as a claim that SHA-1 is in use.",
+                      ),
+                    publicKeyAlgorithm: zod
+                      .string()
+                      .optional()
+                      .describe(
+                        "The store's own string — `RSA`, `ECC`, `1.2.840.113549.1.1.1`, `id-ecPublicKey`, `ED25519`. A string this collector does not carry produces \*\*no observation at all\*\* rather than a guess, which is how a post-quantum certificate stays absent instead of being reported as something classical.",
+                      ),
+                    keySize: zod
+                      .number()
+                      .optional()
+                      .describe(
+                        "Bits, as the store states them. Omit when the store did not: `ECC` names no curve, and a defaulted 256 would be a fabricated measurement (G-05). Only Ed25519\/Ed448, whose identifiers fix a size, get one without this field.",
+                      ),
+                    subject: zod.string().optional(),
+                    issuer: zod.string().optional(),
+                    serialNumber: zod.string().optional(),
+                    notBefore: zod.string().optional(),
+                    notAfter: zod.string().optional(),
+                    hasPrivateKey: zod
+                      .boolean()
+                      .optional()
+                      .describe(
+                        "Omitting it means the agent did not report it, which is not the same claim as `false`. Evidence only.",
+                      ),
+                  })
+                  .describe(
+                    "One certificate in one of the host's machine stores, as the \*store\* renders it — not the DER. A Windows machine store holds hundreds of trusted roots, so shipping every certificate's bytes would send megabytes per host per run; what `Get-ChildItem Cert:\\LocalMachine\\My` already gives you is these fields. The confidence is priced for that: 0.8 here against 0.9 for a certificate `POST \/projects\/{id}\/certificates` actually parsed.",
+                  ),
+              ),
+            }),
+          )
+          .optional()
+          .describe(
+            "Absent = the stores were not read. Present-and-empty = they were read and hold nothing, which correctly retires what used to be there.",
+          ),
+        tlsPolicy: zod
+          .object({
+            provider: zod.enum(["schannel", "openssl", "gnutls", "other"]),
+            protocols: zod
+              .array(
+                zod.object({
+                  name: zod.string(),
+                  role: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "`Server` \/ `Client` where the policy distinguishes them, as Schannel does.",
+                    ),
+                  enabled: zod
+                    .boolean()
+                    .optional()
+                    .describe(
+                      "Tri-state, and omitting it is the common case: a Schannel `Enabled` REG_DWORD frequently does not exist, and the build default then applies — which this product does not claim to know. Such an entry is reported as `undeterminedProtocols`, never as on or off.",
+                    ),
+                }),
+              )
+              .optional()
+              .describe(
+                "No protocol version becomes an asset — `algorithms.json` catalogues algorithms and inventing a `TLS 1.0` entry would put that vocabulary in two places. The posture is carried as host context instead.",
+              ),
+            cipherSuites: zod
+              .array(
+                zod.object({
+                  name: zod
+                    .string()
+                    .describe(
+                      "IANA (`TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384`) or OpenSSL (`ECDHE-RSA-AES256-GCM-SHA384`) spelling; both are read.",
+                    ),
+                  enabled: zod
+                    .boolean()
+                    .describe(
+                      "Required, unlike a protocol's. Schannel's suite order, OpenSSL's `CipherString` and a GnuTLS priority string are all lists of what is \*on\* — membership is enablement, so an agent transcribing one would have nothing to put in an optional field.",
+                    ),
+                }),
+              )
+              .optional()
+              .describe(
+                "Absent = the suite list was not read, which leaves previously recorded suites untouched.",
+              ),
+            disabledAlgorithms: zod
+              .array(zod.string())
+              .optional()
+              .describe(
+                "Algorithms switched off independently of the suite list — Schannel `Ciphers`\/`Hashes`\/`KeyExchangeAlgorithms` subkeys with `Enabled = 0`, spelled exactly as the registry does (`AES 128\/128`, `Triple DES 168`, `SHA`). Any suite that needs one is suppressed entirely. The match is on (algorithm, size): disabling `AES 128\/128` does not silence an AES-256 suite.",
+              ),
+          })
+          .optional(),
+        providers: zod
+          .array(
+            zod.object({
+              name: zod.string(),
+              kind: zod.string().optional(),
+              loaded: zod.boolean().optional(),
+              version: zod.string().optional(),
+            }),
+          )
+          .optional()
+          .describe(
+            "Loaded CNG KSPs, CAPI CSPs, PKCS#11 modules, OpenSSL providers. Recorded and echoed, but \*\*no observation is produced from one\*\*: a loaded provider is a capability, not a key, and turning it into an algorithm asset would put a finding on every Windows machine ever built.",
+          ),
+      }),
+    )
+    .max(submitProjectEndpointBodyHostsMax)
+    .describe(
+      'One entry per host. Every section within a host is optional; absent means \"not collected\" and leaves that slot\'s prior assets alone.',
+    ),
+});
+
+export const SubmitProjectEndpointResponse = zod.object({
+  projectId: zod.number(),
+  hostsSubmitted: zod.number(),
+  hostsIngested: zod
+    .number()
+    .describe(
+      "Hosts with a usable identity and something collected. Zero means no collection run was recorded and the endpoint surface is still un-examined for this project — a host that was read and declares nothing reportable still counts here, because it was examined.",
+    ),
+  collectionRunId: zod
+    .number()
+    .nullable()
+    .describe("Null when no run was recorded (`hostsIngested` is 0)."),
+  assetsCreated: zod.number(),
+  assetsUpdated: zod.number(),
+  observationsCreated: zod.number(),
+  assetsMarkedGone: zod
+    .number()
+    .describe(
+      "Facts previously read from a slot this submission re-read and no longer present in it — a certificate removed from a store, a suite pruned from the registry. Scoped to exactly the (host, section) slots this submission spoke about, so a host or a section it said nothing about is untouched.",
+    ),
+  hosts: zod.array(
+    zod
+      .object({
+        machineId: zod.string(),
+        hostname: zod.string().nullable(),
+        skipped: zod
+          .union([
+            zod.literal("placeholder-machine-id"),
+            zod.literal("duplicate-machine-id"),
+            zod.literal("nothing-collected"),
+            zod.literal(null),
+          ])
+          .nullable()
+          .describe(
+            "Why this host was not ingested. `placeholder-machine-id` — a cleared `MachineGuid` or an all-zero machine-id, which is the absence of an identity wearing the shape of one. `duplicate-machine-id` — two hosts in this submission reported the same identity, so both were refused rather than merged into one machine's asset set. `nothing-collected` — the host reported no section at all. Null when the host was ingested.",
+          ),
+        observationsCreated: zod.number(),
+        certificatesRead: zod
+          .number()
+          .describe(
+            "Certificates seen in this host's stores, including the ones whose key algorithm produced no observation.",
+          ),
+        cipherSuiteDeclarations: zod
+          .number()
+          .describe(
+            "Algorithms this host's enabled, un-suppressed cipher suites state. One suite normally states three.",
+          ),
+        suppressedSuites: zod
+          .array(
+            zod.object({
+              suite: zod.string(),
+              disabledBy: zod.string(),
+            }),
+          )
+          .describe(
+            "Suites the policy enables but a `disabledAlgorithms` entry makes unnegotiable, with the entry responsible. Reported rather than merely applied — a suppression nobody can see is indistinguishable from a collector that missed the suite.",
+          ),
+        undecodedSuites: zod
+          .array(zod.string())
+          .describe(
+            "Enabled suites that named no algorithm this product catalogues — ChaCha20, Camellia, a post-quantum suite. A known silence, reported so it is not mistaken for a clean result.",
+          ),
+        unrecognisedDisabledAlgorithms: zod
+          .array(zod.string())
+          .describe(
+            "`disabledAlgorithms` entries this collector does not recognise and therefore could not act on. The one input whose misreading risks a false positive rather than an omission, so it is surfaced instead of swallowed.",
+          ),
+        enabledProtocols: zod.array(zod.string()),
+        disabledProtocols: zod.array(zod.string()),
+        undeterminedProtocols: zod
+          .array(zod.string())
+          .describe(
+            "Protocols the policy names without stating an `enabled` value — the OS default applies and this product does not claim to know it.",
+          ),
+      })
+      .describe(
+        "What one submitted host produced — including the hosts that produced nothing, which the caller has to be able to see by name.",
+      ),
+  ),
+  evidenceCaveat: zod
+    .string()
+    .describe(
+      "Stated on every response: this reads a report a host agent submitted, no agent ships with the product yet, an enabled suite is not a negotiated one, a suite the host disabled is not reported, no protocol version or loaded provider becomes an asset, and an unrecognised token contributes nothing rather than a guess.",
+    ),
+});
+
+/**
+ * Every `endpoint` asset attributed to this project, grouped back into the host it was read from, with that host's OS build, loaded providers and protocol posture.
+
+Not redundant with `GET /inventory/assets?surface=endpoint`, which returns no `locationDetail` — the machine identity, the certificate store an entry sits in, the enabled and disabled protocol lists and the provider inventory all live there, so without this route a host's posture would be write-only.
+
+There is no host row behind this: a host exists only as the assets it produced, so a machine that reported a fully hardened policy and an empty store is recorded as a collection run (`GET /projects/{id}/coverage` shows the surface as examined) but does not appear here. Giving the surface its own host table is a follow-up.
+ * @summary The project's host fleet, reassembled from its endpoint assets (EP)
+ */
+export const GetProjectEndpointParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetProjectEndpointResponse = zod.object({
+  projectId: zod.number(),
+  generatedAt: zod.coerce.date(),
+  hosts: zod.array(
+    zod.object({
+      machineId: zod.string(),
+      machineIdSource: zod.string().nullable(),
+      hostname: zod
+        .string()
+        .nullable()
+        .describe(
+          "As of the most recent report. Not identity — a rename does not orphan the host's assets.",
+        ),
+      os: zod
+        .object({
+          family: zod.string(),
+          name: zod.string().nullish(),
+          version: zod.string().nullish(),
+          build: zod.string().nullish(),
+        })
+        .nullable(),
+      tlsPolicy: zod
+        .object({
+          provider: zod.string(),
+          enabledProtocols: zod.array(zod.string()),
+          disabledProtocols: zod.array(zod.string()),
+          undeterminedProtocols: zod.array(zod.string()),
+        })
+        .nullable(),
+      providers: zod
+        .array(
+          zod.object({
+            name: zod.string(),
+            kind: zod.string().nullish(),
+            loaded: zod.boolean().nullish(),
+            version: zod.string().nullish(),
+          }),
+        )
+        .describe(
+          "Loaded cryptographic providers. Context — no provider produced any of the components below.",
+        ),
+      lastSeen: zod.coerce.date(),
+      components: zod.array(
+        zod
+          .object({
+            component: zod
+              .string()
+              .describe(
+                "The slot on the host — `certificate-store:LocalMachine\\My`, `tls-cipher-suites`.",
+              ),
+            observedToken: zod
+              .string()
+              .describe(
+                "The suite name or the store thumbprint verbatim, as the host wrote it. Part of the asset identity.",
+              ),
+            algorithm: zod.string(),
+            keySize: zod
+              .number()
+              .nullable()
+              .describe(
+                "Null means the evidence stated none — never a defaulted value (G-05).",
+              ),
+            strength: zod.enum(["permitted", "materialised"]),
+            status: zod
+              .string()
+              .describe(
+                "`active`, `gone`, `remediated` or `waived`. A `gone` entry is a fact that was read and is no longer present.",
+              ),
+            firstSeen: zod.coerce.date(),
+            lastSeen: zod.coerce.date(),
+            certificate: zod
+              .object({
+                store: zod.string(),
+                thumbprint: zod.string(),
+                reportedAlgorithm: zod
+                  .string()
+                  .describe(
+                    "The store's own string, kept beside the canonical algorithm derived from it so the canonicalisation is auditable.",
+                  ),
+                subject: zod.string().nullish(),
+                issuer: zod.string().nullish(),
+                serialNumber: zod.string().nullish(),
+                notBefore: zod.string().nullish(),
+                notAfter: zod.string().nullish(),
+                hasPrivateKey: zod.boolean().nullish(),
+              })
+              .nullable()
+              .describe("Present when the component is a certificate store."),
+          })
+          .describe("One crypto fact read off a host, as it is stored."),
+      ),
+    }),
+  ),
+  evidenceCaveat: zod.string(),
+});
