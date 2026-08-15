@@ -1,4 +1,5 @@
-import type { Membership } from "./identity";
+import type { Membership, DivisionGrant } from "./identity";
+import type { OrgRole } from "@workspace/db/roles";
 import type { OAuthTransaction } from "./providers";
 
 /**
@@ -15,6 +16,18 @@ export type Principal =
       organizationId: number;
       /** Empty string: a machine credential has no person behind it. */
       userId: "";
+      /**
+       * From the positional QUANTAXSCAN_API_KEY_ROLES binding, defaulting to
+       * `admin`. Without a role here RBAC would be bypassable by the one
+       * credential every deployment already holds — 15-rbac-design.md §4.5.
+       */
+      role: OrgRole;
+      /**
+       * Always empty: an API key is not scoped to a division, it acts at its
+       * role across the whole organisation. Empty means *unrestricted*, which
+       * is the same encoding the GUC uses — see `divisionIds` below.
+       */
+      divisionIds: readonly number[];
     }
   | {
       kind: "session";
@@ -25,9 +38,28 @@ export type Principal =
        * routes refuse a principal in this state.
        */
       organizationId: number | null;
+      /**
+       * The organisation-level role, re-read every request. It is a **floor**:
+       * a division grant can raise the effective role on that division's
+       * projects and never lower it (15-rbac-design.md §2).
+       */
       role: string | null;
       /** Re-read from `organization_members` on every request, never cached. */
       memberships: Membership[];
+      /**
+       * Divisions this principal may see, and **empty means unrestricted**.
+       *
+       * The encoding matters. An org `admin` or `owner` sees every division —
+       * that is what makes them an administrator — and carries an empty list.
+       * A `member` or `viewer` carries the divisions they hold a grant on, and
+       * is restricted to those plus organisation-wide rows. Encoding
+       * "unrestricted" as empty rather than a magic value keeps the policy
+       * expression simple and fails the right way: a caller with *some*
+       * divisions is confined to them.
+       */
+      divisionIds: readonly number[];
+      /** Grants held, for the management surface and for explaining a refusal. */
+      divisionGrants: DivisionGrant[];
     }
   | { kind: "anonymous" };
 

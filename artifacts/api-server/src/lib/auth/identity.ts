@@ -32,6 +32,12 @@ export interface Membership {
   role: string;
 }
 
+/** One division grant. `role` is a `DIVISION_ROLE_VALUES` member — never `owner`. */
+export interface DivisionGrant {
+  divisionId: number;
+  role: string;
+}
+
 export interface UserProfile {
   id: string;
   email: string | null;
@@ -211,6 +217,33 @@ export async function membershipsFor(userId: string): Promise<Membership[]> {
     ),
   );
   return rows.map((row) => ({ organizationId: row.organization_id, role: row.role }));
+}
+
+/**
+ * A user's division grants inside one organisation — RBAC, stage 2.
+ * docs/Claude/15-rbac-design.md §2.
+ *
+ * Read in `withUserScope`, which is why `division_grants` carries the same
+ * `OR user_id = app.current_user_id` branch `organization_members` does: at
+ * this point in the request no organisation has been selected yet, so an
+ * org-only policy would return nothing and every user would silently resolve
+ * to "no divisions". That failure is closed rather than open — which is the
+ * right direction, and still wrong.
+ *
+ * Filtered to `organizationId` in SQL rather than in the caller, because a user
+ * may hold grants in several tenants and only this one's are relevant to the
+ * request being resolved.
+ */
+export async function divisionGrantsFor(userId: string, organizationId: number): Promise<DivisionGrant[]> {
+  const rows = await withUserScope(userId, ({ tx }) =>
+    executeRows<{ division_id: number; role: string }>(
+      tx,
+      sql`select division_id, role from division_grants
+           where user_id = ${userId} and organization_id = ${organizationId}
+           order by division_id asc`,
+    ),
+  );
+  return rows.map((row) => ({ divisionId: row.division_id, role: row.role }));
 }
 
 /**

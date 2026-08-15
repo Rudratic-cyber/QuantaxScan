@@ -19,6 +19,7 @@ const ENV_KEYS = [
   "QUANTAXSCAN_API_KEYS",
   "QUANTAXSCAN_API_KEY_ORG_IDS",
   "QUANTAXSCAN_API_KEY_ORG_ID",
+  "QUANTAXSCAN_API_KEY_ROLES",
 ] as const;
 
 let saved: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>;
@@ -140,5 +141,57 @@ describe("principal.ts — API key to organisation binding (F1)", () => {
 
     const { orgContextFor } = await importPrincipal();
     expect(() => orgContextFor(requestWithKey("something-nobody-configured-00000000"))).toThrow();
+  });
+});
+
+describe("principal.ts — API key to role binding (RBAC stage 2)", () => {
+  it("defaults every key to admin, so no existing deployment breaks on upgrade", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "key-one-abcdefghijklmnopqrstuvwx,key-two-abcdefghijklmnopqrstuvwx";
+    delete process.env.QUANTAXSCAN_API_KEY_ROLES;
+
+    const { API_KEY_ROLES } = await importPrincipal();
+    // Defaulting to viewer would be safer in the abstract and would silently
+    // break every CI script that writes through this credential. That is the
+    // worse failure — 15-rbac-design.md §4.5.
+    expect(API_KEY_ROLES).toEqual(["admin", "admin"]);
+  });
+
+  it("binds roles positionally, so a read-only integration key is expressible", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "key-one-abcdefghijklmnopqrstuvwx,key-two-abcdefghijklmnopqrstuvwx";
+    process.env.QUANTAXSCAN_API_KEY_ROLES = "admin,viewer";
+
+    const { API_KEY_ROLES } = await importPrincipal();
+    expect(API_KEY_ROLES).toEqual(["admin", "viewer"]);
+  });
+
+  it("refuses to start on a length mismatch rather than defaulting the rest", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "key-one-abcdefghijklmnopqrstuvwx,key-two-abcdefghijklmnopqrstuvwx";
+    process.env.QUANTAXSCAN_API_KEY_ROLES = "admin";
+
+    // "Which key may write" is not something to discover at runtime.
+    await expect(importPrincipal()).rejects.toThrow(/QUANTAXSCAN_API_KEY_ROLES/);
+  });
+
+  it("refuses a role it does not recognise", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "solo-key-abcdefghijklmnopqrstuvwx";
+    process.env.QUANTAXSCAN_API_KEY_ROLES = "superuser";
+
+    await expect(importPrincipal()).rejects.toThrow(/unknown role/i);
+  });
+
+  it("puts the role on the principal, where a gate can read it", async () => {
+    process.env.QUANTAXSCAN_API_KEYS = "key-one-abcdefghijklmnopqrstuvwx,key-two-abcdefghijklmnopqrstuvwx";
+    process.env.QUANTAXSCAN_API_KEY_ORG_IDS = "10,20";
+    process.env.QUANTAXSCAN_API_KEY_ROLES = "admin,viewer";
+
+    const principal = await importPrincipal();
+    const req = await principalFor(principal, "key-two-abcdefghijklmnopqrstuvwx");
+
+    expect(req.principal).toMatchObject({ kind: "apiKey", organizationId: 20, role: "viewer" });
+    // Empty is unrestricted: a machine credential acts at its role across the
+    // whole organisation rather than being confined to a division.
+    expect(req.principal?.kind).toBe("apiKey");
+    if (req.principal?.kind !== "apiKey") throw new Error("expected an apiKey principal");
+    expect(req.principal.divisionIds).toEqual([]);
   });
 });

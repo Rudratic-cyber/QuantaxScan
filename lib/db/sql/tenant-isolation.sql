@@ -238,11 +238,22 @@ CREATE POLICY divisions_org_isolation ON divisions AS PERMISSIVE FOR ALL TO quan
   USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
+-- `division_grants` needs the same asymmetry `organization_members` has, and
+-- for the same reason: `resolvePrincipal` reads a user's grants *before* any
+-- organisation is selected, inside `withUserScope`, where `app.current_org_id`
+-- is not set. Without the second branch that read returns zero rows and every
+-- signed-in user resolves to "no divisions" — which fails closed, so it would
+-- have been a silent loss of access rather than an error.
+--
+-- The WITH CHECK deliberately does NOT carry the user branch: reading your own
+-- grants is a bootstrap, writing one is an administrative act, and a user who
+-- could insert their own row could grant themselves any division in the tenant.
 ALTER TABLE division_grants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE division_grants FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS division_grants_org_isolation ON division_grants;
 CREATE POLICY division_grants_org_isolation ON division_grants AS PERMISSIVE FOR ALL TO quantaxscan_app
-  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int
+              OR user_id      = nullif(current_setting('app.current_user_id', true), ''))
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 -- --- Three tables that need a different shape --------------------------------

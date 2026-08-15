@@ -1,5 +1,9 @@
 import type { Request, RequestHandler } from "express";
 import type { OrgContext } from "@workspace/db/org-scope";
+// `@workspace/db/roles` is the pure vocabulary subpath — const tuples and two
+// comparisons, no drizzle and no pool — so importing it here does not undo the
+// database-free property this module depends on.
+import { ORG_ROLE_VALUES, roleAtLeast, strongerRole, type OrgRole } from "@workspace/db/roles";
 import { CONFIGURED_KEY_COUNT, matchedKeyIndex, presentedKey } from "./auth";
 // Imported lazily at the one call site below, not here. `./auth/identity`
 // reaches `@workspace/db`, which builds its pool at import time and throws
@@ -50,6 +54,19 @@ const KEYS_ENV_VAR = "QUANTAXSCAN_API_KEYS";
 const ORG_IDS_ENV_VAR = "QUANTAXSCAN_API_KEY_ORG_IDS";
 const LEGACY_ORG_ID_ENV_VAR = "QUANTAXSCAN_API_KEY_ORG_ID";
 const DEFAULT_ORGANIZATION_ID = 1;
+const ROLES_ENV_VAR = "QUANTAXSCAN_API_KEY_ROLES";
+/**
+ * The role an API key acts at when the operator has not said. `admin` rather
+ * than `viewer`, and the choice is deliberate: every deployment and CI script
+ * that exists today writes through this credential, and defaulting to `viewer`
+ * would break all of them silently on upgrade. Safer-in-the-abstract loses to
+ * "does not break every existing caller" — docs/Claude/15-rbac-design.md §4.5.
+ *
+ * What this is *not* is a licence to skip the setting: a machine credential
+ * that only reads should be configured `viewer`, and that is now expressible
+ * for the first time.
+ */
+const DEFAULT_API_KEY_ROLE: OrgRole = "admin";
 
 function parsePositiveInt(raw: string, envVar: string): number {
   const parsed = Number(raw);
@@ -104,6 +121,47 @@ function buildOrgIdsByKeyIndex(): readonly number[] {
   return new Array(CONFIGURED_KEY_COUNT).fill(parseLegacyOrgId(process.env[LEGACY_ORG_ID_ENV_VAR]));
 }
 
+/**
+ * One role per configured API key, positionally, exactly like the organisation
+ * binding above and validated the same way — a length mismatch is a startup
+ * error rather than a silent default, because "which key may write" is not
+ * something to discover at runtime.
+ */
+function buildRolesByKeyIndex(): readonly OrgRole[] {
+  const raw = process.env[ROLES_ENV_VAR];
+  if (raw === undefined || raw.trim() === "") {
+    return new Array(CONFIGURED_KEY_COUNT).fill(DEFAULT_API_KEY_ROLE);
+  }
+
+  const roles = raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  if (roles.length !== CONFIGURED_KEY_COUNT) {
+    throw new Error(
+      `${ROLES_ENV_VAR} lists ${roles.length} role(s) but ${KEYS_ENV_VAR} configures ` +
+        `${CONFIGURED_KEY_COUNT} key(s). They must be the same length and in the same order — one ` +
+        `role per key, positionally. Refusing to start rather than let an unlisted key default to ` +
+        `${DEFAULT_API_KEY_ROLE} silently.`,
+    );
+  }
+
+  for (const role of roles) {
+    if (!(ORG_ROLE_VALUES as readonly string[]).includes(role)) {
+      throw new Error(
+        `${ROLES_ENV_VAR} names an unknown role "${role}". Valid roles are ` +
+          `${ORG_ROLE_VALUES.join(", ")}. Refusing to start.`,
+      );
+    }
+  }
+
+  return roles as OrgRole[];
+}
+
+/** Role for the key at each index. Read-only after startup. */
+export const API_KEY_ROLES: readonly OrgRole[] = buildRolesByKeyIndex();
+
 /** Organisation id for the key at each index. Read-only after startup. */
 export const API_KEY_ORG_IDS: readonly number[] = buildOrgIdsByKeyIndex();
 
@@ -135,7 +193,16 @@ function apiKeyPrincipal(req: Request): Principal | null {
   if (!presented) return null;
   const index = matchedKeyIndex(presented);
   if (index === null) return null;
-  return { kind: "apiKey", organizationId: API_KEY_ORG_IDS[index], userId: "" };
+  return {
+    kind: "apiKey",
+    organizationId: API_KEY_ORG_IDS[index],
+    userId: "",
+    role: API_KEY_ROLES[index],
+    // Empty is *unrestricted*, not "no divisions". A machine credential acts
+    // at its role across the whole organisation; scoping one to a division is
+    // not a shape anybody has asked for and would need its own binding.
+    divisionIds: [],
+  };
 }
 
 /**
@@ -187,9 +254,18 @@ export const resolvePrincipal: RequestHandler = (req, res, next) => {
   }
 
   import("./auth/identity")
-    .then(async ({ membershipsFor, pickActiveOrganization }) => {
+    .then(async ({ membershipsFor, pickActiveOrganization, divisionGrantsFor }) => {
       const memberships = await membershipsFor(userId);
       const active = pickActiveOrganization(memberships, session.organizationId);
+
+      // RBAC, stage 2. Grants are read only once an organisation is settled:
+      // a user may hold grants in several tenants and only this one's apply.
+      // An org admin or owner is unrestricted, so the lookup is skipped
+      // entirely for them — an administrator who could not see a division
+      // could not administer it (15-rbac-design.md §2).
+      const unrestricted = active !== null && roleAtLeast(active.role, "admin");
+      const divisionGrants =
+        active === null || unrestricted ? [] : await divisionGrantsFor(userId, active.organizationId);
       // Write the resolved organisation back so the switcher's choice survives
       // the next request. It is only ever *read* through the membership list
       // above, so a stale value cannot grant anything.
@@ -200,6 +276,11 @@ export const resolvePrincipal: RequestHandler = (req, res, next) => {
         organizationId: active?.organizationId ?? null,
         role: active?.role ?? null,
         memberships,
+        // Empty means unrestricted — an admin, an owner, or a user with no
+        // organisation at all (who reaches nothing anyway, because org-scoped
+        // routes refuse a null organisation before this is ever consulted).
+        divisionIds: divisionGrants.map((grant) => grant.divisionId),
+        divisionGrants,
       };
       next();
     })
