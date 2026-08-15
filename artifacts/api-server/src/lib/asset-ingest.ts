@@ -29,6 +29,7 @@ import {
   type KmsKeyOutcome,
 } from "@workspace/collectors";
 import type { DataClassification } from "@workspace/db/classification";
+import type { RetentionMode } from "@workspace/db/schema";
 import { and, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
 
 /**
@@ -120,6 +121,48 @@ interface IngestSpec {
    * do not supply it run through provably unchanged SQL.
    */
   classificationByLocation?: ReadonlyMap<string, AssetClassificationInput>;
+  /**
+   * F4 — whether this run may persist source-bearing evidence.
+   *
+   * `observations.evidence` is an unconstrained `jsonb` blob that collectors
+   * fill in and several routes return verbatim, and the source collector puts
+   * the matched line in it as `codeSnippet`. So a submission processed under
+   * `ephemeral` retention that did not thread this flag through would leave the
+   * customer's source sitting in `evidence` while the product told them nothing
+   * was retained — a false statement of exactly the class this codebase treats
+   * as worse than a missing feature.
+   *
+   * Defaults to `retained`, which is every caller that does not pass it and
+   * every collector other than source: a TLS handshake, a certificate and a
+   * lockfile line are not the customer's proprietary source, and the mode is
+   * only offered on the two routes that accept source bodies.
+   */
+  evidenceRetention?: RetentionMode;
+}
+
+/**
+ * Evidence keys that are verbatim fragments of a customer's submitted source.
+ *
+ * A denylist rather than an allowlist, and that is a real trade-off: a future
+ * collector adding a second source-bearing key without adding it here would
+ * leak. The alternative — allowlisting the safe keys — breaks every collector
+ * whenever one of them adds a field, and would have silently dropped evidence
+ * rather than silently kept it, which is the failure that goes unnoticed. The
+ * mitigation is the boundary test, which greps the whole database for the
+ * submitted source rather than asserting on this list.
+ */
+const SOURCE_BEARING_EVIDENCE_KEYS = ["codeSnippet"] as const;
+
+function evidenceFor(
+  raw: RawObservation,
+  extras: { algorithm: string; keySize: number | null; location: string },
+  retention: RetentionMode,
+): Record<string, unknown> {
+  const evidence: Record<string, unknown> = { ...raw.evidence, ...extras };
+  if (retention === "ephemeral") {
+    for (const key of SOURCE_BEARING_EVIDENCE_KEYS) delete evidence[key];
+  }
+  return evidence;
 }
 
 /** The two A3 columns a caller may supply per asset. Null/absent means "not supplied" and stays null — never a default. */
@@ -198,7 +241,11 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
         collectorVersion: spec.collectorVersion,
         confidence: raw.confidence,
         discoveryModality: raw.discoveryModality,
-        evidence: { ...raw.evidence, algorithm: raw.algorithm, keySize, location: raw.location },
+        evidence: evidenceFor(
+          raw,
+          { algorithm: raw.algorithm, keySize, location: raw.location },
+          spec.evidenceRetention ?? "retained",
+        ),
       },
     });
   }
@@ -344,6 +391,8 @@ export async function ingestSourceObservations(
     files: Array<{ path: string; content: string; language: string }>;
     /** Must match the organisation the caller's `withOrg` scope was opened at; RLS rejects anything else. */
     organizationId: number;
+    /** F4 — `ephemeral` drops `evidence.codeSnippet`, so no fragment of the submission is written. Defaults to `retained`. */
+    retentionMode?: RetentionMode;
   },
 ): Promise<IngestResult> {
   const target = { kind: "source" as const, repo: params.repo, files: params.files };
@@ -354,6 +403,7 @@ export async function ingestSourceObservations(
     collectorVersion: "1.0.0",
     surface: "source",
     observations: collectSourceObservations(target),
+    evidenceRetention: params.retentionMode ?? "retained",
     // Scoped per scanned FILE, not per `repo`: a call that only submits a
     // subset of a repo's files (e.g. POST /scans submitting one file) has no
     // information about files it wasn't given, so those files' assets must be

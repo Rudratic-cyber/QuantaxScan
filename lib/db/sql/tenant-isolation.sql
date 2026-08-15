@@ -74,6 +74,7 @@ GRANT USAGE ON SCHEMA public TO quantaxscan_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   projects, scans, findings, assets, observations, collection_runs,
   activity, shared_reports, community_posts, ot_fleets, vendor_assessments,
+  credentials,
   organizations, organization_members, user_identities, users, sessions
 TO quantaxscan_app;
 
@@ -168,6 +169,20 @@ ALTER TABLE vendor_assessments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vendor_assessments FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS vendor_assessments_org_isolation ON vendor_assessments;
 CREATE POLICY vendor_assessments_org_isolation ON vendor_assessments AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+-- F4 — the credential store. Standard shape, and the single most consequential
+-- row in this file: a leak here is not a customer's inventory, it is a
+-- customer's read-only key into their own cloud. The material is also
+-- encrypted at rest under an environment-held key (lib/db/src/credentials.ts
+-- §3), which is a defence against a database-only compromise and is NOT a
+-- substitute for this policy — a tenant reaching another tenant's row would be
+-- served a decryption by the running process, which holds the key.
+ALTER TABLE credentials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credentials FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS credentials_org_isolation ON credentials;
+CREATE POLICY credentials_org_isolation ON credentials AS PERMISSIVE FOR ALL TO quantaxscan_app
   USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 

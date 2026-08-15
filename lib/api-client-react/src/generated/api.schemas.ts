@@ -71,6 +71,16 @@ export const ScanStatus = {
   failed: "failed",
 } as const;
 
+/**
+ * F4 — which source-handling tier a submission was processed under, recorded per submission so a customer can be told which one their data went through (docs/Claude/08-security.md §"Source code handling"). `retained`: the body is persisted on `scans.code` and matched lines are persisted as evidence. `ephemeral`: the submission is scanned in memory and no source is written anywhere — no `code`, no finding code snippets, no `evidence.codeSnippet`. The findings themselves are still persisted; none of them is source.
+ */
+export type RetentionMode = (typeof RetentionMode)[keyof typeof RetentionMode];
+
+export const RetentionMode = {
+  retained: "retained",
+  ephemeral: "ephemeral",
+} as const;
+
 export type FindingSeverity =
   (typeof FindingSeverity)[keyof typeof FindingSeverity];
 
@@ -390,8 +400,11 @@ export interface Scan {
   totalEffortHours: number;
   estimatedCost: number;
   executiveSummary?: string | null;
-  /** The submitted source, as persisted on the row. Null on rows written before it was captured. */
+  /** The submitted source, as persisted on the row. Null on rows written before it was captured, and **always** null when `retentionMode` is `ephemeral`. */
   code?: string | null;
+  retentionMode: RetentionMode;
+  /** When the submitted source was discarded. Set at insert time for an `ephemeral` scan, because there is no later moment — the body is never written. Null on a `retained` scan, where the source is still there. */
+  sourceDiscardedAt?: string | null;
   language?: string | null;
   findings?: Finding[];
   pqc: PqcExposure;
@@ -569,6 +582,8 @@ export interface CreateScanBody {
   mode: CreateScanBodyMode;
   code: string;
   language: string;
+  /** Omitted means `retained`, which is what every submission did before F4. Send `ephemeral` to have the source scanned in memory and never written — the findings come back in the response exactly as they would otherwise, with their code snippets replaced by a fixed marker in the persisted rows. */
+  retentionMode?: RetentionMode;
 }
 
 export type CommunityPostType =
@@ -928,6 +943,8 @@ export interface MultiScanBody {
   language: string;
   /** @minItems 1 */
   files: MultiScanFile[];
+  /** Omitted means `retained`. Applies to the whole submission: every scan row this request creates carries the same mode, because a customer's answer to "what did you do with my source" cannot differ per file within one upload. */
+  retentionMode?: RetentionMode;
 }
 
 export type MultiScanFindingSeverity =
@@ -974,6 +991,7 @@ export interface MultiScanResult {
   totalLines: number;
   findingsCount: number;
   filesScanned: number;
+  retentionMode: RetentionMode;
   pqc: PqcExposure;
   hygiene: HygieneSummary;
   mosca: MoscaAssessment;
@@ -2297,6 +2315,69 @@ export interface ProjectDataAtRest {
   scenarios: ProjectDataAtRestScenariosItem[];
   /** Mandatory wherever a scenario year is shown. */
   framing: string;
+}
+
+/**
+ * What a stored credential is *for* (F4). Each value names a wave-two consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.
+ */
+export type CredentialKind =
+  (typeof CredentialKind)[keyof typeof CredentialKind];
+
+export const CredentialKind = {
+  cloud_kms_readonly: "cloud_kms_readonly",
+  database_readonly: "database_readonly",
+  secrets_manager_token: "secrets_manager_token",
+  idp_client_secret: "idp_client_secret",
+} as const;
+
+/**
+ * Derived on read, never stored: `revoked` when the material has been destroyed, `expired` when the customer told us the third-party credential expires and that instant has passed, `active` otherwise. A credential with no `expiresAt` reads `active` because the customer did not say when it expires — never because it does not.
+ */
+export type CredentialStatus =
+  (typeof CredentialStatus)[keyof typeof CredentialStatus];
+
+export const CredentialStatus = {
+  active: "active",
+  expired: "expired",
+  revoked: "revoked",
+} as const;
+
+/**
+ * A stored third-party credential, as a client may see it (F4). **There is no secret field and no route that can produce one.** The secret exists only as AES-256-GCM ciphertext in the database and as a disposable handle inside a collector's callback; see `lib/db/src/credentials.ts` for what that encryption does and does not protect against. There is also deliberately no hash, length, prefix or last-four of the plaintext anywhere in the schema, because each would be an oracle an attacker with a database dump could test guesses against.
+ */
+export interface Credential {
+  id: number;
+  organizationId: number;
+  /** The customer's label, unique within the organisation. */
+  name: string;
+  kind: CredentialKind;
+  /** Free text — which account, tenant or endpoint it belongs to. Never the secret. */
+  description: string | null;
+  /** Which `QUANTAXSCAN_CREDENTIAL_KEYS` entry encrypted this row. Not secret; an operator reads it to see which rows still need re-encrypting after a rotation. Null once revoked, along with the material itself. */
+  keyId: string | null;
+  status: CredentialStatus;
+  /** When the *third-party* credential expires, as the customer told us. Null means they did not say — never "does not expire". */
+  expiresAt: string | null;
+  revokedAt: string | null;
+  lastRedeemedAt: string | null;
+  redemptionCount: number;
+  createdAt: string;
+  /** Null for the shared API key, which has no person behind it. Populated once per-user sign-in (F1) lands; a default here would manufacture an attribution that does not exist. */
+  createdByUserId: string | null;
+}
+
+export interface CreateCredentialBody {
+  /** @minLength 1 */
+  name: string;
+  kind: CredentialKind;
+  /**
+   * The credential itself. Sent once, encrypted immediately, and never returned by any route. It must be the narrowest read-only credential that does the job (docs/Claude/08-security.md §"Least privilege for collectors") — this product never needs write access to a customer's key store.
+   * @minLength 1
+   */
+  secret: string;
+  description?: string | null;
+  /** When the third-party credential expires, if the customer knows. Omit rather than guessing: a wrong expiry makes a working credential unusable, and a fabricated one makes an expired credential look live. */
+  expiresAt?: string | null;
 }
 
 export type RateLimitedResponse = {

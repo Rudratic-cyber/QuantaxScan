@@ -1346,6 +1346,15 @@ export const CreateScanBody = zod.object({
   mode: zod.enum(["scan-only", "interactive", "proactive", "community"]),
   code: zod.string(),
   language: zod.string(),
+  retentionMode: zod
+    .enum(["retained", "ephemeral"])
+    .describe(
+      'F4 — which source-handling tier a submission was processed under, recorded per submission so a customer can be told which one their data went through (docs\/Claude\/08-security.md §\"Source code handling\"). `retained`: the body is persisted on `scans.code` and matched lines are persisted as evidence. `ephemeral`: the submission is scanned in memory and no source is written anywhere — no `code`, no finding code snippets, no `evidence.codeSnippet`. The findings themselves are still persisted; none of them is source.',
+    )
+    .optional()
+    .describe(
+      "Omitted means `retained`, which is what every submission did before F4. Send `ephemeral` to have the source scanned in memory and never written — the findings come back in the response exactly as they would otherwise, with their code snippets replaced by a fixed marker in the persisted rows.",
+    ),
 });
 
 /**
@@ -1374,7 +1383,18 @@ export const GetScanResponse = zod
       .string()
       .nullish()
       .describe(
-        "The submitted source, as persisted on the row. Null on rows written before it was captured.",
+        "The submitted source, as persisted on the row. Null on rows written before it was captured, and \*\*always\*\* null when `retentionMode` is `ephemeral`.",
+      ),
+    retentionMode: zod
+      .enum(["retained", "ephemeral"])
+      .describe(
+        'F4 — which source-handling tier a submission was processed under, recorded per submission so a customer can be told which one their data went through (docs\/Claude\/08-security.md §\"Source code handling\"). `retained`: the body is persisted on `scans.code` and matched lines are persisted as evidence. `ephemeral`: the submission is scanned in memory and no source is written anywhere — no `code`, no finding code snippets, no `evidence.codeSnippet`. The findings themselves are still persisted; none of them is source.',
+      ),
+    sourceDiscardedAt: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "When the submitted source was discarded. Set at insert time for an `ephemeral` scan, because there is no later moment — the body is never written. Null on a `retained` scan, where the source is still there.",
       ),
     language: zod.string().nullish(),
     findings: zod
@@ -1927,6 +1947,15 @@ export const CreateMultiScanBody = zod.object({
       }),
     )
     .min(1),
+  retentionMode: zod
+    .enum(["retained", "ephemeral"])
+    .describe(
+      'F4 — which source-handling tier a submission was processed under, recorded per submission so a customer can be told which one their data went through (docs\/Claude\/08-security.md §\"Source code handling\"). `retained`: the body is persisted on `scans.code` and matched lines are persisted as evidence. `ephemeral`: the submission is scanned in memory and no source is written anywhere — no `code`, no finding code snippets, no `evidence.codeSnippet`. The findings themselves are still persisted; none of them is source.',
+    )
+    .optional()
+    .describe(
+      'Omitted means `retained`. Applies to the whole submission: every scan row this request creates carries the same mode, because a customer\'s answer to \"what did you do with my source\" cannot differ per file within one upload.',
+    ),
 });
 
 /**
@@ -4833,6 +4862,161 @@ export const UpdateVendorAssessmentResponse = zod
 export const DeleteVendorAssessmentParams = zod.object({
   id: zod.coerce.number(),
 });
+
+/**
+ * Metadata only. The stored secret is never returned by this route, and there is no route that returns it — the only way out of the store is `redeemCredential()` inside the server process, which hands a collector an opaque handle rather than a string. `keyId` names the `QUANTAXSCAN_CREDENTIAL_KEYS` entry that encrypted the row, so an operator can tell which rows still need re-encrypting after a rotation; it is not itself secret.
+ * @summary List this organisation's stored credentials (F4)
+ */
+export const ListCredentialsResponseItem = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    name: zod
+      .string()
+      .describe("The customer's label, unique within the organisation."),
+    kind: zod
+      .enum([
+        "cloud_kms_readonly",
+        "database_readonly",
+        "secrets_manager_token",
+        "idp_client_secret",
+      ])
+      .describe(
+        "What a stored credential is \*for\* (F4). Each value names a wave-two consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.",
+      ),
+    description: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — which account, tenant or endpoint it belongs to. Never the secret.",
+      ),
+    keyId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Which `QUANTAXSCAN_CREDENTIAL_KEYS` entry encrypted this row. Not secret; an operator reads it to see which rows still need re-encrypting after a rotation. Null once revoked, along with the material itself.",
+      ),
+    status: zod
+      .enum(["active", "expired", "revoked"])
+      .describe(
+        "Derived on read, never stored: `revoked` when the material has been destroyed, `expired` when the customer told us the third-party credential expires and that instant has passed, `active` otherwise. A credential with no `expiresAt` reads `active` because the customer did not say when it expires — never because it does not.",
+      ),
+    expiresAt: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        'When the \*third-party\* credential expires, as the customer told us. Null means they did not say — never \"does not expire\".',
+      ),
+    revokedAt: zod.coerce.date().nullable(),
+    lastRedeemedAt: zod.coerce.date().nullable(),
+    redemptionCount: zod.number(),
+    createdAt: zod.coerce.date(),
+    createdByUserId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Null for the shared API key, which has no person behind it. Populated once per-user sign-in (F1) lands; a default here would manufacture an attribution that does not exist.",
+      ),
+  })
+  .describe(
+    "A stored third-party credential, as a client may see it (F4). \*\*There is no secret field and no route that can produce one.\*\* The secret exists only as AES-256-GCM ciphertext in the database and as a disposable handle inside a collector's callback; see `lib\/db\/src\/credentials.ts` for what that encryption does and does not protect against. There is also deliberately no hash, length, prefix or last-four of the plaintext anywhere in the schema, because each would be an oracle an attacker with a database dump could test guesses against.",
+  );
+export const ListCredentialsResponse = zod.array(ListCredentialsResponseItem);
+
+/**
+ * The secret is encrypted with AES-256-GCM under a key read from the environment and never stored in the database, then discarded from memory. The response carries the same metadata as the list route and no secret. A deployment that has configured no credential key answers 503 rather than storing anything.
+ * @summary Register a third-party credential (F4)
+ */
+
+export const CreateCredentialBody = zod.object({
+  name: zod.string().min(1),
+  kind: zod
+    .enum([
+      "cloud_kms_readonly",
+      "database_readonly",
+      "secrets_manager_token",
+      "idp_client_secret",
+    ])
+    .describe(
+      "What a stored credential is \*for\* (F4). Each value names a wave-two consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.",
+    ),
+  secret: zod
+    .string()
+    .min(1)
+    .describe(
+      'The credential itself. Sent once, encrypted immediately, and never returned by any route. It must be the narrowest read-only credential that does the job (docs\/Claude\/08-security.md §\"Least privilege for collectors\") — this product never needs write access to a customer\'s key store.',
+    ),
+  description: zod.string().nullish(),
+  expiresAt: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "When the third-party credential expires, if the customer knows. Omit rather than guessing: a wrong expiry makes a working credential unusable, and a fabricated one makes an expired credential look live.",
+    ),
+});
+
+/**
+ * Sets `revokedAt` and nulls the ciphertext, IV, tag and key id in the same statement, so revocation is a destruction of the material rather than a flag a later query could forget to check. The row survives, because "this organisation held this credential between these dates" is what an incident review needs. Idempotent: re-revoking returns the credential with its original `revokedAt`. There is no un-revoke — register a new one.
+ * @summary Revoke a credential and destroy its stored material (F4)
+ */
+export const RevokeCredentialParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RevokeCredentialResponse = zod
+  .object({
+    id: zod.number(),
+    organizationId: zod.number(),
+    name: zod
+      .string()
+      .describe("The customer's label, unique within the organisation."),
+    kind: zod
+      .enum([
+        "cloud_kms_readonly",
+        "database_readonly",
+        "secrets_manager_token",
+        "idp_client_secret",
+      ])
+      .describe(
+        "What a stored credential is \*for\* (F4). Each value names a wave-two consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.",
+      ),
+    description: zod
+      .string()
+      .nullable()
+      .describe(
+        "Free text — which account, tenant or endpoint it belongs to. Never the secret.",
+      ),
+    keyId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Which `QUANTAXSCAN_CREDENTIAL_KEYS` entry encrypted this row. Not secret; an operator reads it to see which rows still need re-encrypting after a rotation. Null once revoked, along with the material itself.",
+      ),
+    status: zod
+      .enum(["active", "expired", "revoked"])
+      .describe(
+        "Derived on read, never stored: `revoked` when the material has been destroyed, `expired` when the customer told us the third-party credential expires and that instant has passed, `active` otherwise. A credential with no `expiresAt` reads `active` because the customer did not say when it expires — never because it does not.",
+      ),
+    expiresAt: zod.coerce
+      .date()
+      .nullable()
+      .describe(
+        'When the \*third-party\* credential expires, as the customer told us. Null means they did not say — never \"does not expire\".',
+      ),
+    revokedAt: zod.coerce.date().nullable(),
+    lastRedeemedAt: zod.coerce.date().nullable(),
+    redemptionCount: zod.number(),
+    createdAt: zod.coerce.date(),
+    createdByUserId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Null for the shared API key, which has no person behind it. Populated once per-user sign-in (F1) lands; a default here would manufacture an attribution that does not exist.",
+      ),
+  })
+  .describe(
+    "A stored third-party credential, as a client may see it (F4). \*\*There is no secret field and no route that can produce one.\*\* The secret exists only as AES-256-GCM ciphertext in the database and as a disposable handle inside a collector's callback; see `lib\/db\/src\/credentials.ts` for what that encryption does and does not protect against. There is also deliberately no hash, length, prefix or last-four of the plaintext anywhere in the schema, because each would be an oracle an attacker with a database dump could test guesses against.",
+  );
 
 /**
  * Classifies the keys a managed key store holds — HashiCorp Vault, AWS KMS, Azure Key Vault, GCP KMS — and persists what it finds as assets on the `kms` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.

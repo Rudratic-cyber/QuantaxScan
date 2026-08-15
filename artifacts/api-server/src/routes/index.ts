@@ -11,6 +11,7 @@ import reportsRouter from "./reports";
 import inventoryRouter from "./inventory";
 import otFleetsRouter from "./ot-fleets";
 import vendorAssessmentsRouter from "./vendor-assessments";
+import credentialsRouter from "./credentials";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(reportsRouter);
 router.use(inventoryRouter);
 router.use(otFleetsRouter);
 router.use(vendorAssessmentsRouter);
+router.use(credentialsRouter);
 
 export default router;

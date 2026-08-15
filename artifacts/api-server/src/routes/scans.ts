@@ -1,6 +1,15 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { withOrg, scansTable, findingsTable, projectsTable, activityTable, projectRepoId } from "@workspace/db";
+import {
+  withOrg,
+  scansTable,
+  findingsTable,
+  projectsTable,
+  activityTable,
+  projectRepoId,
+  EPHEMERAL_SNIPPET_MARKER,
+  type RetentionMode,
+} from "@workspace/db";
 import type { ScopedTx } from "@workspace/db/org-scope";
 import { CreateScanBody, GetScanParams, GetScanFindingsParams } from "@workspace/api-zod";
 import { computeRiskProfile } from "@workspace/risk";
@@ -31,14 +40,40 @@ const router: IRouter = Router();
 async function dualWriteObservations(
   tx: ScopedTx,
   organizationId: number,
-  params: { repo: string; files: Array<{ path: string; content: string; language: string }> },
+  params: {
+    repo: string;
+    files: Array<{ path: string; content: string; language: string }>;
+    retentionMode: RetentionMode;
+  },
   logContext: Record<string, unknown>,
 ): Promise<void> {
   try {
     await tx.transaction((sp) => ingestSourceObservations(sp as ScopedTx, { ...params, organizationId }));
   } catch (err) {
-    logger.error({ err, ...logContext }, "asset/observation dual-write failed");
+    // F4: `err` here can carry the failing statement's parameters, and under
+    // `retained` those include the matched source line. The dual-write is
+    // additive and its failures are diagnosed from the route and ids, so log
+    // the class rather than the object.
+    logger.error(
+      { errName: err instanceof Error ? err.name : typeof err, ...logContext },
+      "asset/observation dual-write failed",
+    );
   }
+}
+
+/**
+ * F4 — what actually gets persisted for a finding, given the retention mode.
+ *
+ * The whole of the ephemeral guarantee for `findings` is this one function, and
+ * it is deliberately a single choke point: both scan routes build their finding
+ * rows through it, so adding a third writer that forgets the mode is a
+ * type-level omission rather than a silent leak. `findings.code_snippet` is
+ * `NOT NULL`, so an ephemeral finding carries a fixed self-describing marker —
+ * see `EPHEMERAL_SNIPPET_MARKER` for why that is preferred to an empty string
+ * or to dropping the constraint.
+ */
+function persistedSnippet(snippet: string, retentionMode: RetentionMode): string {
+  return retentionMode === "ephemeral" ? EPHEMERAL_SNIPPET_MARKER : snippet;
 }
 
 router.post("/scans", async (req, res): Promise<void> => {
@@ -49,6 +84,11 @@ router.post("/scans", async (req, res): Promise<void> => {
   }
 
   const { projectId, mode, code, language } = parsed.data;
+  // F4: absent means `retained` — what every submission did before this
+  // existed. The default is explicit here rather than left to the column
+  // default, because the column default describes rows written before the
+  // feature and this describes a caller who did not ask for ephemeral.
+  const retentionMode: RetentionMode = parsed.data.retentionMode ?? "retained";
   const ctx = orgContextFor(req);
 
   const fileName = `code.${language === "python" ? "py" : language === "javascript" ? "js" : language === "typescript" ? "ts" : language === "go" ? "go" : language === "java" ? "java" : "txt"}`;
@@ -91,7 +131,12 @@ router.post("/scans", async (req, res): Promise<void> => {
         totalEffortHours: result.totalEffortHours,
         estimatedCost: result.estimatedCost,
         executiveSummary: summary,
-        code,
+        // The single most important line in F4's other half: under `ephemeral`
+        // the submitted body is never written. It was scanned in memory above
+        // and is discarded when this handler returns.
+        code: retentionMode === "ephemeral" ? null : code,
+        retentionMode,
+        sourceDiscardedAt: retentionMode === "ephemeral" ? new Date() : null,
         language,
         completedAt: new Date(),
       })
@@ -107,7 +152,7 @@ router.post("/scans", async (req, res): Promise<void> => {
           lineNumber: f.lineNumber,
           severity: f.severity,
           algorithm: f.algorithm,
-          codeSnippet: f.codeSnippet,
+          codeSnippet: persistedSnippet(f.codeSnippet, retentionMode),
           nistReplacement: f.nistReplacement,
           nistStandard: f.nistStandard,
           effortHours: f.effortHours,
@@ -119,7 +164,7 @@ router.post("/scans", async (req, res): Promise<void> => {
     await dualWriteObservations(
       tx,
       ctx.organizationId,
-      { repo: projectRepoId(projectId), files: [{ path: fileName, content: code, language }] },
+      { repo: projectRepoId(projectId), files: [{ path: fileName, content: code, language }], retentionMode },
       { projectId, scanId: inserted.id, route: "POST /scans" },
     );
 
@@ -242,16 +287,28 @@ router.get("/scans/:id/findings", async (req, res): Promise<void> => {
 
 // ── Multi-file scan: scan all files in one project ────────────────────────────
 router.post("/scans/multi", async (req, res): Promise<void> => {
-  const { projectName, language, files } = req.body as {
+  const { projectName, language, files, retentionMode: requestedRetention } = req.body as {
     projectName: string;
     language: string;
     files: { content: string; filename: string }[];
+    retentionMode?: string;
   };
 
   if (!projectName || !Array.isArray(files) || files.length === 0) {
     res.status(400).json({ error: "projectName and files[] required" });
     return;
   }
+
+  // This handler reads `req.body` directly rather than through a generated zod
+  // schema (it predates them), so the retention mode is validated here by hand.
+  // Anything other than the one opt-in value is `retained` — an unrecognised
+  // string must never be read as "do not retain", because that would let a typo
+  // silently promise a customer something the code then does not do.
+  if (requestedRetention !== undefined && requestedRetention !== "retained" && requestedRetention !== "ephemeral") {
+    res.status(400).json({ error: "retentionMode must be 'retained' or 'ephemeral'" });
+    return;
+  }
+  const retentionMode: RetentionMode = requestedRetention === "ephemeral" ? "ephemeral" : "retained";
 
   const ctx = orgContextFor(req);
 
@@ -301,14 +358,18 @@ router.post("/scans/multi", async (req, res): Promise<void> => {
           riskScore: result.riskScore, totalLines: fileLines,
           criticalCount: result.criticalCount, alertCount: result.alertCount, cleanCount: result.cleanCount,
           totalEffortHours: result.totalEffortHours, estimatedCost: result.estimatedCost,
-          code: file.content, language, completedAt: new Date(),
+          code: retentionMode === "ephemeral" ? null : file.content,
+          retentionMode,
+          sourceDiscardedAt: retentionMode === "ephemeral" ? new Date() : null,
+          language, completedAt: new Date(),
         })
         .returning();
 
       const fileFindingRows = findings.map(f => ({
         organizationId: ctx.organizationId,
         scanId: scan.id, fileName: f.fileName, lineNumber: f.lineNumber,
-        severity: f.severity, algorithm: f.algorithm, codeSnippet: f.codeSnippet,
+        severity: f.severity, algorithm: f.algorithm,
+        codeSnippet: persistedSnippet(f.codeSnippet, retentionMode),
         nistReplacement: f.nistReplacement, nistStandard: f.nistStandard,
         effortHours: f.effortHours, explanation: f.explanation,
       }));
@@ -340,7 +401,11 @@ router.post("/scans/multi", async (req, res): Promise<void> => {
     await dualWriteObservations(
       tx,
       ctx.organizationId,
-      { repo: projectRepoId(project.id), files: files.map((f) => ({ path: f.filename, content: f.content, language })) },
+      {
+        repo: projectRepoId(project.id),
+        files: files.map((f) => ({ path: f.filename, content: f.content, language })),
+        retentionMode,
+      },
       { projectId: project.id, route: "POST /scans/multi" },
     );
 
@@ -368,6 +433,10 @@ router.post("/scans/multi", async (req, res): Promise<void> => {
       criticalCount: totalCritical,
       alertCount: totalAlert, cleanCount: totalSafe,
       totalLines, findingsCount: allFindingRows.length, filesScanned: files.length,
+      // Echoed back so the caller can state which regime their upload went
+      // through without a second read — the answer to "what did you do with my
+      // source" should be in the response that acknowledged it.
+      retentionMode,
       pqc: projectProfile.pqc, hygiene: projectProfile.hygiene, mosca: projectProfile.mosca,
     };
   });
