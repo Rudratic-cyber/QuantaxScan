@@ -589,14 +589,35 @@ Detail: [06-cisa-dashboard.md](06-cisa-dashboard.md)
 
 ## E. Reports
 
-| # | Report | Status | Pri |
-|---|---|---|---|
-| E1 | Board / executive pack | `planned` | **P1** |
-| E2 | Regulator / auditor inventory submission | `planned` | **P1** |
-| E3 | CBOM (machine-readable) | `next` | **P0** |
-| E4 | Technical remediation backlog | `planned` | **P2** |
-| E5 | Vendor assessment pack | `planned` | **P3** |
-| E6 | Scheduled report delivery | `planned` | **P2** |
+| # | Report | Status | Pri | Notes |
+|---|---|---|---|---|
+| E1 | Board / executive pack | `built` | **P1** | `GET /api/report-packs/board`, `.html`, `.pdf`. One page answering doc 07's four questions plus the coverage gap, then three appendices. **Page one names no algorithm**, enforced in `board-pack.test.ts` against every algorithm the input contains — and the complement is asserted too, so dropping the names everywhere fails as well |
+| E2 | Regulator / auditor inventory submission | `built` | **P1** | `GET /api/report-packs/regulator`, `.html`, `.pdf`. Every asset with its collector, version, timestamp, confidence and modality; every claim with its citation and retrieval date; the mapping `dataVersion` pinned in the header. Only `verified` obligations appear as claims — `needs-check` ones ride in a separate `indicativeObligations` list |
+| E3 | CBOM (machine-readable) | `built` | **P0** | A5, `GET /api/inventory/cbom`. Import (A6) is still open |
+| E4 | Technical remediation backlog | `planned` | **P2** | Blocked on D5 — it groups by agility cluster |
+| E5 | Vendor assessment pack | `planned` | **P3** | |
+| E6 | Scheduled report delivery | `planned` | **P2** | |
+
+**The one number these packs will not print.** doc 07's E1 asks for "this covers 31% of estimated
+estate" on page one. This product cannot produce that figure — `coverage.ts`'s rule 4 is that the
+denominator is surfaces, not assets, and how much cryptography sits in an unexamined surface is
+unknowable from anything we hold. So `estateFraction` is a field, always `null`, carrying
+`estateFractionReason`; the gap is still on page one, stated as surfaces out of the collector
+catalogue. A field that is null with a reason is what stops the next person filling the hole in.
+
+**Two of E2's seven requirements are answered by an honest refusal**, and both are fields rather
+than omissions. `exceptions.registerAvailable` is always `false`: C8's waiver register is a
+separate lane, so no exception carries an owner, justification, expiry or approver, and the listed
+assets are simply those an operator marked `waived`. An empty `waivers: []` would read as "there
+are no exceptions". And `integrity.signed` is always `false` — the SHA-256 digest detects
+alteration against a value the recipient already holds and proves nothing about origin. When C8
+lands, `exceptions` is the block to fill in.
+
+**PDF is the M2 exit criterion and it is met**: `tests/e2e/20-report-packs.spec.ts` asserts 200 and
+`%PDF-` on `/api/report-packs/board.pdf` against the real stack, deliberately *not* tolerating the
+503 fallback. Rendering is one HTML document printed by headless Chromium via `playwright-core`,
+behind a dynamic import — `Dockerfile.api` installs no browser yet, so a container deployment gets
+503 naming the `.html` route until it does.
 
 Detail: [07-reports.md](07-reports.md)
 
