@@ -23,6 +23,8 @@ export const collectionRunsTable = pgTable(
     organizationId: integer("organization_id")
       .notNull()
       .references(() => organizationsTable.id, { onDelete: "cascade" }),
+    /** RBAC — denormalised from the target project, when the run has one. NULL for an estate-wide run. See §4.3. */
+    divisionId: integer("division_id"),
     collector: text("collector").notNull(),
     collectorVersion: text("collector_version").notNull(),
     surface: text("surface").notNull(),

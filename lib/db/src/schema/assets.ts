@@ -26,6 +26,16 @@ export const assetsTable = pgTable(
     organizationId: integer("organization_id")
       .notNull()
       .references(() => organizationsTable.id, { onDelete: "cascade" }),
+    /**
+     * RBAC — denormalised from the project named by the `location` prefix.
+     * `assets` has no `project_id` at all: the association is a text prefix
+     * (`project:7:...`), and parsing that inside a policy that runs on every
+     * row of every query is both slow and fragile. See §4.3 for the rejected
+     * alternatives. NULL means the asset belongs to no division — true for a
+     * TLS endpoint, a submitted certificate or a KMS key inventory, which are
+     * organisation-wide by nature.
+     */
+    divisionId: integer("division_id"),
     fingerprint: text("fingerprint").notNull(), // deterministic identity — see @workspace/collectors fingerprint.ts
     surface: text("surface").notNull(),
     algorithm: text("algorithm").notNull(),

@@ -1,6 +1,6 @@
 {
-  "id": "8194ef45-88df-4d2e-878b-97430ee72b12",
-  "prevId": "4fdcf1c7-76f5-44e5-a6c8-1db93e8e7d29",
+  "id": "95e22967-8c85-4698-a720-0059702f4c2d",
+  "prevId": "8194ef45-88df-4d2e-878b-97430ee72b12",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -94,7 +94,7 @@
       "checkConstraints": {
         "organization_members_role_check": {
           "name": "organization_members_role_check",
-          "value": "\"organization_members\".\"role\" in ('owner', 'member')"
+          "value": "\"organization_members\".\"role\" in ('viewer', 'member', 'admin', 'owner')"
         }
       },
       "isRLSEnabled": false
@@ -307,6 +307,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "division_id": {
+          "name": "division_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "name": {
           "name": "name",
           "type": "text",
@@ -415,6 +421,19 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "projects_division_id_divisions_id_fk": {
+          "name": "projects_division_id_divisions_id_fk",
+          "tableFrom": "projects",
+          "tableTo": "divisions",
+          "columnsFrom": [
+            "division_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -447,6 +466,12 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "division_id": {
+          "name": "division_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "project_id": {
           "name": "project_id",
@@ -632,6 +657,12 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "division_id": {
+          "name": "division_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "scan_id": {
           "name": "scan_id",
@@ -1195,6 +1226,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "division_id": {
+          "name": "division_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "collector": {
           "name": "collector",
           "type": "text",
@@ -1293,6 +1330,12 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "division_id": {
+          "name": "division_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "fingerprint": {
           "name": "fingerprint",
@@ -1539,6 +1582,12 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "division_id": {
+          "name": "division_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "asset_id": {
           "name": "asset_id",
@@ -2143,6 +2192,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "division_id": {
+          "name": "division_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "project_id": {
           "name": "project_id",
           "type": "integer",
@@ -2320,6 +2375,12 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "division_id": {
+          "name": "division_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "project_id": {
           "name": "project_id",
@@ -2749,6 +2810,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "division_id": {
+          "name": "division_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "project_id": {
           "name": "project_id",
           "type": "integer",
@@ -2893,6 +2960,242 @@
           "value": "\"collection_schedules\".\"interval_minutes\" is null or \"collection_schedules\".\"interval_minutes\" >= 15"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.division_grants": {
+      "name": "division_grants",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "division_id": {
+          "name": "division_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'viewer'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "division_grants_user_idx": {
+          "name": "division_grants_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "division_grants_org_idx": {
+          "name": "division_grants_org_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "division_grants_organization_id_organizations_id_fk": {
+          "name": "division_grants_organization_id_organizations_id_fk",
+          "tableFrom": "division_grants",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "division_grants_division_id_divisions_id_fk": {
+          "name": "division_grants_division_id_divisions_id_fk",
+          "tableFrom": "division_grants",
+          "tableTo": "divisions",
+          "columnsFrom": [
+            "division_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "division_grants_user_id_users_id_fk": {
+          "name": "division_grants_user_id_users_id_fk",
+          "tableFrom": "division_grants",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "division_grants_division_id_user_id_pk": {
+          "name": "division_grants_division_id_user_id_pk",
+          "columns": [
+            "division_id",
+            "user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "division_grants_role_check": {
+          "name": "division_grants_role_check",
+          "value": "\"division_grants\".\"role\" in ('viewer', 'member', 'admin')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.divisions": {
+      "name": "divisions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "divisions_org_slug_idx": {
+          "name": "divisions_org_slug_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "divisions_org_idx": {
+          "name": "divisions_org_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "divisions_organization_id_organizations_id_fk": {
+          "name": "divisions_organization_id_organizations_id_fk",
+          "tableFrom": "divisions",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

@@ -76,6 +76,8 @@ export const collectionSchedulesTable = pgTable(
     organizationId: integer("organization_id")
       .notNull()
       .references(() => organizationsTable.id, { onDelete: "cascade" }),
+    /** RBAC — denormalised from the project. See §4.3. */
+    divisionId: integer("division_id"),
     /**
      * The project whose estate this schedule re-collects. A real foreign key,
      * unlike the `project:<id>:` location-prefix association `assets` uses —

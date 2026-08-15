@@ -1,6 +1,6 @@
 {
   "id": "4fdcf1c7-76f5-44e5-a6c8-1db93e8e7d29",
-  "prevId": "8331e522-326e-4b08-99ef-b93d6eabebca",
+  "prevId": "bdd95d54-19e6-4740-98c1-375c31e1089a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -528,6 +528,19 @@
           "primaryKey": false,
           "notNull": false
         },
+        "retention_mode": {
+          "name": "retention_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'retained'"
+        },
+        "source_discarded_at": {
+          "name": "source_discarded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -590,7 +603,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "scans_retention_mode_check": {
+          "name": "scans_retention_mode_check",
+          "value": "\"scans\".\"retention_mode\" in ('retained', 'ephemeral')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.findings": {
@@ -1925,6 +1943,629 @@
         "vendor_assessments_contract_pqc_clause_check": {
           "name": "vendor_assessments_contract_pqc_clause_check",
           "value": "\"vendor_assessments\".\"contract_pqc_clause\" in ('present', 'absent', 'in_negotiation')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.credentials": {
+      "name": "credentials",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ciphertext": {
+          "name": "ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "iv": {
+          "name": "iv",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auth_tag": {
+          "name": "auth_tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_redeemed_at": {
+          "name": "last_redeemed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "redemption_count": {
+          "name": "redemption_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "credentials_org_idx": {
+          "name": "credentials_org_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "credentials_org_name_idx": {
+          "name": "credentials_org_name_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "credentials_organization_id_organizations_id_fk": {
+          "name": "credentials_organization_id_organizations_id_fk",
+          "tableFrom": "credentials",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "credentials_created_by_user_id_users_id_fk": {
+          "name": "credentials_created_by_user_id_users_id_fk",
+          "tableFrom": "credentials",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "credentials_kind_check": {
+          "name": "credentials_kind_check",
+          "value": "\"credentials\".\"kind\" in ('cloud_kms_readonly', 'database_readonly', 'secrets_manager_token', 'idp_client_secret')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.discovered_targets": {
+      "name": "discovered_targets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hostname": {
+          "name": "hostname",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_domain": {
+          "name": "source_domain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "discovery_method": {
+          "name": "discovery_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dns_resolution": {
+          "name": "dns_resolution",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_addresses": {
+          "name": "resolved_addresses",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dns_checked_at": {
+          "name": "dns_checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_discovered_at": {
+          "name": "first_discovered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_discovered_at": {
+          "name": "last_discovered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "discovered_targets_org_project_hostname_method_idx": {
+          "name": "discovered_targets_org_project_hostname_method_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "hostname",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "discovery_method",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "discovered_targets_org_project_idx": {
+          "name": "discovered_targets_org_project_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "discovered_targets_organization_id_organizations_id_fk": {
+          "name": "discovered_targets_organization_id_organizations_id_fk",
+          "tableFrom": "discovered_targets",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discovered_targets_project_id_projects_id_fk": {
+          "name": "discovered_targets_project_id_projects_id_fk",
+          "tableFrom": "discovered_targets",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "discovered_targets_method_check": {
+          "name": "discovered_targets_method_check",
+          "value": "\"discovered_targets\".\"discovery_method\" in ('certificate_transparency')"
+        },
+        "discovered_targets_dns_resolution_check": {
+          "name": "discovered_targets_dns_resolution_check",
+          "value": "\"discovered_targets\".\"dns_resolution\" in ('resolved', 'not-resolved', 'undetermined')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.network_flows": {
+      "name": "network_flows",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "flow_key": {
+          "name": "flow_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_identity": {
+          "name": "source_identity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_address": {
+          "name": "source_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_hostname": {
+          "name": "source_hostname",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_workload": {
+          "name": "source_workload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "destination_identity": {
+          "name": "destination_identity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "destination_address": {
+          "name": "destination_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "destination_hostname": {
+          "name": "destination_hostname",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "destination_workload": {
+          "name": "destination_workload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "destination_port": {
+          "name": "destination_port",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transport": {
+          "name": "transport",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "application_protocol": {
+          "name": "application_protocol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "crypto_state": {
+          "name": "crypto_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reported_cipher_suite": {
+          "name": "reported_cipher_suite",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reported_tls_version": {
+          "name": "reported_tls_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "crypto_reported_at": {
+          "name": "crypto_reported_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "record_format": {
+          "name": "record_format",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_count": {
+          "name": "record_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_seen": {
+          "name": "first_seen",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_seen": {
+          "name": "last_seen",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "network_flows_org_flow_key_idx": {
+          "name": "network_flows_org_flow_key_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "flow_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "network_flows_org_project_idx": {
+          "name": "network_flows_org_project_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "network_flows_org_destination_idx": {
+          "name": "network_flows_org_destination_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "destination_identity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "destination_port",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "network_flows_organization_id_organizations_id_fk": {
+          "name": "network_flows_organization_id_organizations_id_fk",
+          "tableFrom": "network_flows",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "network_flows_project_id_projects_id_fk": {
+          "name": "network_flows_project_id_projects_id_fk",
+          "tableFrom": "network_flows",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "network_flows_transport_check": {
+          "name": "network_flows_transport_check",
+          "value": "\"network_flows\".\"transport\" in ('tcp', 'udp', 'other')"
+        },
+        "network_flows_crypto_state_check": {
+          "name": "network_flows_crypto_state_check",
+          "value": "\"network_flows\".\"crypto_state\" in ('observed', 'undetermined')"
+        },
+        "network_flows_record_format_check": {
+          "name": "network_flows_record_format_check",
+          "value": "\"network_flows\".\"record_format\" in ('vpc-flow-log', 'load-balancer-access-log', 'service-mesh-telemetry', 'firewall-session-log', 'other')"
+        },
+        "network_flows_destination_port_check": {
+          "name": "network_flows_destination_port_check",
+          "value": "\"network_flows\".\"destination_port\" is null or \"network_flows\".\"destination_port\" >= 1"
+        },
+        "network_flows_record_count_check": {
+          "name": "network_flows_record_count_check",
+          "value": "\"network_flows\".\"record_count\" is null or \"network_flows\".\"record_count\" >= 1"
         }
       },
       "isRLSEnabled": false

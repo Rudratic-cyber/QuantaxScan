@@ -63,6 +63,8 @@ export const discoveredTargetsTable = pgTable(
     organizationId: integer("organization_id")
       .notNull()
       .references(() => organizationsTable.id, { onDelete: "cascade" }),
+    /** RBAC — denormalised from the project. See §4.3. */
+    divisionId: integer("division_id"),
     /**
      * Real foreign key, unlike `assets` (which associates to a project only by
      * its `project:<id>:` location prefix). Nothing here is fingerprinted or

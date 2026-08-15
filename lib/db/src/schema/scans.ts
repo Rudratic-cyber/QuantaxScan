@@ -58,6 +58,8 @@ export const scansTable = pgTable("scans", {
   organizationId: integer("organization_id")
     .notNull()
     .references(() => organizationsTable.id, { onDelete: "cascade" }),
+    /** RBAC — denormalised from the project, so a policy can scope without a join. See §4.3. */
+    divisionId: integer("division_id"),
   // Real FK added during the A1/A2 migration — see
   // docs/Claude/04-architecture.md §"Also: add foreign keys".
   projectId: integer("project_id")

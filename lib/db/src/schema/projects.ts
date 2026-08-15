@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { oneOf, nullableAtLeast } from "./sql-helpers";
 import { DATA_CLASSIFICATION_VALUES, type DataClassification } from "../classification";
 import { organizationsTable } from "./organizations";
+import { divisionsTable } from "./divisions";
 
 export const projectsTable = pgTable(
   "projects",
@@ -13,6 +14,20 @@ export const projectsTable = pgTable(
     organizationId: integer("organization_id")
       .notNull()
       .references(() => organizationsTable.id, { onDelete: "cascade" }),
+    /**
+     * RBAC — the division this project belongs to, or NULL for organisation-wide.
+     * docs/Claude/15-rbac-design.md §2. Nullable with no default on purpose:
+     * every project that predates divisions stays visible to the whole tenant,
+     * so this ships without a flag day.
+     *
+     * This is the **authoritative** copy — the `division_id` on `assets`,
+     * `findings` and the rest is denormalised from it (§4.3), which is why
+     * only this one carries a foreign key. `ON DELETE SET NULL`, because
+     * deleting a division must not delete the projects inside it: they become
+     * organisation-wide, which is the state they were in before divisions
+     * existed and the only safe reading of "the team was dissolved".
+     */
+    divisionId: integer("division_id").references(() => divisionsTable.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     description: text("description"),
     language: text("language").notNull(),

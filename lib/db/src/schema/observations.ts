@@ -37,6 +37,8 @@ export const observationsTable = pgTable(
     organizationId: integer("organization_id")
       .notNull()
       .references(() => organizationsTable.id, { onDelete: "cascade" }),
+    /** RBAC — denormalised from the asset. See §4.3. */
+    divisionId: integer("division_id"),
     assetId: integer("asset_id")
       .notNull()
       .references(() => assetsTable.id, { onDelete: "cascade" }),

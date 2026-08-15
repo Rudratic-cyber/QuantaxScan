@@ -75,7 +75,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   projects, scans, findings, assets, observations, collection_runs,
   activity, shared_reports, community_posts, ot_fleets, vendor_assessments,
   credentials, discovered_targets, network_flows,
-  collection_schedules, collection_schedule_runs,
+  collection_schedules, collection_schedule_runs, divisions, division_grants,
   organizations, organization_members, user_identities, users, sessions
 TO quantaxscan_app;
 
@@ -224,6 +224,24 @@ ALTER TABLE collection_schedule_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE collection_schedule_runs FORCE  ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS collection_schedule_runs_org_isolation ON collection_schedule_runs;
 CREATE POLICY collection_schedule_runs_org_isolation ON collection_schedule_runs AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+-- RBAC — divisions and grants. Standard shape. Which teams or business units a
+-- company is organised into is commercially sensitive on its own, and
+-- `division_grants` decides what that tenant's own users may see, so a leak
+-- here is an authorisation leak rather than only a disclosure.
+ALTER TABLE divisions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE divisions FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS divisions_org_isolation ON divisions;
+CREATE POLICY divisions_org_isolation ON divisions AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+ALTER TABLE division_grants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE division_grants FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS division_grants_org_isolation ON division_grants;
+CREATE POLICY division_grants_org_isolation ON division_grants AS PERMISSIVE FOR ALL TO quantaxscan_app
   USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 

@@ -61,6 +61,8 @@ export const networkFlowsTable = pgTable(
     organizationId: integer("organization_id")
       .notNull()
       .references(() => organizationsTable.id, { onDelete: "cascade" }),
+    /** RBAC — denormalised from the project. See §4.3. */
+    divisionId: integer("division_id"),
     /**
      * The project the flow export was submitted under. A real foreign key,
      * unlike `assets`'s `project:<id>:` location prefix, because this table is

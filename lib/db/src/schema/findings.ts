@@ -10,6 +10,8 @@ export const findingsTable = pgTable("findings", {
   organizationId: integer("organization_id")
     .notNull()
     .references(() => organizationsTable.id, { onDelete: "cascade" }),
+    /** RBAC — denormalised from the scan's project. `findings` reaches a project only through `scan_id`, which a policy cannot follow cheaply. See §4.3. */
+    divisionId: integer("division_id"),
   // Real FK added during the A1/A2 migration — previously a plain integer
   // with nothing stopping an orphaned row. See docs/Claude/04-architecture.md
   // §"Also: add foreign keys". `findings` is legacy: new writes go to

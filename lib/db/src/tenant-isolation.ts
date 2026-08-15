@@ -45,6 +45,12 @@ export const ORG_SCOPED_TABLES = [
   "network_flows",
   "collection_schedules",
   "collection_schedule_runs",
+  // RBAC. Both are scoped like every other table — a division is a fact about
+  // one tenant's internal shape, and which teams a company has is itself
+  // information. `division_grants` additionally decides what its own tenant's
+  // users may see, so a leak here is an authorisation leak and not only a data one.
+  "divisions",
+  "division_grants",
 ] as const;
 
 export type OrgScopedTable = (typeof ORG_SCOPED_TABLES)[number];
