@@ -1746,6 +1746,61 @@ paths:
         "404":
           description: Not found
 
+  /projects/{id}/discovery/cloud:
+    post:
+      operationId: discoverCloudResources
+      tags: [projects]
+      summary: Enumerate a cloud account's resources with a stored credential (P2)
+      description: >-
+        Reads an AWS account's storage using a read-only credential you registered, and records
+        what it finds as **leads** — places a collector could look. Certificate transparency
+        (`POST /projects/{id}/discovery`) finds names in a public log and proves nothing about
+        ownership; this proves the account is yours, because you issued the key.
+
+
+        **Requires the `admin` role.** Spending a credential is gated like holding one.
+
+
+        **No asset is created, and no surface becomes examined.** A bucket name is not an
+        observation of cryptography: until `POST /projects/{id}/data-at-rest` reads its
+        encryption configuration, this product knows nothing about the cryptography behind it —
+        not a cipher, not a key-wrapping algorithm, not whether it is encrypted at all. The
+        coverage meter is deliberately unmoved by this route, and gains only a denominator.
+
+
+        **Finding a resource is not consent to connect to it.** Enumerating is a control-plane
+        read; examining one of the resources is a separate act on a separate route, against
+        target ids you name.
+
+
+        A partial result is the normal outcome and is reported as `partial`, with the exact
+        scopes enumerated and refused. A scope that was denied or throttled is never reported
+        as empty.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DiscoverCloudResourcesBody"
+      responses:
+        "200":
+          description: Enumeration result and the leads it recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CloudDiscoverySummary"
+        "400":
+          description: Invalid project ID or body
+        "404":
+          description: Project or credential not found
+        "409":
+          description: The credential is revoked, expired, or cannot be decrypted. No enumeration happened.
   /projects/{id}/discovery:
     post:
       operationId: runProjectDiscovery
@@ -7348,6 +7403,76 @@ components:
           type: string
           nullable: true
 
+    DiscoverCloudResourcesBody:
+      type: object
+      description: >-
+        Which stored credential to redeem, and which AWS account to enumerate. No secret is
+        ever sent to this route.
+      properties:
+        credentialId:
+          type: integer
+          description: A credential of kind `cloud_readonly_inventory`, registered through `POST /credentials`.
+        account:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The AWS account id the credential belongs to.
+        maxTargets:
+          type: integer
+          minimum: 1
+          maximum: 500
+          description: >-
+            Ceiling on leads recorded. Reaching it marks the run `partial` and sets
+            `enumeration.truncated` — a run that withheld names has not enumerated the account
+            and does not say it has.
+      required: [credentialId, account]
+    CloudDiscoverySummary:
+      type: object
+      description: >-
+        The result of one credentialed enumeration. **No asset is created by this route** —
+        discovery produces leads, which are places a collector could look, and a lead is not
+        an observation of cryptography. Every surface still reads `never-examined` afterwards.
+      properties:
+        projectId: { type: integer }
+        discoveryRunId:
+          type: integer
+          description: >-
+            The `discovery_runs` row this enumeration recorded. Written whatever happened,
+            including a total failure — an enumeration that produced nothing and one that never
+            ran are different facts, and only a row can tell them apart.
+        status:
+          type: string
+          enum: [succeeded, partial, no_evidence, failed]
+          description: >-
+            `partial` is the value that matters and the normal outcome of a cloud enumeration.
+            A run that read two of three accounts is neither a success nor a failure, and
+            collapsing it into either destroys the boundary of what can be spoken for.
+            `no_evidence` means it ran correctly and found nothing, which is not a failure.
+        targetsCreated:
+          type: integer
+          description: Leads this run recorded for the first time.
+        targetsUpdated:
+          type: integer
+          description: Leads already on record that this run saw again. A lead that stops appearing is not deleted.
+        enumeration:
+          $ref: "#/components/schemas/EnumerationRecord"
+        evidenceCaveat:
+          $ref: "#/components/schemas/DiscoveryMethodCaveat"
+      required: [projectId, discoveryRunId, status, targetsCreated, targetsUpdated, enumeration, evidenceCaveat]
+    DiscoveryMethodCaveat:
+      type: object
+      description: >-
+        What a target from this method does and does not prove — resolved on read from the
+        method, never stored, because a claim written into a row is a claim that cannot be
+        corrected.
+      properties:
+        ownership:
+          type: string
+          description: What a target from this method establishes about ownership.
+        completeness:
+          type: string
+          description: The exact boundary this method can speak for. Never the estate.
+      required: [ownership, completeness]
     PollProjectKmsBody:
       type: object
       description: >-

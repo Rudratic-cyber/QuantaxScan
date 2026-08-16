@@ -326,6 +326,9 @@ describe("route manifest — a new route cannot ship without being considered", 
     // confirmed visible inside the scope before a child row is written — the
     // same reasoning as POST /scans.
     "POST /projects/:id/discovery": "org-scoped",
+    // P2 — credentialed cloud enumeration. Resolves a project id and a
+    // credential id, both inside the scope. Writes leads and no assets.
+    "POST /projects/:id/discovery/cloud": "org-scoped",
     "GET /projects/:id/discovered-targets": "org-scoped",
     // D8 → B3. The one route in this file whose scope check has to happen
     // *before* the outbound work rather than alongside it: the hostnames come
@@ -462,6 +465,9 @@ describe("route manifest — a new route cannot ship without being considered", 
       // integer in this route's body. §4.8 of the discovery design named that
       // as an open question; this is the answer.
       "POST /projects/:id/kms/poll",
+      // P2. Same argument, and one more: an enumeration costs money in provider
+      // API calls, and its result names which accounts the company operates.
+      "POST /projects/:id/discovery/cloud",
     ].sort();
 
     it("names exactly the routes that require admin", () => {

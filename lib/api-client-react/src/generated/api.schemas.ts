@@ -2557,6 +2557,129 @@ export interface UpdateVendorAssessmentBody {
 }
 
 /**
+ * Which stored credential to redeem, and which AWS account to enumerate. No secret is ever sent to this route.
+ */
+export interface DiscoverCloudResourcesBody {
+  /** A credential of kind `cloud_readonly_inventory`, registered through `POST /credentials`. */
+  credentialId: number;
+  /**
+   * The AWS account id the credential belongs to.
+   * @minLength 1
+   * @maxLength 64
+   */
+  account: string;
+  /**
+   * Ceiling on leads recorded. Reaching it marks the run `partial` and sets `enumeration.truncated` — a run that withheld names has not enumerated the account and does not say it has.
+   * @minimum 1
+   * @maximum 500
+   */
+  maxTargets?: number;
+}
+
+/**
+ * `partial` is the value that matters and the normal outcome of a cloud enumeration. A run that read two of three accounts is neither a success nor a failure, and collapsing it into either destroys the boundary of what can be spoken for. `no_evidence` means it ran correctly and found nothing, which is not a failure.
+ */
+export type CloudDiscoverySummaryStatus =
+  (typeof CloudDiscoverySummaryStatus)[keyof typeof CloudDiscoverySummaryStatus];
+
+export const CloudDiscoverySummaryStatus = {
+  succeeded: "succeeded",
+  partial: "partial",
+  no_evidence: "no_evidence",
+  failed: "failed",
+} as const;
+
+export type DiscoveryScopeKind =
+  (typeof DiscoveryScopeKind)[keyof typeof DiscoveryScopeKind];
+
+export const DiscoveryScopeKind = {
+  domain: "domain",
+  cloud_account: "cloud_account",
+  directory: "directory",
+  issuer: "issuer",
+} as const;
+
+/**
+ * What was searched, in a shape that can hold a question larger than a domain.
+ */
+export interface DiscoveryScope {
+  kind: DiscoveryScopeKind;
+  domain?: string;
+  provider?: string;
+  account?: string;
+  region?: string;
+  service?: string;
+  directory?: string;
+  issuer?: string;
+}
+
+export interface EnumeratedScope {
+  scope: DiscoveryScope;
+  /** Always true. A scope that is not complete belongs in `refused`. */
+  complete: boolean;
+}
+
+export type RefusedScopeReason =
+  (typeof RefusedScopeReason)[keyof typeof RefusedScopeReason];
+
+export const RefusedScopeReason = {
+  "access-denied": "access-denied",
+  throttled: "throttled",
+  unauthenticated: "unauthenticated",
+  unsupported: "unsupported",
+  unreachable: "unreachable",
+  timeout: "timeout",
+} as const;
+
+export interface RefusedScope {
+  scope: DiscoveryScope;
+  reason: RefusedScopeReason;
+  /** Free text for a human. Never parsed, never grouped by, never a substitute for `reason`. */
+  detail?: string;
+}
+
+/**
+ * What a run could and could not speak for. Absent from a submission response entirely — a submission makes no enumeration claim, and an empty record would instead claim a successful enumeration that found nothing.
+ */
+export interface EnumerationRecord {
+  /** Scopes read to exhaustion with no error. The only thing that earns a claim of coverage. */
+  enumerated: EnumeratedScope[];
+  /** Scopes attempted and not completed. `reason` comes from a closed vocabulary and is never a cloud SDK's error text, which routinely embeds the request that failed. */
+  refused: RefusedScope[];
+  /** A pagination or safety ceiling was hit. Reported, never silent. */
+  truncated: boolean;
+  /** Which stored credential this run redeemed. Never the credential itself. */
+  credentialId?: number;
+}
+
+/**
+ * What a target from this method does and does not prove — resolved on read from the method, never stored, because a claim written into a row is a claim that cannot be corrected.
+ */
+export interface DiscoveryMethodCaveat {
+  /** What a target from this method establishes about ownership. */
+  ownership: string;
+  /** The exact boundary this method can speak for. Never the estate. */
+  completeness: string;
+}
+
+/**
+ * The result of one credentialed enumeration. **No asset is created by this route** — discovery produces leads, which are places a collector could look, and a lead is not an observation of cryptography. Every surface still reads `never-examined` afterwards.
+ */
+export interface CloudDiscoverySummary {
+  projectId: number;
+  /** The `discovery_runs` row this enumeration recorded. Written whatever happened, including a total failure — an enumeration that produced nothing and one that never ran are different facts, and only a row can tell them apart. */
+  discoveryRunId: number;
+  /** `partial` is the value that matters and the normal outcome of a cloud enumeration. A run that read two of three accounts is neither a success nor a failure, and collapsing it into either destroys the boundary of what can be spoken for. `no_evidence` means it ran correctly and found nothing, which is not a failure. */
+  status: CloudDiscoverySummaryStatus;
+  /** Leads this run recorded for the first time. */
+  targetsCreated: number;
+  /** Leads already on record that this run saw again. A lead that stops appearing is not deleted. */
+  targetsUpdated: number;
+  enumeration: EnumerationRecord;
+  evidenceCaveat: DiscoveryMethodCaveat;
+}
+
+/**
  * Which stored credential to redeem, and which AWS account and regions to enumerate. No secret is ever sent to this route — only the id of a credential already registered through `POST /credentials`.
  */
 export interface PollProjectKmsBody {
@@ -2632,69 +2755,6 @@ export interface KmsKeyOutcome {
   rotationEnabled: boolean | null;
   /** The asset locator this key was written under. Null when no asset was written. */
   location: string | null;
-}
-
-export type DiscoveryScopeKind =
-  (typeof DiscoveryScopeKind)[keyof typeof DiscoveryScopeKind];
-
-export const DiscoveryScopeKind = {
-  domain: "domain",
-  cloud_account: "cloud_account",
-  directory: "directory",
-  issuer: "issuer",
-} as const;
-
-/**
- * What was searched, in a shape that can hold a question larger than a domain.
- */
-export interface DiscoveryScope {
-  kind: DiscoveryScopeKind;
-  domain?: string;
-  provider?: string;
-  account?: string;
-  region?: string;
-  service?: string;
-  directory?: string;
-  issuer?: string;
-}
-
-export interface EnumeratedScope {
-  scope: DiscoveryScope;
-  /** Always true. A scope that is not complete belongs in `refused`. */
-  complete: boolean;
-}
-
-export type RefusedScopeReason =
-  (typeof RefusedScopeReason)[keyof typeof RefusedScopeReason];
-
-export const RefusedScopeReason = {
-  "access-denied": "access-denied",
-  throttled: "throttled",
-  unauthenticated: "unauthenticated",
-  unsupported: "unsupported",
-  unreachable: "unreachable",
-  timeout: "timeout",
-} as const;
-
-export interface RefusedScope {
-  scope: DiscoveryScope;
-  reason: RefusedScopeReason;
-  /** Free text for a human. Never parsed, never grouped by, never a substitute for `reason`. */
-  detail?: string;
-}
-
-/**
- * What a run could and could not speak for. Absent from a submission response entirely — a submission makes no enumeration claim, and an empty record would instead claim a successful enumeration that found nothing.
- */
-export interface EnumerationRecord {
-  /** Scopes read to exhaustion with no error. The only thing that earns a claim of coverage. */
-  enumerated: EnumeratedScope[];
-  /** Scopes attempted and not completed. `reason` comes from a closed vocabulary and is never a cloud SDK's error text, which routinely embeds the request that failed. */
-  refused: RefusedScope[];
-  /** A pagination or safety ceiling was hit. Reported, never silent. */
-  truncated: boolean;
-  /** Which stored credential this run redeemed. Never the credential itself. */
-  credentialId?: number;
 }
 
 /**

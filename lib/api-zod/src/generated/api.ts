@@ -6571,6 +6571,183 @@ export const GetProjectDataAtRestResponse = zod.object({
 });
 
 /**
+ * Reads an AWS account's storage using a read-only credential you registered, and records what it finds as **leads** — places a collector could look. Certificate transparency (`POST /projects/{id}/discovery`) finds names in a public log and proves nothing about ownership; this proves the account is yours, because you issued the key.
+
+**Requires the `admin` role.** Spending a credential is gated like holding one.
+
+**No asset is created, and no surface becomes examined.** A bucket name is not an observation of cryptography: until `POST /projects/{id}/data-at-rest` reads its encryption configuration, this product knows nothing about the cryptography behind it — not a cipher, not a key-wrapping algorithm, not whether it is encrypted at all. The coverage meter is deliberately unmoved by this route, and gains only a denominator.
+
+**Finding a resource is not consent to connect to it.** Enumerating is a control-plane read; examining one of the resources is a separate act on a separate route, against target ids you name.
+
+A partial result is the normal outcome and is reported as `partial`, with the exact scopes enumerated and refused. A scope that was denied or throttled is never reported as empty.
+ * @summary Enumerate a cloud account's resources with a stored credential (P2)
+ */
+export const DiscoverCloudResourcesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const discoverCloudResourcesBodyAccountMax = 64;
+
+export const discoverCloudResourcesBodyMaxTargetsMax = 500;
+
+export const DiscoverCloudResourcesBody = zod
+  .object({
+    credentialId: zod
+      .number()
+      .describe(
+        "A credential of kind `cloud_readonly_inventory`, registered through `POST \/credentials`.",
+      ),
+    account: zod
+      .string()
+      .min(1)
+      .max(discoverCloudResourcesBodyAccountMax)
+      .describe("The AWS account id the credential belongs to."),
+    maxTargets: zod
+      .number()
+      .min(1)
+      .max(discoverCloudResourcesBodyMaxTargetsMax)
+      .optional()
+      .describe(
+        "Ceiling on leads recorded. Reaching it marks the run `partial` and sets `enumeration.truncated` — a run that withheld names has not enumerated the account and does not say it has.",
+      ),
+  })
+  .describe(
+    "Which stored credential to redeem, and which AWS account to enumerate. No secret is ever sent to this route.",
+  );
+
+export const DiscoverCloudResourcesResponse = zod
+  .object({
+    projectId: zod.number(),
+    discoveryRunId: zod
+      .number()
+      .describe(
+        "The `discovery_runs` row this enumeration recorded. Written whatever happened, including a total failure — an enumeration that produced nothing and one that never ran are different facts, and only a row can tell them apart.",
+      ),
+    status: zod
+      .enum(["succeeded", "partial", "no_evidence", "failed"])
+      .describe(
+        "`partial` is the value that matters and the normal outcome of a cloud enumeration. A run that read two of three accounts is neither a success nor a failure, and collapsing it into either destroys the boundary of what can be spoken for. `no_evidence` means it ran correctly and found nothing, which is not a failure.",
+      ),
+    targetsCreated: zod
+      .number()
+      .describe("Leads this run recorded for the first time."),
+    targetsUpdated: zod
+      .number()
+      .describe(
+        "Leads already on record that this run saw again. A lead that stops appearing is not deleted.",
+      ),
+    enumeration: zod
+      .object({
+        enumerated: zod
+          .array(
+            zod.object({
+              scope: zod
+                .object({
+                  kind: zod.enum([
+                    "domain",
+                    "cloud_account",
+                    "directory",
+                    "issuer",
+                  ]),
+                  domain: zod.string().optional(),
+                  provider: zod.string().optional(),
+                  account: zod.string().optional(),
+                  region: zod.string().optional(),
+                  service: zod.string().optional(),
+                  directory: zod.string().optional(),
+                  issuer: zod.string().optional(),
+                })
+                .describe(
+                  "What was searched, in a shape that can hold a question larger than a domain.",
+                ),
+              complete: zod
+                .literal(true)
+                .describe(
+                  "Always true. A scope that is not complete belongs in `refused`.",
+                ),
+            }),
+          )
+          .describe(
+            "Scopes read to exhaustion with no error. The only thing that earns a claim of coverage.",
+          ),
+        refused: zod
+          .array(
+            zod.object({
+              scope: zod
+                .object({
+                  kind: zod.enum([
+                    "domain",
+                    "cloud_account",
+                    "directory",
+                    "issuer",
+                  ]),
+                  domain: zod.string().optional(),
+                  provider: zod.string().optional(),
+                  account: zod.string().optional(),
+                  region: zod.string().optional(),
+                  service: zod.string().optional(),
+                  directory: zod.string().optional(),
+                  issuer: zod.string().optional(),
+                })
+                .describe(
+                  "What was searched, in a shape that can hold a question larger than a domain.",
+                ),
+              reason: zod.enum([
+                "access-denied",
+                "throttled",
+                "unauthenticated",
+                "unsupported",
+                "unreachable",
+                "timeout",
+              ]),
+              detail: zod
+                .string()
+                .optional()
+                .describe(
+                  "Free text for a human. Never parsed, never grouped by, never a substitute for `reason`.",
+                ),
+            }),
+          )
+          .describe(
+            "Scopes attempted and not completed. `reason` comes from a closed vocabulary and is never a cloud SDK's error text, which routinely embeds the request that failed.",
+          ),
+        truncated: zod
+          .boolean()
+          .describe(
+            "A pagination or safety ceiling was hit. Reported, never silent.",
+          ),
+        credentialId: zod
+          .number()
+          .optional()
+          .describe(
+            "Which stored credential this run redeemed. Never the credential itself.",
+          ),
+      })
+      .describe(
+        "What a run could and could not speak for. Absent from a submission response entirely — a submission makes no enumeration claim, and an empty record would instead claim a successful enumeration that found nothing.",
+      ),
+    evidenceCaveat: zod
+      .object({
+        ownership: zod
+          .string()
+          .describe(
+            "What a target from this method establishes about ownership.",
+          ),
+        completeness: zod
+          .string()
+          .describe(
+            "The exact boundary this method can speak for. Never the estate.",
+          ),
+      })
+      .describe(
+        "What a target from this method does and does not prove — resolved on read from the method, never stored, because a claim written into a row is a claim that cannot be corrected.",
+      ),
+  })
+  .describe(
+    "The result of one credentialed enumeration. \*\*No asset is created by this route\*\* — discovery produces leads, which are places a collector could look, and a lead is not an observation of cryptography. Every surface still reads `never-examined` afterwards.",
+  );
+
+/**
  * Turns "name every host you want probed" into "give us your domain". Queries public Certificate Transparency logs (RFC 6962) for certificates covering the domain and records the names they carry as *discovered targets*. Needs no customer credential — CT is public — which is what makes it usable before any cloud access is negotiated.
 
 **A discovered name is a lead, not an asset.** Nothing here writes to `assets`, `observations` or `collection_runs`, and no surface becomes examined. A CT entry proves exactly one thing: some CA issued a certificate carrying this name. It does not prove a host exists there, that anything is served from it now, or that this organisation owns it. Every response repeats that in `evidenceCaveat`, and the names are unverified until a collector examines one.

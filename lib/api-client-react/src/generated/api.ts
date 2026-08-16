@@ -24,6 +24,7 @@ import type {
   CbomDocument,
   CertificateIngestSummary,
   ChatBody,
+  CloudDiscoverySummary,
   CollectionSchedule,
   CommunityPost,
   CompleteAuthFlowParams,
@@ -45,6 +46,7 @@ import type {
   DemoRepo,
   DemoScanResult,
   DependencyIngestSummary,
+  DiscoverCloudResourcesBody,
   DiscoveredTargetProbeSummary,
   DiscoveryRunSummary,
   Division,
@@ -5109,6 +5111,103 @@ export function useGetProjectDataAtRest<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Reads an AWS account's storage using a read-only credential you registered, and records what it finds as **leads** — places a collector could look. Certificate transparency (`POST /projects/{id}/discovery`) finds names in a public log and proves nothing about ownership; this proves the account is yours, because you issued the key.
+
+**Requires the `admin` role.** Spending a credential is gated like holding one.
+
+**No asset is created, and no surface becomes examined.** A bucket name is not an observation of cryptography: until `POST /projects/{id}/data-at-rest` reads its encryption configuration, this product knows nothing about the cryptography behind it — not a cipher, not a key-wrapping algorithm, not whether it is encrypted at all. The coverage meter is deliberately unmoved by this route, and gains only a denominator.
+
+**Finding a resource is not consent to connect to it.** Enumerating is a control-plane read; examining one of the resources is a separate act on a separate route, against target ids you name.
+
+A partial result is the normal outcome and is reported as `partial`, with the exact scopes enumerated and refused. A scope that was denied or throttled is never reported as empty.
+ * @summary Enumerate a cloud account's resources with a stored credential (P2)
+ */
+export const getDiscoverCloudResourcesUrl = (id: number) => {
+  return `/api/projects/${id}/discovery/cloud`;
+};
+
+export const discoverCloudResources = async (
+  id: number,
+  discoverCloudResourcesBody: DiscoverCloudResourcesBody,
+  options?: RequestInit,
+): Promise<CloudDiscoverySummary> => {
+  return customFetch<CloudDiscoverySummary>(getDiscoverCloudResourcesUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(discoverCloudResourcesBody),
+  });
+};
+
+export const getDiscoverCloudResourcesMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discoverCloudResources>>,
+    TError,
+    { id: number; data: BodyType<DiscoverCloudResourcesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof discoverCloudResources>>,
+  TError,
+  { id: number; data: BodyType<DiscoverCloudResourcesBody> },
+  TContext
+> => {
+  const mutationKey = ["discoverCloudResources"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof discoverCloudResources>>,
+    { id: number; data: BodyType<DiscoverCloudResourcesBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return discoverCloudResources(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DiscoverCloudResourcesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof discoverCloudResources>>
+>;
+export type DiscoverCloudResourcesMutationBody =
+  BodyType<DiscoverCloudResourcesBody>;
+export type DiscoverCloudResourcesMutationError = ErrorType<void>;
+
+/**
+ * @summary Enumerate a cloud account's resources with a stored credential (P2)
+ */
+export const useDiscoverCloudResources = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discoverCloudResources>>,
+    TError,
+    { id: number; data: BodyType<DiscoverCloudResourcesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof discoverCloudResources>>,
+  TError,
+  { id: number; data: BodyType<DiscoverCloudResourcesBody> },
+  TContext
+> => {
+  return useMutation(getDiscoverCloudResourcesMutationOptions(options));
+};
 
 /**
  * Turns "name every host you want probed" into "give us your domain". Queries public Certificate Transparency logs (RFC 6962) for certificates covering the domain and records the names they carry as *discovered targets*. Needs no customer credential — CT is public — which is what makes it usable before any cloud access is negotiated.
