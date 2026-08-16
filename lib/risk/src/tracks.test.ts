@@ -3,7 +3,7 @@ import { classifyRiskTrack, splitFindingsByTrack } from "./tracks";
 
 describe("classifyRiskTrack — the G-10 split, derived from algorithms.json", () => {
   it("puts every quantum-vulnerable algorithm on the pqc track", () => {
-    for (const algorithm of ["RSA", "ECDSA", "ECDH/DH", "DSA", "EdDSA"]) {
+    for (const algorithm of ["RSA", "ECDSA", "ECDH", "DH", "DSA", "EdDSA"]) {
       expect(classifyRiskTrack(algorithm).track, algorithm).toBe("pqc");
     }
   });

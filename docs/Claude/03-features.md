@@ -219,7 +219,7 @@ another silo.
 | B8 | Manual OT/embedded register | `built` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first. Since 2026-08-14 it also **records cryptography on the `ot` surface**: an optional structured `cryptoAlgorithm`/`cryptoKeySize` becomes an asset at `manual_attestation` modality and confidence 0.3, while `cryptoInUse` stays free text and is never parsed. A fleet described only in prose produces no asset — the register is still the estate's enumeration, so clearing the claim or deleting the fleet retires the asset |
 | B9 | Vendor / third-party | `built` | **P3** | A *form*, not a scanner — the only route to crypto the customer does not operate. Org-scoped `vendor_assessments` table, CRUD at `/api/vendor-assessments`, register page at `/vendor-register`. Every answer is stamped `manual_attestation` at confidence 0.3 (below every collector's) and `null` when the vendor has answered nothing. The `vendor` surface stays `planned`: nothing here was examined |
 | B10 | Binaries / firmware | `deferred` | **P3** | Hard. Defer until coverage elsewhere is complete |
-| B12 | Endpoint & host fleet | `built` | **P1** | The `endpoint` surface: machine certificate stores, host TLS policy and loaded providers for a Windows/Linux fleet, via `POST/GET /api/projects/:id/endpoint`. **No agent ships** — what exists is the report format an agent (or existing config-management tooling) reports against, and that is a decision: a binary running on a customer's domain controller is a packaging and security-review problem several times a collector's size, and it cannot authenticate until F4. `live` claims less here than elsewhere and the caveat says so on every response: **an enabled cipher suite is a permitted algorithm, not a negotiated one** — a suite list is an upper bound, and what was actually agreed is B3's surface. A suite the host's own policy disables produces nothing, and every suppression is returned so it can be audited; an unrecognised token (including every post-quantum suite) produces nothing rather than a guess. Identity is `machineId`, never `hostname` — hostnames get reused — and a placeholder or duplicated id is refused **by name** rather than merged. **`endpoint` is the tenth `live` surface** |
+| B12 | Endpoint & host fleet | `built` | **P1** | The `endpoint` surface: machine certificate stores, host TLS policy and loaded providers for a Windows/Linux fleet, via `POST/GET /api/projects/:id/endpoint`. **No agent ships** — what exists is the report format an agent (or existing config-management tooling) reports against, and that is a decision: a binary running on a customer's domain controller is a packaging and security-review problem several times a collector's size. It could not authenticate at all until F4, which shipped 2026-08-15; what remains is the packaging and review problem, which is the larger half. `live` claims less here than elsewhere and the caveat says so on every response: **an enabled cipher suite is a permitted algorithm, not a negotiated one** — a suite list is an upper bound, and what was actually agreed is B3's surface. A suite the host's own policy disables produces nothing, and every suppression is returned so it can be audited; an unrecognised token (including every post-quantum suite) produces nothing rather than a guess. Identity is `machineId`, never `hostname` — hostnames get reused — and a placeholder or duplicated id is refused **by name** rather than merged. **`endpoint` is the tenth `live` surface** |
 | B11 | Network conversations | `built` | **P1** | The `network-flow` surface: what talks to what, and the cryptography (if any) the customer's own records say protected it. **No packet capture and no tap** — real-time interception is an explicit twelve-month non-goal, so this ingests the flow and session records an estate already produces (VPC flow logs, load-balancer access logs, service-mesh telemetry, firewall session logs) via `POST/GET /api/projects/:id/network-flows`. A record naming no cipher is recorded with `cryptoState: undetermined` and produces **no asset** — never "unencrypted", which would be a finding nobody observed — and `flowsWithUndeterminedCryptography` counts those rows so the coverage meter cannot render the surface as examined-and-clean. The source's ephemeral port is accepted and discarded: keying a conversation on it would mint a row per TCP handshake. **`network-flow` is the ninth `live` surface** |
 
 **B2, as shipped 2026-08-14 and widened 2026-08-16.** Submission is
@@ -300,8 +300,11 @@ caller posts the key inventory their own `aws kms describe-key` / `az keyvault k
 `gcloud kms keys list` / `vault read transit/keys/<name>` already produced, exactly as B4 accepts
 a submitted PEM. Live polling would have meant four cloud SDKs inside `lib/collectors` — which is
 deliberately dependency-free so it can ship as a standalone on-prem agent — four auth flows, and
-long-lived read-only credentials into a customer's key store held by a product whose
-source-code/secret-handling controls (F4) are not built. None of that is needed to make the
+long-lived read-only credentials into a customer's key store held by a product that, when this
+was written, had nowhere safe to hold one. **F4 shipped 2026-08-15 and that half of the argument
+is spent** — the credential store exists, and a credentialed poller is now unblocked and merely
+unbuilt. The rest of the reasoning still stands unchanged: four cloud SDKs inside a package that
+is deliberately dependency-free, and four auth flows. None of that is needed to make the
 surface real, and a credentialed poller is strictly additive: it produces the same
 `KmsKeyDescription` values this collector already maps. What the submission model costs is stated
 in every response: the export is taken at its word, so nothing proves it complete, current, or
@@ -405,9 +408,12 @@ evaluated at read time. `DataAtRestCollector` is pure and does no I/O
 Four decisions worth stating:
 
 - **Submission, not credentials.** Connecting to a live database needs somewhere to put a
-  production credential, and F4 is unbuilt. Inventing a secret-handling design inside a collector
-  lane is how a product ends up storing database passwords by accident — the same reasoning B5
-  applies to KMS.
+  production credential. When this was written there was nowhere, and inventing a secret-handling
+  design inside a collector lane is how a product ends up storing database passwords by accident.
+  **F4 shipped 2026-08-15**, so the blocker is gone and this is now a sequencing choice rather
+  than a constraint — the credentialed variant is designed in
+  [17-discovery-design.md](17-discovery-design.md) §4 and held back only because every one of them
+  edits `asset-ingest.ts`. Same status as B5's KMS poller.
 - **Two assets per store, not one.** The bulk cipher (usually AES, which NIST does not treat as
   quantum-vulnerable) and the algorithm wrapping the data key are separate facts, and only the
   second is a Shor target. A collector that recorded the cipher alone would report an AES-256

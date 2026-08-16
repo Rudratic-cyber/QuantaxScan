@@ -157,8 +157,14 @@ does not change.
 JSON-encoded, explicitly ordered array of the fields above per surface — not a delimiter-joined
 string — so a field value that happens to contain the delimiter cannot collide two distinct
 inputs into the same fingerprint. It currently implements `source`, `dependency`, `tls`,
-`certificate`, `config`, `kms` and `binary`; `ot` has no fingerprint rule yet, and does not
-need one — B8's register is a form whose rows are fleets, not fingerprinted assets.
+`certificate`, `config`, `kms`, `data-at-rest`, `network-flow`, `ot`, `endpoint` and `binary` —
+every surface in the catalogue.
+
+**This paragraph used to say `ot` had no rule and "does not need one — B8's register is a form
+whose rows are fleets, not fingerprinted assets."** That reasoning was sound when written and is
+now simply false: `ingestOtObservations` mints `ot` assets and `fingerprint.ts` has the rule. The
+correction is recorded rather than quietly deleted because the *stated reason a thing would never
+be needed* is the kind of sentence that goes on being cited after it stops being true.
 
 **Why `config` is the `source` shape and carries a `token`.** A configuration file is a stable
 slot that gets edited in place, not an artefact that gets minted, so the file's path belongs in
@@ -262,6 +268,17 @@ standards data into the pattern definitions.
 ### Target — as built (`lib/collectors/`)
 
 ```ts
+> **Amendment, 2026-08-16 — there are two seams here, not one.** The design below describes
+> `Collector` as *the* extension point, and for everything that arrives as a submitted artefact it
+> is. It cannot describe a collector that *fetches*: `CollectionTarget` is a single-variant union of
+> submitted file bytes with no host, endpoint or credential affordance, and widening it would put a
+> credential handle and a cloud SDK inside `@workspace/collectors`, which is deliberately
+> dependency-free so it can ship as a standalone on-prem agent. Six of the ten live surfaces have
+> already declined to implement this interface for that reason — `endpoint-collector.ts` says so in
+> terms: *"a class whose `collect()` yielded nothing would satisfy the interface and mislead every
+> reader of it."* Credentialed acquisition therefore gets a **server-side peer** rather than a wider
+> `Collector`; the design is [17-discovery-design.md](17-discovery-design.md) §4.
+
 export interface Collector {
   readonly name: string;
   readonly version: string;

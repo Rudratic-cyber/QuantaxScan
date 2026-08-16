@@ -206,7 +206,7 @@ test.describe("the dependency collector's back-end ecosystems (B2)", () => {
     ]);
 
     expect(second.ecosystems).toEqual(["golang"]);
-    // CIRCL contributed two assets (EdDSA and ECDH/DH) and left the file. The
+    // CIRCL contributed two assets (EdDSA and ECDH) and left the file. The
     // count is exact on purpose: "at least one" would pass just as happily if
     // the Maven assets had been swept up too, which is the bug this test is for.
     expect(second.assetsMarkedGone).toBe(2);

@@ -415,7 +415,7 @@ before.
 
 ---
 
-## G-12 — Security findings S1–S8 `High` — **MITIGATED IN CODE, PENDING DEPLOY**
+## G-12 — Security findings S1–S8 `High` — **MITIGATED IN CODE, PENDING DEPLOY** (S1 largely closed 2026-08-15 — see below)
 
 Full detail in [08-security.md](08-security.md). Headline was: no authentication anywhere,
 share-link IDs from `Math.random()`, full customer source persisted, `cors({ origin: true })`
@@ -453,11 +453,19 @@ with credentials.
 > clause now returns zero rows rather than another tenant's data. Design and evidence:
 > [13-auth-and-tenancy.md](13-auth-and-tenancy.md).
 >
-> **This is the org-scoping half of S1 and nothing else.** There is still no per-user identity —
-> no sign-in, no sessions, no providers — so the shared API key remains the only credential, now
-> bound to organisation 1. **S1 stays open.** The change is deliberately invisible: no
-> user-facing behaviour differs, which is what makes a regression show up as zero rows rather
-> than as a subtle authorisation bug.
+> **This was the org-scoping half of S1 and nothing else**, when it was written: no per-user
+> identity, no sign-in, no sessions, no providers, so the shared API key was the only credential,
+> bound to organisation 1. The change was deliberately invisible — no user-facing behaviour
+> differs, which is what makes a regression show up as zero rows rather than as a subtle
+> authorisation bug.
+>
+> **Superseded 2026-08-15.** F1 shipped: an identity-provider registry, sessions and six `/auth/*`
+> routes, with a session principal existing *beside* the API-key principal rather than replacing
+> it. RBAC followed the same day — four roles plus divisions, enforced in the policies rather than
+> in route code — and F4's credential store shipped before both. **The sentence above is left
+> standing rather than deleted because this entry is a record of what was true when, and the
+> paragraph was cited three times in `03-features.md` after it stopped being true.** What remains
+> open under S1 is member *invites*, which need an email flow.
 >
 > Severity drops from `Critical` to `High` on deploy, not on merge. It does not reach closed:
 > S1 still lacks per-user identity (F1), S2 still lacks the expiry and revocation *interface*

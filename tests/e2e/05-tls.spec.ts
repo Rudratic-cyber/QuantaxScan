@@ -186,8 +186,8 @@ test.describe("the TLS prober (B3)", () => {
     // with its size left **undetermined**, and the component is unsuffixed. A
     // plausible-looking 256 here would be a fabrication, and this assertion is
     // what stops one being introduced later.
-    expect(names).toContain("ECDH/DH");
-    expect(keySizeOf("ECDH/DH")).toBe("undetermined");
+    expect(names).toContain("ECDH");
+    expect(keySizeOf("ECDH")).toBe("undetermined");
   });
 
   test("a submission where nothing completes a handshake records no run, and says so", async ({ api }) => {

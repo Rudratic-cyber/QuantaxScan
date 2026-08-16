@@ -728,7 +728,10 @@ CREATE ROLE quantaxscan_app      LOGIN PASSWORD :'app_pw' NOINHERIT;
 GRANT USAGE ON SCHEMA public TO quantaxscan_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
       projects, scans, findings, assets, observations, collection_runs,
-      activity, shared_reports, community_posts,
+      activity, shared_reports, community_posts, ot_fleets, vendor_assessments,
+      credentials, discovered_targets, network_flows,
+      collection_schedules, collection_schedule_runs, divisions, division_grants,
+      waivers,
       organizations, organization_members, user_identities, users, sessions
   TO quantaxscan_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO quantaxscan_app;
@@ -743,6 +746,16 @@ ownership change.
 
 The `GRANT` list is itself a second layer: a table with no grant is inaccessible to the runtime
 regardless of policy. That is why `conversations`/`messages` are simply not granted.
+
+**This block is a copy, and it went stale.** Between 2026-08-13 and 2026-08-16 nine tables were
+added to `ORG_SCOPED_TABLES` and granted in `lib/db/sql/tenant-isolation.sql` while this listing
+kept its original fourteen. Following it verbatim would have shipped a database where nine tables
+are unreachable by the runtime — fail-closed, so nothing is exposed, but silent until a route
+returns a 500 nobody can explain from the error. **`lib/db/sql/tenant-isolation.sql` is the
+authority; this is illustration.** If you are adding a table, the checklist is in
+[CLAUDE.md](../../CLAUDE.md): `ORG_SCOPED_TABLES`, a policy, and a grant — and
+`lib/db/src/tenant-isolation.test.ts` asserts the first against the database rather than against
+this page.
 
 ### 5.3 The policies
 
