@@ -31,7 +31,7 @@ import { logger } from "../lib/logger";
  * Nothing. Not "nothing much" — nothing. The inventory annotation added in
  * `summariseInventoryAssets()` attaches the active waiver to the asset row and
  * changes no count, no coverage figure, no readiness section and no CBOM
- * component. `tests/e2e/20-waivers.spec.ts` asserts those payloads are
+ * component. `tests/e2e/22-waivers.spec.ts` asserts those payloads are
  * byte-identical either side of a granted waiver. An accepted risk is still a
  * risk that was accepted, and a product that let one improve a score would be
  * selling the thing it was built to prevent.

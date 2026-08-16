@@ -460,7 +460,7 @@ organisation- *and* division-scoped like every other row.
 - **It annotates; it does not filter.** `GET /api/inventory/assets` gains a `waiver` field per
   asset and a `waivedAssets` count *beside* the inventory. The asset stays in the list, in the
   CBOM, in `statusCounts`, and in every coverage, readiness and Mosca figure — all of which are
-  computed with no knowledge that waivers exist. `tests/e2e/20-waivers.spec.ts` grants a waiver
+  computed with no knowledge that waivers exist. `tests/e2e/22-waivers.spec.ts` grants a waiver
   and asserts `/inventory/readiness`, `/inventory/cbom` and `/stats` come back identical field
   for field. An accepted risk is still a risk that was accepted.
 - **It expires, and there is no "never".** `expires_at` is `NOT NULL`, must be in the future and
@@ -708,7 +708,7 @@ failed when the refusal became untrue**, which is the part worth remembering: a 
 the absence of a feature the product ships is invisible to every suite here. If the register ever
 becomes optional, `registerAvailable` is the field that lies first.
 
-**PDF is the M2 exit criterion and it is met**: `tests/e2e/20-report-packs.spec.ts` asserts 200 and
+**PDF is the M2 exit criterion and it is met**: `tests/e2e/21-report-packs.spec.ts` asserts 200 and
 `%PDF-` on `/api/report-packs/board.pdf` against the real stack, deliberately *not* tolerating the
 503 fallback. Rendering is one HTML document printed by headless Chromium via `playwright-core`,
 behind a dynamic import — `Dockerfile.api` installs no browser yet, so a container deployment gets

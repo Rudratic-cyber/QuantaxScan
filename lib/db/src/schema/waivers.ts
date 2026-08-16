@@ -62,7 +62,7 @@ import { organizationsTable } from "./organizations";
  * A waiver **annotates**; it does not filter. The asset stays in the inventory,
  * in the CBOM, in `statusCounts`, and in every coverage and readiness number.
  * `summariseInventoryAssets()` attaches the active waiver and changes nothing
- * else, and `tests/e2e/20-waivers.spec.ts` asserts those payloads are
+ * else, and `tests/e2e/22-waivers.spec.ts` asserts those payloads are
  * byte-identical before and after a waiver is granted. Suppressing a finding
  * from a working list is legitimate; improving a coverage number by accepting a
  * risk is the exact failure this product exists not to commit.

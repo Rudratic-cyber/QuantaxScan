@@ -17,7 +17,7 @@ like their siblings; the route does one `withOrg` read with one `now`.
 **Not `/reports/board`.** `PUBLIC_ROUTES` matches the share link with `/^\/reports\/[^/]+$/`, so a
 pack under that prefix would have been served to anonymous callers — a complete map of an
 organisation's cryptographic weaknesses, with no credential. The prefix is different so that
-cannot happen by accident. `tests/e2e/20-report-packs.spec.ts` asserts the near-miss stays one.
+cannot happen by accident. `tests/e2e/21-report-packs.spec.ts` asserts the near-miss stays one.
 
 **One deviation from the spec below, deliberate.** "Include the coverage gap on page 1 — *this
 covers 31% of estimated estate*" cannot be honoured as written: `coverage.ts` rule 4 says the
