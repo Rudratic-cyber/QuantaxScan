@@ -50,7 +50,7 @@ import { curveBitSize } from "./named-curves";
  * Matching is on the **whole normalised token**, never a substring. Modern
  * OpenSSH offers `sntrup761x25519-sha512` and `mlkem768x25519-sha256` by
  * default: a substring match on `x25519` would report a hybrid post-quantum
- * key exchange as quantum-vulnerable `ECDH/DH`, a false positive on the exact
+ * key exchange as quantum-vulnerable `ECDH`, a false positive on the exact
  * axis this product exists to measure. Anchored whole-token matching makes an
  * unknown token — post-quantum, vendor-specific, or simply new — produce no
  * declaration at all, which is the same discipline `certificate-collector.ts`
@@ -128,11 +128,11 @@ const TOKEN_MAPPINGS: Record<string, TokenMapping> = {
   "ssh-ed448": { algorithm: "EdDSA", keySize: 448 },
 
   // ── SSH key exchange (RFC 4419, RFC 5656, RFC 8731) ──
-  "curve25519-sha256": { algorithm: "ECDH/DH", keySize: 256 },
+  "curve25519-sha256": { algorithm: "ECDH", keySize: 256 },
   // Group-exchange negotiates the modulus size at runtime, so the file states
   // no size — undetermined, not defaulted (G-05).
-  "diffie-hellman-group-exchange-sha1": { algorithm: "ECDH/DH" },
-  "diffie-hellman-group-exchange-sha256": { algorithm: "ECDH/DH" },
+  "diffie-hellman-group-exchange-sha1": { algorithm: "DH" },
+  "diffie-hellman-group-exchange-sha256": { algorithm: "DH" },
 
   // ── SSH MACs that name a hash `algorithms.json` does know ──
   "hmac-sha1": { algorithm: "SHA-1" },
@@ -141,22 +141,22 @@ const TOKEN_MAPPINGS: Record<string, TokenMapping> = {
   "hmac-md5-96": { algorithm: "MD5" },
 
   // ── IPsec/IKE transform names (strongSwan proposal syntax) ──
-  modp1024: { algorithm: "ECDH/DH", keySize: 1024 },
-  modp1536: { algorithm: "ECDH/DH", keySize: 1536 },
-  modp2048: { algorithm: "ECDH/DH", keySize: 2048 },
-  modp3072: { algorithm: "ECDH/DH", keySize: 3072 },
-  modp4096: { algorithm: "ECDH/DH", keySize: 4096 },
-  modp6144: { algorithm: "ECDH/DH", keySize: 6144 },
-  modp8192: { algorithm: "ECDH/DH", keySize: 8192 },
-  ecp192: { algorithm: "ECDH/DH", keySize: 192 },
-  ecp224: { algorithm: "ECDH/DH", keySize: 224 },
-  ecp256: { algorithm: "ECDH/DH", keySize: 256 },
-  ecp384: { algorithm: "ECDH/DH", keySize: 384 },
-  ecp521: { algorithm: "ECDH/DH", keySize: 521 },
-  curve25519: { algorithm: "ECDH/DH", keySize: 256 },
-  curve448: { algorithm: "ECDH/DH", keySize: 448 },
-  x25519: { algorithm: "ECDH/DH", keySize: 256 },
-  x448: { algorithm: "ECDH/DH", keySize: 448 },
+  modp1024: { algorithm: "DH", keySize: 1024 },
+  modp1536: { algorithm: "DH", keySize: 1536 },
+  modp2048: { algorithm: "DH", keySize: 2048 },
+  modp3072: { algorithm: "DH", keySize: 3072 },
+  modp4096: { algorithm: "DH", keySize: 4096 },
+  modp6144: { algorithm: "DH", keySize: 6144 },
+  modp8192: { algorithm: "DH", keySize: 8192 },
+  ecp192: { algorithm: "ECDH", keySize: 192 },
+  ecp224: { algorithm: "ECDH", keySize: 224 },
+  ecp256: { algorithm: "ECDH", keySize: 256 },
+  ecp384: { algorithm: "ECDH", keySize: 384 },
+  ecp521: { algorithm: "ECDH", keySize: 521 },
+  curve25519: { algorithm: "ECDH", keySize: 256 },
+  curve448: { algorithm: "ECDH", keySize: 448 },
+  x25519: { algorithm: "ECDH", keySize: 256 },
+  x448: { algorithm: "ECDH", keySize: 448 },
   sha1: { algorithm: "SHA-1" },
   md5: { algorithm: "MD5" },
 
@@ -181,10 +181,10 @@ const TOKEN_MAPPINGS: Record<string, TokenMapping> = {
   eddsa: { algorithm: "EdDSA" },
   ed25519: { algorithm: "EdDSA", keySize: 256 },
   ed448: { algorithm: "EdDSA", keySize: 448 },
-  "ecdh-es": { algorithm: "ECDH/DH" },
-  "ecdh-es+a128kw": { algorithm: "ECDH/DH" },
-  "ecdh-es+a192kw": { algorithm: "ECDH/DH" },
-  "ecdh-es+a256kw": { algorithm: "ECDH/DH" },
+  "ecdh-es": { algorithm: "ECDH" },
+  "ecdh-es+a128kw": { algorithm: "ECDH" },
+  "ecdh-es+a192kw": { algorithm: "ECDH" },
+  "ecdh-es+a256kw": { algorithm: "ECDH" },
 
   // ── XML Signature / XML Encryption URI fragments ──
   "rsa-sha1": { algorithm: "RSA" },
@@ -212,14 +212,14 @@ const TOKEN_MAPPINGS: Record<string, TokenMapping> = {
  * the same thing wherever they appear. `dh` does not. As an xmlenc fragment
  * (`http://www.w3.org/2009/xmlenc11#dh`) it is a Diffie-Hellman key agreement;
  * as a hyphen-separated segment of a strongSwan proposal it is not a transform
- * at all, and resolving it there produced a phantom `ECDH/DH` asset with no
+ * at all, and resolving it there produced a phantom `DH` asset with no
  * key size, indistinguishable from a real `modp2048` declaration on the same
  * line. Splitting an IPsec proposal on `-` is what makes a one-or-two-character
  * token dangerous, so the fix belongs here rather than in the splitter.
  */
 const XMLDSIG_ONLY_TOKENS: Record<string, TokenMapping> = {
-  dh: { algorithm: "ECDH/DH" },
-  "dh-es": { algorithm: "ECDH/DH" },
+  dh: { algorithm: "DH" },
+  "dh-es": { algorithm: "DH" },
 };
 
 /**
@@ -245,11 +245,11 @@ const SSH_DH_GROUP_BITS: Record<string, number> = {
 const TOKEN_PATTERNS: Array<{ pattern: RegExp; resolve: (match: RegExpMatchArray) => TokenMapping | undefined }> = [
   // ecdsa-sha2-nistp384, ecdh-sha2-nistp521 (RFC 5656)
   { pattern: /^ecdsa-sha2-nistp(\d+)$/, resolve: (m) => ({ algorithm: "ECDSA", keySize: curveBitSize(`nistp${m[1]}`) }) },
-  { pattern: /^ecdh-sha2-nistp(\d+)$/, resolve: (m) => ({ algorithm: "ECDH/DH", keySize: curveBitSize(`nistp${m[1]}`) }) },
+  { pattern: /^ecdh-sha2-nistp(\d+)$/, resolve: (m) => ({ algorithm: "ECDH", keySize: curveBitSize(`nistp${m[1]}`) }) },
   // diffie-hellman-group14-sha256
   {
     pattern: /^diffie-hellman-group(\d+)-sha\d+$/,
-    resolve: (m) => ({ algorithm: "ECDH/DH", keySize: SSH_DH_GROUP_BITS[m[1]] }),
+    resolve: (m) => ({ algorithm: "DH", keySize: SSH_DH_GROUP_BITS[m[1]] }),
   },
   // SSH ciphers (aes256-ctr, aes128-gcm) and XML Encryption (aes256-cbc, aes128-gcm)
   { pattern: /^aes(128|192|256)-(ctr|cbc|gcm)$/, resolve: (m) => ({ algorithm: "AES", keySize: Number(m[1]) }) },
@@ -315,7 +315,10 @@ export const PROTOCOL_CONFIG_ALGORITHMS: readonly string[] = [
     ...Object.values(XMLDSIG_ONLY_TOKENS).map((m) => m.algorithm),
     // The parametric families' algorithms, which have no literal entry above.
     "ECDSA",
-    "ECDH/DH",
+    // Both halves of the G-24 split: `ecdh-sha2-nistp*` is a curve,
+    // `diffie-hellman-group*` is a modulus, and they band differently.
+    "ECDH",
+    "DH",
     "AES",
   ]),
 ];

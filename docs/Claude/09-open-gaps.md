@@ -39,7 +39,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-21 | The package table applies one claim to every version of a package | Medium | Design | B2 follow-up |
 | ~~G-22~~ | ~~The estate timeline tells the customer we have no certificate collector~~ | **Closed** | Done 2026-08-15 | — |
 | ~~G-23~~ | ~~A collection schedule's `host` is validated only by its description~~ | **Closed** | Done 2026-08-15 | — |
-| G-24 | Finite-field DH is banded as if its modulus were a curve, and loses its 2030 deprecation | **High** | Collector change | Opened 2026-08-16 by C4 |
+| ~~G-24~~ | ~~Finite-field DH is banded as if its modulus were a curve, and loses its 2030 deprecation~~ | **Closed** | Done 2026-08-16 | — |
 | ~~G-25~~ | ~~A failed collection is recorded as a completed one~~ | **Closed** | Done 2026-08-16 | — |
 
 ---
@@ -846,6 +846,43 @@ used to pin the defect now asserts the fix.
 
 ---
 
+**Closed the same day it was opened**, by the split C4 described and could not make from its own
+lane.
+
+`algorithms.json` now carries two entries: `ecdh` (canonicalName `ECDH`, `keySizeKind: "curve"`)
+and `ffdh` (canonicalName `DH`, `keySizeKind: "modulus"`). The regression test is the clean
+statement of the fix — **the same number, 2048, resolving to different obligations**: as a modulus
+it is 112-bit security, deprecated after 2030; as a curve order it is `>= 128 bits` and is not.
+
+**Six producers had to choose a side, not three.** The entry said `cipher-suite.ts`,
+`protocol-config-collector.ts` and `data-at-rest-collector.ts`; the real list also included
+`tls-collector.ts`, `certificate-collector.ts`, `endpoint-report.ts` and `source-regex-collector.ts`.
+The one that mattered most was the one nobody listed: **`tls-collector.ts` is the only path where a
+live endpoint hands the product a real size.** Node reports `type: "DH"`, `bits: 2048` for a classic
+DHE handshake, so a real server negotiating DHE-2048 was being told its first milestone was 2035.
+
+Rules applied, each from the token's own evidence rather than a default:
+
+- `modp*`, `diffie-hellman-group*`, `DHE`/`EDH`, xmlenc `dh`/`dh-es`, `DHParameterSpec`,
+  `getDiffieHellman` → **`DH`** (modulus)
+- `ecp*`, `curve*`, `x25519`/`x448`, `ecdh-sha2-nistp*`, JOSE `ecdh-es*`, `createECDH` → **`ECDH`**
+- **An unrecognised TLS key-exchange type falls back to `ECDH`, not `DH`**, and that is the
+  conservative direction here rather than the generous one: every modern TLS 1.3 group is elliptic
+  or hybrid, and reading a 256-bit curve as a 256-bit *modulus* would invent a 2030 deadline that
+  does not apply to it.
+- Seven packages in `crypto-packages.json` name **both** families in their own documentation
+  (`cryptography`, `m2crypto`, the four BouncyCastle artifacts, the Rust `openssl` crate) and now
+  carry an entry each. The other thirteen were elliptic-only by their own quoted evidence.
+- A token that names no group (SSH group-exchange, a bare `MQV`) still yields no size, so the
+  engine reports both candidate bands as assumed. That is the G-05 answer and the split does not
+  change it — which is what the entry asked for.
+
+**The guard this needed already existed.** `algorithm-mapping.test.ts` iterates every collector's
+exported algorithm list — including the ones derived from `crypto-packages.json` and
+`kms-key-specs.json` — and asserts each resolves, so a rename that orphaned a reference would fail
+rather than silently stop producing obligations. Worth knowing before adding a canonical name.
+
+
 ## G-25 — A failed collection was filed as a completed one — **CLOSED 2026-08-16**
 
 `asset-ingest.ts` held the only production insert into `collection_runs`, and it wrote
@@ -886,7 +923,7 @@ Found while reading `asset-ingest.ts` for the discovery design
 ([17-discovery-design.md](17-discovery-design.md) §6.1), which is where the fix was scoped as a
 preparatory commit nobody owns — every credentialed collector needs a way to say an attempt failed.
 
-## G-24 — Finite-field DH loses its 2030 deprecation `High` — **OPENED 2026-08-16**
+## G-24 — Finite-field DH lost its 2030 deprecation — **CLOSED 2026-08-16**
 
 Found while re-reading NIST IR 8547 for C4. This is a G-05-class failure: it does not error, it
 reports **more runway than the standard allows**.

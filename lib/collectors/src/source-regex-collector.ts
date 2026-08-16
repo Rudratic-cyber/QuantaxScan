@@ -38,8 +38,8 @@ const SOURCE_PATTERNS: SourcePattern[] = [
      * are in active *new* deployment, which is what makes the blind spot
      * expensive. The pattern requires the `Ed`/`EdDSA` token: a bare `25519`
      * would also match `X25519`/`Curve25519`, which are Diffie-Hellman
-     * key agreement and belong to the `ECDH/DH` entry, not here.
-     * Placed after ECDSA and before ECDH/DH: no earlier pattern can match an
+     * key agreement and belong to the `ECDH` entry, not here.
+     * Placed after ECDSA and before ECDH: no earlier pattern can match an
      * `ed25519`/`ed448` token, so this changes no existing detection —
      * verified by the parity tests in source-regex-collector.test.ts.
      * No *trailing* `\b`, deliberately and in line with the other entries:
@@ -50,8 +50,24 @@ const SOURCE_PATTERNS: SourcePattern[] = [
     pattern: /\b(EdDSA|Ed25519|Ed448)/i,
   },
   {
-    algorithm: "ECDH/DH",
-    pattern: /\b(ECDH|createECDH|DH\b|DHParameterSpec|getDiffieHellman)/i,
+    /**
+     * G-24 — elliptic first, and the order is load-bearing. `ECDH` and
+     * `createECDH` name a curve; `DHParameterSpec` and `getDiffieHellman`
+     * name a modulus. A single pattern could not tell them apart, and the one
+     * that existed resolved both to a `curve` key-size source — so a
+     * `DHParameterSpec(2048)` was banded as if 2048 were a curve order.
+     */
+    algorithm: "ECDH",
+    pattern: /\b(ECDH|createECDH)/i,
+  },
+  {
+    /**
+     * Bare `DH` keeps a trailing `\b` so it cannot swallow the `ECDH` above —
+     * that pattern runs first regardless, but a future reordering should not
+     * silently change which family a line resolves to.
+     */
+    algorithm: "DH",
+    pattern: /\b(DH\b|DHParameterSpec|getDiffieHellman)/i,
   },
   {
     algorithm: "DSA",
@@ -89,7 +105,9 @@ const KEY_SIZE_SOURCE: Record<string, "modulus" | "curve"> = {
   RSA: "modulus",
   DSA: "modulus",
   ECDSA: "curve",
-  "ECDH/DH": "curve",
+  ECDH: "curve",
+  // A modulus, not a curve — the whole point of the G-24 split.
+  DH: "modulus",
   EdDSA: "curve",
 };
 

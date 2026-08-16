@@ -16,7 +16,7 @@ import { deriveAlgorithmMapping, type DerivedAlgorithmMapping } from "@workspace
  * algorithm anyone adds to `algorithms.json`, which is exactly the failure
  * G-10 records. The discriminators are, in order:
  *
- * 1. `quantumVulnerable: true`  → `pqc`. RSA, ECDSA, ECDH/DH, DSA, EdDSA.
+ * 1. `quantumVulnerable: true`  → `pqc`. RSA, ECDSA, ECDH, DH, DSA, EdDSA.
  * 2. `quantumVulnerable: false` **and a recommended replacement exists**
  *    → `hygiene`. MD5, SHA-1, AES-ECB — real defects, no quantum content.
  * 3. `quantumVulnerable: false` and **no** replacement recommended

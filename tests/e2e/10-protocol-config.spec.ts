@@ -120,12 +120,12 @@ test.describe("the protocol-configuration collector (B6), end to end", () => {
 
     // ── The assertion this whole collector's token matching exists for. Modern
     // OpenSSH offers hybrid post-quantum key exchange by default; reporting it
-    // as classical `ECDH/DH` would be a false positive on the exact axis this
+    // as classical `ECDH` would be a false positive on the exact axis this
     // product measures, so it is absent rather than wrong.
     expect(body.declarations.some((d) => d.declaredValue.includes("sntrup761"))).toBe(false);
     // ...while the classical entry on the same line IS read, which is what
     // proves the line was parsed rather than skipped wholesale.
-    expect(declaration("KexAlgorithms", "ecdh-sha2-nistp384")).toMatchObject({ algorithm: "ECDH/DH", keySize: 384 });
+    expect(declaration("KexAlgorithms", "ecdh-sha2-nistp384")).toMatchObject({ algorithm: "ECDH", keySize: 384 });
 
     // ── Two ciphers from one directive stay two findings with their own sizes.
     expect(declaration("Ciphers", "aes256-ctr")).toMatchObject({ algorithm: "AES", keySize: 256 });
@@ -143,7 +143,7 @@ test.describe("the protocol-configuration collector (B6), end to end", () => {
     expect(declaration("HostKeyAlgorithms", "ssh-ed25519")?.condition).toBeNull();
 
     // ── The other three formats.
-    expect(declaration("ike", "modp2048")).toMatchObject({ algorithm: "ECDH/DH", keySize: 2048, format: "ipsec-config" });
+    expect(declaration("ike", "modp2048")).toMatchObject({ algorithm: "DH", keySize: 2048, format: "ipsec-config" });
     expect(declaration("alg", "RS256")).toMatchObject({ algorithm: "RSA", keySize: 2048, strength: "materialised" });
 
     // ── A permitted list and a materialised key are different claims, and the
@@ -177,7 +177,7 @@ test.describe("the protocol-configuration collector (B6), end to end", () => {
     // `SHA-1` is in here because `MACs hmac-sha1` really does declare it — the
     // hygiene half of the estate, which the mappings data separates from the
     // post-quantum track rather than this collector doing so.
-    expect(new Set(mine.map((a) => a.algorithm))).toEqual(new Set(["AES", "ECDH/DH", "RSA", "EdDSA", "SHA-1"]));
+    expect(new Set(mine.map((a) => a.algorithm))).toEqual(new Set(["AES", "DH", "ECDH", "RSA", "EdDSA", "SHA-1"]));
     expect(mine.every((a) => a.latestConfidence !== null && a.latestConfidence < 1)).toBe(true);
   });
 
@@ -202,7 +202,7 @@ test.describe("the protocol-configuration collector (B6), end to end", () => {
     const inventoryRes = await api.get("/api/inventory/assets?surface=config");
     const inventory = (await inventoryRes.json()) as { assets: Array<{ algorithm: string; location: string }> };
     const mine = inventory.assets.filter((a) => a.location.startsWith(`project:${projectId}:config:`));
-    expect(mine.map((a) => a.algorithm).sort()).toEqual(["AES", "ECDH/DH", "EdDSA"]);
+    expect(mine.map((a) => a.algorithm).sort()).toEqual(["AES", "ECDH", "EdDSA"]);
 
     // Emptying the file of algorithm directives entirely still retires the
     // last one — the case a reobservation scope derived from observations

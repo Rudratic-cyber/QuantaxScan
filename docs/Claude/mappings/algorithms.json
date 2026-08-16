@@ -250,17 +250,16 @@
     },
     {
       "id": "ecdh",
-      "canonicalName": "ECDH/DH",
+      "canonicalName": "ECDH",
       "aliases": [
         "ECDH",
         "ECDHE",
-        "DH",
-        "DHE",
-        "MQV",
+        "ECMQV",
         "createECDH",
-        "DiffieHellman",
         "X25519",
-        "curve25519"
+        "curve25519",
+        "X448",
+        "curve448"
       ],
       "family": "key-agreement",
       "purposes": [
@@ -282,7 +281,7 @@
           "securityStrength": "112 bits",
           "type": "deprecated",
           "after": "2030",
-          "source": "IR8547 Table 4 (Finite Field DH and MQV; Elliptic Curve DH and MQV)",
+          "source": "IR8547 Table 4 (Elliptic Curve DH and MQV)",
           "confidence": "verified"
         },
         {
@@ -290,7 +289,7 @@
           "securityStrength": "112 bits",
           "type": "disallowed",
           "after": "2035",
-          "source": "IR8547 Table 4",
+          "source": "IR8547 Table 4 (Elliptic Curve DH and MQV)",
           "confidence": "verified"
         },
         {
@@ -298,22 +297,88 @@
           "securityStrength": ">= 128 bits",
           "type": "disallowed",
           "after": "2035",
-          "source": "IR8547 Table 4",
+          "source": "IR8547 Table 4 (Elliptic Curve DH and MQV)",
           "confidence": "verified"
         }
       ],
       "citation": {
         "document": "NIST IR 8547 ipd",
-        "section": "Table 4 and §4.1.2",
+        "section": "Table 4 (Elliptic Curve DH and MQV) and §4.1.2",
         "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
         "retrievedAt": "2026-08-16"
       },
       "confidence": "verified",
-      "explanation": "Diffie-Hellman key agreement is broken by Shor's algorithm. This is the primary harvest-now-decrypt-later exposure: recorded sessions can be decrypted retroactively once the key exchange is broken.",
+      "explanation": "Elliptic-curve Diffie-Hellman key agreement is broken by Shor's algorithm. This is the primary harvest-now-decrypt-later exposure: recorded sessions can be decrypted retroactively once the key exchange is broken.",
       "hndlCritical": true,
       "hndlSourceQuote": "IR8547 §4.1.2: 'in order to mitigate the risk of \"harvest now, decrypt later\" attacks on network communications, application-specific guidance ... may require or recommend migration to quantum-resistant key establishment schemes before the classical schemes are generally disallowed.' — i.e. the 2035 date is a ceiling, not a target, for anything carrying long-lived secrets.",
       "keySizeKind": "curve",
-      "detectionNuance": "IR 8547 Table 4 lists Finite Field DH and MQV [SP 800-56A] and Elliptic Curve DH and MQV [SP 800-56A] as SEPARATE families whose stated parameter means different things — a modulus for the first, a curve order for the second — while this entry is a single canonicalName (ECDH/DH) with one keySizeKind of \"curve\". A finite-field group reported by modulus size (e.g. diffie-hellman-group14 at 2048 bits) is therefore banded as if 2048 were a curve size, lands in the >= 128 bits band, and LOSES the 2030 deprecation row that in fact applies to it. Open gap G-24: the fix needs the collectors to stop canonicalising finite-field DH onto this entry, so it is recorded rather than patched here."
+      "detectionNuance": "Split from finite-field DH on 2026-08-16 (G-24). The two are separate families in IR 8547 Table 4 and their stated parameter means different things — a curve order here, a modulus there — so 2048 bits denotes ~112-bit security as a modulus and is not a curve size at all. Keeping one entry banded a 2048-bit MODP group against curveBits and silently dropped its 2030 deprecation. A token that names no group (SSH group-exchange, a bare `MQV`) still yields no key size, which the engine reports as undetermined against both candidate bands rather than choosing the generous one."
+    },
+    {
+      "id": "ffdh",
+      "canonicalName": "DH",
+      "aliases": [
+        "DH",
+        "DHE",
+        "EDH",
+        "FFDH",
+        "MODP",
+        "MQV",
+        "DiffieHellman",
+        "createDiffieHellman"
+      ],
+      "family": "key-agreement",
+      "purposes": [
+        "key-establishment"
+      ],
+      "quantumVulnerable": true,
+      "quantumAttack": "Shor",
+      "baseEffortHours": 8,
+      "replacements": [
+        {
+          "purpose": "key-establishment",
+          "algorithm": "ML-KEM",
+          "standard": "FIPS 203"
+        }
+      ],
+      "deadlines": [
+        {
+          "framework": "NIST-IR-8547",
+          "securityStrength": "112 bits",
+          "type": "deprecated",
+          "after": "2030",
+          "source": "IR8547 Table 4 (Elliptic Curve DH and MQV)",
+          "confidence": "verified"
+        },
+        {
+          "framework": "NIST-IR-8547",
+          "securityStrength": "112 bits",
+          "type": "disallowed",
+          "after": "2035",
+          "source": "IR8547 Table 4 (Elliptic Curve DH and MQV)",
+          "confidence": "verified"
+        },
+        {
+          "framework": "NIST-IR-8547",
+          "securityStrength": ">= 128 bits",
+          "type": "disallowed",
+          "after": "2035",
+          "source": "IR8547 Table 4 (Elliptic Curve DH and MQV)",
+          "confidence": "verified"
+        }
+      ],
+      "citation": {
+        "document": "NIST IR 8547 ipd",
+        "section": "Table 4 (Finite Field DH and MQV) and §4.1.2",
+        "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
+        "retrievedAt": "2026-08-16"
+      },
+      "confidence": "verified",
+      "explanation": "Finite-field Diffie-Hellman key agreement is broken by Shor's algorithm. This is the primary harvest-now-decrypt-later exposure: recorded sessions can be decrypted retroactively once the key exchange is broken.",
+      "hndlCritical": true,
+      "hndlSourceQuote": "IR8547 §4.1.2: 'in order to mitigate the risk of \"harvest now, decrypt later\" attacks on network communications, application-specific guidance ... may require or recommend migration to quantum-resistant key establishment schemes before the classical schemes are generally disallowed.' — i.e. the 2035 date is a ceiling, not a target, for anything carrying long-lived secrets.",
+      "keySizeKind": "modulus",
+      "detectionNuance": "Split from elliptic-curve DH on 2026-08-16 (G-24). The stated parameter is a MODULUS: a 2048-bit MODP group is ~112-bit security and is deprecated after 2030, where 2048 read as a curve order would land in the >= 128 bits band and show 2035 as the first milestone. That was the defect. `modp*`, `diffie-hellman-group*` and OpenSSL's `DH`/`DHE`/`EDH` resolve here; `ecp*`, `curve*` and `x25519`/`x448` resolve to `ECDH`."
     },
     {
       "id": "dsa",

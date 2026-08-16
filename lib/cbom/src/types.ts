@@ -46,7 +46,7 @@ export interface CryptoAssetInput {
   fingerprint: string;
   /** `@workspace/collectors` `Surface`. Chooses the CycloneDX `assetType` — see SURFACE_ASSET_TYPE. */
   surface: string;
-  /** Detector's algorithm label, e.g. `RSA`, `AES-ECB`, `ECDH/DH`. */
+  /** Detector's algorithm label, e.g. `RSA`, `AES-ECB`, `ECDH`. */
   algorithm: string;
   /**
    * Parameter size in bits, or `null` when the collector could not determine

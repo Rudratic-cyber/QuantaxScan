@@ -192,7 +192,10 @@ describe("Java — Maven and Gradle", () => {
   it("maps a Java lockfile to the algorithms its libraries implement", () => {
     const observations = collectDependencyObservations(target([{ path: "gradle.lockfile", content: GRADLE_LOCKFILE }]));
     expect(names(observations)).toEqual([
-      "ECDH/DH@acme/widget:pkg:maven/org.bouncycastle/bcprov-jdk18on",
+      // Both halves: the listing carries `ECDSA/ECDH` and a separate
+      // `Diffie-Hellman` entry, so BouncyCastle claims each family (G-24).
+      "DH@acme/widget:pkg:maven/org.bouncycastle/bcprov-jdk18on",
+      "ECDH@acme/widget:pkg:maven/org.bouncycastle/bcprov-jdk18on",
       "ECDSA@acme/widget:pkg:maven/com.google.crypto.tink/tink",
       "ECDSA@acme/widget:pkg:maven/org.bouncycastle/bcprov-jdk18on",
       "EdDSA@acme/widget:pkg:maven/com.google.crypto.tink/tink",
@@ -360,8 +363,9 @@ describe(".NET — NuGet", () => {
     expect(names(observations)).toEqual(
       [
         "DSA@acme/widget:pkg:nuget/bouncycastle.cryptography",
-        "ECDH/DH@acme/widget:pkg:nuget/bouncycastle.cryptography",
-        "ECDH/DH@acme/widget:pkg:nuget/nsec.cryptography",
+        "DH@acme/widget:pkg:nuget/bouncycastle.cryptography",
+        "ECDH@acme/widget:pkg:nuget/bouncycastle.cryptography",
+        "ECDH@acme/widget:pkg:nuget/nsec.cryptography",
         "ECDSA@acme/widget:pkg:nuget/bouncycastle.cryptography",
         "EdDSA@acme/widget:pkg:nuget/bouncycastle.cryptography",
         "EdDSA@acme/widget:pkg:nuget/nsec.cryptography",
@@ -435,7 +439,7 @@ describe("Rust — Cargo.lock", () => {
     const observations = collectDependencyObservations(target([{ path: "Cargo.lock", content: CARGO_LOCK }]));
     expect(names(observations)).toEqual(
       [
-        "ECDH/DH@acme/widget:pkg:cargo/k256",
+        "ECDH@acme/widget:pkg:cargo/k256",
         "ECDSA@acme/widget:pkg:cargo/k256",
         "EdDSA@acme/widget:pkg:cargo/ed25519-dalek",
         "RSA@acme/widget:pkg:cargo/rsa",

@@ -259,7 +259,7 @@ const populatedTimeline = {
       requirement: "RSA at 112 bits of security strength is deprecated after 2030 under NIST IR 8547.",
       citation: { document: "NIST IR 8547 ipd", section: "Table 2", url: "https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf" },
       confidence: "verified", draftStatus: "INITIAL PUBLIC DRAFT",
-      algorithms: ["ECDH/DH", "ECDSA", "RSA"], assets: 5, caveats: [],
+      algorithms: ["ECDH", "ECDSA", "RSA"], assets: 5, caveats: [],
     },
     {
       id: "NIST-IR-8547|disallowed|2036-01-01T00:00:00.000Z||>= 128 bits",
@@ -271,7 +271,7 @@ const populatedTimeline = {
       requirement: "RSA at >= 128 bits of security strength is disallowed after 2035 under NIST IR 8547.",
       citation: { document: "NIST IR 8547 ipd", section: "Table 2", url: "https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf" },
       confidence: "verified", draftStatus: "INITIAL PUBLIC DRAFT",
-      algorithms: ["ECDH/DH", "ECDSA", "RSA"], assets: 5, caveats: [],
+      algorithms: ["ECDH", "ECDSA", "RSA"], assets: 5, caveats: [],
     },
   ],
   inputs: {
@@ -452,7 +452,7 @@ test.describe("D7 — the estate posture timeline", () => {
     await expect(rows.nth(1)).toContainText("2036");
     await expect(rows.nth(1)).toContainText("Disallowed");
     // Both rows cover five assets, and name which algorithms produced them.
-    await expect(rows.nth(1)).toContainText("ECDH/DH, ECDSA, RSA");
+    await expect(rows.nth(1)).toContainText("ECDH, ECDSA, RSA");
     // A draft is labelled as a draft wherever its dates are quoted.
     await expect(rows.nth(0)).toContainText("INITIAL PUBLIC DRAFT");
     await expect(rows.nth(0)).toContainText("NIST-IR-8547");

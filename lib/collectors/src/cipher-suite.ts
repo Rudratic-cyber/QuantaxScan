@@ -12,7 +12,7 @@
  *
  * **Whole tokens, never substrings.** B6 shipped two bugs of exactly this shape
  * — a comment containing `sha1` reported as a key's algorithm, and a bare `dh`
- * inside an IPsec proposal resolving to a phantom `ECDH/DH` asset. Every name
+ * inside an IPsec proposal resolving to a phantom `DH` asset. Every name
  * here is split into whole tokens on `_` and `-` and looked up in a `Record`;
  * nothing does `includes()` on the raw string. `ECDHE` and `DH` are different
  * map keys, and `SHA` never appears in any of them at all.
@@ -37,7 +37,7 @@
  *     every handshake, and B3's prober *does* record one for a TLS 1.3
  *     connection — because B3 completed the handshake and can say a key
  *     exchange happened. We did not. A log line containing this suite name is
- *     evidence of the AEAD only, and minting an `ECDH/DH` asset from it would
+ *     evidence of the AEAD only, and minting an `ECDH` asset from it would
  *     be reporting a value we inferred. This is the headline control of this
  *     module and `cipher-suite.test.ts` asserts it directly.
  *  2. **`iana-legacy`** — `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`. The tokens
@@ -123,20 +123,31 @@ export interface ParsedCipherSuite {
 }
 
 /**
- * Key-exchange tokens. `ECDHE`, `ECDH`, `DHE`, `DH` and OpenSSL's `EDH` are all
- * aliases of the single `ECDH/DH` entry in `algorithms.json` — an X25519
- * handshake and a classic DHE handshake are the same algorithm family for
- * reporting purposes, which is the same resolution B3 uses.
+ * Key-exchange tokens.
+ *
+ * **`ECDHE` and `DHE` are different algorithms here, and used not to be.**
+ * Until 2026-08-16 all five resolved to one `ECDH/DH` entry on the reasoning
+ * that an X25519 handshake and a classic DHE handshake are "the same family
+ * for reporting purposes". They are not, and the difference is a date: IR 8547
+ * Table 4 lists Finite Field DH/MQV and Elliptic Curve DH/MQV separately
+ * because the stated parameter means different things — a modulus against a
+ * curve order. 2048 is ~112-bit security as a modulus, and 112-bit key
+ * establishment is deprecated after 2030; read as a curve size it lands in the
+ * `>= 128 bits` band and the customer is told 2035. See G-24.
+ *
+ * A suite name states no key size either way, so nothing here bands anything
+ * on its own — but the canonical name it emits decides which table the size
+ * gets read against everywhere downstream.
  *
  * `RSA` is here as well as in the authentication table because a legacy static
  * key-transport suite uses the certificate's own RSA key *as* the key exchange.
  */
 const KEY_EXCHANGE_TOKENS: Record<string, string> = {
-  ECDHE: "ECDH/DH",
-  ECDH: "ECDH/DH",
-  DHE: "ECDH/DH",
-  DH: "ECDH/DH",
-  EDH: "ECDH/DH",
+  ECDHE: "ECDH",
+  ECDH: "ECDH",
+  DHE: "DH",
+  DH: "DH",
+  EDH: "DH",
   RSA: "RSA",
 };
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "dataVersion": "1.1.0",
+  "dataVersion": "1.2.0",
   "description": "B2's package -> algorithm table. If this package is in the dependency graph, which quantum-relevant primitives does it put there? Moved out of lib/collectors/src/crypto-packages.ts on 2026-08-14 so a data revision needs no code edit (C1's rule) and so check:standards polices its retrievedAt dates (G-14). 1.1.0 (2026-08-16) added the maven, golang, nuget and cargo ecosystems.",
   "criticalCaveat": "A lockfile records the fully RESOLVED dependency graph. A package matched here may be a transitive dependency of the build toolchain rather than a library the project's own code calls. This table states what a package implements, never that the customer's code uses it — see the toolchainUbiquity flag and docs/Claude/09-open-gaps.md G-20.",
   "curationRules": [
@@ -9,7 +9,7 @@
     "No version-range reasoning. The version a lockfile pins is recorded, but this table has no notion of `implemented from x.y.z` or `vulnerable before x.y.z`. Where a claim is known to be version-dependent it is marked needs-check rather than silently applied to every version — see paramiko/DSA below and G-21.",
     "Every claim carries a citation with a verbatim quote from the package's own documentation. A citation without a quote is the unverified claim G-07/G-08/G-09 punished. Where no such quote could be obtained the claim is `needs-check`, not deleted: the gap being visible is the point.",
     "A *bundle* whose cryptography differs per sub-package is absent for the same reason a JOSE library is. `golang.org/x/crypto` is one Go module holding ssh, ocsp, pkcs12, blake2b, chacha20 and much else; the module path in a go.mod says which module is required, never which package is imported, so no algorithm follows from it. Same for `org.bouncycastle:bcpkix-*` and `bctls-*`, which are format and protocol layers over bcprov rather than algorithm implementations.",
-    "This table can only emit an `algorithm` that is a canonicalName in algorithms.json, and there are nine of them: RSA, ECDSA, EdDSA, ECDH/DH, DSA, MD5, SHA-1, AES and AES-ECB. Several libraries added in 1.1.0 also ship ML-KEM, ML-DSA, SLH-DSA or ChaCha20. Those are omitted rather than approximated, so an entry here under-reports what a library provides and never over-reports it. Where the omission is material the package's `note` says so."
+    "This table can only emit an `algorithm` that is a canonicalName in algorithms.json, and there are ten of them: RSA, ECDSA, EdDSA, ECDH, DH, DSA, MD5, SHA-1, AES and AES-ECB. ECDH and DH were one entry until 2026-08-16; G-24 split them because a stated size is a curve order in the first and a modulus in the second, and 2048 means different things in each. Several libraries added in 1.1.0 also ship ML-KEM, ML-DSA, SLH-DSA or ChaCha20. Those are omitted rather than approximated, so an entry here under-reports what a library provides and never over-reports it. Where the omission is material the package's `note` says so."
   ],
   "statusValues": {
     "verified": "A verbatim quote from the package's own documentation supports the claim, read on `retrievedAt`. It does NOT mean the claim was checked against the specific version a lockfile pins.",
@@ -58,7 +58,11 @@
         "quote": "Generate a RSA PEM key pair from pure JS"
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "dedicated", "rationale": "keypair generates RSA key pairs and nothing else." }
+        {
+          "algorithm": "RSA",
+          "tier": "dedicated",
+          "rationale": "keypair generates RSA key pairs and nothing else."
+        }
       ]
     },
     {
@@ -72,8 +76,17 @@
         "quote": "Provides [X.509][] certificate support, ED25519 key generation and signing/verifying, and RSA public and private key encoding, decoding, encryption/decryption, and signing/verifying."
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "forge.pki implements RSA key generation, signing and encryption." },
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "curve": "ed25519", "rationale": "forge.pki.ed25519 implements Ed25519 signatures." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "forge.pki implements RSA key generation, signing and encryption."
+        },
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "curve": "ed25519",
+          "rationale": "forge.pki.ed25519 implements Ed25519 signatures."
+        }
       ],
       "note": "The absence of ECDSA/ECDH is a checked absence, not an omission: the strings ecdsa, ecdh and elliptic do not occur anywhere in the README."
     },
@@ -98,7 +111,11 @@
           "tier": "multi-primitive",
           "rationale": "jsrsasign implements ECDSA. Its curve set is not NIST-only: the ECDSA API page lists secp256r1/secp384r1/secp521r1 alongside the Koblitz curves secp256k1 and secp192k1, so no single curve is claimed here."
         },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "jsrsasign implements DSA signature." }
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "jsrsasign implements DSA signature."
+        }
       ]
     },
     {
@@ -113,9 +130,22 @@
         "quote": "NOTE: That `curve25519` could not be used for ECDSA, use `ed25519` instead."
       },
       "algorithms": [
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "elliptic implements ECDSA over secp256k1 and p192/p224/p256/p384/p521; curve-agnostic, so no key size is claimed." },
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "curve": "ed25519", "rationale": "elliptic's EdDSA implementation is instantiated as new EdDSA('ed25519') — ed25519 is the only EdDSA curve in its curve list." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "elliptic implements ECDH key agreement (key.derive(otherPublic))." }
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "elliptic implements ECDSA over secp256k1 and p192/p224/p256/p384/p521; curve-agnostic, so no key size is claimed."
+        },
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "curve": "ed25519",
+          "rationale": "elliptic's EdDSA implementation is instantiated as new EdDSA('ed25519') — ed25519 is the only EdDSA curve in its curve list."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "elliptic implements ECDH key agreement (key.derive(otherPublic)). Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     },
     {
@@ -129,8 +159,18 @@
         "quote": "This module provides native bindings to bitcoin-core/secp256k1. In browser elliptic will be used as fallback."
       },
       "algorithms": [
-        { "algorithm": "ECDSA", "tier": "dedicated", "curve": "secp256k1", "rationale": "Bindings to libsecp256k1. ECDSA sign/verify/recover over secp256k1 is the package's primary purpose and it supports no other curve." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "curve": "secp256k1", "rationale": "API.md documents an `ecdh` function — ECDH key agreement over secp256k1. Added 2026-08-14: the original hand-curated entry claimed ECDSA only." }
+        {
+          "algorithm": "ECDSA",
+          "tier": "dedicated",
+          "curve": "secp256k1",
+          "rationale": "Bindings to libsecp256k1. ECDSA sign/verify/recover over secp256k1 is the package's primary purpose and it supports no other curve."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "curve": "secp256k1",
+          "rationale": "API.md documents an `ecdh` function — ECDH key agreement over secp256k1. Added 2026-08-14: the original hand-curated entry claimed ECDSA only. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ],
       "note": "Browser builds fall back to the pure-JS `elliptic` package by the module's own README, so a project depending on this may also carry elliptic's claims transitively."
     },
@@ -145,8 +185,18 @@
         "quote": "Fastest 5KB JS implementation of secp256k1 signatures & ECDH."
       },
       "algorithms": [
-        { "algorithm": "ECDSA", "tier": "dedicated", "curve": "secp256k1", "rationale": "Single-curve ECDSA implementation (secp256k1), RFC6979-compliant." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "curve": "secp256k1", "rationale": "getSharedSecret performs ECDH over secp256k1. Added 2026-08-14: the original hand-curated entry claimed ECDSA only." }
+        {
+          "algorithm": "ECDSA",
+          "tier": "dedicated",
+          "curve": "secp256k1",
+          "rationale": "Single-curve ECDSA implementation (secp256k1), RFC6979-compliant."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "curve": "secp256k1",
+          "rationale": "getSharedSecret performs ECDH over secp256k1. Added 2026-08-14: the original hand-curated entry claimed ECDSA only. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ],
       "note": "Also ships BIP340 Schnorr signatures. Not reported: Schnorr has no canonicalName in algorithms.json, and inventing one here would put an algorithm name in a place that cannot resolve a standard or a deadline for it."
     },
@@ -161,9 +211,14 @@
         "quote": "Fastest 5KB JS implementation of ed25519 signatures."
       },
       "algorithms": [
-        { "algorithm": "EdDSA", "tier": "dedicated", "curve": "ed25519", "rationale": "Single-curve Ed25519 signature implementation, RFC8032/FIPS 186-5." }
+        {
+          "algorithm": "EdDSA",
+          "tier": "dedicated",
+          "curve": "ed25519",
+          "rationale": "Single-curve Ed25519 signature implementation, RFC8032/FIPS 186-5."
+        }
       ],
-      "note": "Deliberately excludes x25519/curve25519 since v2 — the README directs users needing key agreement to @noble/curves — so no ECDH/DH claim is made."
+      "note": "Deliberately excludes x25519/curve25519 since v2 — the README directs users needing key agreement to @noble/curves — so no ECDH claim is made."
     },
     {
       "ecosystem": "npm",
@@ -176,9 +231,21 @@
         "quote": "We provide ECDH over all Weierstrass curves, and over 2 Montgomery curves X25519 (Curve25519) & X448 (Curve448), conforming to [RFC 7748]"
       },
       "algorithms": [
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "Ships ECDSA over the NIST (p256/p384/p521), secp256k1 and Brainpool curves." },
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "rationale": "Ships ed25519 and ed448; curve-agnostic at the package level, so no key size is claimed." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "Ships ECDH over all Weierstrass curves plus X25519 and X448." }
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "Ships ECDSA over the NIST (p256/p384/p521), secp256k1 and Brainpool curves."
+        },
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "rationale": "Ships ed25519 and ed448; curve-agnostic at the package level, so no key size is claimed."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "Ships ECDH over all Weierstrass curves plus X25519 and X448. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     },
     {
@@ -192,8 +259,18 @@
         "quote": "Implements *x25519-xsalsa20-poly1305*."
       },
       "algorithms": [
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "curve": "ed25519", "rationale": "nacl.sign implements ed25519 (README: 'Implements [ed25519]')." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "curve": "x25519", "rationale": "nacl.box is x25519-xsalsa20-poly1305; the raw X25519 primitive is nacl.scalarMult." }
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "curve": "ed25519",
+          "rationale": "nacl.sign implements ed25519 (README: 'Implements [ed25519]')."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "curve": "x25519",
+          "rationale": "nacl.box is x25519-xsalsa20-poly1305; the raw X25519 primitive is nacl.scalarMult. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     },
     {
@@ -207,7 +284,12 @@
         "quote": "A native implementation of Ed25519 for Node.js."
       },
       "algorithms": [
-        { "algorithm": "EdDSA", "tier": "dedicated", "curve": "ed25519", "rationale": "Native Ed25519 signature bindings (MakeKeypair/Sign/Verify)." }
+        {
+          "algorithm": "EdDSA",
+          "tier": "dedicated",
+          "curve": "ed25519",
+          "rationale": "Native Ed25519 signature bindings (MakeKeypair/Sign/Verify)."
+        }
       ],
       "note": "Last published 2021; effectively unmaintained."
     },
@@ -222,10 +304,27 @@
         "quote": "Supports RSA, DSA, ECDSA (nistp-*) and ED25519 key types, in PEM (PKCS#1, PKCS#8) and OpenSSH formats."
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "sshpk parses and generates SSH RSA keys." },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "sshpk supports SSH DSA keys." },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "sshpk supports ECDSA keys over nistp256/nistp384/nistp521; curve-agnostic at the package level." },
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "curve": "ed25519", "rationale": "sshpk supports ED25519 keys." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "sshpk parses and generates SSH RSA keys."
+        },
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "sshpk supports SSH DSA keys."
+        },
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "sshpk supports ECDSA keys over nistp256/nistp384/nistp521; curve-agnostic at the package level."
+        },
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "curve": "ed25519",
+          "rationale": "sshpk supports ED25519 keys."
+        }
       ],
       "note": "Key *generation* is narrower than parsing — the README limits generation to ecdsa and ed25519 — but a dependency on the library still puts all four key types in reach."
     },
@@ -240,8 +339,18 @@
         "quote": "Only secp256k1 curve, only SHA-512 (KDF), HMAC-SHA-256 (HMAC) and AES-256-CBC for ECIES"
       },
       "algorithms": [
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "curve": "secp256k1", "rationale": "eccrypto signs with ECDSA over secp256k1." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "curve": "secp256k1", "rationale": "eccrypto derives shared secrets with ECDH over secp256k1." }
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "curve": "secp256k1",
+          "rationale": "eccrypto signs with ECDSA over secp256k1."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "curve": "secp256k1",
+          "rationale": "eccrypto derives shared secrets with ECDH over secp256k1. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     },
     {
@@ -254,7 +363,13 @@
         "retrievedAt": "2026-08-14",
         "quote": "a JavaScript function for hashing messages with MD5."
       },
-      "algorithms": [{ "algorithm": "MD5", "tier": "dedicated", "rationale": "The package is an MD5 implementation." }]
+      "algorithms": [
+        {
+          "algorithm": "MD5",
+          "tier": "dedicated",
+          "rationale": "The package is an MD5 implementation."
+        }
+      ]
     },
     {
       "ecosystem": "npm",
@@ -266,7 +381,13 @@
         "retrievedAt": "2026-08-14",
         "quote": "A simple and fast MD5 hash function for JavaScript supports UTF-8 encoding."
       },
-      "algorithms": [{ "algorithm": "MD5", "tier": "dedicated", "rationale": "The package is an MD5 implementation; it also exposes HMAC-MD5." }]
+      "algorithms": [
+        {
+          "algorithm": "MD5",
+          "tier": "dedicated",
+          "rationale": "The package is an MD5 implementation; it also exposes HMAC-MD5."
+        }
+      ]
     },
     {
       "ecosystem": "npm",
@@ -278,7 +399,13 @@
         "retrievedAt": "2026-08-14",
         "quote": "A simple SHA1 hash function for JavaScript supports UTF-8 encoding."
       },
-      "algorithms": [{ "algorithm": "SHA-1", "tier": "dedicated", "rationale": "The package is a SHA-1 implementation; it also exposes HMAC-SHA1." }]
+      "algorithms": [
+        {
+          "algorithm": "SHA-1",
+          "tier": "dedicated",
+          "rationale": "The package is a SHA-1 implementation; it also exposes HMAC-SHA1."
+        }
+      ]
     },
     {
       "ecosystem": "npm",
@@ -292,7 +419,11 @@
         "quote": "SHA-1 -- **legacy, do not use in new systems**"
       },
       "algorithms": [
-        { "algorithm": "SHA-1", "tier": "multi-primitive", "rationale": "sha.js implements SHA-0, SHA-1, SHA-224, SHA-256, SHA-384 and SHA-512 — SHA-1 included, and marked legacy by upstream itself. It does not implement SHA-3." }
+        {
+          "algorithm": "SHA-1",
+          "tier": "multi-primitive",
+          "rationale": "sha.js implements SHA-0, SHA-1, SHA-224, SHA-256, SHA-384 and SHA-512 — SHA-1 included, and marked legacy by upstream itself. It does not implement SHA-3."
+        }
       ]
     },
     {
@@ -306,12 +437,19 @@
         "quote": "- ```crypto-js/md5``` "
       },
       "algorithms": [
-        { "algorithm": "MD5", "tier": "multi-primitive", "rationale": "CryptoJS.MD5 (crypto-js/md5) is part of the bundle, alongside HMAC-MD5." },
-        { "algorithm": "SHA-1", "tier": "multi-primitive", "rationale": "CryptoJS.SHA1 (crypto-js/sha1) is part of the bundle, alongside HMAC-SHA1." }
+        {
+          "algorithm": "MD5",
+          "tier": "multi-primitive",
+          "rationale": "CryptoJS.MD5 (crypto-js/md5) is part of the bundle, alongside HMAC-MD5."
+        },
+        {
+          "algorithm": "SHA-1",
+          "tier": "multi-primitive",
+          "rationale": "CryptoJS.SHA1 (crypto-js/sha1) is part of the bundle, alongside HMAC-SHA1."
+        }
       ],
       "note": "The README states the project is no longer actively maintained and recommends the native Crypto API."
     },
-
     {
       "ecosystem": "pypi",
       "name": "cryptography",
@@ -323,10 +461,31 @@
         "quote": "The ECDSA signature algorithm first standardized in NIST publication FIPS 186-3"
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "Implements RSA key generation, signing and encryption." },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "Implements ECDSA over the SECG/NIST curves (secp256r1 is documented as 'Also called NIST P-256')." },
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "rationale": "Implements Ed25519 and Ed448 as separate modules; curve-agnostic at the package level, so no key size is claimed." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "Implements ECDH (SP 800-56A) and finite-field Diffie-Hellman." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "Implements RSA key generation, signing and encryption."
+        },
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "Implements ECDSA over the SECG/NIST curves (secp256r1 is documented as 'Also called NIST P-256')."
+        },
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "rationale": "Implements Ed25519 and Ed448 as separate modules; curve-agnostic at the package level, so no key size is claimed."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "Implements ECDH (SP 800-56A) and finite-field Diffie-Hellman. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        },
+        {
+          "algorithm": "DH",
+          "tier": "multi-primitive",
+          "rationale": "The same sentence names finite-field Diffie-Hellman alongside ECDH. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ],
       "note": "The library's own DH page states that finite-field DH is deprecated and support will be removed in a future release. The ECDH half is unaffected."
     },
@@ -341,9 +500,21 @@
         "quote": "DSA and ECDSA are U.S. federal standards for digital signatures, specified in FIPS PUB 186-4."
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "Crypto.PublicKey.RSA defines RSA keys, private or public." },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "Crypto.PublicKey.DSA generates and constructs DSA keys; the DSS page calls plain DSA deprecated." },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "Crypto.Signature.DSS over Crypto.PublicKey.ECC is ECDSA. Its documentation restricts accepted ECC keys to P-224, P-256, P-384 and P-521, so no single curve is claimed." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "Crypto.PublicKey.RSA defines RSA keys, private or public."
+        },
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "Crypto.PublicKey.DSA generates and constructs DSA keys; the DSS page calls plain DSA deprecated."
+        },
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "Crypto.Signature.DSS over Crypto.PublicKey.ECC is ECDSA. Its documentation restricts accepted ECC keys to P-224, P-256, P-384 and P-521, so no single curve is claimed."
+        }
       ]
     },
     {
@@ -356,9 +527,21 @@
         "url": "https://pycryptodome.readthedocs.io/en/latest/src/signature/dsa.html"
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "Cryptodome.PublicKey.RSA is expected to mirror pycryptodome's Crypto.PublicKey.RSA." },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "Cryptodome.PublicKey.DSA is expected to mirror pycryptodome's Crypto.PublicKey.DSA." },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "Cryptodome.Signature.DSS over ECC keys is expected to mirror pycryptodome's." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "Cryptodome.PublicKey.RSA is expected to mirror pycryptodome's Crypto.PublicKey.RSA."
+        },
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "Cryptodome.PublicKey.DSA is expected to mirror pycryptodome's Crypto.PublicKey.DSA."
+        },
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "Cryptodome.Signature.DSS over ECC keys is expected to mirror pycryptodome's."
+        }
       ]
     },
     {
@@ -367,8 +550,16 @@
       "status": "needs-check",
       "needsCheckReason": "PyCrypto has been unmaintained since 2014 and no authoritative documentation for it was read. The claims below are the original hand-curated ones, retained rather than deleted so the gap stays visible.",
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "Crypto.PublicKey.RSA is believed to be part of PyCrypto (unmaintained)." },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "Crypto.PublicKey.DSA is believed to be part of PyCrypto (unmaintained)." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "Crypto.PublicKey.RSA is believed to be part of PyCrypto (unmaintained)."
+        },
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "Crypto.PublicKey.DSA is believed to be part of PyCrypto (unmaintained)."
+        }
       ]
     },
     {
@@ -382,7 +573,11 @@
         "quote": "Representation of an ECDSA key which can be used to sign and verify SSH2 data."
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "paramiko supports ssh-rsa and rsa-sha2-256/512 host and user keys." },
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "paramiko supports ssh-rsa and rsa-sha2-256/512 host and user keys."
+        },
         {
           "algorithm": "DSA",
           "tier": "multi-primitive",
@@ -390,8 +585,17 @@
           "needsCheckReason": "Version-dependent, and this table does no version-range reasoning (G-21). Paramiko's changelog for 4.0.0 (2025-08-03) states: 'Removed support for the DSA (aka DSS) key algorithm, as it has been badly outdated and insecure for a decade or more at this point, and was recently completely removed from OpenSSH as well.' DSSKey is absent from the current API docs. The claim holds for 3.x and is false for 4.x; the pinned version is recorded in the observation's evidence, so a reviewer can settle it.",
           "rationale": "paramiko 3.x supports ssh-dss keys; 4.0.0 removed them."
         },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "paramiko supports ecdsa-sha2-nistp256/384/521 keys via ECDSAKey." },
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "curve": "ed25519", "rationale": "paramiko supports ssh-ed25519 keys via Ed25519Key." }
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "paramiko supports ecdsa-sha2-nistp256/384/521 keys via ECDSAKey."
+        },
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "curve": "ed25519",
+          "rationale": "paramiko supports ssh-ed25519 keys via Ed25519Key."
+        }
       ]
     },
     {
@@ -405,7 +609,11 @@
         "quote": "It supports encryption and decryption, signing and verifying signatures, and key generation according to PKCS#1 version 1.5."
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "dedicated", "rationale": "python-rsa is a pure-Python RSA implementation. Its own description scopes it to RSA and names no other algorithm." }
+        {
+          "algorithm": "RSA",
+          "tier": "dedicated",
+          "rationale": "python-rsa is a pure-Python RSA implementation. Its own description scopes it to RSA and names no other algorithm."
+        }
       ]
     },
     {
@@ -424,8 +632,16 @@
           "tier": "multi-primitive",
           "rationale": "Corrected 2026-08-14. The original entry rated this `dedicated` on the reasoning that 'python-ecdsa exists to implement ECDSA'. Its own description contradicts that: the package is a general ECC library offering ECDSA, EdDSA and ECDH, so which primitive a caller invokes is not readable from a lockfile. Curve-agnostic — NIST 192/224/256/384/521, Brainpool 160-512 and secp256k1 — so no key size is claimed."
         },
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "rationale": "Added 2026-08-14. Key generation, signing and verifying are supported for Ed25519 and Ed448; curve-agnostic between the two, so no key size is claimed." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "Added 2026-08-14. Elliptic Curve Diffie-Hellman is named in the package's own description." }
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "rationale": "Added 2026-08-14. Key generation, signing and verifying are supported for Ed25519 and Ed448; curve-agnostic between the two, so no key size is claimed."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "Added 2026-08-14. Elliptic Curve Diffie-Hellman is named in the package's own description. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     },
     {
@@ -439,7 +655,12 @@
         "quote": "Python bindings to the Ed25519 public-key signature system."
       },
       "algorithms": [
-        { "algorithm": "EdDSA", "tier": "dedicated", "curve": "ed25519", "rationale": "The package is an Ed25519 signature implementation." }
+        {
+          "algorithm": "EdDSA",
+          "tier": "dedicated",
+          "curve": "ed25519",
+          "rationale": "The package is an Ed25519 signature implementation."
+        }
       ],
       "note": "The README carries the header 'Not Recommended For New Applications: Use pynacl Instead'."
     },
@@ -454,8 +675,18 @@
         "quote": "Private key for producing digital signatures using the Ed25519 algorithm."
       },
       "algorithms": [
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "curve": "ed25519", "rationale": "nacl.signing is Ed25519; the docs note Ed25519 keys are 256 bits (32 bytes), which matches the curve bit size this table resolves." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "curve": "x25519", "rationale": "nacl.public performs key agreement over Curve25519 (shared_key returns 'the Curve25519 shared secret'). The docs name the curve Curve25519 rather than X25519; these are the same 255-bit curve and the same 32-byte keys, so the key size is unaffected." }
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "curve": "ed25519",
+          "rationale": "nacl.signing is Ed25519; the docs note Ed25519 keys are 256 bits (32 bytes), which matches the curve bit size this table resolves."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "curve": "x25519",
+          "rationale": "nacl.public performs key agreement over Curve25519 (shared_key returns 'the Curve25519 shared secret'). The docs name the curve Curve25519 rather than X25519; these are the same 255-bit curve and the same 32-byte keys, so the key size is unaffected. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     },
     {
@@ -469,8 +700,16 @@
         "quote": "A class representing an DSA or RSA public key or key pair."
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "PKey exposes OpenSSL RSA keys (OpenSSL.crypto.TYPE_RSA)." },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "PKey exposes OpenSSL DSA keys (OpenSSL.crypto.TYPE_DSA)." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "PKey exposes OpenSSL RSA keys (OpenSSL.crypto.TYPE_RSA)."
+        },
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "PKey exposes OpenSSL DSA keys (OpenSSL.crypto.TYPE_DSA)."
+        }
       ],
       "note": "The ECDSA claim was REMOVED on 2026-08-14 as contradicted by the source. pyOpenSSL's PKey documents only TYPE_RSA and TYPE_DSA; there is no TYPE_EC. Its only EC surface is get_elliptic_curves(), whose documented purpose is choosing the curve for TLS ECDHE key exchange — not an EC key object and not ECDSA. Reporting ECDSA from a pyOpenSSL dependency would have been a customer-facing claim of the same class as G-07/G-08/G-09. The module is also documented as pending deprecation in favour of pyca/cryptography."
     },
@@ -485,13 +724,33 @@
         "quote": "M2Crypto wrapper for OpenSSL ECDH/ECDSA API."
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "M2Crypto wraps OpenSSL RSA." },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "M2Crypto wraps OpenSSL DSA." },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "M2Crypto.EC signs and verifies with ECDSA (methods are named sign_dsa/verify_dsa but documented as ECDSA)." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "M2Crypto wraps the OpenSSL DH API, and M2Crypto.EC.compute_dh_key performs ECDH." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "M2Crypto wraps OpenSSL RSA."
+        },
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "M2Crypto wraps OpenSSL DSA."
+        },
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "M2Crypto.EC signs and verifies with ECDSA (methods are named sign_dsa/verify_dsa but documented as ECDSA)."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "M2Crypto wraps the OpenSSL DH API, and M2Crypto.EC.compute_dh_key performs ECDH. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        },
+        {
+          "algorithm": "DH",
+          "tier": "multi-primitive",
+          "rationale": "M2Crypto wraps the OpenSSL DH API — the finite-field half of the same evidence that gives it ECDH. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     },
-
     {
       "ecosystem": "maven",
       "name": "org.bouncycastle:bcprov-jdk18on",
@@ -503,11 +762,36 @@
         "quote": "ECDSA/ECDH"
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "RSA is one of the key types the provider's own algorithm listing names." },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "DSA is one of the key types the provider's own algorithm listing names." },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "The listing's `ECDSA/ECDH` entry is the quoted claim." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "The listing carries both `ECDSA/ECDH` and a separate `Diffie-Hellman` entry." },
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "rationale": "The listing's `EdDSA/XDH` entry. Curve-agnostic at the artifact level (Ed25519 and Ed448 are both provided), so no key size is claimed." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "RSA is one of the key types the provider's own algorithm listing names."
+        },
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "DSA is one of the key types the provider's own algorithm listing names."
+        },
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "The listing's `ECDSA/ECDH` entry is the quoted claim."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "The listing carries both `ECDSA/ECDH` and a separate `Diffie-Hellman` entry. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        },
+        {
+          "algorithm": "DH",
+          "tier": "multi-primitive",
+          "rationale": "The listing's separate `Diffie-Hellman` entry is the finite-field half; `ECDSA/ECDH` is the elliptic one. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        },
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "rationale": "The listing's `EdDSA/XDH` entry. Curve-agnostic at the artifact level (Ed25519 and Ed448 are both provided), so no key size is claimed."
+        }
       ],
       "note": "The cited page states its coverage as a list of key types rather than prose; the entries read on the retrieval date were Diffie-Hellman, DSA, DSTU, ECDSA/ECDH, EdDSA/XDH, ElGamal, GOST, LMS/HSS, SM2, RSA and XMSS. The quote is one of those entries verbatim. Bouncy Castle also ships ML-DSA, ML-KEM, SLH-DSA and other NIST PQC algorithms; those are deliberately not reported here because they are not canonicalNames in algorithms.json, and a table that cannot name them must not imply their absence."
     },
@@ -521,10 +805,31 @@
         "url": "https://www.bouncycastle.org/documentation/specification_interoperability/"
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "Expected to mirror bcprov-jdk18on." },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "Expected to mirror bcprov-jdk18on." },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "Expected to mirror bcprov-jdk18on." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "Expected to mirror bcprov-jdk18on." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "Expected to mirror bcprov-jdk18on."
+        },
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "Expected to mirror bcprov-jdk18on."
+        },
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "Expected to mirror bcprov-jdk18on."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "Expected to mirror bcprov-jdk18on. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        },
+        {
+          "algorithm": "DH",
+          "tier": "multi-primitive",
+          "rationale": "Expected to mirror bcprov-jdk18on, which lists finite-field Diffie-Hellman separately. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     },
     {
@@ -557,13 +862,25 @@
         "quote": "ECDSA over NIST curves"
       },
       "algorithms": [
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "The quoted signature key type. Curve-agnostic at the library level (P-256, P-384 and P-521 key templates all exist), so no key size is claimed." },
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "curve": "ed25519", "rationale": "The same table lists `Ed25519` as a signature key type, which pins the curve." },
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "The same table lists `RSA-SSA-PKCS1` and `RSA-SSA-PSS` as signature key types." }
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "The quoted signature key type. Curve-agnostic at the library level (P-256, P-384 and P-521 key templates all exist), so no key size is claimed."
+        },
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "curve": "ed25519",
+          "rationale": "The same table lists `Ed25519` as a signature key type, which pins the curve."
+        },
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "The same table lists `RSA-SSA-PKCS1` and `RSA-SSA-PSS` as signature key types."
+        }
       ],
       "note": "The table also lists ML-DSA and SLH-DSA. Those are omitted for the same reason as Bouncy Castle's: algorithms.json has no canonicalName for them, and this table may only emit names that resolve there."
     },
-
     {
       "ecosystem": "golang",
       "name": "github.com/decred/dcrd/dcrec/secp256k1",
@@ -614,12 +931,19 @@
         "quote": "CIRCL (Cloudflare Interoperable, Reusable Cryptographic Library) is a collection of cryptographic primitives written in Go."
       },
       "algorithms": [
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "rationale": "The README's primitive list names Ed25519 and Ed448 as digital signature schemes. Two curves, so none is pinned and no key size is claimed." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "The README's primitive list names X25519 and X448 as Diffie-Hellman key exchange functions." }
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "rationale": "The README's primitive list names Ed25519 and Ed448 as digital signature schemes. Two curves, so none is pinned and no key size is claimed."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "The README's primitive list names X25519 and X448 as Diffie-Hellman key exchange functions. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ],
       "note": "CIRCL's headline content is post-quantum (Kyber/ML-KEM, Dilithium/ML-DSA). Those are not reported because algorithms.json has no canonicalName for them; a CIRCL dependency is therefore under-reported here rather than mis-reported. The RSA blind-signature protocol it ships is also omitted — it is a protocol built on RSA, not a claim that the importer uses RSA keys."
     },
-
     {
       "ecosystem": "nuget",
       "name": "BouncyCastle.Cryptography",
@@ -631,11 +955,36 @@
         "quote": "ECDSA/ECDH"
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "RSA is one of the key types the provider's own algorithm listing names." },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "DSA is one of the key types the provider's own algorithm listing names." },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "The listing's `ECDSA/ECDH` entry is the quoted claim." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "The listing carries both `ECDSA/ECDH` and a separate `Diffie-Hellman` entry." },
-        { "algorithm": "EdDSA", "tier": "multi-primitive", "rationale": "The listing's `EdDSA/XDH` entry. Curve-agnostic at the package level, so no key size is claimed." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "RSA is one of the key types the provider's own algorithm listing names."
+        },
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "DSA is one of the key types the provider's own algorithm listing names."
+        },
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "The listing's `ECDSA/ECDH` entry is the quoted claim."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "The listing carries both `ECDSA/ECDH` and a separate `Diffie-Hellman` entry. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        },
+        {
+          "algorithm": "DH",
+          "tier": "multi-primitive",
+          "rationale": "The listing's separate `Diffie-Hellman` entry is the finite-field half; `ECDSA/ECDH` is the elliptic one. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        },
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "rationale": "The listing's `EdDSA/XDH` entry. Curve-agnostic at the package level, so no key size is claimed."
+        }
       ],
       "note": "The current package id, published by the Bouncy Castle project itself. Its NuGet description ('BouncyCastle.NET is a popular cryptography library for .NET') names no algorithm, which is why the citation is the project's own specification page instead."
     },
@@ -649,10 +998,31 @@
         "url": "https://www.bouncycastle.org/documentation/specification_interoperability/"
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "Expected to mirror BouncyCastle.Cryptography." },
-        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "Expected to mirror BouncyCastle.Cryptography." },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "Expected to mirror BouncyCastle.Cryptography." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "Expected to mirror BouncyCastle.Cryptography." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "Expected to mirror BouncyCastle.Cryptography."
+        },
+        {
+          "algorithm": "DSA",
+          "tier": "multi-primitive",
+          "rationale": "Expected to mirror BouncyCastle.Cryptography."
+        },
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "Expected to mirror BouncyCastle.Cryptography."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "Expected to mirror BouncyCastle.Cryptography. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        },
+        {
+          "algorithm": "DH",
+          "tier": "multi-primitive",
+          "rationale": "Expected to mirror BouncyCastle.Cryptography, which lists finite-field Diffie-Hellman separately. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     },
     {
@@ -673,15 +1043,14 @@
           "rationale": "SignatureAlgorithm exposes Ed25519 and Ed25519ph and no other signature scheme, so the curve is pinned even though the library is multi-primitive overall."
         },
         {
-          "algorithm": "ECDH/DH",
+          "algorithm": "ECDH",
           "tier": "multi-primitive",
           "curve": "x25519",
-          "rationale": "KeyAgreementAlgorithm exposes exactly one algorithm, documented as 'Gets the X25519 key agreement algorithm.' (nsec.rocks/docs/api/nsec.cryptography.keyagreementalgorithm, read 2026-08-16)."
+          "rationale": "KeyAgreementAlgorithm exposes exactly one algorithm, documented as 'Gets the X25519 key agreement algorithm.' (nsec.rocks/docs/api/nsec.cryptography.keyagreementalgorithm, read 2026-08-16). Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
         }
       ],
       "note": "A libsodium-based library, so it offers no RSA, DSA or NIST-curve primitive at all. That absence is a checked absence: the signature and key-agreement API pages list only the two algorithms above."
     },
-
     {
       "ecosystem": "cargo",
       "name": "rsa",
@@ -693,7 +1062,11 @@
         "quote": "A portable RSA implementation in pure Rust."
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "dedicated", "rationale": "The crate is an RSA implementation and offers no other public-key primitive." }
+        {
+          "algorithm": "RSA",
+          "tier": "dedicated",
+          "rationale": "The crate is an RSA implementation and offers no other public-key primitive."
+        }
       ]
     },
     {
@@ -707,7 +1080,12 @@
         "quote": "Fast and efficient Rust implementation of ed25519 key generation, signing, and verification."
       },
       "algorithms": [
-        { "algorithm": "EdDSA", "tier": "dedicated", "curve": "ed25519", "rationale": "The crate implements Ed25519 signatures and nothing else; the curve is in its name and in the quoted sentence." }
+        {
+          "algorithm": "EdDSA",
+          "tier": "dedicated",
+          "curve": "ed25519",
+          "rationale": "The crate implements Ed25519 signatures and nothing else; the curve is in its name and in the quoted sentence."
+        }
       ]
     },
     {
@@ -721,7 +1099,12 @@
         "quote": "A pure-Rust implementation of x25519 elliptic curve Diffie-Hellman key exchange, with curve operations provided by curve25519-dalek."
       },
       "algorithms": [
-        { "algorithm": "ECDH/DH", "tier": "dedicated", "curve": "x25519", "rationale": "The crate implements X25519 key exchange and nothing else." }
+        {
+          "algorithm": "ECDH",
+          "tier": "dedicated",
+          "curve": "x25519",
+          "rationale": "The crate implements X25519 key exchange and nothing else. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     },
     {
@@ -735,8 +1118,18 @@
         "quote": "secp256k1 (a.k.a. K-256) elliptic curve library written in pure Rust with support for ECDSA signing/verification/public-key recovery, Taproot Schnorr signatures as defined in BIP340, Elliptic Curve Diffie-Hellman (ECDH), and general-purpose secp256k1 elliptic curve group operations which can be used to implement arbitrary group-based protocols."
       },
       "algorithms": [
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "curve": "secp256k1", "rationale": "One of ECDSA, BIP340 Schnorr and ECDH the crate offers; a lockfile cannot say which the caller invokes." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "curve": "secp256k1", "rationale": "The quoted sentence names Elliptic Curve Diffie-Hellman explicitly." }
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "curve": "secp256k1",
+          "rationale": "One of ECDSA, BIP340 Schnorr and ECDH the crate offers; a lockfile cannot say which the caller invokes."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "curve": "secp256k1",
+          "rationale": "The quoted sentence names Elliptic Curve Diffie-Hellman explicitly. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ],
       "note": "The quote is the README's opening sentence with its inline markdown link brackets removed; the wording is otherwise unaltered."
     },
@@ -751,8 +1144,18 @@
         "quote": "Pure Rust implementation of the NIST P-256 (a.k.a. secp256r1, prime256v1) elliptic curve with support for ECDH, ECDSA signing/verification, and general purpose curve arithmetic support implemented in terms of traits from the `elliptic-curve` crate."
       },
       "algorithms": [
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "curve": "p-256", "rationale": "One of ECDSA and ECDH the crate offers over P-256." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "curve": "p-256", "rationale": "The quoted sentence names ECDH explicitly." }
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "curve": "p-256",
+          "rationale": "One of ECDSA and ECDH the crate offers over P-256."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "curve": "p-256",
+          "rationale": "The quoted sentence names ECDH explicitly. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ],
       "note": "The quote is the README's opening sentence with its inline markdown link brackets removed; the wording is otherwise unaltered."
     },
@@ -767,7 +1170,11 @@
         "quote": "Elliptic Curve Digital Signature Algorithm (ECDSA) as specified in FIPS 186-4 (Digital Signature Standard)."
       },
       "algorithms": [
-        { "algorithm": "ECDSA", "tier": "dedicated", "rationale": "The crate is the generic ECDSA implementation the curve crates build on. Curve-agnostic by construction, so no key size is claimed." }
+        {
+          "algorithm": "ECDSA",
+          "tier": "dedicated",
+          "rationale": "The crate is the generic ECDSA implementation the curve crates build on. Curve-agnostic by construction, so no key size is claimed."
+        }
       ],
       "note": "The quote is the README's opening line with its inline markdown link brackets removed. This crate is a transitive dependency of every RustCrypto curve crate (p256, k256, p384, ...), so its presence often reflects a curve crate rather than a direct call — the same reading G-20 warns about for the npm toolchain, and the observation's evidence carries the criticalCaveat that says so."
     },
@@ -782,7 +1189,11 @@
         "quote": "Pure Rust implementation of the MD5 cryptographic hash algorithm."
       },
       "algorithms": [
-        { "algorithm": "MD5", "tier": "dedicated", "rationale": "The crate is an MD5 implementation." }
+        {
+          "algorithm": "MD5",
+          "tier": "dedicated",
+          "rationale": "The crate is an MD5 implementation."
+        }
       ],
       "note": "The crates.io name is `md-5` (the directory in the repository is `md5`). The quote is the README's opening line with its inline markdown link brackets removed."
     },
@@ -797,7 +1208,11 @@
         "quote": "Pure Rust implementation of the SHA-1 cryptographic hash algorithm."
       },
       "algorithms": [
-        { "algorithm": "SHA-1", "tier": "dedicated", "rationale": "The crate is a SHA-1 implementation." }
+        {
+          "algorithm": "SHA-1",
+          "tier": "dedicated",
+          "rationale": "The crate is a SHA-1 implementation."
+        }
       ],
       "note": "The quote is the README's opening line with its inline markdown link brackets removed."
     },
@@ -811,9 +1226,26 @@
         "url": "https://raw.githubusercontent.com/sfackler/rust-openssl/master/README.md"
       },
       "algorithms": [
-        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "OpenSSL's RSA API is expected to be exposed; not confirmed against this crate's own documentation." },
-        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "OpenSSL's ECDSA API is expected to be exposed; not confirmed against this crate's own documentation." },
-        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "OpenSSL's DH and ECDH APIs are expected to be exposed; not confirmed against this crate's own documentation." }
+        {
+          "algorithm": "RSA",
+          "tier": "multi-primitive",
+          "rationale": "OpenSSL's RSA API is expected to be exposed; not confirmed against this crate's own documentation."
+        },
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "rationale": "OpenSSL's ECDSA API is expected to be exposed; not confirmed against this crate's own documentation."
+        },
+        {
+          "algorithm": "ECDH",
+          "tier": "multi-primitive",
+          "rationale": "OpenSSL's DH and ECDH APIs are expected to be exposed; not confirmed against this crate's own documentation. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        },
+        {
+          "algorithm": "DH",
+          "tier": "multi-primitive",
+          "rationale": "OpenSSL's DH API is the finite-field half; not confirmed against this crate's own documentation. Split from the former combined `ECDH/DH` entry on 2026-08-16 (G-24): the two families band a stated size against different tables — a curve order against a modulus."
+        }
       ]
     }
   ]

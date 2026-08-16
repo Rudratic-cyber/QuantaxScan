@@ -663,7 +663,7 @@
     {
       "provider": "gcp-kms",
       "keySpec": "KEM_ECDH_P256",
-      "algorithm": "ECDH/DH",
+      "algorithm": "ECDH",
       "keySize": 256,
       "status": "verified",
       "quote": "Key encapsulation: Elliptic Curve Diffie-Hellman with NIST P-256 key.",
@@ -672,7 +672,7 @@
     {
       "provider": "gcp-kms",
       "keySpec": "KEM_ECDH_P384",
-      "algorithm": "ECDH/DH",
+      "algorithm": "ECDH",
       "keySize": 384,
       "status": "verified",
       "quote": "Key encapsulation: Elliptic Curve Diffie-Hellman with NIST P-384 key.",

@@ -177,7 +177,7 @@ describe("certificatesIn — detection", () => {
 
 describe("CERTIFICATE_KEY_ALGORITHMS", () => {
   it("names every canonical algorithm this collector can emit", () => {
-    expect(CERTIFICATE_KEY_ALGORITHMS).toEqual(expect.arrayContaining(["RSA", "ECDSA", "EdDSA", "DSA", "ECDH/DH"]));
+    expect(CERTIFICATE_KEY_ALGORITHMS).toEqual(expect.arrayContaining(["RSA", "ECDSA", "EdDSA", "DSA", "ECDH"]));
   });
 });
 

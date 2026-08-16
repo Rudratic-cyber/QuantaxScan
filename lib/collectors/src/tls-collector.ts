@@ -26,7 +26,8 @@ import type { RawObservation } from "./types";
  *  1. The **negotiated key-exchange algorithm and group** — the thing an
  *     attacker with a cryptographically relevant quantum computer breaks via
  *     Shor's algorithm to read traffic retroactively (harvest-now-decrypt-
- *     later). Canonical name `ECDH/DH` — `docs/Claude/mappings/algorithms.json`
+ *     later). Canonical name `ECDH` or `DH` per the negotiated type (G-24) —
+ *     `docs/Claude/mappings/algorithms.json`
  *     already lists `X25519`, `ECDHE`, `DHE` and `curve25519` as aliases of
  *     that one entry, so an X25519 handshake and a classic DHE handshake are
  *     correctly the same algorithm family for reporting purposes.
@@ -152,6 +153,28 @@ function certKeyBitSize(pubkey: NonNullable<TlsHandshakeResult["peerCertificateP
 }
 
 /** Bit size of the negotiated key-exchange group, or `undefined` when neither the named-curve table nor Node's own report has one. */
+/**
+ * Which of the two Diffie-Hellman families this handshake actually used.
+ *
+ * This is the sharpest instance of G-24 in the product, because it is the one
+ * place a real endpoint hands us a real size. Node reports `type: "DH"` with
+ * `bits: 2048` for a classic DHE handshake; until 2026-08-16 that was recorded
+ * as `ECDH/DH` and 2048 was read against curve thresholds, landing it in the
+ * `>= 128 bits` band. A live server negotiating DHE-2048 was told its first
+ * milestone was 2035, when IR 8547 Table 4 deprecates 112-bit key
+ * establishment after **2030**.
+ *
+ * `ECDH` is the default for an unrecognised type rather than `DH`, and that is
+ * the conservative direction here rather than the generous one: every modern
+ * TLS 1.3 group is elliptic or a hybrid, `bits` is absent for named curves so
+ * `curveBitSize(name)` supplies the size, and mislabelling a P-256 exchange as
+ * a 256-bit *modulus* would put it in the 112-bit band and invent a 2030
+ * deadline that does not apply.
+ */
+function keyExchangeAlgorithm(kex: NonNullable<TlsHandshakeResult["keyExchange"]>): string {
+  return kex.type?.toUpperCase() === "DH" ? "DH" : "ECDH";
+}
+
 function keyExchangeBitSize(kex: NonNullable<TlsHandshakeResult["keyExchange"]>): number | undefined {
   if (kex.name) return curveBitSize(kex.name) ?? kex.bits;
   return kex.bits;
@@ -177,7 +200,7 @@ export function observationsFromTlsHandshake(repo: string, result: TlsHandshakeR
 
   if (result.keyExchange) {
     observations.push({
-      algorithm: "ECDH/DH",
+      algorithm: keyExchangeAlgorithm(result.keyExchange),
       keySize: keyExchangeBitSize(result.keyExchange),
       location,
       locationDetail,

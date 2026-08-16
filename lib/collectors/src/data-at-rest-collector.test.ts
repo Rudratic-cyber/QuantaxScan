@@ -38,11 +38,14 @@ describe("canonicalDataAtRestAlgorithm", () => {
     expect(canonicalDataAtRestAlgorithm("AES-256-XTS")).toEqual({ algorithm: "AES", keySize: 256 });
   });
 
-  it("maps every key-agreement spelling onto the one entry the standards data has", () => {
-    for (const reported of ["ECDH", "ECDHE", "DH", "X25519"]) {
-      expect(canonicalDataAtRestAlgorithm(reported)?.algorithm, reported).toBe("ECDH/DH");
+  it("maps each key-agreement spelling onto its own family — elliptic and finite-field band differently (G-24)", () => {
+    for (const reported of ["ECDH", "ECDHE", "X25519"]) {
+      expect(canonicalDataAtRestAlgorithm(reported)?.algorithm, reported).toBe("ECDH");
     }
-    expect(canonicalDataAtRestAlgorithm("ECDH-P-384")).toEqual({ algorithm: "ECDH/DH", keySize: 384 });
+    for (const reported of ["DH", "DHE"]) {
+      expect(canonicalDataAtRestAlgorithm(reported)?.algorithm, reported).toBe("DH");
+    }
+    expect(canonicalDataAtRestAlgorithm("ECDH-P-384")).toEqual({ algorithm: "ECDH", keySize: 384 });
   });
 
   it("takes the size that follows the family, not the first number in the string", () => {

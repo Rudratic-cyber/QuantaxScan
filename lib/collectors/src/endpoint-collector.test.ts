@@ -53,7 +53,7 @@ describe("observationsFromEndpointHost — what a host report becomes", () => {
     });
 
     const suites = result.observations.filter((o) => o.location.endsWith(ENDPOINT_CIPHER_SUITES_COMPONENT));
-    expect(suites.map((o) => o.algorithm)).toEqual(["ECDH/DH", "RSA", "AES"]);
+    expect(suites.map((o) => o.algorithm)).toEqual(["ECDH", "RSA", "AES"]);
     expect(suites.every((o) => o.confidence === ENDPOINT_CONFIDENCE.permitted)).toBe(true);
     expect(suites.find((o) => o.algorithm === "AES")?.keySize).toBe(256);
   });
@@ -167,7 +167,7 @@ describe("observationsFromEndpointHost — what a host report becomes", () => {
     // Only the surviving suite is reported, and it keeps its real 256-bit AES —
     // suppressing that too would be the mirror-image error.
     expect(result.observations.map((o) => [o.algorithm, o.keySize])).toEqual([
-      ["ECDH/DH", undefined],
+      ["ECDH", undefined],
       ["RSA", undefined],
       ["AES", 256],
     ]);

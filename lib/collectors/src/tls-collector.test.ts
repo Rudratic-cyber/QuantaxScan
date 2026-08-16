@@ -15,7 +15,7 @@ describe("observationsFromTlsHandshake", () => {
 
     expect(observations).toHaveLength(2);
 
-    const kex = observations.find((o) => o.algorithm === "ECDH/DH");
+    const kex = observations.find((o) => o.algorithm === "ECDH");
     expect(kex).toBeDefined();
     expect(kex!.keySize).toBe(256);
     expect(kex!.location).toBe("project:1:example.com:443");
@@ -80,7 +80,7 @@ describe("observationsFromTlsHandshake", () => {
     expect(kex.keySize).toBe(512);
   });
 
-  it("plain (non-elliptic) DH carries a bit size but no curve name", () => {
+  it("plain (non-elliptic) DH is DH, not ECDH — 2048 here is a modulus (G-24)", () => {
     const [kex] = observationsFromTlsHandshake("project:1", {
       host: "h",
       port: 1,
@@ -88,7 +88,12 @@ describe("observationsFromTlsHandshake", () => {
       cipherSuiteName: "DHE-RSA-AES256-GCM-SHA384",
       keyExchange: { type: "DH", bits: 2048 },
     });
-    expect(kex.algorithm).toBe("ECDH/DH");
+    // The sharpest instance of G-24 in the product, because this is the one
+    // path where a real endpoint hands us a real size. Recorded as `ECDH/DH`
+    // this read 2048 against curve thresholds, landed in the `>= 128 bits`
+    // band, and told the customer their first milestone was 2035. As `DH` it
+    // is a 2048-bit modulus — ~112-bit security, deprecated after 2030.
+    expect(kex.algorithm).toBe("DH");
     expect(kex.keySize).toBe(2048);
     expect((kex.evidence as { keyExchangeGroup: string | null }).keyExchangeGroup).toBeNull();
   });
@@ -114,7 +119,11 @@ describe("observationsFromTlsHandshake", () => {
       cipherSuiteName: "TLS_AES_256_GCM_SHA384",
       keyExchange: { type: "ECDH" }, // name/bits absent — the TLS 1.3 case
     });
-    expect(kex.algorithm).toBe("ECDH/DH");
+    // An unrecognised type falls back to ECDH rather than DH, which is the
+    // conservative direction: every modern TLS 1.3 group is elliptic or
+    // hybrid, and reading a 256-bit curve as a 256-bit modulus would invent a
+    // 2030 deadline that does not apply to it.
+    expect(kex.algorithm).toBe("ECDH");
     expect(kex.keySize).toBeUndefined();
     expect((kex.evidence as { keyExchangeGroup: string | null }).keyExchangeGroup).toBeNull();
   });
@@ -164,7 +173,7 @@ describe("fingerprintForObservation — the network locationDetail bridge", () =
       keyExchange: { type: "ECDH", name: "X25519" },
     });
     const input = fingerprintForObservation(kex, { repo: "project:1" });
-    expect(input).toEqual({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDH/DH" });
+    expect(input).toEqual({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDH" });
   });
 
   it("is stable and matches computeFingerprint's own tls test", () => {
@@ -177,7 +186,7 @@ describe("fingerprintForObservation — the network locationDetail bridge", () =
     });
     const input = fingerprintForObservation(kex, { repo: "project:1" })!;
     expect(computeFingerprint(input)).toBe(
-      computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDH/DH" }),
+      computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDH" }),
     );
   });
 

@@ -14,7 +14,7 @@ describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappi
   it("reproduces the pre-refactor scanner.ts severities exactly (quantumVulnerable -> critical, else alert)", () => {
     expect(deriveAlgorithmMapping("RSA")?.severity).toBe("critical");
     expect(deriveAlgorithmMapping("ECDSA")?.severity).toBe("critical");
-    expect(deriveAlgorithmMapping("ECDH/DH")?.severity).toBe("critical");
+    expect(deriveAlgorithmMapping("ECDH")?.severity).toBe("critical");
     expect(deriveAlgorithmMapping("DSA")?.severity).toBe("critical");
     expect(deriveAlgorithmMapping("MD5")?.severity).toBe("alert");
     expect(deriveAlgorithmMapping("SHA-1")?.severity).toBe("alert");
@@ -24,7 +24,7 @@ describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappi
   it("reproduces the pre-refactor scanner.ts baseEffortHours exactly", () => {
     expect(deriveAlgorithmMapping("RSA")?.effortHours).toBe(4);
     expect(deriveAlgorithmMapping("ECDSA")?.effortHours).toBe(4);
-    expect(deriveAlgorithmMapping("ECDH/DH")?.effortHours).toBe(8);
+    expect(deriveAlgorithmMapping("ECDH")?.effortHours).toBe(8);
     expect(deriveAlgorithmMapping("DSA")?.effortHours).toBe(6);
     expect(deriveAlgorithmMapping("MD5")?.effortHours).toBe(0.5);
     expect(deriveAlgorithmMapping("SHA-1")?.effortHours).toBe(0.5);
@@ -84,7 +84,7 @@ describe("deriveAlgorithmMapping — read-time derivation from docs/Claude/mappi
   });
 
   it("surfaces quantumVulnerable verbatim, so the A4 risk split reads the data rather than a name list", () => {
-    for (const algorithm of ["RSA", "ECDSA", "ECDH/DH", "DSA", "EdDSA"]) {
+    for (const algorithm of ["RSA", "ECDSA", "ECDH", "DH", "DSA", "EdDSA"]) {
       expect(deriveAlgorithmMapping(algorithm)?.quantumVulnerable, algorithm).toBe(true);
     }
     for (const algorithm of ["MD5", "SHA-1", "AES-ECB", "AES"]) {

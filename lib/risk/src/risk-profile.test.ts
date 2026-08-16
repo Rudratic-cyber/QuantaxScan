@@ -73,7 +73,7 @@ describe("computeRiskProfile — G-10 regression: hygiene findings must not infl
     // docs/Claude/09-open-gaps.md G-10, the live smoke test: "a 10-line file
     // scored risk 100, 3 critical / 2 alert, where 2 of the 5 findings had
     // nothing to do with quantum computing."
-    const profile = computeRiskProfile([RSA, ECDSA, { algorithm: "ECDH/DH", effortHours: 8 }, MD5, SHA1], {
+    const profile = computeRiskProfile([RSA, ECDSA, { algorithm: "ECDH", effortHours: 8 }, MD5, SHA1], {
       totalLines: 10,
       now: NOW,
     });

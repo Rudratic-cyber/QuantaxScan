@@ -136,7 +136,7 @@ describe("purity and provenance", () => {
   });
 });
 
-describe("PQC migration items keep their runway (RSA, ECDSA, ECDH/DH)", () => {
+describe("PQC migration items keep their runway (RSA, ECDSA, ECDH, DH)", () => {
   it("files RSA as a migration item with both IR 8547 milestones", () => {
     const result = mappingEngine.resolve({ algorithm: "RSA" }, { asOf: ASOF })!;
     expect(result.bucket).toBe("pqc-migration");
@@ -211,17 +211,17 @@ describe("C4 — IR 8547 is a ceiling, not a schedule (§4.2 / §4.1.2 / §3.2)"
 
   it("prioritises key establishment for the harvest-now-decrypt-later purpose, and only that purpose", () => {
     // RSA declares key-establishment among its purposes (IR 8547 Table 4, SP 800-56B); ECDSA does not.
-    expect(obligationsOf("ECDH/DH", "key-establishment")).toHaveLength(1);
+    expect(obligationsOf("ECDH", "key-establishment")).toHaveLength(1);
     expect(obligationsOf("RSA", "key-establishment")).toHaveLength(1);
     expect(obligationsOf("ECDSA", "key-establishment")).toHaveLength(0);
-    expect(obligationsOf("ECDH/DH", "key-establishment")[0].severity).toBe("high");
-    expect(obligationsOf("ECDH/DH", "key-establishment")[0].caveats.join(" ")).toMatch(
+    expect(obligationsOf("ECDH", "key-establishment")[0].severity).toBe("high");
+    expect(obligationsOf("ECDH", "key-establishment")[0].caveats.join(" ")).toMatch(
       /before the classical schemes are generally disallowed/,
     );
   });
 
   it("offers the hybrid allowance without letting it read as compliance", () => {
-    const [hybrid] = obligationsOf("ECDH/DH", "hybrid");
+    const [hybrid] = obligationsOf("ECDH", "hybrid");
     expect(hybrid.severity).toBe("informational");
     expect(hybrid.caveats.join(" ")).toMatch(/does not by itself satisfy/i);
     expect(hybrid.requirement.toLowerCase()).not.toMatch(/violat|non-compliant/);
@@ -381,7 +381,7 @@ describe("C5 — CNSA 2.0 resolves per purpose, and stays unverified while it do
     expect(ecdsa[0].requirement).toContain("ML-DSA-87");
     expect(ecdsa[0].requirement).not.toContain("ML-KEM");
 
-    const ecdh = cnsa("ECDH/DH");
+    const ecdh = cnsa("ECDH");
     expect(ecdh).toHaveLength(1);
     expect(ecdh[0].requirement).toContain("ML-KEM-1024");
     expect(ecdh[0].requirement).not.toContain("ML-DSA");
@@ -394,7 +394,7 @@ describe("C5 — CNSA 2.0 resolves per purpose, and stays unverified while it do
 
   it("names LMS/XMSS only where CNSA 2.0 does — software and firmware signing", () => {
     expect(cnsa("ECDSA")[0].requirement).toMatch(/LMS or XMSS \(SP 800-208\)/);
-    expect(cnsa("ECDH/DH")[0].requirement).not.toMatch(/LMS|XMSS/);
+    expect(cnsa("ECDH")[0].requirement).not.toMatch(/LMS|XMSS/);
   });
 
   it("reaches symmetric and hash findings without calling them a PQC migration item", () => {
@@ -409,7 +409,7 @@ describe("C5 — CNSA 2.0 resolves per purpose, and stays unverified while it do
   });
 
   it("keeps every one of them needs-check and carries G-01 to each", () => {
-    for (const algorithm of ["RSA", "ECDSA", "ECDH/DH", "AES-256", "SHA-1", "MD5"]) {
+    for (const algorithm of ["RSA", "ECDSA", "ECDH", "DH", "AES-256", "SHA-1", "MD5"]) {
       for (const obligation of cnsa(algorithm)) {
         expect(obligation.confidence).toBe("needs-check");
         expect(obligation.caveats.join(" ")).toMatch(/NOT VERIFIED AGAINST THE PRIMARY SOURCE/);
@@ -477,7 +477,7 @@ describe("C6 — the CISA quantum-readiness roadmap, aligned section by section"
   it("puts the update path in scope for a signature algorithm, and only for one", () => {
     const updatePath = /software and firmware update path/i;
     expect(cisa("ECDSA").some((o) => updatePath.test(o.requirement))).toBe(true);
-    expect(cisa("ECDH/DH").some((o) => updatePath.test(o.requirement))).toBe(false);
+    expect(cisa("ECDH").some((o) => updatePath.test(o.requirement))).toBe(false);
   });
 
   it("carries the factsheet's own admission that discovery has blind spots", () => {
@@ -616,23 +616,31 @@ describe("G-05 — key size and the security-strength band the rule is keyed on"
     expect(result.obligations.flatMap((o) => o.caveats).join(" ")).not.toMatch(/Key size undetermined/);
   });
 
-  it("G-24 — PINS THE DEFECT: a finite-field DH modulus is banded as a curve and loses 2030", () => {
-    // IR 8547 Table 4 lists Finite Field DH/MQV and Elliptic Curve DH/MQV as SEPARATE families:
-    // the first states a modulus, the second a curve order. `algorithms.json` has one entry for
-    // both, with keySizeKind "curve", and the collectors canonicalise finite-field DH onto it
-    // (`protocol-config-collector` resolves diffie-hellman-group14-sha256 to keySize 2048).
+  it("G-24 — a finite-field DH modulus keeps its 2030 deprecation, and a curve of the same number does not", () => {
+    // This test asserted the DEFECT until 2026-08-16, deliberately, so the fix
+    // could not land silently. What it pinned: IR 8547 Table 4 lists Finite
+    // Field DH/MQV and Elliptic Curve DH/MQV as separate families whose stated
+    // parameter means different things — a modulus against a curve order —
+    // while `algorithms.json` had one `ECDH/DH` entry with keySizeKind
+    // "curve". So a 2048-bit MODP group was read against curveBits, missed the
+    // 112-bit band {0,256}, matched `>= 128 bits` {384,100000}, and lost the
+    // 2030 deprecation that actually applied. No error, no caveat.
     //
-    // So 2048 is read against curveBits, misses the 112-bit band {0,256}, matches the >= 128 bits
-    // band {384,100000}, and the "deprecated after 2030" row — which DOES apply to a 2048-bit
-    // finite-field group — is filtered out. More runway than the standard allows, with no error
-    // and no "undetermined" caveat, because the engine was correctly told it had a curve size.
-    //
-    // This assertion pins the defect deliberately. When G-24 is fixed in the collectors and the
-    // entry is split, this test must FAIL and be rewritten to assert the 2030 row is present.
-    const rows = ir8547(mappingEngine.resolve({ algorithm: "ECDH/DH", keySize: 2048 }, { asOf: ASOF })!);
-    expect(new Set(rows.map((o) => o.deadline!.securityStrength))).toEqual(new Set([">= 128 bits"]));
-    expect(rows.some((o) => o.deadline!.after === "2030")).toBe(false);
-    expect(rows.flatMap((o) => o.caveats).join(" ")).not.toMatch(/undetermined/);
+    // The entry is split now. 2048 means different things in the two, and the
+    // pair below is the whole point: same number, different obligation.
+    const ff = ir8547(mappingEngine.resolve({ algorithm: "DH", keySize: 2048 }, { asOf: ASOF })!);
+    expect(new Set(ff.map((o) => o.deadline!.securityStrength))).toEqual(new Set(["112 bits"]));
+    expect(ff.some((o) => o.deadline!.after === "2030")).toBe(true);
+
+    const ec = ir8547(mappingEngine.resolve({ algorithm: "ECDH", keySize: 384 }, { asOf: ASOF })!);
+    expect(new Set(ec.map((o) => o.deadline!.securityStrength))).toEqual(new Set([">= 128 bits"]));
+    expect(ec.some((o) => o.deadline!.after === "2030")).toBe(false);
+
+    // A token that names no group still yields no size, and the engine reports
+    // both candidate bands as assumed rather than picking the generous one —
+    // the G-05 answer, which the split does not change.
+    const unsized = ir8547(mappingEngine.resolve({ algorithm: "DH" }, { asOf: ASOF })!);
+    expect(unsized.flatMap((o) => o.caveats).join(" ")).toMatch(/undetermined/);
   });
 
   it("keys the bands off the data, so a revised band changes the answer with no code edit", () => {

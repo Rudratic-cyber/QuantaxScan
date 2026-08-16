@@ -94,7 +94,7 @@ describe("every claim in the package table has provenance", () => {
     // python-ecdsa's own description names ECDSA, EdDSA and ECDH — it is a
     // general ECC library, so `dedicated` (0.8) overstated the inference.
     const ecdsa = lookupCryptoPackage("pypi", "ecdsa")!;
-    expect(ecdsa.algorithms.map((a) => a.algorithm).sort()).toEqual(["ECDH/DH", "ECDSA", "EdDSA"]);
+    expect(ecdsa.algorithms.map((a) => a.algorithm).sort()).toEqual(["ECDH", "ECDSA", "EdDSA"]);
     expect(ecdsa.algorithms.every((a) => a.tier === "multi-primitive")).toBe(true);
   });
 });

@@ -109,7 +109,7 @@ describe("EdDSA detection — G-06", () => {
     const [x25519] = await collectAll([
       { path: "a.js", content: "const ecdh = crypto.createECDH('x25519')", language: "javascript" },
     ]);
-    expect(x25519.algorithm).toBe("ECDH/DH");
+    expect(x25519.algorithm).toBe("ECDH");
     const curve25519 = await collectAll([{ path: "a.go", content: "\tcurve25519.X25519(priv, pub)", language: "go" }]);
     expect(curve25519.every((o) => o.algorithm !== "EdDSA")).toBe(true);
   });
@@ -141,7 +141,7 @@ describe("extractKeySizeFromLine — G-05", () => {
   });
 
   it("extracts a named curve's bit size", () => {
-    expect(extractKeySizeFromLine("const ecdh = crypto.createECDH('secp256k1')", "ECDH/DH")).toBe(256);
+    expect(extractKeySizeFromLine("const ecdh = crypto.createECDH('secp256k1')", "ECDH")).toBe(256);
     expect(extractKeySizeFromLine("ecdsa.GenerateKey(elliptic.P384(), rand.Reader)", "ECDSA")).toBe(384);
   });
 

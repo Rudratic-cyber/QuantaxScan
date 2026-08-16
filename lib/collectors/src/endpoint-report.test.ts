@@ -43,7 +43,7 @@ describe("cipherSuiteTokens — both spellings reduce to the same whole tokens",
 describe("decodeCipherSuite — what a suite name states", () => {
   it("reads key exchange, authentication and the bulk cipher with its width", () => {
     expect(decodeCipherSuite("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384")).toEqual([
-      { token: "ECDHE", algorithm: "ECDH/DH", keySize: undefined },
+      { token: "ECDHE", algorithm: "ECDH", keySize: undefined },
       { token: "RSA", algorithm: "RSA", keySize: undefined },
       { token: "AES_256", algorithm: "AES", keySize: 256 },
     ]);
@@ -51,7 +51,7 @@ describe("decodeCipherSuite — what a suite name states", () => {
 
   it("reads the same facts from the OpenSSL spelling, width included", () => {
     expect(decodeCipherSuite("ECDHE-ECDSA-AES128-SHA256")).toEqual([
-      { token: "ECDHE", algorithm: "ECDH/DH", keySize: undefined },
+      { token: "ECDHE", algorithm: "ECDH", keySize: undefined },
       { token: "ECDSA", algorithm: "ECDSA", keySize: undefined },
       { token: "AES_128", algorithm: "AES", keySize: 128 },
     ]);
@@ -59,7 +59,8 @@ describe("decodeCipherSuite — what a suite name states", () => {
 
   it("resolves DSS through the DSA alias rather than dropping it", () => {
     expect(decodeCipherSuite("TLS_DHE_DSS_WITH_AES_128_CBC_SHA").map((c) => c.algorithm)).toEqual([
-      "ECDH/DH",
+      // DHE, not ECDHE — finite field (G-24).
+      "DH",
       "DSA",
       "AES",
       "SHA-1",
@@ -74,7 +75,7 @@ describe("decodeCipherSuite — what a suite name states", () => {
     // inference, and this product does not report inferences.
     const decoded = decodeCipherSuite("TLS_AES_256_GCM_SHA384");
     expect(decoded).toEqual([{ token: "AES_256", algorithm: "AES", keySize: 256 }]);
-    expect(decoded.some((c) => c.algorithm === "ECDH/DH")).toBe(false);
+    expect(decoded.some((c) => c.algorithm === "ECDH")).toBe(false);
     expect(decoded.some((c) => c.algorithm === "RSA")).toBe(false);
   });
 
@@ -93,12 +94,12 @@ describe("decodeCipherSuite — what a suite name states", () => {
     // ChaCha20-Poly1305 has no entry in algorithms.json; the suite's ECDHE and
     // ECDSA are real and reported, and the AEAD contributes nothing.
     expect(decodeCipherSuite("TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256").map((c) => c.algorithm)).toEqual([
-      "ECDH/DH",
+      "ECDH",
       "ECDSA",
     ]);
     // A suite this table recognises nothing in is empty, not a guess.
     expect(decodeCipherSuite("TLS_KRB5_WITH_IDEA_CBC_MD5").map((c) => c.algorithm)).toEqual(["MD5"]);
-    expect(decodeCipherSuite("TLS_ECDHE_PSK_WITH_CAMELLIA_128_CBC_SHA256").map((c) => c.algorithm)).toEqual(["ECDH/DH"]);
+    expect(decodeCipherSuite("TLS_ECDHE_PSK_WITH_CAMELLIA_128_CBC_SHA256").map((c) => c.algorithm)).toEqual(["ECDH"]);
     expect(decodeCipherSuite("TLS_MLKEM768_SOMETHING_UNKNOWN")).toEqual([]);
   });
 
@@ -107,8 +108,8 @@ describe("decodeCipherSuite — what a suite name states", () => {
     // every real appearance is inside a disabled-by-default list. Reporting
     // them would put quantum-vulnerable key agreement on a machine that cannot
     // negotiate it.
-    expect(decodeCipherSuite("ADH-AES256-SHA").some((c) => c.algorithm === "ECDH/DH")).toBe(false);
-    expect(decodeCipherSuite("AECDH-AES128-SHA").some((c) => c.algorithm === "ECDH/DH")).toBe(false);
+    expect(decodeCipherSuite("ADH-AES256-SHA").some((c) => c.algorithm === "DH")).toBe(false);
+    expect(decodeCipherSuite("AECDH-AES128-SHA").some((c) => c.algorithm === "ECDH")).toBe(false);
   });
 
   it("does not double-count an algorithm a suite names twice", () => {
@@ -122,7 +123,7 @@ describe("decodeTlsPolicy — a listed suite is not an enabled one", () => {
       provider: "schannel",
       cipherSuites: [enabled("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384")],
     });
-    expect(decoded.declarations.map((d) => d.component.algorithm)).toEqual(["ECDH/DH", "RSA", "AES"]);
+    expect(decoded.declarations.map((d) => d.component.algorithm)).toEqual(["ECDH", "RSA", "AES"]);
   });
 
   // ── false-positive controls ──

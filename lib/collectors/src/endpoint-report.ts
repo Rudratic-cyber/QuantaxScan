@@ -405,11 +405,13 @@ interface SuiteTokenMapping {
  */
 const SUITE_TOKEN_MAPPINGS: Record<string, SuiteTokenMapping> = {
   // ── Key exchange (RFC 5246 §A.5, RFC 4492) ──
-  ECDHE: { algorithm: "ECDH/DH" },
-  ECDH: { algorithm: "ECDH/DH" },
-  DHE: { algorithm: "ECDH/DH" },
-  EDH: { algorithm: "ECDH/DH" },
-  DH: { algorithm: "ECDH/DH" },
+  // G-24: the elliptic and finite-field families band against different
+  // tables, so a suite name has to say which one it named.
+  ECDHE: { algorithm: "ECDH" },
+  ECDH: { algorithm: "ECDH" },
+  DHE: { algorithm: "DH" },
+  EDH: { algorithm: "DH" },
+  DH: { algorithm: "DH" },
   // ── Authentication / key transport ──
   RSA: { algorithm: "RSA" },
   ECDSA: { algorithm: "ECDSA" },

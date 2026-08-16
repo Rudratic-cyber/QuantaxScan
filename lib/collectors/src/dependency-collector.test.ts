@@ -191,7 +191,7 @@ describe("DependencyCollector — B2", () => {
     }
 
     expect(names(observations)).toEqual([
-      "ECDH/DH@acme/widget:pkg:npm/elliptic",
+      "ECDH@acme/widget:pkg:npm/elliptic",
       "ECDSA@acme/widget:pkg:npm/elliptic",
       "EdDSA@acme/widget:pkg:npm/%40noble/ed25519",
       "EdDSA@acme/widget:pkg:npm/elliptic",
@@ -253,7 +253,7 @@ describe("DependencyCollector — B2", () => {
     const observations = collectDependencyObservations(target([{ path: "requirements.txt", content: "PyNaCl==1.5.0\nPyOpenSSL==24.0.0\n" }]));
     expect(observations.map((o) => o.location)).toContain("acme/widget:pkg:pypi/PyNaCl");
     expect(observations.some((o) => o.algorithm === "EdDSA" && o.keySize === 256)).toBe(true);
-    expect(observations.some((o) => o.algorithm === "ECDH/DH" && o.keySize === 256)).toBe(true);
+    expect(observations.some((o) => o.algorithm === "ECDH" && o.keySize === 256)).toBe(true);
     expect(observations.some((o) => o.algorithm === "RSA")).toBe(true);
   });
 

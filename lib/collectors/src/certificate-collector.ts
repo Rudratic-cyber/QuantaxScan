@@ -45,8 +45,8 @@ const ALGORITHM_BY_KEY_TYPE: Record<string, string> = {
   ec: "ECDSA",
   ed25519: "EdDSA",
   ed448: "EdDSA",
-  x25519: "ECDH/DH",
-  x448: "ECDH/DH",
+  x25519: "ECDH",
+  x448: "ECDH",
 };
 
 /** The canonical algorithm names this collector can emit. Every one must resolve in `algorithms.json` — asserted in algorithm-mapping.test.ts. */

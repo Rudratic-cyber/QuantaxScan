@@ -63,8 +63,8 @@ describe("computeFingerprint — other surfaces", () => {
   });
 
   it("tls: the same host:port in two projects is two assets — same reasoning as dependency above", () => {
-    const one = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDH/DH" });
-    const two = computeFingerprint({ surface: "tls", repo: "project:2", host: "example.com", port: 443, algorithm: "ECDH/DH" });
+    const one = computeFingerprint({ surface: "tls", repo: "project:1", host: "example.com", port: 443, algorithm: "ECDH" });
+    const two = computeFingerprint({ surface: "tls", repo: "project:2", host: "example.com", port: 443, algorithm: "ECDH" });
     expect(one).not.toBe(two);
   });
 

@@ -137,7 +137,7 @@ describe("collectNetworkFlowObservations — the cryptography", () => {
 
     expect(flow.cryptoState).toBe("observed");
     expect(flow.observations.map((o) => [o.algorithm, o.keySize ?? null])).toEqual([
-      ["ECDH/DH", null],
+      ["ECDH", null],
       ["RSA", null],
       ["AES", 128],
     ]);
@@ -248,7 +248,7 @@ describe("collectNetworkFlowObservations — what it refuses to report", () => {
     ]);
     const [flow] = conversations;
     expect(flow.observations.map((o) => o.algorithm)).toEqual(["AES"]);
-    expect(flow.observations.map((o) => o.algorithm)).not.toContain("ECDH/DH");
+    expect(flow.observations.map((o) => o.algorithm)).not.toContain("ECDH");
     expect(flow.gaps.map((g) => g.component)).toContain("key-exchange-not-named");
     expect(flow.gaps.map((g) => g.component)).toContain("authentication-not-named");
     // Only the slot it really did observe is reconcilable.

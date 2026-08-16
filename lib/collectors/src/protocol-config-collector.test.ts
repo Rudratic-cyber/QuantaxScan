@@ -52,11 +52,11 @@ describe("format detection", () => {
 describe("token resolution", () => {
   it("decodes the parametric SSH families to an algorithm and the curve's stated bit size", () => {
     expect(resolveToken("ecdsa-sha2-nistp384")).toEqual({ algorithm: "ECDSA", keySize: 384 });
-    expect(resolveToken("ecdh-sha2-nistp521")).toEqual({ algorithm: "ECDH/DH", keySize: 521 });
+    expect(resolveToken("ecdh-sha2-nistp521")).toEqual({ algorithm: "ECDH", keySize: 521 });
     expect(resolveToken("ssh-ed25519")).toEqual({ algorithm: "EdDSA", keySize: 256 });
-    expect(resolveToken("diffie-hellman-group14-sha256")).toEqual({ algorithm: "ECDH/DH", keySize: 2048 });
+    expect(resolveToken("diffie-hellman-group14-sha256")).toEqual({ algorithm: "DH", keySize: 2048 });
     // SSH's group1 is Oakley Group 2 (1024 bits), not Group 1 (768).
-    expect(resolveToken("diffie-hellman-group1-sha1")).toEqual({ algorithm: "ECDH/DH", keySize: 1024 });
+    expect(resolveToken("diffie-hellman-group1-sha1")).toEqual({ algorithm: "DH", keySize: 1024 });
     expect(resolveToken("aes256-ctr")).toEqual({ algorithm: "AES", keySize: 256 });
   });
 
@@ -64,7 +64,7 @@ describe("token resolution", () => {
     expect(normaliseToken("ssh-ed25519-cert-v01@openssh.com")).toBe("ssh-ed25519");
     expect(normaliseToken("sk-ecdsa-sha2-nistp256@openssh.com")).toBe("ecdsa-sha2-nistp256");
     expect(resolveToken("aes128-gcm@openssh.com")).toEqual({ algorithm: "AES", keySize: 128 });
-    expect(resolveToken("curve25519-sha256@libssh.org")).toEqual({ algorithm: "ECDH/DH", keySize: 256 });
+    expect(resolveToken("curve25519-sha256@libssh.org")).toEqual({ algorithm: "ECDH", keySize: 256 });
   });
 
   it("resolves the JOSE alg vocabulary, including ES512's P-521 curve", () => {
@@ -195,10 +195,10 @@ describe("IPsec proposals", () => {
     const declared = parseProtocolConfig("ipsec-config", "conn site\n  ike=aes256-sha256-modp2048,aes128-sha1-modp1024!\n");
     expect(declared.map((d) => [d.token, d.algorithm, d.keySize])).toEqual([
       ["aes256", "AES", 256],
-      ["modp2048", "ECDH/DH", 2048],
+      ["modp2048", "DH", 2048],
       ["aes128", "AES", 128],
       ["sha1", "SHA-1", undefined],
-      ["modp1024", "ECDH/DH", 1024],
+      ["modp1024", "DH", 1024],
     ]);
     // sha256 has no canonical name in algorithms.json and contributes nothing.
     expect(declared.some((d) => d.token === "sha256")).toBe(false);
@@ -216,7 +216,7 @@ describe("IPsec proposals", () => {
         "saml-metadata",
         '<EntityDescriptor><EncryptionMethod Algorithm="http://www.w3.org/2009/xmlenc11#dh"/></EntityDescriptor>',
       ).map((d) => d.algorithm),
-    ).toEqual(["ECDH/DH"]);
+    ).toEqual(["DH"]);
   });
 });
 
