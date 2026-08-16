@@ -170,11 +170,144 @@ export type AssetStatus = (typeof ASSET_STATUS_VALUES)[number];
  * about names you already have. So DNS is used in this feature purely to
  * corroborate a CT-derived name, recorded in `DNS_RESOLUTION_VALUES` below,
  * and never as a source of names. Adding a `dns_enumeration` value here would
- * be claiming a capability that does not exist.
+ * be claiming a capability that does not exist. **That still holds after the
+ * 2026-08-16 widening**: three methods were added and none of them is DNS.
  */
-export const DISCOVERY_METHOD_VALUES = ["certificate_transparency"] as const;
+export const DISCOVERY_METHOD_VALUES = [
+  "certificate_transparency",
+  /**
+   * Enumerating a cloud account's resources with the customer's own read-only
+   * credential. The only method here that proves ownership, because the
+   * customer issued the key — see `DISCOVERY_METHOD_CAVEATS`.
+   */
+  "cloud_account_enumeration",
+  /** An MDM/EDR fleet export. Proves enrolment, which is stronger than "theirs" and weaker than "all of theirs". */
+  "fleet_directory",
+  /** An OIDC discovery document or JWKS at a URL the customer named. */
+  "identity_provider_metadata",
+] as const;
 
 export type DiscoveryMethod = (typeof DISCOVERY_METHOD_VALUES)[number];
+
+/**
+ * What a target from each method does and does not prove — **resolved on read,
+ * never stored**.
+ *
+ * D8 could keep this as one module-level constant because there was exactly
+ * one method. With four, the strength of the ownership claim varies enormously
+ * and flattening it into a single sentence would be dishonest in both
+ * directions: it would overclaim for certificate transparency, where a SAN list
+ * routinely names a supplier or a former subsidiary, and underclaim for a cloud
+ * enumeration the customer authorised themselves.
+ *
+ * Not a column, for the reason `resolveSecrecyLifetime()`, `assessOtExposure()`
+ * and the C1 mapping engine are not columns either: **a claim written into a
+ * row is a claim that cannot be corrected.** If our understanding of what CT
+ * proves changes, every historical row should change with it.
+ *
+ * `completeness` is the half people skip. Every method is complete for
+ * *something* narrower than the estate, and naming that boundary is the
+ * difference between "we enumerated your account" and "we enumerated one page
+ * of one service in one region of one account at one instant".
+ */
+export interface DiscoveryMethodCaveat {
+  /** What a target from this method establishes about ownership. */
+  ownership: string;
+  /** The exact boundary this method can speak for — never the estate. */
+  completeness: string;
+}
+
+export const DISCOVERY_METHOD_CAVEATS: Readonly<Record<DiscoveryMethod, DiscoveryMethodCaveat>> = {
+  certificate_transparency: {
+    ownership:
+      "Nothing. A certificate's subject-alternative-name list routinely carries a supplier, a CDN, or a " +
+      "former subsidiary, and a name appearing beside one of yours is not a name you control.",
+    completeness:
+      "Nothing. Certificate transparency sees a name only if somebody obtained a publicly logged certificate " +
+      "for it; an internal host, or one behind a private CA, is invisible here and is not counted as absent.",
+  },
+  cloud_account_enumeration: {
+    ownership:
+      "The account is the customer's — they issued the read-only credential this ran under. This is the only " +
+      "method here that establishes ownership rather than association.",
+    completeness:
+      "Complete for that account, that service, that region, that page, at that instant — and for nothing " +
+      "else. A region that throttled or refused is recorded as refused, never as empty.",
+  },
+  fleet_directory: {
+    ownership:
+      "The machines are enrolled in a directory the customer operates. Stronger than 'associated with them', " +
+      "weaker than 'all of theirs'.",
+    completeness:
+      "Complete for what is enrolled. An unenrolled machine is invisible here and uncounted — it does not " +
+      "appear as a gap, because nothing in this method can see that it exists.",
+  },
+  identity_provider_metadata: {
+    ownership: "Nothing beyond the customer having named the issuer.",
+    completeness:
+      "Complete for that issuer's advertised configuration at that instant. An issuer advertises what it " +
+      "chooses to; keys it does not publish are not visible and are not counted.",
+  },
+};
+
+/**
+ * What kind of thing a discovered lead is.
+ *
+ * `hostname` is the only value D8 could produce, which is why the column that
+ * held it was called `hostname` and was `NOT NULL`. Five of the six values
+ * below have no hostname at all — a KMS key ring is not addressed by one — so
+ * the column becomes `identity` and nullable, and this discriminator says how
+ * to read it.
+ */
+export const DISCOVERY_TARGET_KIND_VALUES = [
+  "hostname",
+  "cloud_account",
+  "cloud_resource",
+  "database",
+  "key_store",
+  "endpoint_host",
+] as const;
+
+export type DiscoveryTargetKind = (typeof DISCOVERY_TARGET_KIND_VALUES)[number];
+
+/**
+ * Why a scope could not be enumerated — a closed vocabulary, and **never a
+ * vendor SDK's error object**.
+ *
+ * An SDK error is a string that changes between minor versions and differs
+ * between three providers describing the same condition. Storing it would make
+ * "which of your accounts could we not read, and why" unanswerable by query,
+ * which is the one question a partial enumeration exists to answer.
+ */
+export const DISCOVERY_REFUSAL_REASON_VALUES = [
+  "access-denied",
+  "throttled",
+  "unauthenticated",
+  "unsupported",
+  "unreachable",
+  "timeout",
+] as const;
+
+export type DiscoveryRefusalReason = (typeof DISCOVERY_REFUSAL_REASON_VALUES)[number];
+
+/**
+ * What became of a discovery run.
+ *
+ * **`partial` is the value that did not exist anywhere in this product and had
+ * to.** For certificate transparency a query is total or it fails, so two
+ * states sufficed. For a credentialed cloud enumeration partial success is the
+ * *normal* case — three regions enumerated, one throttled, one `AccessDenied` —
+ * and a run that enumerated four of five is neither `succeeded` (it did not do
+ * what it was asked) nor `failed` (it produced real leads). Collapsing it into
+ * either destroys the only fact a report actually needs: the boundary of what
+ * we can speak for.
+ *
+ * `no_evidence` mirrors `collection_schedule_runs`: an attempt that ran
+ * correctly and found nothing is not a failure, and must not read as one.
+ */
+export const DISCOVERY_RUN_STATUS_VALUES = ["succeeded", "partial", "no_evidence", "failed"] as const;
+
+export type DiscoveryRunStatus = (typeof DISCOVERY_RUN_STATUS_VALUES)[number];
 
 /**
  * What a DNS lookup of a discovered name established, as three states rather

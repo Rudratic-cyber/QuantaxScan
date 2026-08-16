@@ -202,7 +202,9 @@ test.describe("the protocol-configuration collector (B6), end to end", () => {
     const inventoryRes = await api.get("/api/inventory/assets?surface=config");
     const inventory = (await inventoryRes.json()) as { assets: Array<{ algorithm: string; location: string }> };
     const mine = inventory.assets.filter((a) => a.location.startsWith(`project:${projectId}:config:`));
-    expect(mine.map((a) => a.algorithm).sort()).toEqual(["AES", "ECDH", "EdDSA"]);
+    // `modp2048` is a MODP group — finite-field DH, so `DH` and not `ECDH`
+    // (G-24). The two are not interchangeable here: 2048 is a modulus.
+    expect(mine.map((a) => a.algorithm).sort()).toEqual(["AES", "DH", "EdDSA"]);
 
     // Emptying the file of algorithm directives entirely still retires the
     // last one — the case a reobservation scope derived from observations
