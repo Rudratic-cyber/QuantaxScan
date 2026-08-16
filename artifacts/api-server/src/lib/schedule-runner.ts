@@ -9,7 +9,12 @@ import {
 import type { ScopedTx } from "@workspace/db/org-scope";
 import type { OrgContext, OrgScope } from "@workspace/db/org-scope";
 import { probeTlsTargets, type TlsProbeOutcome } from "./tls-probe";
-import { ingestTlsObservations } from "./asset-ingest";
+import {
+  ingestTlsObservations,
+  recordFailedCollectionRun,
+  TLS_COLLECTOR,
+  TLS_COLLECTOR_VERSION,
+} from "./asset-ingest";
 import { logger } from "./logger";
 
 /**
@@ -146,6 +151,24 @@ export async function executeSchedule(
 
     if (probeError !== null) {
       status = "failed";
+      // The probe itself blew up, so this surface was attempted and produced no
+      // coverage. Until 2026-08-16 that fact died here: `collection_runs` had
+      // one production writer and it hardcoded `completed`, so a week of
+      // scheduled collections crashing was indistinguishable — to the coverage
+      // meter — from a surface nobody had ever pointed a collector at.
+      //
+      // Recorded on the *collection* as well as the schedule run, because the
+      // two answer different questions. `collection_schedule_runs` says this
+      // schedule failed; `collection_runs` is what `coverage.ts` reads, and its
+      // `failedRuns` counter was unreachable code before this line existed.
+      const failed = await recordFailedCollectionRun(tx, {
+        organizationId: ctx.organizationId,
+        repo: projectRepoId(schedule.projectId),
+        collector: TLS_COLLECTOR,
+        collectorVersion: TLS_COLLECTOR_VERSION,
+        surface: "tls",
+      });
+      collectionRunId = failed.collectionRunId;
     } else if (probed.length === 0) {
       // Real, common, and NOT an error: every target may legitimately be
       // unreachable or refused on a given day. No `collection_runs` row is

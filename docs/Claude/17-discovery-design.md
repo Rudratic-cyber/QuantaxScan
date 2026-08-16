@@ -883,9 +883,15 @@ as alternatives and that **must never be resolved by concatenating both sides**.
 2. **`ORG_SCOPED_TABLES` + policy + grant** for `discovery_runs`, in `tenant-isolation.sql`, applied
    by `apply-rls` — **not** by `drizzle-kit push`, which writes a NULL `USING` clause and installs
    no isolation while `pg_policies` reports the policy as present.
-3. **`asset-ingest.ts`**: `runStatus` and `enumeration` on `IngestSpec`; the hardcoded
-   `status: "completed"` becomes `spec.runStatus ?? "completed"`. **No lane touches
-   `ingestObservations()` after this.**
+3. ~~**`asset-ingest.ts`**: `runStatus` and `enumeration` on `IngestSpec`; the hardcoded
+   `status: "completed"` becomes `spec.runStatus ?? "completed"`.~~ — **the `runStatus` half
+   landed 2026-08-16** as [G-25](09-open-gaps.md), ahead of the rest of stage 0, because it is a
+   live defect rather than only a preparation: a scheduled collection that crashed was recorded as
+   one that succeeded. It came with `recordFailedCollectionRun()`, which exists as a separate
+   function rather than a flag because a failed attempt must reconcile nothing — routing it through
+   `ingestObservations()` would mark the whole reobserved scope `gone` on the strength of a crash.
+   `enumeration` still belongs with the migration in item 1. **No lane touches
+   `ingestObservations()` after stage 0 completes.**
 4. **`lib/db/src/credentials.ts`**: `withRedeemedCredential`, and two new `CREDENTIAL_KIND_VALUES`
    entries (`cloud_readonly_inventory`, and the fleet-directory kind if the endpoint lane is in
    scope). Widening that tuple is deliberate by design; doing it once is the point.

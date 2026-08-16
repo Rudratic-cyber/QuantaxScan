@@ -35,7 +35,7 @@ import {
   type EndpointHostResult,
 } from "@workspace/collectors";
 import type { DataClassification } from "@workspace/db/classification";
-import type { RetentionMode } from "@workspace/db/schema";
+import type { CollectionRunStatus, RetentionMode } from "@workspace/db/schema";
 import { and, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
 
 /**
@@ -144,6 +144,22 @@ interface IngestSpec {
    * only offered on the two routes that accept source bodies.
    */
   evidenceRetention?: RetentionMode;
+  /**
+   * What became of the attempt this run records. Defaults to `completed`.
+   *
+   * It exists because the default used to be the *only* value: this insert
+   * hardcoded `"completed"` and was the single production write to
+   * `collection_runs`, so `coverage.ts`'s `failed` branch — with its own
+   * comment explaining that a failed attempt is not coverage — was unreachable
+   * code. A collection that blew up was filed as one that succeeded.
+   *
+   * A caller that reaches *this* function has observations to write, so
+   * `completed` is nearly always right here; the value a caller actually needs
+   * is `failed`, and for that there is `recordFailedCollectionRun()` below,
+   * because a failed attempt reconciles nothing and must not mark an asset
+   * `gone`.
+   */
+  runStatus?: CollectionRunStatus;
 }
 
 /**
@@ -169,6 +185,56 @@ function evidenceFor(
     for (const key of SOURCE_BEARING_EVIDENCE_KEYS) delete evidence[key];
   }
   return evidence;
+}
+
+/**
+ * Record an attempt that produced no coverage, so a surface can say "we tried
+ * and it failed" rather than "nobody has ever looked".
+ *
+ * **Why this is a separate function and not a flag on the ingest.**
+ * `ingestObservations()` reconciles: it marks previously-active assets in the
+ * reobserved scope `gone` when this run did not see them again. An attempt that
+ * failed saw *nothing*, so running it through that path would mark the whole
+ * scope remediated on the strength of a crash — a silent mass false
+ * remediation, and the exact failure `ReobservationScope` exists to prevent.
+ * This writes one row and touches no asset.
+ *
+ * **What must not call it.** An attempt that ran fine and found nothing is not
+ * a failure. `schedule-runner.ts` distinguishes the two deliberately: every
+ * target being unreachable on a given day is `no_evidence`, and writes no run
+ * at all, because a `completed` run with zero observations would make the
+ * coverage meter report the surface as examined. Failure means the collection
+ * itself did not happen or could not be persisted.
+ */
+export async function recordFailedCollectionRun(
+  tx: ScopedTx,
+  params: {
+    organizationId: number;
+    repo: string;
+    collector: string;
+    collectorVersion: string;
+    surface: Surface;
+  },
+): Promise<{ collectionRunId: number }> {
+  const [run] = await tx
+    .insert(collectionRunsTable)
+    .values({
+      organizationId: params.organizationId,
+      divisionId: await divisionForTarget(tx, params.repo),
+      collector: params.collector,
+      collectorVersion: params.collectorVersion,
+      surface: params.surface,
+      status: "failed",
+      target: params.repo,
+      // Zero, and never anything else: the count is what the run observed, and
+      // a failed run observed nothing. `coverage.ts` keeps a failed run out of
+      // `completedRuns` so it can never make a surface look examined.
+      observationCount: 0,
+      completedAt: new Date(),
+    })
+    .returning();
+
+  return { collectionRunId: run.id };
 }
 
 /** The two A3 columns a caller may supply per asset. Null/absent means "not supplied" and stays null — never a default. */
@@ -306,7 +372,7 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
       collector: spec.collector,
       collectorVersion: spec.collectorVersion,
       surface: spec.surface,
-      status: "completed",
+      status: spec.runStatus ?? "completed",
       target: spec.repo,
       observationCount: observations.length,
       completedAt: new Date(),
@@ -657,6 +723,16 @@ export async function ingestCertificateObservations(
  * `outcome === "probed"` before calling this, the same discipline
  * `ingestSourceObservations` applies per scanned file.
  */
+/**
+ * The TLS collector's identity, exported because two writers now need to agree
+ * on it: the success path below, and `recordFailedCollectionRun()` in
+ * `schedule-runner.ts`. Two literals drifting apart would put a failed run and
+ * a completed run on the same surface under different collector versions,
+ * which reads as two collectors where there is one.
+ */
+export const TLS_COLLECTOR = "tls-handshake";
+export const TLS_COLLECTOR_VERSION = "1.0.0";
+
 export async function ingestTlsObservations(
   tx: ScopedTx,
   params: {
@@ -674,8 +750,8 @@ export async function ingestTlsObservations(
   return ingestObservations(tx, {
     organizationId: params.organizationId,
     repo: params.repo,
-    collector: "tls-handshake",
-    collectorVersion: "1.0.0",
+    collector: TLS_COLLECTOR,
+    collectorVersion: TLS_COLLECTOR_VERSION,
     surface: "tls",
     observations,
     reobserved: {

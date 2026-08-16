@@ -16,6 +16,23 @@ import { organizationsTable } from "./organizations";
  * `ReportAdapter`/import boundary, not required for this project's own
  * first-party collectors emitting `RawObservation` directly.
  */
+/**
+ * The three states a run can be in.
+ *
+ * Defined here, in the schema file, rather than in `@workspace/collectors`:
+ * exactly one table uses it, and a collector has no concept of a run's status —
+ * it produces observations and the server decides what became of the attempt.
+ * Same reasoning as B9's vendor tuples (see CLAUDE.md's recorded exceptions).
+ *
+ * **`failed` was unreachable until 2026-08-16.** The only production insert
+ * into this table hardcoded `"completed"`, so a collection that blew up was
+ * filed as one that succeeded, while `coverage.ts` carried a live `failed`
+ * branch that nothing could reach. The vocabulary is exported now so the
+ * write path has to name a value rather than default into the reassuring one.
+ */
+export const COLLECTION_RUN_STATUS_VALUES = ["running", "completed", "failed"] as const;
+export type CollectionRunStatus = (typeof COLLECTION_RUN_STATUS_VALUES)[number];
+
 export const collectionRunsTable = pgTable(
   "collection_runs",
   {
@@ -28,7 +45,7 @@ export const collectionRunsTable = pgTable(
     collector: text("collector").notNull(),
     collectorVersion: text("collector_version").notNull(),
     surface: text("surface").notNull(),
-    status: text("status").notNull().default("completed"), // running | completed | failed
+    status: text("status").notNull().default("completed"), // COLLECTION_RUN_STATUS_VALUES
     target: text("target"), // repo/host/package descriptor the collector was pointed at
     observationCount: integer("observation_count").notNull().default(0),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
@@ -36,7 +53,7 @@ export const collectionRunsTable = pgTable(
   },
   (table) => [
     check("collection_runs_surface_check", oneOf(table.surface, SURFACE_VALUES)),
-    check("collection_runs_status_check", oneOf(table.status, ["running", "completed", "failed"])),
+    check("collection_runs_status_check", oneOf(table.status, COLLECTION_RUN_STATUS_VALUES)),
   ],
 );
 

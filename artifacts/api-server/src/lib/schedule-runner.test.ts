@@ -11,6 +11,7 @@ import type { ScopedTx } from "@workspace/db/org-scope";
 import { createTestDb, type TestDb } from "@workspace/db/test-support";
 import type { TlsHandshakeResult } from "@workspace/collectors";
 import { runDueSchedules, type ScheduleRunnerDeps } from "./schedule-runner";
+import { summariseProjectCoverage } from "./coverage";
 import type { TlsProbeOutcome } from "./tls-probe";
 
 /**
@@ -244,7 +245,38 @@ describe("the scheduled re-collection runner", () => {
 
     expect(result.executed[0].status).toBe("failed");
     expect(result.executed[0].error).toContain("resolver exploded");
-    expect(await read((tx) => tx.select().from(collectionRunsTable))).toHaveLength(0);
+
+    // This assertion used to read `toHaveLength(0)`, and it was pinning a
+    // defect rather than a decision: `collection_runs` had exactly one
+    // production writer and it hardcoded `status: "completed"`, so a failed
+    // collection had nowhere to be written at all. `coverage.ts` carried a
+    // `failed` branch that no execution could reach.
+    const runs = await read((tx) => tx.select().from(collectionRunsTable));
+    expect(runs).toHaveLength(1);
+    expect(runs[0].status).toBe("failed");
+    // Zero, and it matters: the count is what the run observed, and a run that
+    // crashed observed nothing.
+    expect(runs[0].observationCount).toBe(0);
+
+    // The reason the row exists. A failed attempt is not coverage — it must
+    // count as an attempt without ever making the surface look examined.
+    const coverage = summariseProjectCoverage({
+      runs: runs.map((r) => ({
+        surface: r.surface,
+        status: r.status,
+        startedAt: r.startedAt,
+        completedAt: r.completedAt,
+      })),
+      assets: [],
+      observations: [],
+    });
+    const tls = coverage.surfaces.find((s) => s.surface === "tls");
+    expect(tls?.failedRuns).toBe(1);
+    expect(tls?.completedRuns).toBe(0);
+    expect(tls?.state).not.toBe("examined");
+
+    // Still nothing reconciled. A crash saw no target, so it may not decide
+    // any asset is gone — the failure this stays separate from `ingest` for.
     expect(await read((tx) => tx.select().from(assetsTable))).toHaveLength(0);
 
     const attempts = await read((tx) => tx.select().from(collectionScheduleRunsTable));

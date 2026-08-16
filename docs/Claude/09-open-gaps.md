@@ -40,6 +40,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | ~~G-22~~ | ~~The estate timeline tells the customer we have no certificate collector~~ | **Closed** | Done 2026-08-15 | — |
 | ~~G-23~~ | ~~A collection schedule's `host` is validated only by its description~~ | **Closed** | Done 2026-08-15 | — |
 | G-24 | Finite-field DH is banded as if its modulus were a curve, and loses its 2030 deprecation | **High** | Collector change | Opened 2026-08-16 by C4 |
+| ~~G-25~~ | ~~A failed collection is recorded as a completed one~~ | **Closed** | Done 2026-08-16 | — |
 
 ---
 
@@ -844,6 +845,46 @@ The spec description now says the rule is enforced rather than merely stating it
 used to pin the defect now asserts the fix.
 
 ---
+
+## G-25 — A failed collection was filed as a completed one — **CLOSED 2026-08-16**
+
+`asset-ingest.ts` held the only production insert into `collection_runs`, and it wrote
+`status: "completed"` as a literal. `coverage.ts` has read `run.status === "failed"` since D3
+shipped — with a comment explaining that an attempt producing nothing is not coverage and must stay
+out of `completedRuns` — and nothing in the product could ever set that value. The branch was
+unreachable code guarding a state the write path could not produce.
+
+**What it cost in practice.** `schedule-runner.ts` is the one place a collection runs unattended.
+When a scheduled TLS probe threw, the runner recorded a `failed` row in `collection_schedule_runs`
+and wrote **no `collection_runs` row at all** — so to the D3 coverage meter, a week of scheduled
+collections crashing looked exactly like a surface nobody had ever pointed a collector at. The
+product held the information and discarded it. The existing test asserted
+`collectionRunsTable ... toHaveLength(0)` on that path, which pinned the defect rather than a
+decision.
+
+**Fixed by**, in order of how much each matters:
+
+1. `COLLECTION_RUN_STATUS_VALUES` exported from `lib/db/src/schema/collection_runs.ts`, where the
+   `CHECK` already constrained the same three values inline. The vocabulary now has one definition,
+   and the write path has to name a value rather than default into the reassuring one.
+2. `IngestSpec.runStatus`, defaulting to `completed`.
+3. **`recordFailedCollectionRun()`, which is deliberately not a flag on the ingest.**
+   `ingestObservations()` reconciles: it marks previously-active assets in the reobserved scope
+   `gone` when this run did not see them again. An attempt that failed saw *nothing*, so routing it
+   through that path would mark the whole scope remediated on the strength of a crash — a silent
+   mass false remediation, which is the failure `ReobservationScope` exists to prevent. The new
+   function writes one row with `observationCount: 0` and touches no asset.
+4. The `probeError` branch of `executeSchedule` calls it.
+
+**The distinction that had to survive.** An attempt that ran fine and saw nothing is *not* a
+failure. `schedule-runner.ts` calls that `no_evidence`, writes no `collection_runs` row, and
+reconciles nothing — because a `completed` run with zero observations would make the meter report
+the surface as examined and found empty, and a `failed` one would report a working collector as
+broken. That path is unchanged and still asserted.
+
+Found while reading `asset-ingest.ts` for the discovery design
+([17-discovery-design.md](17-discovery-design.md) §6.1), which is where the fix was scoped as a
+preparatory commit nobody owns — every credentialed collector needs a way to say an attempt failed.
 
 ## G-24 — Finite-field DH loses its 2030 deprecation `High` — **OPENED 2026-08-16**
 
