@@ -27,6 +27,7 @@ import {
 } from "@workspace/api-zod";
 import {
   lockfilesIn,
+  ecosystemForLockfile,
   certificatesIn,
   protocolConfigsIn,
   KMS_KEY_SPECS_CRITICAL_CAVEAT,
@@ -329,8 +330,17 @@ router.get("/projects/:id/coverage", async (req, res): Promise<void> => {
  * truncation to the first N: quietly dropping lockfiles would understate the
  * dependency tree while reporting the surface as examined, which is worse
  * than refusing.
+ *
+ * Raised from 50 to 200 on 2026-08-16, when the collector gained Maven, Go,
+ * NuGet and Cargo. The old number was sized for npm and PyPI, where a
+ * repository has a handful of lockfiles at the root of each app. The new
+ * formats are **per module**: a multi-module Maven build has one `pom.xml`
+ * per module and a .NET solution one `.csproj` per project, so a large
+ * back-end monorepo submitted whole — which this route's own description
+ * invites — passed 50 easily and got a hard 400 for the ecosystems that had
+ * just been added. Still a bound on parse work, not on bytes.
  */
-const MAX_LOCKFILES_PER_SUBMISSION = 50;
+const MAX_LOCKFILES_PER_SUBMISSION = 200;
 
 /**
  * Stated on every response rather than left for a client to remember. A
@@ -408,6 +418,10 @@ router.post("/projects/:id/dependencies", async (req, res): Promise<void> => {
       projectId: id,
       lockfilesRecognised: 0,
       lockfiles: [],
+      // Nothing readable was submitted, so no ecosystem was examined and none
+      // may be reconciled against. Stated as an empty array rather than
+      // omitted: a client that reads this field must not have to guess.
+      ecosystems: [],
       collectionRunId: null,
       assetsCreated: 0,
       assetsUpdated: 0,
@@ -428,6 +442,15 @@ router.post("/projects/:id/dependencies", async (req, res): Promise<void> => {
     projectId: id,
     lockfilesRecognised: result.lockfiles.length,
     lockfiles: result.lockfiles,
+    // Derived here rather than returned by the ingest, so that widening the
+    // ecosystem list stays a change to `@workspace/collectors` and this route
+    // only — `asset-ingest.ts` already scopes its reconciliation by exactly
+    // this set (`ecosystemsIn` → `dependencyLocationPrefix`) and needs no edit
+    // to gain one. It is the single worst merge-conflict magnet in the
+    // repository; not touching it is deliberate.
+    // Read off `recognised` rather than `result.lockfiles` because that one is
+    // still `LockfileKind`-typed; the ingest result widens `kind` to `string`.
+    ecosystems: [...new Set(recognised.map((lockfile) => ecosystemForLockfile(lockfile.kind)))],
     collectionRunId: result.collectionRunId,
     assetsCreated: result.assetsCreated,
     assetsUpdated: result.assetsUpdated,

@@ -1,13 +1,15 @@
 {
   "schemaVersion": "1.0.0",
-  "dataVersion": "1.0.0",
-  "description": "B2's package -> algorithm table. If this package is in the dependency graph, which quantum-relevant primitives does it put there? Moved out of lib/collectors/src/crypto-packages.ts on 2026-08-14 so a data revision needs no code edit (C1's rule) and so check:standards polices its retrievedAt dates (G-14).",
+  "dataVersion": "1.1.0",
+  "description": "B2's package -> algorithm table. If this package is in the dependency graph, which quantum-relevant primitives does it put there? Moved out of lib/collectors/src/crypto-packages.ts on 2026-08-14 so a data revision needs no code edit (C1's rule) and so check:standards polices its retrievedAt dates (G-14). 1.1.0 (2026-08-16) added the maven, golang, nuget and cargo ecosystems.",
   "criticalCaveat": "A lockfile records the fully RESOLVED dependency graph. A package matched here may be a transitive dependency of the build toolchain rather than a library the project's own code calls. This table states what a package implements, never that the customer's code uses it — see the toolchainUbiquity flag and docs/Claude/09-open-gaps.md G-20.",
   "curationRules": [
     "The algorithm must be a property of the package, not of how a caller configures it. JWT/JOSE libraries (jsonwebtoken, jose, pyjwt) are deliberately absent: their algorithm is an `alg` value chosen at runtime, so a lockfile entry says nothing about which one is in use. Inferring RSA from jsonwebtoken would manufacture findings, and a wrong value is worse than no value (G-05).",
     "`algorithm` must be a canonicalName in algorithms.json, so algorithm-mapping.ts resolves severity/replacement/standard for it at read time. Asserted in algorithm-mapping.test.ts.",
     "No version-range reasoning. The version a lockfile pins is recorded, but this table has no notion of `implemented from x.y.z` or `vulnerable before x.y.z`. Where a claim is known to be version-dependent it is marked needs-check rather than silently applied to every version — see paramiko/DSA below and G-21.",
-    "Every claim carries a citation with a verbatim quote from the package's own documentation. A citation without a quote is the unverified claim G-07/G-08/G-09 punished. Where no such quote could be obtained the claim is `needs-check`, not deleted: the gap being visible is the point."
+    "Every claim carries a citation with a verbatim quote from the package's own documentation. A citation without a quote is the unverified claim G-07/G-08/G-09 punished. Where no such quote could be obtained the claim is `needs-check`, not deleted: the gap being visible is the point.",
+    "A *bundle* whose cryptography differs per sub-package is absent for the same reason a JOSE library is. `golang.org/x/crypto` is one Go module holding ssh, ocsp, pkcs12, blake2b, chacha20 and much else; the module path in a go.mod says which module is required, never which package is imported, so no algorithm follows from it. Same for `org.bouncycastle:bcpkix-*` and `bctls-*`, which are format and protocol layers over bcprov rather than algorithm implementations.",
+    "This table can only emit an `algorithm` that is a canonicalName in algorithms.json, and there are nine of them: RSA, ECDSA, EdDSA, ECDH/DH, DSA, MD5, SHA-1, AES and AES-ECB. Several libraries added in 1.1.0 also ship ML-KEM, ML-DSA, SLH-DSA or ChaCha20. Those are omitted rather than approximated, so an entry here under-reports what a library provides and never over-reports it. Where the omission is material the package's `note` says so."
   ],
   "statusValues": {
     "verified": "A verbatim quote from the package's own documentation supports the claim, read on `retrievedAt`. It does NOT mean the claim was checked against the specific version a lockfile pins.",
@@ -487,6 +489,331 @@
         { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "M2Crypto wraps OpenSSL DSA." },
         { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "M2Crypto.EC signs and verifies with ECDSA (methods are named sign_dsa/verify_dsa but documented as ECDSA)." },
         { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "M2Crypto wraps the OpenSSL DH API, and M2Crypto.EC.compute_dh_key performs ECDH." }
+      ]
+    },
+
+    {
+      "ecosystem": "maven",
+      "name": "org.bouncycastle:bcprov-jdk18on",
+      "status": "verified",
+      "citation": {
+        "document": "Bouncy Castle, Specifications & Interoperability — Algorithms & Key Types",
+        "url": "https://www.bouncycastle.org/documentation/specification_interoperability/",
+        "retrievedAt": "2026-08-16",
+        "quote": "ECDSA/ECDH"
+      },
+      "algorithms": [
+        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "RSA is one of the key types the provider's own algorithm listing names." },
+        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "DSA is one of the key types the provider's own algorithm listing names." },
+        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "The listing's `ECDSA/ECDH` entry is the quoted claim." },
+        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "The listing carries both `ECDSA/ECDH` and a separate `Diffie-Hellman` entry." },
+        { "algorithm": "EdDSA", "tier": "multi-primitive", "rationale": "The listing's `EdDSA/XDH` entry. Curve-agnostic at the artifact level (Ed25519 and Ed448 are both provided), so no key size is claimed." }
+      ],
+      "note": "The cited page states its coverage as a list of key types rather than prose; the entries read on the retrieval date were Diffie-Hellman, DSA, DSTU, ECDSA/ECDH, EdDSA/XDH, ElGamal, GOST, LMS/HSS, SM2, RSA and XMSS. The quote is one of those entries verbatim. Bouncy Castle also ships ML-DSA, ML-KEM, SLH-DSA and other NIST PQC algorithms; those are deliberately not reported here because they are not canonicalNames in algorithms.json, and a table that cannot name them must not imply their absence."
+    },
+    {
+      "ecosystem": "maven",
+      "name": "org.bouncycastle:bcprov-jdk15on",
+      "status": "needs-check",
+      "needsCheckReason": "Same library, the older artifact id for JDK 1.5+ (superseded by -jdk18on and no longer receiving releases). The claims below are transposed from bcprov-jdk18on; the 15on line's own documentation was not read separately, and an unmaintained line may not carry everything the current one does.",
+      "citation": {
+        "document": "Bouncy Castle, Specifications & Interoperability — Algorithms & Key Types (read for -jdk18on; the -jdk15on line was NOT separately verified)",
+        "url": "https://www.bouncycastle.org/documentation/specification_interoperability/"
+      },
+      "algorithms": [
+        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "Expected to mirror bcprov-jdk18on." },
+        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "Expected to mirror bcprov-jdk18on." },
+        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "Expected to mirror bcprov-jdk18on." },
+        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "Expected to mirror bcprov-jdk18on." }
+      ]
+    },
+    {
+      "ecosystem": "maven",
+      "name": "net.i2p.crypto:eddsa",
+      "status": "verified",
+      "citation": {
+        "document": "ed25519-java README (str4d/ed25519-java)",
+        "url": "https://raw.githubusercontent.com/str4d/ed25519-java/master/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "This is an implementation of EdDSA in Java."
+      },
+      "algorithms": [
+        {
+          "algorithm": "EdDSA",
+          "tier": "dedicated",
+          "rationale": "The library exists to implement EdDSA and offers no other public-key primitive."
+        }
+      ],
+      "note": "No curve is claimed, and therefore no key size. The quoted sentence says EdDSA, not Ed25519 — the library does provide Ed25519 parameter specs, but naming a curve here would be an inference beyond what was read (G-05)."
+    },
+    {
+      "ecosystem": "maven",
+      "name": "com.google.crypto.tink:tink",
+      "status": "verified",
+      "citation": {
+        "document": "Tink documentation, Supported key types — digital signatures",
+        "url": "https://developers.google.com/tink/supported-key-types",
+        "retrievedAt": "2026-08-16",
+        "quote": "ECDSA over NIST curves"
+      },
+      "algorithms": [
+        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "The quoted signature key type. Curve-agnostic at the library level (P-256, P-384 and P-521 key templates all exist), so no key size is claimed." },
+        { "algorithm": "EdDSA", "tier": "multi-primitive", "curve": "ed25519", "rationale": "The same table lists `Ed25519` as a signature key type, which pins the curve." },
+        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "The same table lists `RSA-SSA-PKCS1` and `RSA-SSA-PSS` as signature key types." }
+      ],
+      "note": "The table also lists ML-DSA and SLH-DSA. Those are omitted for the same reason as Bouncy Castle's: algorithms.json has no canonicalName for them, and this table may only emit names that resolve there."
+    },
+
+    {
+      "ecosystem": "golang",
+      "name": "github.com/decred/dcrd/dcrec/secp256k1",
+      "status": "verified",
+      "citation": {
+        "document": "pkg.go.dev — github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa package documentation",
+        "url": "https://pkg.go.dev/github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa",
+        "retrievedAt": "2026-08-16",
+        "quote": "Package ecdsa provides secp256k1-optimized ECDSA signing and verification."
+      },
+      "algorithms": [
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "curve": "secp256k1",
+          "rationale": "ECDSA lives in the module's `ecdsa` subpackage; the root package is curve arithmetic, and the module also carries EC-Schnorr and ECDH. Which of those an importer reaches is not visible in go.mod."
+        }
+      ],
+      "note": "Matched without its major-version suffix: `/v4` in the module path names the same library at a later major version, and normalisePackageName strips it before lookup."
+    },
+    {
+      "ecosystem": "golang",
+      "name": "github.com/btcsuite/btcd/btcec",
+      "status": "verified",
+      "citation": {
+        "document": "btcec README (btcsuite/btcd)",
+        "url": "https://raw.githubusercontent.com/btcsuite/btcd/master/btcec/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "Package btcec implements elliptic curve cryptography needed for working with Bitcoin (secp256k1 only for now)."
+      },
+      "algorithms": [
+        {
+          "algorithm": "ECDSA",
+          "tier": "multi-primitive",
+          "curve": "secp256k1",
+          "rationale": "The same README states it 'is designed so that it may be used with the standard crypto/ecdsa packages provided with go'; signing lives in the `ecdsa` subpackage alongside Schnorr."
+        }
+      ]
+    },
+    {
+      "ecosystem": "golang",
+      "name": "github.com/cloudflare/circl",
+      "status": "verified",
+      "citation": {
+        "document": "CIRCL README (cloudflare/circl)",
+        "url": "https://raw.githubusercontent.com/cloudflare/circl/main/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "CIRCL (Cloudflare Interoperable, Reusable Cryptographic Library) is a collection of cryptographic primitives written in Go."
+      },
+      "algorithms": [
+        { "algorithm": "EdDSA", "tier": "multi-primitive", "rationale": "The README's primitive list names Ed25519 and Ed448 as digital signature schemes. Two curves, so none is pinned and no key size is claimed." },
+        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "The README's primitive list names X25519 and X448 as Diffie-Hellman key exchange functions." }
+      ],
+      "note": "CIRCL's headline content is post-quantum (Kyber/ML-KEM, Dilithium/ML-DSA). Those are not reported because algorithms.json has no canonicalName for them; a CIRCL dependency is therefore under-reported here rather than mis-reported. The RSA blind-signature protocol it ships is also omitted — it is a protocol built on RSA, not a claim that the importer uses RSA keys."
+    },
+
+    {
+      "ecosystem": "nuget",
+      "name": "BouncyCastle.Cryptography",
+      "status": "verified",
+      "citation": {
+        "document": "Bouncy Castle, Specifications & Interoperability — Algorithms & Key Types (covers the C# distribution alongside the Java one)",
+        "url": "https://www.bouncycastle.org/documentation/specification_interoperability/",
+        "retrievedAt": "2026-08-16",
+        "quote": "ECDSA/ECDH"
+      },
+      "algorithms": [
+        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "RSA is one of the key types the provider's own algorithm listing names." },
+        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "DSA is one of the key types the provider's own algorithm listing names." },
+        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "The listing's `ECDSA/ECDH` entry is the quoted claim." },
+        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "The listing carries both `ECDSA/ECDH` and a separate `Diffie-Hellman` entry." },
+        { "algorithm": "EdDSA", "tier": "multi-primitive", "rationale": "The listing's `EdDSA/XDH` entry. Curve-agnostic at the package level, so no key size is claimed." }
+      ],
+      "note": "The current package id, published by the Bouncy Castle project itself. Its NuGet description ('BouncyCastle.NET is a popular cryptography library for .NET') names no algorithm, which is why the citation is the project's own specification page instead."
+    },
+    {
+      "ecosystem": "nuget",
+      "name": "Portable.BouncyCastle",
+      "status": "needs-check",
+      "needsCheckReason": "The community-maintained repackaging of the C# library, superseded by the official BouncyCastle.Cryptography id. The claims below are transposed from that package; this id's own release notes were not read, and the fork's algorithm set at any given version was not confirmed.",
+      "citation": {
+        "document": "Bouncy Castle, Specifications & Interoperability (read for BouncyCastle.Cryptography; Portable.BouncyCastle was NOT separately verified)",
+        "url": "https://www.bouncycastle.org/documentation/specification_interoperability/"
+      },
+      "algorithms": [
+        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "Expected to mirror BouncyCastle.Cryptography." },
+        { "algorithm": "DSA", "tier": "multi-primitive", "rationale": "Expected to mirror BouncyCastle.Cryptography." },
+        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "Expected to mirror BouncyCastle.Cryptography." },
+        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "Expected to mirror BouncyCastle.Cryptography." }
+      ]
+    },
+    {
+      "ecosystem": "nuget",
+      "name": "NSec.Cryptography",
+      "status": "verified",
+      "citation": {
+        "document": "NSec API reference, SignatureAlgorithm class",
+        "url": "https://nsec.rocks/docs/api/nsec.cryptography.signaturealgorithm",
+        "retrievedAt": "2026-08-16",
+        "quote": "Gets the Ed25519 signature algorithm."
+      },
+      "algorithms": [
+        {
+          "algorithm": "EdDSA",
+          "tier": "multi-primitive",
+          "curve": "ed25519",
+          "rationale": "SignatureAlgorithm exposes Ed25519 and Ed25519ph and no other signature scheme, so the curve is pinned even though the library is multi-primitive overall."
+        },
+        {
+          "algorithm": "ECDH/DH",
+          "tier": "multi-primitive",
+          "curve": "x25519",
+          "rationale": "KeyAgreementAlgorithm exposes exactly one algorithm, documented as 'Gets the X25519 key agreement algorithm.' (nsec.rocks/docs/api/nsec.cryptography.keyagreementalgorithm, read 2026-08-16)."
+        }
+      ],
+      "note": "A libsodium-based library, so it offers no RSA, DSA or NIST-curve primitive at all. That absence is a checked absence: the signature and key-agreement API pages list only the two algorithms above."
+    },
+
+    {
+      "ecosystem": "cargo",
+      "name": "rsa",
+      "status": "verified",
+      "citation": {
+        "document": "RustCrypto/RSA README",
+        "url": "https://raw.githubusercontent.com/RustCrypto/RSA/master/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "A portable RSA implementation in pure Rust."
+      },
+      "algorithms": [
+        { "algorithm": "RSA", "tier": "dedicated", "rationale": "The crate is an RSA implementation and offers no other public-key primitive." }
+      ]
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "ed25519-dalek",
+      "status": "verified",
+      "citation": {
+        "document": "ed25519-dalek README (dalek-cryptography/curve25519-dalek)",
+        "url": "https://raw.githubusercontent.com/dalek-cryptography/curve25519-dalek/main/ed25519-dalek/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "Fast and efficient Rust implementation of ed25519 key generation, signing, and verification."
+      },
+      "algorithms": [
+        { "algorithm": "EdDSA", "tier": "dedicated", "curve": "ed25519", "rationale": "The crate implements Ed25519 signatures and nothing else; the curve is in its name and in the quoted sentence." }
+      ]
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "x25519-dalek",
+      "status": "verified",
+      "citation": {
+        "document": "x25519-dalek README (dalek-cryptography/curve25519-dalek)",
+        "url": "https://raw.githubusercontent.com/dalek-cryptography/curve25519-dalek/main/x25519-dalek/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "A pure-Rust implementation of x25519 elliptic curve Diffie-Hellman key exchange, with curve operations provided by curve25519-dalek."
+      },
+      "algorithms": [
+        { "algorithm": "ECDH/DH", "tier": "dedicated", "curve": "x25519", "rationale": "The crate implements X25519 key exchange and nothing else." }
+      ]
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "k256",
+      "status": "verified",
+      "citation": {
+        "document": "RustCrypto/elliptic-curves, k256 README",
+        "url": "https://raw.githubusercontent.com/RustCrypto/elliptic-curves/master/k256/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "secp256k1 (a.k.a. K-256) elliptic curve library written in pure Rust with support for ECDSA signing/verification/public-key recovery, Taproot Schnorr signatures as defined in BIP340, Elliptic Curve Diffie-Hellman (ECDH), and general-purpose secp256k1 elliptic curve group operations which can be used to implement arbitrary group-based protocols."
+      },
+      "algorithms": [
+        { "algorithm": "ECDSA", "tier": "multi-primitive", "curve": "secp256k1", "rationale": "One of ECDSA, BIP340 Schnorr and ECDH the crate offers; a lockfile cannot say which the caller invokes." },
+        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "curve": "secp256k1", "rationale": "The quoted sentence names Elliptic Curve Diffie-Hellman explicitly." }
+      ],
+      "note": "The quote is the README's opening sentence with its inline markdown link brackets removed; the wording is otherwise unaltered."
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "p256",
+      "status": "verified",
+      "citation": {
+        "document": "RustCrypto/elliptic-curves, p256 README",
+        "url": "https://raw.githubusercontent.com/RustCrypto/elliptic-curves/master/p256/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "Pure Rust implementation of the NIST P-256 (a.k.a. secp256r1, prime256v1) elliptic curve with support for ECDH, ECDSA signing/verification, and general purpose curve arithmetic support implemented in terms of traits from the `elliptic-curve` crate."
+      },
+      "algorithms": [
+        { "algorithm": "ECDSA", "tier": "multi-primitive", "curve": "p-256", "rationale": "One of ECDSA and ECDH the crate offers over P-256." },
+        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "curve": "p-256", "rationale": "The quoted sentence names ECDH explicitly." }
+      ],
+      "note": "The quote is the README's opening sentence with its inline markdown link brackets removed; the wording is otherwise unaltered."
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "ecdsa",
+      "status": "verified",
+      "citation": {
+        "document": "RustCrypto/signatures, ecdsa README",
+        "url": "https://raw.githubusercontent.com/RustCrypto/signatures/master/ecdsa/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "Elliptic Curve Digital Signature Algorithm (ECDSA) as specified in FIPS 186-4 (Digital Signature Standard)."
+      },
+      "algorithms": [
+        { "algorithm": "ECDSA", "tier": "dedicated", "rationale": "The crate is the generic ECDSA implementation the curve crates build on. Curve-agnostic by construction, so no key size is claimed." }
+      ],
+      "note": "The quote is the README's opening line with its inline markdown link brackets removed. This crate is a transitive dependency of every RustCrypto curve crate (p256, k256, p384, ...), so its presence often reflects a curve crate rather than a direct call — the same reading G-20 warns about for the npm toolchain, and the observation's evidence carries the criticalCaveat that says so."
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "md-5",
+      "status": "verified",
+      "citation": {
+        "document": "RustCrypto/hashes, md5 crate README",
+        "url": "https://raw.githubusercontent.com/RustCrypto/hashes/master/md5/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "Pure Rust implementation of the MD5 cryptographic hash algorithm."
+      },
+      "algorithms": [
+        { "algorithm": "MD5", "tier": "dedicated", "rationale": "The crate is an MD5 implementation." }
+      ],
+      "note": "The crates.io name is `md-5` (the directory in the repository is `md5`). The quote is the README's opening line with its inline markdown link brackets removed."
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "sha1",
+      "status": "verified",
+      "citation": {
+        "document": "RustCrypto/hashes, sha1 crate README",
+        "url": "https://raw.githubusercontent.com/RustCrypto/hashes/master/sha1/README.md",
+        "retrievedAt": "2026-08-16",
+        "quote": "Pure Rust implementation of the SHA-1 cryptographic hash algorithm."
+      },
+      "algorithms": [
+        { "algorithm": "SHA-1", "tier": "dedicated", "rationale": "The crate is a SHA-1 implementation." }
+      ],
+      "note": "The quote is the README's opening line with its inline markdown link brackets removed."
+    },
+    {
+      "ecosystem": "cargo",
+      "name": "openssl",
+      "status": "needs-check",
+      "needsCheckReason": "The crate's own README describes it only as 'OpenSSL bindings for the Rust programming language' and names no algorithm. The claims below are inferred from what OpenSSL provides, not read from this crate's documentation, and a binding crate's feature set is narrower than the library it binds.",
+      "citation": {
+        "document": "rust-openssl README (sfackler/rust-openssl) — describes the crate but names no algorithm",
+        "url": "https://raw.githubusercontent.com/sfackler/rust-openssl/master/README.md"
+      },
+      "algorithms": [
+        { "algorithm": "RSA", "tier": "multi-primitive", "rationale": "OpenSSL's RSA API is expected to be exposed; not confirmed against this crate's own documentation." },
+        { "algorithm": "ECDSA", "tier": "multi-primitive", "rationale": "OpenSSL's ECDSA API is expected to be exposed; not confirmed against this crate's own documentation." },
+        { "algorithm": "ECDH/DH", "tier": "multi-primitive", "rationale": "OpenSSL's DH and ECDH APIs are expected to be exposed; not confirmed against this crate's own documentation." }
       ]
     }
   ]

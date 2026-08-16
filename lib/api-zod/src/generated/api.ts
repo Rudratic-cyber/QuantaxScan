@@ -400,7 +400,22 @@ export const GetProjectCoverageResponse = zod
 /**
  * Runs the dependency collector over the submitted files and persists what it finds as assets on the `dependency` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
 
-Files are selected by basename, not by extension: `pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock` and `requirements*.txt`. Anything else in `files` is ignored rather than rejected, so a caller may submit a whole tree.
+Files are selected by basename, not by extension. Six ecosystems are read:
+
+- **npm** — `pnpm-lock.yaml`, `package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`
+- **PyPI** — `requirements*.txt` (`poetry.lock` / `Pipfile.lock` are not read)
+- **Maven** — `pom.xml`, `gradle.lockfile`, `buildscript-gradle.lockfile`,
+  `build.gradle`, `build.gradle.kts`
+
+- **Go** — `go.mod`, `go.sum`
+- **NuGet** — `packages.lock.json`, `packages.config`, `*.csproj`/`*.fsproj`/`*.vbproj`,
+  `Directory.Packages.props`, `Directory.Build.props`
+
+- **Cargo** — `Cargo.lock` (`Cargo.toml` is not read: its versions are ranges)
+
+Anything else in `files` is ignored rather than rejected, so a caller may submit a whole tree.
+
+A manifest states less than a lock, and the response never hides the difference: a version that is a build-system variable (`${bc.version}`, `$(NSecVersion)`), a range (`[2.4.0, )`), or absent because a BOM or central package management supplies it is reported as `version: null` rather than as a guess. Only the unambiguous single-literal form of a `build.gradle` dependency declaration is read; a version catalogue reference or map notation produces nothing rather than a guess.
 
 **If no submitted file is a recognised lockfile, no collection run is recorded** and `lockfilesRecognised` is 0. That is deliberate: writing a run would make the meter report the dependency surface as examined-and-empty, when the truth is that nothing readable was submitted. It is a 200, not an error — a repository legitimately may have no lockfile.
 
@@ -440,10 +455,24 @@ export const SubmitProjectDependenciesResponse = zod.object({
           "npm-lock",
           "yarn-lock",
           "pip-requirements",
+          "maven-pom",
+          "gradle-lock",
+          "gradle-build",
+          "go-mod",
+          "go-sum",
+          "nuget-lock",
+          "nuget-packages-config",
+          "dotnet-project",
+          "cargo-lock",
         ]),
       }),
     )
     .describe("The recognised lockfiles and which format each was read as."),
+  ecosystems: zod
+    .array(zod.enum(["npm", "pypi", "maven", "golang", "nuget", "cargo"]))
+    .describe(
+      "The package ecosystems this submission actually carried a readable file for, in purl spelling. This is the exact set that `assetsMarkedGone` was scoped to, and therefore the set of ecosystems this run may make any statement about at all: a submission of only `go.mod` has observed nothing whatsoever about the project's Maven tree and leaves its Maven assets untouched. Empty when `lockfilesRecognised` is 0.",
+    ),
   collectionRunId: zod
     .number()
     .nullable()

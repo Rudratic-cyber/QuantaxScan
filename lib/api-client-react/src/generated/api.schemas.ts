@@ -432,6 +432,15 @@ export const DependencyIngestSummaryLockfilesItemKind = {
   "npm-lock": "npm-lock",
   "yarn-lock": "yarn-lock",
   "pip-requirements": "pip-requirements",
+  "maven-pom": "maven-pom",
+  "gradle-lock": "gradle-lock",
+  "gradle-build": "gradle-build",
+  "go-mod": "go-mod",
+  "go-sum": "go-sum",
+  "nuget-lock": "nuget-lock",
+  "nuget-packages-config": "nuget-packages-config",
+  "dotnet-project": "dotnet-project",
+  "cargo-lock": "cargo-lock",
 } as const;
 
 export type DependencyIngestSummaryLockfilesItem = {
@@ -439,12 +448,26 @@ export type DependencyIngestSummaryLockfilesItem = {
   kind: DependencyIngestSummaryLockfilesItemKind;
 };
 
+export type DependencyIngestSummaryEcosystemsItem =
+  (typeof DependencyIngestSummaryEcosystemsItem)[keyof typeof DependencyIngestSummaryEcosystemsItem];
+
+export const DependencyIngestSummaryEcosystemsItem = {
+  npm: "npm",
+  pypi: "pypi",
+  maven: "maven",
+  golang: "golang",
+  nuget: "nuget",
+  cargo: "cargo",
+} as const;
+
 export interface DependencyIngestSummary {
   projectId: number;
   /** How many submitted files the collector could read. Zero means no collection run was recorded and the dependency surface is still un-examined for this project. */
   lockfilesRecognised: number;
   /** The recognised lockfiles and which format each was read as. */
   lockfiles: DependencyIngestSummaryLockfilesItem[];
+  /** The package ecosystems this submission actually carried a readable file for, in purl spelling. This is the exact set that `assetsMarkedGone` was scoped to, and therefore the set of ecosystems this run may make any statement about at all: a submission of only `go.mod` has observed nothing whatsoever about the project's Maven tree and leaves its Maven assets untouched. Empty when `lockfilesRecognised` is 0. */
+  ecosystems: DependencyIngestSummaryEcosystemsItem[];
   /** Null when no run was recorded (`lockfilesRecognised` is 0). */
   collectionRunId: number | null;
   assetsCreated: number;

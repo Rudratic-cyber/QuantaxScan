@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi } from "vitest";
 import { parse as parseYaml } from "yaml";
+import { ECOSYSTEM_VALUES, LOCKFILE_KINDS } from "@workspace/collectors";
 
 /**
  * The spec has to describe the server that exists.
@@ -121,5 +122,25 @@ describe("openapi.yaml describes the server that exists", () => {
       return !spec.paths[path][method.toLowerCase()].operationId;
     });
     expect(missing).toEqual([]);
+  });
+
+  /**
+   * The one *enum* this file polices, because it is the one that fails
+   * silently in the client rather than in the server. `lib/api-zod` validates
+   * the response, so a lockfile kind the collector emits and the spec does not
+   * list makes a real submission fail client-side with a schema error — a
+   * failure that looks like a bug in the caller. Nothing else in the test
+   * suite can see that: the server would return a perfectly correct payload.
+   */
+  it("lists every lockfile kind and every ecosystem the collector can emit", () => {
+    const summary = (spec as unknown as { components: { schemas: Record<string, unknown> } }).components.schemas
+      .DependencyIngestSummary as {
+      properties: {
+        lockfiles: { items: { properties: { kind: { enum: string[] } } } };
+        ecosystems: { items: { enum: string[] } };
+      };
+    };
+    expect([...summary.properties.lockfiles.items.properties.kind.enum].sort()).toEqual([...LOCKFILE_KINDS].sort());
+    expect([...summary.properties.ecosystems.items.enum].sort()).toEqual([...ECOSYSTEM_VALUES].sort());
   });
 });
