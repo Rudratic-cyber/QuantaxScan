@@ -5691,9 +5691,11 @@ export const ListCredentialsResponseItem = zod
         "database_readonly",
         "secrets_manager_token",
         "idp_client_secret",
+        "cloud_readonly_inventory",
+        "fleet_directory_readonly",
       ])
       .describe(
-        "What a stored credential is \*for\* (F4). Each value names a wave-two consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.",
+        "What a stored credential is \*for\* (F4). Each value names a consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.\n\n`cloud_readonly_inventory` is separate from `cloud_kms_readonly` even though both are \"an AWS key\": one lists key metadata in a single service, the other walks an account's resources across services, and a customer scoping an IAM policy must be able to grant one without the other.\n\n\*\*This list must equal `CREDENTIAL_KIND_VALUES` in `lib\/db\/src\/schema\/credentials.ts`.\*\* Stage 0 widened that tuple and did not widen this enum, which made both new kinds unregisterable over HTTP while every unit test passed — the database accepted them and no request could carry one. Caught by the e2e suite, which is the only thing that exercises the generated client against the real route.",
       ),
     description: zod
       .string()
@@ -5747,9 +5749,11 @@ export const CreateCredentialBody = zod.object({
       "database_readonly",
       "secrets_manager_token",
       "idp_client_secret",
+      "cloud_readonly_inventory",
+      "fleet_directory_readonly",
     ])
     .describe(
-      "What a stored credential is \*for\* (F4). Each value names a wave-two consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.",
+      "What a stored credential is \*for\* (F4). Each value names a consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.\n\n`cloud_readonly_inventory` is separate from `cloud_kms_readonly` even though both are \"an AWS key\": one lists key metadata in a single service, the other walks an account's resources across services, and a customer scoping an IAM policy must be able to grant one without the other.\n\n\*\*This list must equal `CREDENTIAL_KIND_VALUES` in `lib\/db\/src\/schema\/credentials.ts`.\*\* Stage 0 widened that tuple and did not widen this enum, which made both new kinds unregisterable over HTTP while every unit test passed — the database accepted them and no request could carry one. Caught by the e2e suite, which is the only thing that exercises the generated client against the real route.",
     ),
   secret: zod
     .string()
@@ -5787,9 +5791,11 @@ export const RevokeCredentialResponse = zod
         "database_readonly",
         "secrets_manager_token",
         "idp_client_secret",
+        "cloud_readonly_inventory",
+        "fleet_directory_readonly",
       ])
       .describe(
-        "What a stored credential is \*for\* (F4). Each value names a wave-two consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.",
+        "What a stored credential is \*for\* (F4). Each value names a consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.\n\n`cloud_readonly_inventory` is separate from `cloud_kms_readonly` even though both are \"an AWS key\": one lists key metadata in a single service, the other walks an account's resources across services, and a customer scoping an IAM policy must be able to grant one without the other.\n\n\*\*This list must equal `CREDENTIAL_KIND_VALUES` in `lib\/db\/src\/schema\/credentials.ts`.\*\* Stage 0 widened that tuple and did not widen this enum, which made both new kinds unregisterable over HTTP while every unit test passed — the database accepted them and no request could carry one. Caught by the e2e suite, which is the only thing that exercises the generated client against the real route.",
       ),
     description: zod
       .string()

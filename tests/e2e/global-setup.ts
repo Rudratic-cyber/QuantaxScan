@@ -16,6 +16,8 @@ import {
   API_URL,
   CREDENTIAL_KEYS,
   CT_STUB_URL,
+  KMS_STUB_URL,
+  S3_STUB_URL,
   DEAD_DNS_SERVER,
   GITHUB_OAUTH_CLIENT_ID,
   GITHUB_OAUTH_CLIENT_SECRET,
@@ -117,6 +119,13 @@ export default async function globalSetup(): Promise<void> {
       // on it. Neither reaches the internet, which is what keeps the suite
       // runnable offline and off crt.sh's free service. See support/config.ts.
       QUANTAXSCAN_CT_LOG_BASE_URL: CT_STUB_URL,
+      // P1 and P2's cloud stubs. Pointed at loopback listeners the credentialed
+      // spec runs, so the suite stays offline, needs no real AWS account, and
+      // can provoke the partial results — a throttled page, a denied region —
+      // that are the whole point of the enumeration record and cannot be
+      // arranged on demand against a real provider.
+      AWS_KMS_ENDPOINT: KMS_STUB_URL,
+      AWS_S3_ENDPOINT: S3_STUB_URL,
       QUANTAXSCAN_DISCOVERY_ALLOW_PRIVATE_SOURCES: "1",
       QUANTAXSCAN_DISCOVERY_DNS_SERVERS: DEAD_DNS_SERVER,
       // F1. Without these every `/auth/*` route answers 501 and the auth spec
