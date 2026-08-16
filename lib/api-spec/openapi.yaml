@@ -1511,6 +1511,61 @@ paths:
               schema:
                 $ref: "#/components/schemas/Credential"
 
+  /projects/{id}/kms/poll:
+    post:
+      operationId: pollProjectKms
+      tags: [projects]
+      summary: Read a cloud account's KMS keys with a stored credential (P1)
+      description: >-
+        The credentialed counterpart to `POST /projects/{id}/kms`. Redeems a credential you
+        registered earlier and enumerates the account's KMS keys directly, rather than taking
+        an export at its word.
+
+
+        **Requires the `admin` role**, which `POST /projects/{id}/kms` does not. Holding a
+        credential is already admin-only, and being able to *spend* one without holding it
+        would route straight around that decision.
+
+
+        **Submission is not deprecated by this.** `POST /projects/{id}/kms` keeps working
+        forever: an air-gapped or on-premises estate has no other path, and a customer who
+        declines to issue a read-only credential is a normal customer rather than an edge case.
+
+
+        The response's `enumeration` block is the part that matters. A poll's normal outcome is
+        *partial* — some regions answer, one throttles, one is denied — and the block records
+        which is which. A region that refused is never reported as empty, and a run that was
+        truncated or had any region refused retires nothing, because a throttled page and an
+        empty one are indistinguishable from the outside. `reconciliation` states in one
+        sentence whether this run was allowed to retire keys and why.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PollProjectKmsBody"
+      responses:
+        "200":
+          description: Poll result, including the boundary of what it can speak for
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KmsPollSummary"
+        "400":
+          description: Invalid project ID or body
+        "404":
+          description: Project or credential not found
+        "409":
+          description: >-
+            The credential is revoked, expired, or cannot be decrypted. No collection happened —
+            deliberately not a 200 with an empty result, which would make an unusable credential
+            read as an empty key store.
   /projects/{id}/kms:
     post:
       operationId: submitProjectKms
@@ -7293,6 +7348,165 @@ components:
           type: string
           nullable: true
 
+    PollProjectKmsBody:
+      type: object
+      description: >-
+        Which stored credential to redeem, and which AWS account and regions to enumerate.
+        No secret is ever sent to this route — only the id of a credential already registered
+        through `POST /credentials`.
+      properties:
+        credentialId:
+          type: integer
+          description: >-
+            A credential of kind `cloud_kms_readonly`, registered through `POST /credentials`.
+            A credential of any other kind, belonging to another organisation, or revoked or
+            expired, is refused — a credential is never sent to the wrong third party because
+            an id happened to resolve.
+        account:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The AWS account id the credential belongs to, as it appears in a key ARN.
+        regions:
+          type: array
+          minItems: 1
+          maxItems: 20
+          description: >-
+            The regions to enumerate. There is deliberately no "all regions" option: a region
+            this product invented and enumerated would be a scope the customer never authorised,
+            and a region that was never called must not be reported as empty. Each region is
+            enumerated and reported separately, because a partial result is the normal case.
+          items:
+            type: string
+            pattern: "^[a-z]{2}(-[a-z]+){1,2}-[0-9]$"
+        maxKeys:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 500
+          description: >-
+            Ceiling on keys read across all regions. Reaching it sets `enumeration.truncated`,
+            which withdraws this run's right to retire anything — a truncated run has not seen
+            every key and must not claim to have.
+      required: [credentialId, account, regions]
+    KmsPollSummary:
+      type: object
+      description: >-
+        The result of one credentialed poll, including the boundary of what it can speak for.
+      properties:
+        projectId: { type: integer }
+        keysRead:
+          type: integer
+          description: Keys read from the provider across every region that answered.
+        keysObserved:
+          type: integer
+          description: Of those, how many resolved to an algorithm this product reports on.
+        keysUnclassified: { type: integer }
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/KmsKeyOutcome"
+        collectionRunId:
+          type: integer
+          nullable: true
+          description: Null when the poll read no keys at all — there is nothing to record a run against.
+        assetsCreated: { type: integer }
+        assetsUpdated: { type: integer }
+        observationsCreated: { type: integer }
+        assetsMarkedGone:
+          type: integer
+          description: >-
+            Keys previously on record, absent from this poll, and inside a region this run
+            enumerated completely. **Always 0 unless the run earned a prefix scope** — see
+            `reconciliation`. A run that was truncated or had any region refused retires
+            nothing, because a throttled page is indistinguishable from an empty one.
+        enumeration:
+          $ref: "#/components/schemas/EnumerationRecord"
+        reconciliation:
+          type: string
+          description: >-
+            One sentence stating whether this run was allowed to retire keys, and why. Present
+            in the body rather than left to be derived from `enumeration`, for the same reason
+            `evidenceCaveat` is: a caveat a client has to reconstruct is a caveat that will be
+            missing from the one report that matters.
+        evidenceCaveat: { type: string }
+      required:
+        - projectId
+        - keysRead
+        - keysObserved
+        - keysUnclassified
+        - keys
+        - collectionRunId
+        - assetsCreated
+        - assetsUpdated
+        - observationsCreated
+        - assetsMarkedGone
+        - enumeration
+        - reconciliation
+        - evidenceCaveat
+    EnumerationRecord:
+      type: object
+      description: >-
+        What a run could and could not speak for. Absent from a submission response entirely —
+        a submission makes no enumeration claim, and an empty record would instead claim a
+        successful enumeration that found nothing.
+      properties:
+        enumerated:
+          type: array
+          description: Scopes read to exhaustion with no error. The only thing that earns a claim of coverage.
+          items:
+            $ref: "#/components/schemas/EnumeratedScope"
+        refused:
+          type: array
+          description: >-
+            Scopes attempted and not completed. `reason` comes from a closed vocabulary and is
+            never a cloud SDK's error text, which routinely embeds the request that failed.
+          items:
+            $ref: "#/components/schemas/RefusedScope"
+        truncated:
+          type: boolean
+          description: A pagination or safety ceiling was hit. Reported, never silent.
+        credentialId:
+          type: integer
+          description: Which stored credential this run redeemed. Never the credential itself.
+      required: [enumerated, refused, truncated]
+    DiscoveryScope:
+      type: object
+      description: What was searched, in a shape that can hold a question larger than a domain.
+      properties:
+        kind:
+          type: string
+          enum: [domain, cloud_account, directory, issuer]
+        domain: { type: string }
+        provider: { type: string }
+        account: { type: string }
+        region: { type: string }
+        service: { type: string }
+        directory: { type: string }
+        issuer: { type: string }
+      required: [kind]
+    EnumeratedScope:
+      type: object
+      properties:
+        scope:
+          $ref: "#/components/schemas/DiscoveryScope"
+        complete:
+          type: boolean
+          enum: [true]
+          description: Always true. A scope that is not complete belongs in `refused`.
+      required: [scope, complete]
+    RefusedScope:
+      type: object
+      properties:
+        scope:
+          $ref: "#/components/schemas/DiscoveryScope"
+        reason:
+          type: string
+          enum: [access-denied, throttled, unauthenticated, unsupported, unreachable, timeout]
+        detail:
+          type: string
+          description: Free text for a human. Never parsed, never grouped by, never a substitute for `reason`.
+      required: [scope, reason]
     SubmitProjectKmsBody:
       type: object
       properties:

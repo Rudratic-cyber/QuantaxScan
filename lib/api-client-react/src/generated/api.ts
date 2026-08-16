@@ -65,6 +65,7 @@ import type {
   HealthStatus,
   InventoryAssetsSummary,
   KmsIngestSummary,
+  KmsPollSummary,
   LeaderboardEntry,
   ListCommunityPostsParams,
   ListWaiversParams,
@@ -73,6 +74,7 @@ import type {
   NetworkFlowIngestSummary,
   OrganizationMemberList,
   OtFleet,
+  PollProjectKmsBody,
   PostureTimeline,
   ProbeDiscoveredTargetsBody,
   Project,
@@ -4635,6 +4637,100 @@ export const useRevokeCredential = <
   TContext
 > => {
   return useMutation(getRevokeCredentialMutationOptions(options));
+};
+
+/**
+ * The credentialed counterpart to `POST /projects/{id}/kms`. Redeems a credential you registered earlier and enumerates the account's KMS keys directly, rather than taking an export at its word.
+
+**Requires the `admin` role**, which `POST /projects/{id}/kms` does not. Holding a credential is already admin-only, and being able to *spend* one without holding it would route straight around that decision.
+
+**Submission is not deprecated by this.** `POST /projects/{id}/kms` keeps working forever: an air-gapped or on-premises estate has no other path, and a customer who declines to issue a read-only credential is a normal customer rather than an edge case.
+
+The response's `enumeration` block is the part that matters. A poll's normal outcome is *partial* — some regions answer, one throttles, one is denied — and the block records which is which. A region that refused is never reported as empty, and a run that was truncated or had any region refused retires nothing, because a throttled page and an empty one are indistinguishable from the outside. `reconciliation` states in one sentence whether this run was allowed to retire keys and why.
+ * @summary Read a cloud account's KMS keys with a stored credential (P1)
+ */
+export const getPollProjectKmsUrl = (id: number) => {
+  return `/api/projects/${id}/kms/poll`;
+};
+
+export const pollProjectKms = async (
+  id: number,
+  pollProjectKmsBody: PollProjectKmsBody,
+  options?: RequestInit,
+): Promise<KmsPollSummary> => {
+  return customFetch<KmsPollSummary>(getPollProjectKmsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(pollProjectKmsBody),
+  });
+};
+
+export const getPollProjectKmsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pollProjectKms>>,
+    TError,
+    { id: number; data: BodyType<PollProjectKmsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pollProjectKms>>,
+  TError,
+  { id: number; data: BodyType<PollProjectKmsBody> },
+  TContext
+> => {
+  const mutationKey = ["pollProjectKms"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pollProjectKms>>,
+    { id: number; data: BodyType<PollProjectKmsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return pollProjectKms(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PollProjectKmsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pollProjectKms>>
+>;
+export type PollProjectKmsMutationBody = BodyType<PollProjectKmsBody>;
+export type PollProjectKmsMutationError = ErrorType<void>;
+
+/**
+ * @summary Read a cloud account's KMS keys with a stored credential (P1)
+ */
+export const usePollProjectKms = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pollProjectKms>>,
+    TError,
+    { id: number; data: BodyType<PollProjectKmsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pollProjectKms>>,
+  TError,
+  { id: number; data: BodyType<PollProjectKmsBody> },
+  TContext
+> => {
+  return useMutation(getPollProjectKmsMutationOptions(options));
 };
 
 /**

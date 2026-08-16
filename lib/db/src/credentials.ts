@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import type { ScopedTx } from "./org-scope";
+import type { OrgContext, OrgScope, ScopedTx } from "./org-scope";
 import { credentialsTable, type CredentialKind, type CredentialRow } from "./schema/credentials";
 
 /**
@@ -578,6 +578,131 @@ export async function redeemCredential<T>(
     name: row.name,
   });
 
+  try {
+    return await use(handle);
+  } finally {
+    handle.dispose();
+  }
+}
+
+/**
+ * Redeem a credential for an operation that **outlives a database
+ * transaction** — a credentialed acquisition against a third-party API.
+ * docs/Claude/17-discovery-design.md §4.6, and §7 Q1.
+ *
+ * ## Why `redeemCredential` cannot serve this
+ *
+ * It runs `use` *inside* the caller's `ScopedTx` and disposes the handle in a
+ * `finally`. That is right for a short call and wrong for an enumeration that
+ * pages through a cloud API: `withOrg` holds a real database transaction for
+ * the whole callback, so a minutes-long vendor round trip pins a pooled
+ * connection idle for its duration — and behaves badly behind a
+ * transaction-mode pooler.
+ *
+ * The codebase already refuses to do this twice over. `routes/discovery.ts` and
+ * `schedule-runner.ts` both split their egress out of the scope, in the second
+ * case by taking an `OrgScope` rather than a `ScopedTx` *specifically so it can
+ * open its scope after the probe* — "probing is outbound `node:tls` to hosts
+ * this server does not control… doing it inside would pin a pooled connection
+ * idle for the duration." A credentialed acquisition is the same shape with a
+ * secret attached, and `Acquisition.acquire` is documented as running outside
+ * any transaction. There is no way to satisfy both contracts with
+ * `redeemCredential`, which is why this exists.
+ *
+ * **§7 Q1 asked whether this is a legitimate second variant of F4's contract or
+ * a hole in it, and named a measurement as what would settle it: how long a real
+ * enumeration takes against the deployed pool size.** That measurement needs a
+ * real cloud account and there is none, so it is settled *structurally* instead
+ * — the two contracts are incompatible as written, independent of timing. The
+ * timing question stays genuinely open, and it decides something else: whether a
+ * ceiling on enumeration duration is needed. Recorded rather than closed.
+ *
+ * ## The ordering, and what it costs
+ *
+ * Opens a scope, performs every check `redeemCredential` performs, decrypts,
+ * records the redemption, **commits**, and only then runs `use` — disposing the
+ * handle in a `finally` so a plaintext never outlives the call.
+ *
+ * The cost, stated rather than buried: the redemption is recorded before the
+ * use, so a crash mid-acquisition leaves a recorded redemption and no
+ * collection. That is the right direction and it is already F4's stated
+ * behaviour — "records the redemption on the row before running the callback,
+ * so a use that crashes still leaves a trace." A redemption that did not happen
+ * is the dangerous error; a redemption recorded for a use that failed is an
+ * over-count in an audit trail, which is the direction to be wrong in.
+ *
+ * ## The caller must not already hold a scope
+ *
+ * Scopes do not nest, and a nested one *silently re-scopes its parent once its
+ * savepoint is released* — the single failure in the tenancy mechanism that
+ * returns another tenant's rows rather than none. `withOrg` throws if one is
+ * already open, so this fails loudly rather than subtly; the rule is stated here
+ * because the natural way to call this from a route is from inside the scope
+ * that just resolved the ref, and that is exactly wrong.
+ */
+export async function withRedeemedCredential<T>(
+  scope: Pick<OrgScope, "withOrg">,
+  ctx: OrgContext,
+  ref: CredentialRef,
+  use: (secret: SecretHandle) => Promise<T>,
+  now: Date = new Date(),
+): Promise<T> {
+  const handle = await scope.withOrg(ctx, async (tx) => {
+    const [row] = await tx.select().from(credentialsTable).where(eq(credentialsTable.id, ref.credentialId));
+
+    // Every check `redeemCredential` makes, in the same order and with the same
+    // messages. Deliberately duplicated rather than extracted: the two
+    // functions differ only in transaction lifetime, and a shared helper that
+    // took a `tx` would make it easy to call the wrong one from the wrong place.
+    if (!row) {
+      throw new CredentialUnusableError(
+        `Credential ${ref.credentialId} is not visible in this organisation's scope.`,
+        "revoked",
+      );
+    }
+    if (row.kind !== ref.kind) {
+      throw new CredentialUnusableError(
+        `Credential ${row.id} is a "${row.kind}" but was redeemed as a "${ref.kind}". ` +
+          `Refusing rather than sending a customer's secret to the wrong third party.`,
+        "kind_mismatch",
+      );
+    }
+    if (row.revokedAt !== null || row.ciphertext === null || row.iv === null || row.authTag === null || row.keyId === null) {
+      throw new CredentialUnusableError(
+        `Credential ${row.id} ("${row.name}") was revoked and its material destroyed. Register a new one.`,
+        "revoked",
+      );
+    }
+    if (row.expiresAt !== null && row.expiresAt.getTime() <= now.getTime()) {
+      throw new CredentialUnusableError(
+        `Credential ${row.id} ("${row.name}") expired at ${row.expiresAt.toISOString()}.`,
+        "expired",
+      );
+    }
+
+    const plaintext = decryptSecret({
+      ciphertext: row.ciphertext,
+      iv: row.iv,
+      authTag: row.authTag,
+      keyId: row.keyId,
+    });
+
+    await tx
+      .update(credentialsTable)
+      .set({ lastRedeemedAt: now, redemptionCount: sql`${credentialsTable.redemptionCount} + 1` })
+      .where(eq(credentialsTable.id, row.id));
+
+    return new SecretHandle({
+      plaintext,
+      credentialId: row.id,
+      organizationId: row.organizationId,
+      kind: row.kind,
+      name: row.name,
+    });
+  });
+
+  // The scope has committed. The handle now exists outside any transaction,
+  // which is the entire point and also the reason `finally` is not optional.
   try {
     return await use(handle);
   } finally {

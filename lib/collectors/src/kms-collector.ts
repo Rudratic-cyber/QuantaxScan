@@ -87,6 +87,48 @@ export interface KmsKeyDescription {
 export const KMS_KEY_CONFIDENCE = 0.85;
 
 /**
+ * The same key, read by us with the customer's own read-only credential rather
+ * than relayed from an export they produced.
+ *
+ * **The number moves because the two stated doubts are gone, not because a
+ * credential feels more authoritative.** `KMS_KEY_CONFIDENCE`'s comment names
+ * exactly two things that could be wrong with a submission and cannot be wrong
+ * with a certificate: *the export could be stale, and it could be partial*. A
+ * poll reads the provider at a known instant, so it is not stale; and it
+ * reports the boundary of what it enumerated, so where it claims a scope it is
+ * not partial either.
+ *
+ * That lands it at B4's 0.9 — the same standing as a parsed certificate, which
+ * is right: both are now the artifact read directly rather than described. It
+ * stays below 1.0, which remains reserved for observing an algorithm *in
+ * operation* — B3's handshake. A key store telling us what a key is remains a
+ * statement about configuration, however directly we read it, and a key that
+ * exists is not a key anything uses.
+ *
+ * **Applies to the keys inside a scope the run actually enumerated, and to no
+ * others.** A poll that was throttled on its second page is exactly as stale
+ * and partial as an export, and must not be dressed up as more.
+ */
+export const KMS_KEY_POLLED_CONFIDENCE = 0.9;
+
+/** How a set of key descriptions reached us. Decides confidence, and nothing else. */
+export interface KmsProvenance {
+  /**
+   * `submitted` — the customer exported and uploaded it (B5's original path).
+   * `polled` — we read the provider ourselves with their read-only credential.
+   *
+   * Deliberately **not** a `DiscoveryModality`. That enum is a permanent
+   * six-value set by captain decision (2026-08-02, G-15), and both paths are
+   * `configuration_information`: the modality describes what kind of evidence a
+   * thing is, and a key spec is the same kind of evidence however it arrived.
+   * The poll-versus-submission distinction lives here, in the run's
+   * `collector` name, and in `collection_runs.enumeration` — three places, none
+   * of them the modality.
+   */
+  acquisition: "submitted" | "polled";
+}
+
+/**
  * SP 1800-38B §4.1.4's own name for management-plane data — a key store's
  * API is configuration about cryptography, not a wire observation and not an
  * endpoint agent. Deliberately not `manual_attestation`: that modality is
@@ -211,7 +253,17 @@ function locationDetailFor(key: KmsKeyDescription): KmsLocationDetail {
  * Synchronous, like every other collector here: mapping in-memory
  * descriptions has no genuine asynchrony.
  */
-export function classifyKmsKeys(repo: string, keys: readonly KmsKeyDescription[]): KmsKeyOutcome[] {
+export function classifyKmsKeys(
+  repo: string,
+  keys: readonly KmsKeyDescription[],
+  provenance: KmsProvenance = { acquisition: "submitted" },
+): KmsKeyOutcome[] {
+  // Defaulted rather than required, so B5's existing submission route and every
+  // test that predates the poller keep their meaning without an edit. The
+  // default is the *lower* confidence on purpose: a caller that forgets to say
+  // how it acquired the keys gets the weaker claim, never the stronger one.
+  const confidence = provenance.acquisition === "polled" ? KMS_KEY_POLLED_CONFIDENCE : KMS_KEY_CONFIDENCE;
+
   return keys.map((key): KmsKeyOutcome => {
     if (key.keySpec === undefined || key.keySpec.trim() === "") {
       return { kind: "no-spec", key, reason: NO_SPEC_REASON };
@@ -244,7 +296,7 @@ export function classifyKmsKeys(repo: string, keys: readonly KmsKeyDescription[]
       location,
       locationDetail: { kind: "kms", kms: locationDetailFor(key) },
       discoveryModality: KMS_DISCOVERY_MODALITY,
-      confidence: KMS_KEY_CONFIDENCE,
+      confidence,
       evidence: {
         provider: key.provider,
         keyId: key.keyId,

@@ -5830,6 +5830,245 @@ export const RevokeCredentialResponse = zod
   );
 
 /**
+ * The credentialed counterpart to `POST /projects/{id}/kms`. Redeems a credential you registered earlier and enumerates the account's KMS keys directly, rather than taking an export at its word.
+
+**Requires the `admin` role**, which `POST /projects/{id}/kms` does not. Holding a credential is already admin-only, and being able to *spend* one without holding it would route straight around that decision.
+
+**Submission is not deprecated by this.** `POST /projects/{id}/kms` keeps working forever: an air-gapped or on-premises estate has no other path, and a customer who declines to issue a read-only credential is a normal customer rather than an edge case.
+
+The response's `enumeration` block is the part that matters. A poll's normal outcome is *partial* — some regions answer, one throttles, one is denied — and the block records which is which. A region that refused is never reported as empty, and a run that was truncated or had any region refused retires nothing, because a throttled page and an empty one are indistinguishable from the outside. `reconciliation` states in one sentence whether this run was allowed to retire keys and why.
+ * @summary Read a cloud account's KMS keys with a stored credential (P1)
+ */
+export const PollProjectKmsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const pollProjectKmsBodyAccountMax = 64;
+
+export const pollProjectKmsBodyRegionsItemRegExp = new RegExp(
+  "^[a-z]{2}(-[a-z]+){1,2}-[0-9]$",
+);
+export const pollProjectKmsBodyRegionsMax = 20;
+
+export const pollProjectKmsBodyMaxKeysDefault = 500;
+export const pollProjectKmsBodyMaxKeysMax = 500;
+
+export const PollProjectKmsBody = zod
+  .object({
+    credentialId: zod
+      .number()
+      .describe(
+        "A credential of kind `cloud_kms_readonly`, registered through `POST \/credentials`. A credential of any other kind, belonging to another organisation, or revoked or expired, is refused — a credential is never sent to the wrong third party because an id happened to resolve.",
+      ),
+    account: zod
+      .string()
+      .min(1)
+      .max(pollProjectKmsBodyAccountMax)
+      .describe(
+        "The AWS account id the credential belongs to, as it appears in a key ARN.",
+      ),
+    regions: zod
+      .array(zod.string().regex(pollProjectKmsBodyRegionsItemRegExp))
+      .min(1)
+      .max(pollProjectKmsBodyRegionsMax)
+      .describe(
+        'The regions to enumerate. There is deliberately no \"all regions\" option: a region this product invented and enumerated would be a scope the customer never authorised, and a region that was never called must not be reported as empty. Each region is enumerated and reported separately, because a partial result is the normal case.',
+      ),
+    maxKeys: zod
+      .number()
+      .min(1)
+      .max(pollProjectKmsBodyMaxKeysMax)
+      .default(pollProjectKmsBodyMaxKeysDefault)
+      .describe(
+        "Ceiling on keys read across all regions. Reaching it sets `enumeration.truncated`, which withdraws this run's right to retire anything — a truncated run has not seen every key and must not claim to have.",
+      ),
+  })
+  .describe(
+    "Which stored credential to redeem, and which AWS account and regions to enumerate. No secret is ever sent to this route — only the id of a credential already registered through `POST \/credentials`.",
+  );
+
+export const PollProjectKmsResponse = zod
+  .object({
+    projectId: zod.number(),
+    keysRead: zod
+      .number()
+      .describe(
+        "Keys read from the provider across every region that answered.",
+      ),
+    keysObserved: zod
+      .number()
+      .describe(
+        "Of those, how many resolved to an algorithm this product reports on.",
+      ),
+    keysUnclassified: zod.number(),
+    keys: zod.array(
+      zod
+        .object({
+          provider: zod.string(),
+          keyId: zod.string(),
+          keySpec: zod.string().nullable(),
+          alias: zod.string().nullable(),
+          keyState: zod.string().nullable(),
+          outcome: zod
+            .enum(["observed", "no-algorithm", "unrecognised-spec", "no-spec"])
+            .describe(
+              "`observed` — the spec resolved to an algorithm this product reports on, and an asset was written. `no-algorithm` — the spec is known and its primitive is not one `algorithms.json` catalogues (HMAC, ChaCha20-Poly1305, SM2, any post-quantum parameter set, Azure's `kty: oct`); the key is real, counted and examined, and there is nothing to report about it. `unrecognised-spec` — the provider stated a spec the curated table does not have, which means our data is behind the provider and is the one outcome a data update fixes. `no-spec` — the entry named a key and stated nothing about it, the expected shape of a list-without-describe export.",
+            ),
+          reason: zod
+            .string()
+            .nullable()
+            .describe(
+              "Why no observation was produced, verbatim from the curated table where the table has an opinion. Null for `observed`.",
+            ),
+          algorithm: zod
+            .string()
+            .nullable()
+            .describe("Null for every outcome except `observed`."),
+          keySize: zod
+            .number()
+            .nullable()
+            .describe(
+              "The size the provider states for this key. \*\*Null means the provider stated none\*\* — an Azure JsonWebKey carries no `key_size` member at all — never a default. G-05.",
+            ),
+          keySizeSource: zod
+            .enum(["key-spec", "curve", "submitted", "not-supplied"])
+            .nullable()
+            .describe(
+              "Which of four sources supplied `keySize`, so a reader never has to guess: the key spec's documented size, a named curve, a value you submitted, or none of them.",
+            ),
+          rotationEnabled: zod
+            .boolean()
+            .nullable()
+            .describe(
+              "Null when the submitted export did not state it. Not the same as `false`.",
+            ),
+          location: zod
+            .string()
+            .nullable()
+            .describe(
+              "The asset locator this key was written under. Null when no asset was written.",
+            ),
+        })
+        .describe(
+          'What the collector concluded about one submitted key. The four `outcome` values are deliberately not collapsed into \"classified \/ skipped\": only one of the three non-observed values is actionable, and hiding which is which would hide it.',
+        ),
+    ),
+    collectionRunId: zod
+      .number()
+      .nullable()
+      .describe(
+        "Null when the poll read no keys at all — there is nothing to record a run against.",
+      ),
+    assetsCreated: zod.number(),
+    assetsUpdated: zod.number(),
+    observationsCreated: zod.number(),
+    assetsMarkedGone: zod
+      .number()
+      .describe(
+        "Keys previously on record, absent from this poll, and inside a region this run enumerated completely. \*\*Always 0 unless the run earned a prefix scope\*\* — see `reconciliation`. A run that was truncated or had any region refused retires nothing, because a throttled page is indistinguishable from an empty one.",
+      ),
+    enumeration: zod
+      .object({
+        enumerated: zod
+          .array(
+            zod.object({
+              scope: zod
+                .object({
+                  kind: zod.enum([
+                    "domain",
+                    "cloud_account",
+                    "directory",
+                    "issuer",
+                  ]),
+                  domain: zod.string().optional(),
+                  provider: zod.string().optional(),
+                  account: zod.string().optional(),
+                  region: zod.string().optional(),
+                  service: zod.string().optional(),
+                  directory: zod.string().optional(),
+                  issuer: zod.string().optional(),
+                })
+                .describe(
+                  "What was searched, in a shape that can hold a question larger than a domain.",
+                ),
+              complete: zod
+                .literal(true)
+                .describe(
+                  "Always true. A scope that is not complete belongs in `refused`.",
+                ),
+            }),
+          )
+          .describe(
+            "Scopes read to exhaustion with no error. The only thing that earns a claim of coverage.",
+          ),
+        refused: zod
+          .array(
+            zod.object({
+              scope: zod
+                .object({
+                  kind: zod.enum([
+                    "domain",
+                    "cloud_account",
+                    "directory",
+                    "issuer",
+                  ]),
+                  domain: zod.string().optional(),
+                  provider: zod.string().optional(),
+                  account: zod.string().optional(),
+                  region: zod.string().optional(),
+                  service: zod.string().optional(),
+                  directory: zod.string().optional(),
+                  issuer: zod.string().optional(),
+                })
+                .describe(
+                  "What was searched, in a shape that can hold a question larger than a domain.",
+                ),
+              reason: zod.enum([
+                "access-denied",
+                "throttled",
+                "unauthenticated",
+                "unsupported",
+                "unreachable",
+                "timeout",
+              ]),
+              detail: zod
+                .string()
+                .optional()
+                .describe(
+                  "Free text for a human. Never parsed, never grouped by, never a substitute for `reason`.",
+                ),
+            }),
+          )
+          .describe(
+            "Scopes attempted and not completed. `reason` comes from a closed vocabulary and is never a cloud SDK's error text, which routinely embeds the request that failed.",
+          ),
+        truncated: zod
+          .boolean()
+          .describe(
+            "A pagination or safety ceiling was hit. Reported, never silent.",
+          ),
+        credentialId: zod
+          .number()
+          .optional()
+          .describe(
+            "Which stored credential this run redeemed. Never the credential itself.",
+          ),
+      })
+      .describe(
+        "What a run could and could not speak for. Absent from a submission response entirely — a submission makes no enumeration claim, and an empty record would instead claim a successful enumeration that found nothing.",
+      ),
+    reconciliation: zod
+      .string()
+      .describe(
+        "One sentence stating whether this run was allowed to retire keys, and why. Present in the body rather than left to be derived from `enumeration`, for the same reason `evidenceCaveat` is: a caveat a client has to reconstruct is a caveat that will be missing from the one report that matters.",
+      ),
+    evidenceCaveat: zod.string(),
+  })
+  .describe(
+    "The result of one credentialed poll, including the boundary of what it can speak for.",
+  );
+
+/**
  * Classifies the keys a managed key store holds — HashiCorp Vault, AWS KMS, Azure Key Vault, GCP KMS — and persists what it finds as assets on the `kms` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
 
 **This is a submission route, not a credentialed poller.** You send the key inventory your own tooling already produced; no credential for the key store ever reaches this product, and nothing here connects to a cloud provider. The corollary is stated in every response's `evidenceCaveat`: the export is taken at its word, and nothing proves it is complete, current, or from the key store you say it is.

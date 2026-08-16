@@ -2557,50 +2557,29 @@ export interface UpdateVendorAssessmentBody {
 }
 
 /**
- * Which key store this key lives in.
+ * Which stored credential to redeem, and which AWS account and regions to enumerate. No secret is ever sent to this route — only the id of a credential already registered through `POST /credentials`.
  */
-export type SubmitProjectKmsBodyKeysItemProvider =
-  (typeof SubmitProjectKmsBodyKeysItemProvider)[keyof typeof SubmitProjectKmsBodyKeysItemProvider];
-
-export const SubmitProjectKmsBodyKeysItemProvider = {
-  "aws-kms": "aws-kms",
-  "azure-key-vault": "azure-key-vault",
-  "gcp-kms": "gcp-kms",
-  "hashicorp-vault": "hashicorp-vault",
-} as const;
-
-export type SubmitProjectKmsBodyKeysItem = {
-  /** Which key store this key lives in. */
-  provider: SubmitProjectKmsBodyKeysItemProvider;
-  /** ARN, resource name, `kid` URL, or mount-qualified key name — whatever the provider calls the key's identity. Together with `provider` this is the asset's identity; an alias is deliberately not used, since an alias can be repointed at a different key. */
-  keyId: string;
-  /** The provider-native spec string: AWS `KeySpec`, GCP `CryptoKeyVersion.algorithm`, Azure `kty`, Vault `type`. Matched case-insensitively against `docs/Claude/mappings/kms-key-specs.json`. Omit it and the key is recorded as present and unclassified rather than guessed at. */
-  keySpec?: string;
-  /** Curve name where the provider states it separately from the spec — Azure's `crv`. Resolved through the shared named-curve table. */
-  curve?: string;
-  /** A key size your export has and the spec does not state (Azure's Create Key `key_size`). Used only when neither the key spec nor a curve supplies one, so it cannot override a size the provider's documentation states. */
-  keySize?: number;
-  alias?: string;
-  /** The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`), recorded verbatim and never mapped onto the asset's lifecycle status. */
-  keyState?: string;
-  rotationEnabled?: boolean;
-  /** @minimum 1 */
-  rotationPeriodDays?: number;
-  lastRotatedAt?: string;
-  origin?: string;
-  region?: string;
-  /** The containing vault, key ring or mount path. */
-  keyStore?: string;
-};
-
-export interface SubmitProjectKmsBody {
+export interface PollProjectKmsBody {
+  /** A credential of kind `cloud_kms_readonly`, registered through `POST /credentials`. A credential of any other kind, belonging to another organisation, or revoked or expired, is refused — a credential is never sent to the wrong third party because an id happened to resolve. */
+  credentialId: number;
   /**
-   * The key inventory your own key store already produced — the output of `aws kms describe-key`, `az keyvault key show`, `gcloud kms keys list` or `vault read transit/keys/<name>`, transcribed into these fields. No credential for the key store ever reaches this product.
-
-Every field beyond `provider` and `keyId` is optional because every field beyond those is optional in those exports: `aws kms list-keys` returns identifiers only, and Azure Key Vault's list operation returns `kid` and `attributes` with no key type at all. An omitted field means "the export did not state this" and is never substituted for — `rotationEnabled` in particular is left absent rather than sent as `false`, because "not stated" and "not rotated" are different claims.
-   * @maxItems 500
+   * The AWS account id the credential belongs to, as it appears in a key ARN.
+   * @minLength 1
+   * @maxLength 64
    */
-  keys: SubmitProjectKmsBodyKeysItem[];
+  account: string;
+  /**
+   * The regions to enumerate. There is deliberately no "all regions" option: a region this product invented and enumerated would be a scope the customer never authorised, and a region that was never called must not be reported as empty. Each region is enumerated and reported separately, because a partial result is the normal case.
+   * @minItems 1
+   * @maxItems 20
+   */
+  regions: string[];
+  /**
+   * Ceiling on keys read across all regions. Reaching it sets `enumeration.truncated`, which withdraws this run's right to retire anything — a truncated run has not seen every key and must not claim to have.
+   * @minimum 1
+   * @maximum 500
+   */
+  maxKeys?: number;
 }
 
 /**
@@ -2653,6 +2632,140 @@ export interface KmsKeyOutcome {
   rotationEnabled: boolean | null;
   /** The asset locator this key was written under. Null when no asset was written. */
   location: string | null;
+}
+
+export type DiscoveryScopeKind =
+  (typeof DiscoveryScopeKind)[keyof typeof DiscoveryScopeKind];
+
+export const DiscoveryScopeKind = {
+  domain: "domain",
+  cloud_account: "cloud_account",
+  directory: "directory",
+  issuer: "issuer",
+} as const;
+
+/**
+ * What was searched, in a shape that can hold a question larger than a domain.
+ */
+export interface DiscoveryScope {
+  kind: DiscoveryScopeKind;
+  domain?: string;
+  provider?: string;
+  account?: string;
+  region?: string;
+  service?: string;
+  directory?: string;
+  issuer?: string;
+}
+
+export interface EnumeratedScope {
+  scope: DiscoveryScope;
+  /** Always true. A scope that is not complete belongs in `refused`. */
+  complete: boolean;
+}
+
+export type RefusedScopeReason =
+  (typeof RefusedScopeReason)[keyof typeof RefusedScopeReason];
+
+export const RefusedScopeReason = {
+  "access-denied": "access-denied",
+  throttled: "throttled",
+  unauthenticated: "unauthenticated",
+  unsupported: "unsupported",
+  unreachable: "unreachable",
+  timeout: "timeout",
+} as const;
+
+export interface RefusedScope {
+  scope: DiscoveryScope;
+  reason: RefusedScopeReason;
+  /** Free text for a human. Never parsed, never grouped by, never a substitute for `reason`. */
+  detail?: string;
+}
+
+/**
+ * What a run could and could not speak for. Absent from a submission response entirely — a submission makes no enumeration claim, and an empty record would instead claim a successful enumeration that found nothing.
+ */
+export interface EnumerationRecord {
+  /** Scopes read to exhaustion with no error. The only thing that earns a claim of coverage. */
+  enumerated: EnumeratedScope[];
+  /** Scopes attempted and not completed. `reason` comes from a closed vocabulary and is never a cloud SDK's error text, which routinely embeds the request that failed. */
+  refused: RefusedScope[];
+  /** A pagination or safety ceiling was hit. Reported, never silent. */
+  truncated: boolean;
+  /** Which stored credential this run redeemed. Never the credential itself. */
+  credentialId?: number;
+}
+
+/**
+ * The result of one credentialed poll, including the boundary of what it can speak for.
+ */
+export interface KmsPollSummary {
+  projectId: number;
+  /** Keys read from the provider across every region that answered. */
+  keysRead: number;
+  /** Of those, how many resolved to an algorithm this product reports on. */
+  keysObserved: number;
+  keysUnclassified: number;
+  keys: KmsKeyOutcome[];
+  /** Null when the poll read no keys at all — there is nothing to record a run against. */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Keys previously on record, absent from this poll, and inside a region this run enumerated completely. **Always 0 unless the run earned a prefix scope** — see `reconciliation`. A run that was truncated or had any region refused retires nothing, because a throttled page is indistinguishable from an empty one. */
+  assetsMarkedGone: number;
+  enumeration: EnumerationRecord;
+  /** One sentence stating whether this run was allowed to retire keys, and why. Present in the body rather than left to be derived from `enumeration`, for the same reason `evidenceCaveat` is: a caveat a client has to reconstruct is a caveat that will be missing from the one report that matters. */
+  reconciliation: string;
+  evidenceCaveat: string;
+}
+
+/**
+ * Which key store this key lives in.
+ */
+export type SubmitProjectKmsBodyKeysItemProvider =
+  (typeof SubmitProjectKmsBodyKeysItemProvider)[keyof typeof SubmitProjectKmsBodyKeysItemProvider];
+
+export const SubmitProjectKmsBodyKeysItemProvider = {
+  "aws-kms": "aws-kms",
+  "azure-key-vault": "azure-key-vault",
+  "gcp-kms": "gcp-kms",
+  "hashicorp-vault": "hashicorp-vault",
+} as const;
+
+export type SubmitProjectKmsBodyKeysItem = {
+  /** Which key store this key lives in. */
+  provider: SubmitProjectKmsBodyKeysItemProvider;
+  /** ARN, resource name, `kid` URL, or mount-qualified key name — whatever the provider calls the key's identity. Together with `provider` this is the asset's identity; an alias is deliberately not used, since an alias can be repointed at a different key. */
+  keyId: string;
+  /** The provider-native spec string: AWS `KeySpec`, GCP `CryptoKeyVersion.algorithm`, Azure `kty`, Vault `type`. Matched case-insensitively against `docs/Claude/mappings/kms-key-specs.json`. Omit it and the key is recorded as present and unclassified rather than guessed at. */
+  keySpec?: string;
+  /** Curve name where the provider states it separately from the spec — Azure's `crv`. Resolved through the shared named-curve table. */
+  curve?: string;
+  /** A key size your export has and the spec does not state (Azure's Create Key `key_size`). Used only when neither the key spec nor a curve supplies one, so it cannot override a size the provider's documentation states. */
+  keySize?: number;
+  alias?: string;
+  /** The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`), recorded verbatim and never mapped onto the asset's lifecycle status. */
+  keyState?: string;
+  rotationEnabled?: boolean;
+  /** @minimum 1 */
+  rotationPeriodDays?: number;
+  lastRotatedAt?: string;
+  origin?: string;
+  region?: string;
+  /** The containing vault, key ring or mount path. */
+  keyStore?: string;
+};
+
+export interface SubmitProjectKmsBody {
+  /**
+   * The key inventory your own key store already produced — the output of `aws kms describe-key`, `az keyvault key show`, `gcloud kms keys list` or `vault read transit/keys/<name>`, transcribed into these fields. No credential for the key store ever reaches this product.
+
+Every field beyond `provider` and `keyId` is optional because every field beyond those is optional in those exports: `aws kms list-keys` returns identifiers only, and Azure Key Vault's list operation returns `kid` and `attributes` with no key type at all. An omitted field means "the export did not state this" and is never substituted for — `rotationEnabled` in particular is left absent rather than sent as `false`, because "not stated" and "not rotated" are different claims.
+   * @maxItems 500
+   */
+  keys: SubmitProjectKmsBodyKeysItem[];
 }
 
 export interface KmsIngestSummary {
