@@ -177,6 +177,16 @@ pnpm run hooks:install   # gate every push on it automatically
 Typecheck is blocking in local CI. A green run is the standard for "ready to merge", not a green
 check on the PR.
 
+**`--quick` also skips `pnpm install`, which matters the moment you merge a branch that added a
+dependency.** Wave 4's lane A added `playwright-core` for PDF rendering. After the merge,
+`--quick` passed all five stages and `test:api` passed 471 tests, because nothing they run needs
+the package — the API server loads it through a dynamic import and *degrades to 503 by design*
+when it is absent. The only thing that failed was M2's exit criterion in the e2e suite, and the
+server's log said "PDF rendering unavailable", which reads like a missing browser rather than a
+missing `pnpm install`. Run `pnpm install` after any merge that touches a `package.json` or
+`pnpm-lock.yaml` — or run the full `pnpm run ci`, which does it for you. A feature with a
+deliberate graceful fallback is exactly the one whose absence unit tests cannot see.
+
 **`--quick` is not the whole gate, and twice on 2026-08-14 that mattered.** It skips `test:ui` and
 never runs `tests/e2e/` at all. A frontend regression survived five green `--quick` runs and a full
 e2e pass, and surfaced only from running `pnpm run test:ui` directly; separately, the e2e suite

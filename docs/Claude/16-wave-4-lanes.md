@@ -165,6 +165,33 @@ the blocker for credentialed collection, which shipped; `13-auth-and-tenancy.md`
 list nine tables short of `ORG_SCOPED_TABLES`). None were fixed — four lanes were live in those
 files at the time. They are the morning's doc sweep, not a lane's job.
 
+## The merge, and what it cost
+
+All five merged 2026-08-16 in the planned order — B, D, A, C, then E — with the E2/C8
+reconciliation folded into C's merge commit rather than left as a follow-up. **Every merge
+auto-resolved with no textual conflict**, which is precisely the state CLAUDE.md warns not to
+trust: each same-shaped-block file was checked by hand afterwards for both lanes' contributions
+(`cross-tenant.test.ts`, `routes/index.ts`, `inventory-assets.ts`, `openapi.yaml`), and the
+generated clients were **regenerated** from the merged spec rather than accepted from the
+three-way merge. Both regenerations produced no diff, which is the confirmation rather than the
+assumption.
+
+Verified on merged `main`, not inherited from a lane: the snapshot chain walks cleanly across all
+sixteen entries and `drizzle-kit generate` reports "No schema changes, nothing to migrate".
+
+Final gate: `ci --quick` all five stages, `test:ui` 24 passed, and the unfiltered e2e suite
+**148 passed / 13 skipped / 0 failed**. 148 is the arithmetic of the four lanes summed against the
+pre-wave baseline of 120 — the count is the check, because a merge that silently loses a spec file
+still exits 0.
+
+**One failure on the first attempt, and it was the gate working.** The two PDF tests failed
+because lane A added `playwright-core` and the merge had not been followed by `pnpm install`.
+`--quick` skips install; `test:api`'s 471 tests never touch the package; the API server loads it
+through a dynamic import and degrades to 503 by design. So the only thing in the repository that
+could see the gap was M2's own exit criterion, which refuses to accept the 503. Recorded in
+AGENTS.md — a feature with a deliberate graceful fallback is the one whose absence unit tests
+cannot see.
+
 ## What tonight did not buy
 
 Discovery and credentialed collection — the actual critical path — did not move, deliberately:
