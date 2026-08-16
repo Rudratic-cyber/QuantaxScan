@@ -53,9 +53,33 @@ PostgreSQL 16.14; `generate` emits the correct SQL, `push` drops the expression.
 - `assertTenantIsolationInstalled()` gates API-server startup on the real `pg_class`/`pg_policy`
   state, so a future `push` regressing it cannot go unnoticed. A deploy that has not run
   `apply-rls` will refuse to boot — that is intended.
-- `pnpm --filter @workspace/db run apply-tenancy` is the one-time data migration (add nullable →
-  backfill → constrain), which neither `push` nor a generated migration can do on a populated
-  table. Full order and rationale: [docs/Claude/13-auth-and-tenancy.md](docs/Claude/13-auth-and-tenancy.md) §10.
+- `pnpm --filter @workspace/db run apply-tenancy` and `run apply-discovery-identity` are the
+  one-time data migrations (add nullable → backfill → constrain), which neither `push` nor a
+  generated migration can do on a populated table. Full order and rationale:
+  [docs/Claude/13-auth-and-tenancy.md](docs/Claude/13-auth-and-tenancy.md) §10.
+
+**A hand-edited migration under `lib/db/drizzle/` is not on the deploy path, and looks exactly like
+one that is.** `push` computes DDL from the *schema files*; it never reads that directory, and
+neither does the e2e stack (`tests/e2e/support/database.ts` runs `push-force`). So correcting a
+generated migration — the natural move when `generate` emits `ADD COLUMN ... NOT NULL` for a
+populated table — produces a file that is reviewed, committed, applied by the pglite harness, and
+**unreachable in production**. Caught on 2026-08-16 with discovery stage 0's `hostname` → `identity`
+widening, where the careful ordering existed only in `0017`. Any data migration needs a script and a
+line in §10's order; the generated file is for review and for a fresh database.
+
+The same asymmetry makes a green pglite run mean less than it reads as. `createTestDb()` migrates up
+from an *empty* database, so a backfill `UPDATE` matches zero rows and the suite proves the SQL
+**applies**, not that it produces correct values. Those are different claims. If a migration
+transforms data, seed a table and assert the result — `lib/db/src/discovery-identity-backfill.test.ts`
+is the worked example, and it builds the pre-migration table by hand rather than importing the
+schema, which now describes the destination and would prove nothing.
+
+`drizzle-kit generate` is also **interactive and cannot be piped past** — it needs a TTY, so
+`printf '\n' |` and `script -qec` both fail. When it cannot tell a new column from a rename it
+asks, and its suggestion can be destructive (it offered `source_domain › identity`, which would have
+discarded every hostname). Sidestep it by keeping the old column in the schema for one `generate` —
+nothing dropped means nothing to disambiguate — then removing it for a second. Two sequential
+migrations from one lane fork nothing; the one-migration rule exists to stop two *lanes* generating.
 
 **The runtime must connect as `quantaxscan_app`** — a role with no table ownership and no
 `BYPASSRLS`. Connect as the owner or a superuser and every policy is inert while the code behaves
