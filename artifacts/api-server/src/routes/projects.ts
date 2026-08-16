@@ -59,6 +59,10 @@ import {
   ingestEndpointObservations,
   type CertificateSummary,
 } from "../lib/asset-ingest";
+// Shared with P1's credentialed poller, which serves the same documented
+// response schema from its own route file. See `lib/kms-response.ts` for why
+// it moved rather than being copied.
+import { toKmsKeyResponseEntry } from "../lib/kms-response";
 import { evaluateCertificateExpiryAgainstQDay } from "../lib/certificate-risk";
 import { resolveSecrecyLifetime, type DataClassification } from "@workspace/db/classification";
 import { assessMoscaRisk, migrationYearsFromEffortHours, DEFAULT_QDAY_SCENARIOS, QDAY_FRAMING } from "@workspace/risk";
@@ -996,52 +1000,6 @@ const KMS_EVIDENCE_CAVEAT =
   "providers' own documentation, so a spec that table does not carry is reported as unclassified rather " +
   "than mapped to a similar one. " +
   KMS_KEY_SPECS_CRITICAL_CAVEAT;
-
-/**
- * Flattens one collector outcome into the response shape. Every non-`observed`
- * outcome still appears: "we looked at 40 keys, classified 31, and here is
- * what the other 9 were" is the answer a key inventory has to give, and a
- * response that listed only the 31 would read as a complete inventory of 31
- * keys.
- */
-function toKmsKeyResponseEntry(outcome: KmsKeyOutcome) {
-  const { key } = outcome;
-  const base = {
-    provider: key.provider,
-    keyId: key.keyId,
-    keySpec: key.keySpec ?? null,
-    alias: key.alias ?? null,
-    keyState: key.keyState ?? null,
-    // Absent, not false — the export said nothing, and `false` would claim
-    // this key is not rotated.
-    rotationEnabled: key.rotationEnabled ?? null,
-  };
-
-  if (outcome.kind !== "observed") {
-    return {
-      ...base,
-      outcome: outcome.kind,
-      reason: outcome.reason,
-      algorithm: null,
-      // A `no-algorithm` spec can still state a size (HMAC_512 is 512 bits),
-      // and reporting it is free information about a key we cannot classify.
-      keySize: outcome.kind === "no-algorithm" ? outcome.entry.keySize : null,
-      keySizeSource: null,
-      location: null,
-    };
-  }
-
-  const { observation } = outcome;
-  return {
-    ...base,
-    outcome: outcome.kind,
-    reason: null,
-    algorithm: observation.algorithm,
-    keySize: observation.keySize ?? null,
-    keySizeSource: (observation.evidence["keySizeSource"] as string | undefined) ?? null,
-    location: observation.location,
-  };
-}
 
 router.post("/projects/:id/kms", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

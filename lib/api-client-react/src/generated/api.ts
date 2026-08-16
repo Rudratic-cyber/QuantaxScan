@@ -24,6 +24,7 @@ import type {
   CbomDocument,
   CertificateIngestSummary,
   ChatBody,
+  CloudDiscoverySummary,
   CollectionSchedule,
   CommunityPost,
   CompleteAuthFlowParams,
@@ -45,6 +46,7 @@ import type {
   DemoRepo,
   DemoScanResult,
   DependencyIngestSummary,
+  DiscoverCloudResourcesBody,
   DiscoveredTargetProbeSummary,
   DiscoveryRunSummary,
   Division,
@@ -65,6 +67,7 @@ import type {
   HealthStatus,
   InventoryAssetsSummary,
   KmsIngestSummary,
+  KmsPollSummary,
   LeaderboardEntry,
   ListCommunityPostsParams,
   ListWaiversParams,
@@ -73,6 +76,7 @@ import type {
   NetworkFlowIngestSummary,
   OrganizationMemberList,
   OtFleet,
+  PollProjectKmsBody,
   PostureTimeline,
   ProbeDiscoveredTargetsBody,
   Project,
@@ -4638,6 +4642,100 @@ export const useRevokeCredential = <
 };
 
 /**
+ * The credentialed counterpart to `POST /projects/{id}/kms`. Redeems a credential you registered earlier and enumerates the account's KMS keys directly, rather than taking an export at its word.
+
+**Requires the `admin` role**, which `POST /projects/{id}/kms` does not. Holding a credential is already admin-only, and being able to *spend* one without holding it would route straight around that decision.
+
+**Submission is not deprecated by this.** `POST /projects/{id}/kms` keeps working forever: an air-gapped or on-premises estate has no other path, and a customer who declines to issue a read-only credential is a normal customer rather than an edge case.
+
+The response's `enumeration` block is the part that matters. A poll's normal outcome is *partial* — some regions answer, one throttles, one is denied — and the block records which is which. A region that refused is never reported as empty, and a run that was truncated or had any region refused retires nothing, because a throttled page and an empty one are indistinguishable from the outside. `reconciliation` states in one sentence whether this run was allowed to retire keys and why.
+ * @summary Read a cloud account's KMS keys with a stored credential (P1)
+ */
+export const getPollProjectKmsUrl = (id: number) => {
+  return `/api/projects/${id}/kms/poll`;
+};
+
+export const pollProjectKms = async (
+  id: number,
+  pollProjectKmsBody: PollProjectKmsBody,
+  options?: RequestInit,
+): Promise<KmsPollSummary> => {
+  return customFetch<KmsPollSummary>(getPollProjectKmsUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(pollProjectKmsBody),
+  });
+};
+
+export const getPollProjectKmsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pollProjectKms>>,
+    TError,
+    { id: number; data: BodyType<PollProjectKmsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pollProjectKms>>,
+  TError,
+  { id: number; data: BodyType<PollProjectKmsBody> },
+  TContext
+> => {
+  const mutationKey = ["pollProjectKms"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pollProjectKms>>,
+    { id: number; data: BodyType<PollProjectKmsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return pollProjectKms(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PollProjectKmsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pollProjectKms>>
+>;
+export type PollProjectKmsMutationBody = BodyType<PollProjectKmsBody>;
+export type PollProjectKmsMutationError = ErrorType<void>;
+
+/**
+ * @summary Read a cloud account's KMS keys with a stored credential (P1)
+ */
+export const usePollProjectKms = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pollProjectKms>>,
+    TError,
+    { id: number; data: BodyType<PollProjectKmsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pollProjectKms>>,
+  TError,
+  { id: number; data: BodyType<PollProjectKmsBody> },
+  TContext
+> => {
+  return useMutation(getPollProjectKmsMutationOptions(options));
+};
+
+/**
  * Classifies the keys a managed key store holds — HashiCorp Vault, AWS KMS, Azure Key Vault, GCP KMS — and persists what it finds as assets on the `kms` surface, which is what makes that surface count as examined in `GET /projects/{id}/coverage`.
 
 **This is a submission route, not a credentialed poller.** You send the key inventory your own tooling already produced; no credential for the key store ever reaches this product, and nothing here connects to a cloud provider. The corollary is stated in every response's `evidenceCaveat`: the export is taken at its word, and nothing proves it is complete, current, or from the key store you say it is.
@@ -5013,6 +5111,103 @@ export function useGetProjectDataAtRest<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Reads an AWS account's storage using a read-only credential you registered, and records what it finds as **leads** — places a collector could look. Certificate transparency (`POST /projects/{id}/discovery`) finds names in a public log and proves nothing about ownership; this proves the account is yours, because you issued the key.
+
+**Requires the `admin` role.** Spending a credential is gated like holding one.
+
+**No asset is created, and no surface becomes examined.** A bucket name is not an observation of cryptography: until `POST /projects/{id}/data-at-rest` reads its encryption configuration, this product knows nothing about the cryptography behind it — not a cipher, not a key-wrapping algorithm, not whether it is encrypted at all. The coverage meter is deliberately unmoved by this route, and gains only a denominator.
+
+**Finding a resource is not consent to connect to it.** Enumerating is a control-plane read; examining one of the resources is a separate act on a separate route, against target ids you name.
+
+A partial result is the normal outcome and is reported as `partial`, with the exact scopes enumerated and refused. A scope that was denied or throttled is never reported as empty.
+ * @summary Enumerate a cloud account's resources with a stored credential (P2)
+ */
+export const getDiscoverCloudResourcesUrl = (id: number) => {
+  return `/api/projects/${id}/discovery/cloud`;
+};
+
+export const discoverCloudResources = async (
+  id: number,
+  discoverCloudResourcesBody: DiscoverCloudResourcesBody,
+  options?: RequestInit,
+): Promise<CloudDiscoverySummary> => {
+  return customFetch<CloudDiscoverySummary>(getDiscoverCloudResourcesUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(discoverCloudResourcesBody),
+  });
+};
+
+export const getDiscoverCloudResourcesMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discoverCloudResources>>,
+    TError,
+    { id: number; data: BodyType<DiscoverCloudResourcesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof discoverCloudResources>>,
+  TError,
+  { id: number; data: BodyType<DiscoverCloudResourcesBody> },
+  TContext
+> => {
+  const mutationKey = ["discoverCloudResources"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof discoverCloudResources>>,
+    { id: number; data: BodyType<DiscoverCloudResourcesBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return discoverCloudResources(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DiscoverCloudResourcesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof discoverCloudResources>>
+>;
+export type DiscoverCloudResourcesMutationBody =
+  BodyType<DiscoverCloudResourcesBody>;
+export type DiscoverCloudResourcesMutationError = ErrorType<void>;
+
+/**
+ * @summary Enumerate a cloud account's resources with a stored credential (P2)
+ */
+export const useDiscoverCloudResources = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof discoverCloudResources>>,
+    TError,
+    { id: number; data: BodyType<DiscoverCloudResourcesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof discoverCloudResources>>,
+  TError,
+  { id: number; data: BodyType<DiscoverCloudResourcesBody> },
+  TContext
+> => {
+  return useMutation(getDiscoverCloudResourcesMutationOptions(options));
+};
 
 /**
  * Turns "name every host you want probed" into "give us your domain". Queries public Certificate Transparency logs (RFC 6962) for certificates covering the domain and records the names they carry as *discovered targets*. Needs no customer credential — CT is public — which is what makes it usable before any cloud access is negotiated.

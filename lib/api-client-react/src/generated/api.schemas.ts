@@ -2557,50 +2557,152 @@ export interface UpdateVendorAssessmentBody {
 }
 
 /**
- * Which key store this key lives in.
+ * Which stored credential to redeem, and which AWS account to enumerate. No secret is ever sent to this route.
  */
-export type SubmitProjectKmsBodyKeysItemProvider =
-  (typeof SubmitProjectKmsBodyKeysItemProvider)[keyof typeof SubmitProjectKmsBodyKeysItemProvider];
+export interface DiscoverCloudResourcesBody {
+  /** A credential of kind `cloud_readonly_inventory`, registered through `POST /credentials`. */
+  credentialId: number;
+  /**
+   * The AWS account id the credential belongs to.
+   * @minLength 1
+   * @maxLength 64
+   */
+  account: string;
+  /**
+   * Ceiling on leads recorded. Reaching it marks the run `partial` and sets `enumeration.truncated` — a run that withheld names has not enumerated the account and does not say it has.
+   * @minimum 1
+   * @maximum 500
+   */
+  maxTargets?: number;
+}
 
-export const SubmitProjectKmsBodyKeysItemProvider = {
-  "aws-kms": "aws-kms",
-  "azure-key-vault": "azure-key-vault",
-  "gcp-kms": "gcp-kms",
-  "hashicorp-vault": "hashicorp-vault",
+/**
+ * `partial` is the value that matters and the normal outcome of a cloud enumeration. A run that read two of three accounts is neither a success nor a failure, and collapsing it into either destroys the boundary of what can be spoken for. `no_evidence` means it ran correctly and found nothing, which is not a failure.
+ */
+export type CloudDiscoverySummaryStatus =
+  (typeof CloudDiscoverySummaryStatus)[keyof typeof CloudDiscoverySummaryStatus];
+
+export const CloudDiscoverySummaryStatus = {
+  succeeded: "succeeded",
+  partial: "partial",
+  no_evidence: "no_evidence",
+  failed: "failed",
 } as const;
 
-export type SubmitProjectKmsBodyKeysItem = {
-  /** Which key store this key lives in. */
-  provider: SubmitProjectKmsBodyKeysItemProvider;
-  /** ARN, resource name, `kid` URL, or mount-qualified key name — whatever the provider calls the key's identity. Together with `provider` this is the asset's identity; an alias is deliberately not used, since an alias can be repointed at a different key. */
-  keyId: string;
-  /** The provider-native spec string: AWS `KeySpec`, GCP `CryptoKeyVersion.algorithm`, Azure `kty`, Vault `type`. Matched case-insensitively against `docs/Claude/mappings/kms-key-specs.json`. Omit it and the key is recorded as present and unclassified rather than guessed at. */
-  keySpec?: string;
-  /** Curve name where the provider states it separately from the spec — Azure's `crv`. Resolved through the shared named-curve table. */
-  curve?: string;
-  /** A key size your export has and the spec does not state (Azure's Create Key `key_size`). Used only when neither the key spec nor a curve supplies one, so it cannot override a size the provider's documentation states. */
-  keySize?: number;
-  alias?: string;
-  /** The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`), recorded verbatim and never mapped onto the asset's lifecycle status. */
-  keyState?: string;
-  rotationEnabled?: boolean;
-  /** @minimum 1 */
-  rotationPeriodDays?: number;
-  lastRotatedAt?: string;
-  origin?: string;
+export type DiscoveryScopeKind =
+  (typeof DiscoveryScopeKind)[keyof typeof DiscoveryScopeKind];
+
+export const DiscoveryScopeKind = {
+  domain: "domain",
+  cloud_account: "cloud_account",
+  directory: "directory",
+  issuer: "issuer",
+} as const;
+
+/**
+ * What was searched, in a shape that can hold a question larger than a domain.
+ */
+export interface DiscoveryScope {
+  kind: DiscoveryScopeKind;
+  domain?: string;
+  provider?: string;
+  account?: string;
   region?: string;
-  /** The containing vault, key ring or mount path. */
-  keyStore?: string;
-};
+  service?: string;
+  directory?: string;
+  issuer?: string;
+}
 
-export interface SubmitProjectKmsBody {
+export interface EnumeratedScope {
+  scope: DiscoveryScope;
+  /** Always true. A scope that is not complete belongs in `refused`. */
+  complete: boolean;
+}
+
+export type RefusedScopeReason =
+  (typeof RefusedScopeReason)[keyof typeof RefusedScopeReason];
+
+export const RefusedScopeReason = {
+  "access-denied": "access-denied",
+  throttled: "throttled",
+  unauthenticated: "unauthenticated",
+  unsupported: "unsupported",
+  unreachable: "unreachable",
+  timeout: "timeout",
+} as const;
+
+export interface RefusedScope {
+  scope: DiscoveryScope;
+  reason: RefusedScopeReason;
+  /** Free text for a human. Never parsed, never grouped by, never a substitute for `reason`. */
+  detail?: string;
+}
+
+/**
+ * What a run could and could not speak for. Absent from a submission response entirely — a submission makes no enumeration claim, and an empty record would instead claim a successful enumeration that found nothing.
+ */
+export interface EnumerationRecord {
+  /** Scopes read to exhaustion with no error. The only thing that earns a claim of coverage. */
+  enumerated: EnumeratedScope[];
+  /** Scopes attempted and not completed. `reason` comes from a closed vocabulary and is never a cloud SDK's error text, which routinely embeds the request that failed. */
+  refused: RefusedScope[];
+  /** A pagination or safety ceiling was hit. Reported, never silent. */
+  truncated: boolean;
+  /** Which stored credential this run redeemed. Never the credential itself. */
+  credentialId?: number;
+}
+
+/**
+ * What a target from this method does and does not prove — resolved on read from the method, never stored, because a claim written into a row is a claim that cannot be corrected.
+ */
+export interface DiscoveryMethodCaveat {
+  /** What a target from this method establishes about ownership. */
+  ownership: string;
+  /** The exact boundary this method can speak for. Never the estate. */
+  completeness: string;
+}
+
+/**
+ * The result of one credentialed enumeration. **No asset is created by this route** — discovery produces leads, which are places a collector could look, and a lead is not an observation of cryptography. Every surface still reads `never-examined` afterwards.
+ */
+export interface CloudDiscoverySummary {
+  projectId: number;
+  /** The `discovery_runs` row this enumeration recorded. Written whatever happened, including a total failure — an enumeration that produced nothing and one that never ran are different facts, and only a row can tell them apart. */
+  discoveryRunId: number;
+  /** `partial` is the value that matters and the normal outcome of a cloud enumeration. A run that read two of three accounts is neither a success nor a failure, and collapsing it into either destroys the boundary of what can be spoken for. `no_evidence` means it ran correctly and found nothing, which is not a failure. */
+  status: CloudDiscoverySummaryStatus;
+  /** Leads this run recorded for the first time. */
+  targetsCreated: number;
+  /** Leads already on record that this run saw again. A lead that stops appearing is not deleted. */
+  targetsUpdated: number;
+  enumeration: EnumerationRecord;
+  evidenceCaveat: DiscoveryMethodCaveat;
+}
+
+/**
+ * Which stored credential to redeem, and which AWS account and regions to enumerate. No secret is ever sent to this route — only the id of a credential already registered through `POST /credentials`.
+ */
+export interface PollProjectKmsBody {
+  /** A credential of kind `cloud_kms_readonly`, registered through `POST /credentials`. A credential of any other kind, belonging to another organisation, or revoked or expired, is refused — a credential is never sent to the wrong third party because an id happened to resolve. */
+  credentialId: number;
   /**
-   * The key inventory your own key store already produced — the output of `aws kms describe-key`, `az keyvault key show`, `gcloud kms keys list` or `vault read transit/keys/<name>`, transcribed into these fields. No credential for the key store ever reaches this product.
-
-Every field beyond `provider` and `keyId` is optional because every field beyond those is optional in those exports: `aws kms list-keys` returns identifiers only, and Azure Key Vault's list operation returns `kid` and `attributes` with no key type at all. An omitted field means "the export did not state this" and is never substituted for — `rotationEnabled` in particular is left absent rather than sent as `false`, because "not stated" and "not rotated" are different claims.
-   * @maxItems 500
+   * The AWS account id the credential belongs to, as it appears in a key ARN.
+   * @minLength 1
+   * @maxLength 64
    */
-  keys: SubmitProjectKmsBodyKeysItem[];
+  account: string;
+  /**
+   * The regions to enumerate. There is deliberately no "all regions" option: a region this product invented and enumerated would be a scope the customer never authorised, and a region that was never called must not be reported as empty. Each region is enumerated and reported separately, because a partial result is the normal case.
+   * @minItems 1
+   * @maxItems 20
+   */
+  regions: string[];
+  /**
+   * Ceiling on keys read across all regions. Reaching it sets `enumeration.truncated`, which withdraws this run's right to retire anything — a truncated run has not seen every key and must not claim to have.
+   * @minimum 1
+   * @maximum 500
+   */
+  maxKeys?: number;
 }
 
 /**
@@ -2653,6 +2755,77 @@ export interface KmsKeyOutcome {
   rotationEnabled: boolean | null;
   /** The asset locator this key was written under. Null when no asset was written. */
   location: string | null;
+}
+
+/**
+ * The result of one credentialed poll, including the boundary of what it can speak for.
+ */
+export interface KmsPollSummary {
+  projectId: number;
+  /** Keys read from the provider across every region that answered. */
+  keysRead: number;
+  /** Of those, how many resolved to an algorithm this product reports on. */
+  keysObserved: number;
+  keysUnclassified: number;
+  keys: KmsKeyOutcome[];
+  /** Null when the poll read no keys at all — there is nothing to record a run against. */
+  collectionRunId: number | null;
+  assetsCreated: number;
+  assetsUpdated: number;
+  observationsCreated: number;
+  /** Keys previously on record, absent from this poll, and inside a region this run enumerated completely. **Always 0 unless the run earned a prefix scope** — see `reconciliation`. A run that was truncated or had any region refused retires nothing, because a throttled page is indistinguishable from an empty one. */
+  assetsMarkedGone: number;
+  enumeration: EnumerationRecord;
+  /** One sentence stating whether this run was allowed to retire keys, and why. Present in the body rather than left to be derived from `enumeration`, for the same reason `evidenceCaveat` is: a caveat a client has to reconstruct is a caveat that will be missing from the one report that matters. */
+  reconciliation: string;
+  evidenceCaveat: string;
+}
+
+/**
+ * Which key store this key lives in.
+ */
+export type SubmitProjectKmsBodyKeysItemProvider =
+  (typeof SubmitProjectKmsBodyKeysItemProvider)[keyof typeof SubmitProjectKmsBodyKeysItemProvider];
+
+export const SubmitProjectKmsBodyKeysItemProvider = {
+  "aws-kms": "aws-kms",
+  "azure-key-vault": "azure-key-vault",
+  "gcp-kms": "gcp-kms",
+  "hashicorp-vault": "hashicorp-vault",
+} as const;
+
+export type SubmitProjectKmsBodyKeysItem = {
+  /** Which key store this key lives in. */
+  provider: SubmitProjectKmsBodyKeysItemProvider;
+  /** ARN, resource name, `kid` URL, or mount-qualified key name — whatever the provider calls the key's identity. Together with `provider` this is the asset's identity; an alias is deliberately not used, since an alias can be repointed at a different key. */
+  keyId: string;
+  /** The provider-native spec string: AWS `KeySpec`, GCP `CryptoKeyVersion.algorithm`, Azure `kty`, Vault `type`. Matched case-insensitively against `docs/Claude/mappings/kms-key-specs.json`. Omit it and the key is recorded as present and unclassified rather than guessed at. */
+  keySpec?: string;
+  /** Curve name where the provider states it separately from the spec — Azure's `crv`. Resolved through the shared named-curve table. */
+  curve?: string;
+  /** A key size your export has and the spec does not state (Azure's Create Key `key_size`). Used only when neither the key spec nor a curve supplies one, so it cannot override a size the provider's documentation states. */
+  keySize?: number;
+  alias?: string;
+  /** The provider's own lifecycle word (`Enabled`, `PendingDeletion`, `DESTROYED`), recorded verbatim and never mapped onto the asset's lifecycle status. */
+  keyState?: string;
+  rotationEnabled?: boolean;
+  /** @minimum 1 */
+  rotationPeriodDays?: number;
+  lastRotatedAt?: string;
+  origin?: string;
+  region?: string;
+  /** The containing vault, key ring or mount path. */
+  keyStore?: string;
+};
+
+export interface SubmitProjectKmsBody {
+  /**
+   * The key inventory your own key store already produced — the output of `aws kms describe-key`, `az keyvault key show`, `gcloud kms keys list` or `vault read transit/keys/<name>`, transcribed into these fields. No credential for the key store ever reaches this product.
+
+Every field beyond `provider` and `keyId` is optional because every field beyond those is optional in those exports: `aws kms list-keys` returns identifiers only, and Azure Key Vault's list operation returns `kid` and `attributes` with no key type at all. An omitted field means "the export did not state this" and is never substituted for — `rotationEnabled` in particular is left absent rather than sent as `false`, because "not stated" and "not rotated" are different claims.
+   * @maxItems 500
+   */
+  keys: SubmitProjectKmsBodyKeysItem[];
 }
 
 export interface KmsIngestSummary {
@@ -2962,7 +3135,11 @@ export interface ProjectDataAtRest {
 }
 
 /**
- * What a stored credential is *for* (F4). Each value names a wave-two consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.
+ * What a stored credential is *for* (F4). Each value names a consumer that could not ship until the credential store existed. `kind` is not decoration: a redemption whose kind does not match the stored row is refused, so a bug cannot send the identity provider's client secret to a cloud KMS. There is deliberately no `generic` member.
+
+`cloud_readonly_inventory` is separate from `cloud_kms_readonly` even though both are "an AWS key": one lists key metadata in a single service, the other walks an account's resources across services, and a customer scoping an IAM policy must be able to grant one without the other.
+
+**This list must equal `CREDENTIAL_KIND_VALUES` in `lib/db/src/schema/credentials.ts`.** Stage 0 widened that tuple and did not widen this enum, which made both new kinds unregisterable over HTTP while every unit test passed — the database accepted them and no request could carry one. Caught by the e2e suite, which is the only thing that exercises the generated client against the real route.
  */
 export type CredentialKind =
   (typeof CredentialKind)[keyof typeof CredentialKind];
@@ -2972,6 +3149,8 @@ export const CredentialKind = {
   database_readonly: "database_readonly",
   secrets_manager_token: "secrets_manager_token",
   idp_client_secret: "idp_client_secret",
+  cloud_readonly_inventory: "cloud_readonly_inventory",
+  fleet_directory_readonly: "fleet_directory_readonly",
 } as const;
 
 /**

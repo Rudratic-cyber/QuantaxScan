@@ -5,13 +5,24 @@ import {
   projectsTable,
   assetsTable,
   discoveredTargetsTable,
+  discoveryRunsTable,
   projectRepoId,
   type DiscoveredTarget,
 } from "@workspace/db";
-import { RunProjectDiscoveryBody, ProbeDiscoveredTargetsBody } from "@workspace/api-zod";
+import {
+  resolveCredentialRef,
+  withRedeemedCredential,
+  CredentialUnusableError,
+  type SecretHandle,
+} from "@workspace/db/credentials";
+import { RunProjectDiscoveryBody, ProbeDiscoveredTargetsBody, DiscoverCloudResourcesBody } from "@workspace/api-zod";
 import {
   certificateExpired,
   DISCOVERY_EVIDENCE_CAVEAT,
+  DISCOVERY_METHOD_CAVEATS,
+  MAX_DISCOVERED_HOSTNAMES_PER_RUN,
+  type DiscoveryRunStatus,
+  type EnumerationRecord,
   type CtCertificateEvidence,
   type DiscoveryScope,
   type DnsResolution,
@@ -21,6 +32,8 @@ import { queryCertificateTransparency, CtQueryError } from "../lib/ct-log";
 import { corroborateHostnames } from "../lib/dns-corroboration";
 import { examinedHostPorts, summariseDiscoveryCoverage } from "../lib/discovery-coverage";
 import { probeTlsTargets, MAX_TLS_TARGETS_PER_SUBMISSION } from "../lib/tls-probe";
+import { acquireS3Leads } from "../lib/acquisition/aws-s3-discovery";
+import { enumerationRecordFor } from "../lib/acquisition/types";
 import { ingestTlsObservations } from "../lib/asset-ingest";
 import { orgContextFor } from "../lib/principal";
 import { logger } from "../lib/logger";
@@ -473,6 +486,227 @@ router.post("/projects/:id/discovered-targets/probe", async (req, res): Promise<
     observationsCreated: result.observationsCreated,
     assetsMarkedGone: result.assetsMarkedGone,
     evidenceCaveat: DISCOVERED_PROBE_EVIDENCE_CAVEAT,
+  });
+});
+
+/**
+ * What became of a credentialed enumeration, from what it enumerated and what
+ * it could not.
+ *
+ * **`partial` is the value that did not exist anywhere in this product before
+ * stage 0 and had to.** For certificate transparency a query is total or it
+ * fails, so two states sufficed. For a cloud enumeration partial success is the
+ * *normal* case, and a run that read two of three accounts is neither
+ * `succeeded` — it did not do what it was asked — nor `failed`, because it
+ * produced real leads. Collapsing it into either destroys the only fact a
+ * report actually needs: the boundary of what we can speak for.
+ *
+ * `no_evidence` is separate from `failed` for the reason
+ * `collection_schedule_runs` distinguishes them: an attempt that ran correctly
+ * and found nothing is not a failure, and must not read as one. An account with
+ * no buckets is a real and reportable answer.
+ */
+function discoveryRunStatus(enumeration: EnumerationRecord, leadCount: number): DiscoveryRunStatus {
+  if (enumeration.enumerated.length === 0) return "failed";
+  if (enumeration.refused.length > 0 || enumeration.truncated) return "partial";
+  return leadCount > 0 ? "succeeded" : "no_evidence";
+}
+
+/**
+ * P2 — `POST /api/projects/:id/discovery/cloud`.
+ * docs/Claude/17-discovery-design.md §3.2, §1.2, §2.3.
+ *
+ * Enumerates an AWS account's storage with the customer's own read-only
+ * credential and records what it found as **leads**, not assets.
+ *
+ * ## The invariant this route is mostly about
+ *
+ * D8's first, inherited by every source: **discovery writes no `assets`, no
+ * `observations` and no `collection_runs` row.** It examines nothing — a bucket
+ * name is a place B7 *could* look, and until it does, this product knows
+ * nothing about the cryptography behind it. The e2e assertion that guards this
+ * walks every surface after a discovery run and requires all of them to still
+ * read `never-examined`.
+ *
+ * That is also why `discovery_runs` is a separate table from `collection_runs`
+ * rather than a row in it: sharing would put a run that examined nothing into
+ * the table the coverage meter counts.
+ *
+ * ## Consent is not implied by discovery
+ *
+ * D8's fifth invariant survives credentialing. The customer issuing us a
+ * read-only key establishes that the account is theirs — which is more than
+ * certificate transparency ever establishes — but it does not make connecting
+ * to the resources inside it a thing they asked for. Enumerating is a
+ * control-plane read; examining a bucket is a separate act on a separate route,
+ * against target ids the caller names.
+ */
+router.post("/projects/:id/discovery/cloud", async (req, res): Promise<void> => {
+  const id = parseProjectId(req.params.id);
+  if (id === null) {
+    res.status(400).json({ error: "Invalid project ID" });
+    return;
+  }
+
+  const body = DiscoverCloudResourcesBody.safeParse(req.body);
+  if (!body.success) {
+    // Not `body.error.message`: it serialises the rejected input, and the
+    // rejected input names a credential.
+    res.status(400).json({ error: "Invalid request body" });
+    return;
+  }
+
+  const ctx = orgContextFor(req);
+  const scope: DiscoveryScope = { kind: "cloud_account", provider: "aws", account: body.data.account, service: "s3" };
+
+  const resolved = await withOrg(ctx, async (tx) => {
+    const [parent] = await tx
+      .select({ id: projectsTable.id, divisionId: projectsTable.divisionId })
+      .from(projectsTable)
+      .where(eq(projectsTable.id, id));
+    if (!parent) return { kind: "no-project" as const };
+
+    // A credential id in a request body is not subject to RLS any more than a
+    // foreign key is, so it is resolved inside the scope before being acted on.
+    const ref = await resolveCredentialRef(tx, body.data.credentialId, "cloud_readonly_inventory");
+    if (ref === null) return { kind: "no-credential" as const };
+
+    return { kind: "ok" as const, ref, divisionId: parent.divisionId };
+  });
+
+  if (resolved.kind === "no-project") {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+  if (resolved.kind === "no-credential") {
+    res.status(404).json({ error: "Credential not found" });
+    return;
+  }
+
+  // Outside the transaction, for the reason every other egress in this file is:
+  // holding a pooled connection open across a provider round trip pins it idle.
+  const startedAt = new Date();
+  let acquired;
+  try {
+    acquired = await withRedeemedCredential({ withOrg }, ctx, resolved.ref, (secret: SecretHandle) =>
+      acquireS3Leads(secret, { scopes: [scope], maxItems: body.data.maxTargets ?? MAX_DISCOVERED_HOSTNAMES_PER_RUN }),
+    );
+  } catch (err: unknown) {
+    if (err instanceof CredentialUnusableError) {
+      res.status(409).json({ error: `Credential unusable: ${err.reason}` });
+      return;
+    }
+    throw err;
+  }
+
+  const enumeration = enumerationRecordFor(acquired, resolved.ref.credentialId);
+  const status = discoveryRunStatus(enumeration, acquired.input.length);
+
+  const outcome = await withOrg(ctx, async (tx) => {
+    // The run row is written whatever happened, including `failed`. An
+    // enumeration that produced nothing and one that never ran are different
+    // facts, and only a row can tell them apart — the same argument G-25 closed
+    // one level down for collection runs.
+    const [run] = await tx
+      .insert(discoveryRunsTable)
+      .values({
+        organizationId: ctx.organizationId,
+        divisionId: resolved.divisionId,
+        projectId: id,
+        discoveryMethod: "cloud_account_enumeration",
+        credentialId: resolved.ref.credentialId,
+        status,
+        enumerated: enumeration.enumerated,
+        refused: enumeration.refused,
+        truncated: enumeration.truncated,
+        targetsCreated: 0,
+        targetsUpdated: 0,
+        targetsRejected: 0,
+        startedAt,
+        finishedAt: new Date(),
+      })
+      .returning();
+
+    if (acquired.input.length === 0) return { run, created: 0, updated: 0 };
+
+    const before = await tx
+      .select({ identity: discoveredTargetsTable.identity })
+      .from(discoveredTargetsTable)
+      .where(and(eq(discoveredTargetsTable.projectId, id), eq(discoveredTargetsTable.discoveryMethod, "cloud_account_enumeration")));
+    const known = new Set(before.map((b) => b.identity));
+
+    const now = new Date();
+    await tx
+      .insert(discoveredTargetsTable)
+      .values(
+        acquired.input.map((lead) => ({
+          organizationId: ctx.organizationId,
+          divisionId: resolved.divisionId,
+          projectId: id,
+          identity: lead.identity,
+          targetKind: lead.targetKind,
+          // Absent for a bucket, and that is the honest value: it has a DNS
+          // name only if we construct one, and a constructed name is a name
+          // nobody has evidence for.
+          hostname: lead.hostname ?? null,
+          sourceScope: scope,
+          discoveryMethod: "cloud_account_enumeration" as const,
+          evidence: lead.evidence as never,
+          lastDiscoveredRunId: run.id,
+          lastDiscoveredAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [
+          discoveredTargetsTable.organizationId,
+          discoveredTargetsTable.projectId,
+          discoveredTargetsTable.identity,
+          discoveredTargetsTable.discoveryMethod,
+        ],
+        // `firstDiscoveredAt` absent on purpose: re-running must not reset when
+        // a resource was first seen.
+        set: {
+          evidence: sql`excluded.evidence`,
+          sourceScope: sql`excluded.source_scope`,
+          lastDiscoveredRunId: sql`excluded.last_discovered_run_id`,
+          lastDiscoveredAt: sql`excluded.last_discovered_at`,
+        },
+      });
+
+    const created = acquired.input.filter((l) => !known.has(l.identity)).length;
+    const updated = acquired.input.length - created;
+
+    await tx
+      .update(discoveryRunsTable)
+      .set({ targetsCreated: created, targetsUpdated: updated })
+      .where(eq(discoveryRunsTable.id, run.id));
+
+    return { run, created, updated };
+  });
+
+  logger.info(
+    {
+      projectId: id,
+      status,
+      enumerated: enumeration.enumerated.length,
+      refused: enumeration.refused.length,
+      truncated: enumeration.truncated,
+      targetsCreated: outcome.created,
+      route: "POST /projects/:id/discovery/cloud",
+    },
+    "cloud discovery complete",
+  );
+
+  res.json({
+    projectId: id,
+    discoveryRunId: outcome.run.id,
+    status,
+    targetsCreated: outcome.created,
+    targetsUpdated: outcome.updated,
+    enumeration,
+    // Resolved on read from the method, never stored — a claim written into a
+    // row is a claim that cannot be corrected.
+    evidenceCaveat: DISCOVERY_METHOD_CAVEATS.cloud_account_enumeration,
   });
 });
 

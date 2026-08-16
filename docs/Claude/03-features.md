@@ -213,7 +213,7 @@ another silo.
 | B2 | Dependency / SBOM | `built` | **P0** | Biggest coverage jump, and wired end to end. `DependencyCollector` (`lib/collectors/src/dependency-collector.ts`) parses lockfiles and manifests in **six ecosystems** — npm, PyPI, Maven, Go, NuGet and Cargo (see the ecosystem table below) → the cited package table in [`mappings/crypto-packages.json`](mappings/crypto-packages.json) → observations at `0.8` (single-purpose library) or `0.5` (general-purpose library) confidence, persisted as `surface: "dependency"` assets by `POST /api/projects/:id/dependencies`. **`dependency` is the second `live` surface**, so the D3 meter reads 2 of 10 for a project with a scanned lockfile |
 | B3 | TLS / cipher suite prober | `built` | **P1** | Active handshake against hosts, recording the *negotiated* key exchange rather than the configured one — `tls-collector.ts` maps the handshake, `tls-probe.ts` opens the socket, and `tls-ssrf-guard.ts` resolves-then-pins so a caller-named host cannot be turned into an SSRF. `POST /projects/:id/tls`. Confidence 1.0, the only collector that earns it. TLS 1.3 records its key-exchange size as undetermined rather than guessing — Node reports no group there |
 | B4 | Certificate / X.509 | `built` | **P1** | Key type, size, expiry, parsed with `node:crypto`'s `X509Certificate` — no third-party dependency, so `lib/collectors` stays shippable as a standalone agent. Every certificate in a submitted chain is read, not just the leaf. `POST` / `GET /projects/:id/certificates`, with the Q-Day verdict derived per scenario on read |
-| B5 | KMS / secret stores | `built` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS — **submission-based, not credentialed**. `POST /api/projects/:id/kms` takes the key inventory your own `describe-key`/`keys list` produced; `GET` returns the persisted inventory with rotation posture. Spec → algorithm resolution is cited data in [`mappings/kms-key-specs.json`](mappings/kms-key-specs.json) (84 specs, four primary sources). **`kms` is the fifth `live` surface** |
+| B5 | KMS / secret stores | `built` | **P2** | Vault, AWS KMS, Azure Key Vault, GCP KMS — **submission-based, and since P1 also credentialed for AWS**. `POST /api/projects/:id/kms` takes the key inventory your own `describe-key`/`keys list` produced; `POST /api/projects/:id/kms/poll` reads an AWS account itself with a stored `cloud_kms_readonly` credential, at confidence 0.9 rather than 0.85 because a poll removes the two doubts a submission carries (it could be stale, it could be partial). Submission is **not** a legacy path and never becomes one — an air-gapped estate has no other route. The poll is the only caller that can earn a *prefix* reobservation scope, and only when it enumerated a region completely with nothing truncated and nothing refused (`lib/acquisition/prefix-scope.ts`); `GET` returns the persisted inventory with rotation posture. Spec → algorithm resolution is cited data in [`mappings/kms-key-specs.json`](mappings/kms-key-specs.json) (84 specs, four primary sources). **`kms` is the fifth `live` surface** |
 | B6 | Protocol config | `built` | **P2** | `ProtocolConfigCollector` (`lib/collectors/src/protocol-config.ts` + `protocol-config-collector.ts`) parses `sshd_config`/`ssh_config`/`authorized_keys`, `ipsec.conf`/`swanctl.conf`, a JWKS, an OIDC discovery document and SAML metadata, and `POST /api/projects/:id/protocol-config` persists them as `surface: "config"` assets — **`config` is the sixth `live` surface**. Reads what a file *declares*, never what a peer negotiates (that is B3), at `configuration_information` modality and two confidence tiers: `0.6` for a permitted-algorithm list, `0.8` for a materialised key (an `authorized_keys` entry, a published JWK, the method a SAML document was signed with). Whole-token matching only, so hybrid PQC key exchange (`sntrup761x25519-sha512`) is silently absent rather than misreported as vulnerable `ECDH`. `Include` is not followed and an absent directive is not read as the compiled-in default |
 | B7 | Data-at-rest | `built` | **P2** | DB TDE, backup/archive encryption — the true HNDL targets. Submission-based (`POST/GET /api/projects/:id/data-at-rest`), no database credentials. **Two assets per store**: the bulk cipher and the key-wrapping algorithm, because only the second is what Shor breaks. **The only ingest that accepts a data classification**, so a Regulated archive reaches the risk engine with X = 25 rather than an assumed 3. A store reported as encrypted with no cipher named records nothing and is returned as a gap. **`data-at-rest` is the seventh `live` surface** |
 | B8 | Manual OT/embedded register | `built` | **P1** | A *form*, not a scanner. Longest lead time, so it enters the plan first. Since 2026-08-14 it also **records cryptography on the `ot` surface**: an optional structured `cryptoAlgorithm`/`cryptoKeySize` becomes an asset at `manual_attestation` modality and confidence 0.3, while `cryptoInUse` stays free text and is never parsed. A fleet described only in prose produces no asset — the register is still the estate's enumeration, so clearing the claim or deleting the fleet retires the asset |
@@ -536,6 +536,7 @@ Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 | D6 | Migration wave planner | `planned` | **P2** |
 | D7 | Trend/history view | `partial` | **P2** |
 | D8 | Asset & host discovery (certificate transparency) | `built` | **P1** |
+| D9 | Cloud-account resource enumeration (credentialed) | `built` | **P1** |
 
 ### D4 `built`* — drift that refuses to claim a remediation nobody performed
 
@@ -607,6 +608,42 @@ id. Renamed to D8 on merge — two features sharing an id is how a status table 
 readable.
 
 Detail: `tests/e2e/14-discovery.spec.ts`
+
+### D9 `built` — enumeration that is complete for something, and says what
+
+`POST /api/projects/:id/discovery/cloud` redeems a `cloud_readonly_inventory` credential and
+enumerates an AWS account's S3 buckets. It is a `D`-number rather than a `B`-number for D8's
+reason: **leads are not a collector**.
+
+What it adds over D8 is a claim D8 can never make. Certificate transparency proves nothing about
+ownership — a SAN list routinely names a supplier, a CDN or a former subsidiary — while a
+credential the customer issued proves the account is theirs. It is also the first enumeration here
+that is *complete* for anything, which is what `discovery_runs` exists to record: **partial success
+is the normal case** for a cloud API, and a run that read two of three accounts is neither a
+success nor a failure. `DISCOVERY_RUN_STATUS_VALUES`' `partial` is the value that says so, and
+`no_evidence` keeps "the account really is empty" apart from "we could not read it".
+
+The refusals that carry it:
+
+- **A bucket gets no `hostname`.** `<bucket>.s3.amazonaws.com` is derivable and is not derived —
+  `normaliseHostname()`'s rule is that a repaired name is a name nobody has evidence for. This is
+  the case `hostname` became nullable for.
+- **The enumerated scope is the account, with no region**, because `ListBuckets` never filtered on
+  one. Naming a region would claim a boundary the call never established.
+- **A ceiling withdraws the completeness claim rather than shrinking it.** A run that withheld
+  names has not enumerated the account and does not say it has.
+- **Still no assets.** D8's first invariant survives credentialing: the e2e spec walks every
+  surface before and after a run and requires the states identical. A lead is a place a collector
+  could look, and the coverage meter gains a denominator rather than a numerator.
+- **Finding a resource is not consent to connect to it.** Enumerating is a control-plane read;
+  examining one is a separate act on a separate route.
+
+Admin-gated, like every route that spends a credential — which closes the hole §4.8 of
+[17-discovery-design.md](17-discovery-design.md) named: `resolveCredentialRef()` checks the
+organisation and not the role, so without the gate a member who cannot *list* credentials could
+still *use* one by guessing a small integer.
+
+Detail: `tests/e2e/23-credentialed-collection.spec.ts`, [17-discovery-design.md](17-discovery-design.md) §3.2
 
 ### D1 `built` — and it read `planned` here for a day after it shipped
 

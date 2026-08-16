@@ -313,6 +313,10 @@ describe("route manifest — a new route cannot ship without being considered", 
     // scope. The GET reads those assets with no where clause of its own.
     "POST /projects/:id/kms": "org-scoped",
     "GET /projects/:id/kms": "org-scoped",
+    // P1 — the credentialed poller. Org-scoped twice over: it resolves a
+    // project id and a credential id, and both must be confirmed visible
+    // inside the scope before either is acted on.
+    "POST /projects/:id/kms/poll": "org-scoped",
     // B7 — same shape again: assets attributed by location prefix, no
     // foreign key, so the parent is confirmed inside the scope.
     "POST /projects/:id/data-at-rest": "org-scoped",
@@ -322,6 +326,9 @@ describe("route manifest — a new route cannot ship without being considered", 
     // confirmed visible inside the scope before a child row is written — the
     // same reasoning as POST /scans.
     "POST /projects/:id/discovery": "org-scoped",
+    // P2 — credentialed cloud enumeration. Resolves a project id and a
+    // credential id, both inside the scope. Writes leads and no assets.
+    "POST /projects/:id/discovery/cloud": "org-scoped",
     "GET /projects/:id/discovered-targets": "org-scoped",
     // D8 → B3. The one route in this file whose scope check has to happen
     // *before* the outbound work rather than alongside it: the hostnames come
@@ -451,6 +458,16 @@ describe("route manifest — a new route cannot ship without being considered", 
       // C8. Granting a waiver accepts a risk on the organisation's behalf.
       // `POST /waivers/:id/revoke` is absent on purpose — see require-role.ts.
       "POST /waivers",
+      // P1. Spending a credential, not merely holding one. `GET`/`POST
+      // /credentials` are already admin, but `resolveCredentialRef()` checks
+      // the organisation rather than the role — so without this entry a member
+      // who cannot list credentials could still use one by guessing a small
+      // integer in this route's body. §4.8 of the discovery design named that
+      // as an open question; this is the answer.
+      "POST /projects/:id/kms/poll",
+      // P2. Same argument, and one more: an enumeration costs money in provider
+      // API calls, and its result names which accounts the company operates.
+      "POST /projects/:id/discovery/cloud",
     ].sort();
 
     it("names exactly the routes that require admin", () => {

@@ -19,6 +19,9 @@ import driftRouter from "./drift";
 import authRouter from "./auth";
 import divisionsRouter from "./divisions";
 import waiversRouter from "./waivers";
+// P1 — credentialed collectors. Each gets its own file under `routes/collectors/`
+// rather than another handler in `routes/projects.ts`, per §6.3.
+import kmsPollRouter from "./collectors/kms-poll";
 
 const router: IRouter = Router();
 
@@ -42,5 +45,6 @@ router.use(discoveryRouter);
 router.use(collectionSchedulesRouter);
 router.use(driftRouter);
 router.use(waiversRouter);
+router.use(kmsPollRouter);
 
 export default router;

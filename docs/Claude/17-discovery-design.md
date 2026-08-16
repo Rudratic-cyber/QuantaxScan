@@ -956,6 +956,38 @@ merge it prevents.
 
 ### 6.2 What can run in parallel after stage 0
 
+**P1 and P2 landed 2026-08-16**, in that order, on one branch rather than two — the
+file-disjointness claim below held (neither touched `asset-ingest.ts`'s `ingestObservations()` or
+`routes/projects.ts`'s handlers), but they share a prerequisite the table does not show:
+`withRedeemedCredential`. Both redeem a credential, so it was built once, first, for the same
+reason stage 0 exists.
+
+Four things worth carrying into P3 and P4:
+
+- **§7 Q1 is closed, and not by the measurement it named.** It asked how long a real enumeration
+  takes against the deployed pool; there is no real account, so it was settled *structurally* —
+  `redeemCredential` runs its callback inside the caller's `ScopedTx` and `Acquisition.acquire` is
+  specified to run outside any transaction, and the two cannot both hold. The timing question
+  stays open and decides something else: whether an enumeration needs a duration ceiling.
+- **§4.8 is closed.** The `*/poll` admin gate stage 0 added before any route existed is what does
+  it, and `ADMIN_ONLY` in `cross-tenant.test.ts` now names both routes. Any future route accepting
+  a `credentialId` inherits the obligation.
+- **No cloud SDK was added.** Sixty lines of SigV4 in `lib/acquisition/aws-sigv4.ts` instead, for
+  three reasons: an SDK client is handed the plaintext and then outlives the `finally` that
+  disposes the handle; SDK errors embed the failing request with headers, which §4.6 point 5
+  forbids reaching a row, a log or a response, and not having the object is stronger than
+  remembering not to forward it; and an injectable endpoint is what makes the acquisition testable
+  against a stub. The second provider is a file, not a redesign.
+- **`openapi.yaml`'s `CredentialKind` enum was two values short of the database**, so stage 0's
+  new kinds were unregisterable over HTTP while every unit test passed. Found by the e2e spec,
+  which is the only thing that runs the generated client against the real route — and the reason
+  doc 16 makes writing one a lane rule. Check the enum against `CREDENTIAL_KIND_VALUES` if P3 or
+  P4 widens either.
+
+The table below is the original plan.
+
+#### Original plan
+
 | Lane | Work | Touches `asset-ingest.ts`? | Touches `routes/projects.ts`? | Migration |
 |---|---|---|---|---|
 | **P1** | AWS/Azure/GCP/Vault KMS acquisition + `POST /projects/:id/kms/poll` | **no** — calls existing `ingestKmsObservations` with new params | **no** — new file `routes/collectors/kms-poll.ts` | none |

@@ -34,6 +34,7 @@ import {
   type EndpointHostReport,
   type EndpointHostResult,
   type EnumerationRecord,
+  type KmsProvenance,
 } from "@workspace/collectors";
 import type { DataClassification } from "@workspace/db/classification";
 import type { CollectionRunStatus, RetentionMode } from "@workspace/db/schema";
@@ -1012,22 +1013,50 @@ export async function ingestKmsObservations(
     repo: string;
     keys: KmsKeyDescription[];
     organizationId: number;
+    /**
+     * P1 — how these keys were acquired. Absent means submitted, which is B5's
+     * original path and stays the default forever (§4.7: submission is not a
+     * legacy path).
+     *
+     * Three things change when it is `polled`, and no others: the observation's
+     * confidence (`classifyKmsKeys`), the run's `collector` name, and the
+     * enumeration record persisted on the run. Deliberately **not** the
+     * discovery modality, which is a permanent six-value enum.
+     */
+    provenance?: KmsProvenance;
+    /** What the run could and could not speak for. Absent for a submission, which made no enumeration claim. */
+    enumeration?: EnumerationRecord;
+    /**
+     * Asset-location prefixes this run earned the right to reconcile against —
+     * i.e. within which a key that was NOT seen is genuinely `gone`.
+     *
+     * Only ever non-empty when `earnedPrefixes()` says so, which requires the
+     * scope to have been enumerated completely, nothing truncated, and no
+     * overlapping refusal. See `lib/acquisition/prefix-scope.ts` for why that
+     * rule is written to be reluctant.
+     */
+    reconcilePrefixes?: string[];
   },
 ): Promise<KmsIngestResult> {
   if (params.keys.length === 0) {
     throw new Error("KMS ingest was given no key entries — a run must not be recorded");
   }
 
-  const outcomes = classifyKmsKeys(params.repo, params.keys);
+  const polled = params.provenance?.acquisition === "polled";
+  const outcomes = classifyKmsKeys(params.repo, params.keys, params.provenance);
   const observations = outcomes.flatMap((outcome) => (outcome.kind === "observed" ? [outcome.observation] : []));
 
   const result = await ingestObservations(tx, {
     organizationId: params.organizationId,
     repo: params.repo,
-    collector: "kms-inventory",
+    // One of the three places the poll-versus-submission distinction lives.
+    // A run is attributable to how it was acquired without anyone reading its
+    // enumeration record.
+    collector: polled ? "kms-poll-aws" : "kms-inventory",
     collectorVersion: "1.0.0",
     surface: "kms",
     observations,
+    ...(params.enumeration === undefined ? {} : { enumeration: params.enumeration }),
     /**
      * Scoped to the exact keys this submission classified — never a
      * `<repo>:kms:<provider>:` prefix family, which is the shape that looks
@@ -1053,7 +1082,17 @@ export async function ingestKmsObservations(
      * What the scope does do correctly is reactivate a `gone` key when it is
      * resubmitted, and keep a resubmitted key's assets untouched.
      */
-    reobserved: { kind: "locations", locations: [...new Set(observations.map((o) => o.location))] },
+    reobserved:
+      params.reconcilePrefixes !== undefined && params.reconcilePrefixes.length > 0
+        ? // The one caller that can earn this: a credentialed run that
+          // enumerated a scope completely, was not truncated, and had no
+          // overlapping refusal. The comment above describes exactly this as
+          // the thing nothing declared — "a caller that can *declare* its
+          // export complete for a provider could earn a prefix scope". One now
+          // can, and `earnedPrefixes()` is where that declaration is checked
+          // rather than trusted.
+          { kind: "prefixes", prefixes: params.reconcilePrefixes }
+        : { kind: "locations", locations: [...new Set(observations.map((o) => o.location))] },
   });
 
   return { ...result, outcomes };

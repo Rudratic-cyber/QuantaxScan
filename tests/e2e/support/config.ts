@@ -121,6 +121,25 @@ export const CT_STUB_PORT = port("E2E_CT_STUB_PORT", 5713);
 export const CT_STUB_URL = `http://${HOST}:${CT_STUB_PORT}`;
 
 /**
+ * Stubs for the two AWS APIs the credentialed lanes call — P1's KMS poller and
+ * P2's S3 enumeration.
+ *
+ * Same argument as the CT stub, one step stronger. A suite that called real AWS
+ * would need a real account, a real credential in CI, and would bill somebody
+ * per run; and the assertions that matter here are about *partial* results — a
+ * throttled page, a denied region — which cannot be provoked on demand against
+ * a real provider.
+ *
+ * The stub is a plain `node:http` listener and the API server makes a real
+ * outbound signed request to it, so what is under test is the acquisition's own
+ * transport handling rather than a mock of it.
+ */
+export const KMS_STUB_PORT = port("E2E_KMS_STUB_PORT", 5714);
+export const KMS_STUB_URL = `http://${HOST}:${KMS_STUB_PORT}`;
+export const S3_STUB_PORT = port("E2E_S3_STUB_PORT", 5715);
+export const S3_STUB_URL = `http://${HOST}:${S3_STUB_PORT}`;
+
+/**
  * A resolver address with nothing listening on it.
  *
  * D8's sharpest false-positive control is that an unreachable resolver yields
