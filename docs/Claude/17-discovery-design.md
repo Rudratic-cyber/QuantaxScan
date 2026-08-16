@@ -862,7 +862,55 @@ Two existing statements to reconcile while doing this:
 
 Doc 16's rule, applied: **file-disjointness first, priority second.**
 
-### 6.1 Stage 0 — the preparatory commit nobody owns `serialised, must land alone`
+### 6.1 Stage 0 — the preparatory commit nobody owns ~~`serialised, must land alone`~~ **LANDED 2026-08-16**
+
+**All seven items are in.** Items 3 (the `runStatus` half) and 5 landed separately ahead of the
+rest — see the strikethroughs below; items 1, 2, 4, 6, 7 and item 3's `enumeration` half landed
+together on `feat/qx-discovery-stage-0`. **No lane touches `ingestObservations()` from here on**,
+and the four lanes in §6.2 are unblocked.
+
+Two things the plan below got wrong, recorded because the next lane inherits both:
+
+- **It is two migrations, `0017` and `0018`, not one.** Not a relaxation of the one-migration rule
+  — that rule exists so two *lanes* do not each generate, and one lane generating two sequential
+  migrations forks nothing (chain verified across all eighteen entries; a third `generate` reports
+  "No schema changes"). The split is forced by data: `source_scope` is backfilled **from**
+  `source_domain`, so the column cannot be dropped in the migration that reads it. `0017` adds and
+  backfills, `0018` drops `source_domain` and swaps the unique index onto `identity`.
+- **`drizzle-kit generate` cannot produce this migration unattended, and its suggestion is wrong.**
+  It prompts `~ source_domain › identity rename column`, which would discard the hostnames. It also
+  needs a TTY, so the prompt cannot be piped past. The way through is to keep `source_domain` in
+  the schema for the first `generate` (no dropped column, therefore no prompt), then remove it for
+  the second. The three `ADD COLUMN ... NOT NULL` statements it emits are **hand-edited** to
+  add-nullable → backfill → constrain, since they cannot apply to a populated table; the snapshot
+  is left untouched, because it describes the end state and is identical either way.
+
+**And a third thing, which the two above hide: the migration is not on the deploy path.** `push` is
+this project's deploy mechanism and computes DDL from the schema files, so what a real database gets
+is `add column identity text not null` — which cannot apply to a populated table, and whose rename
+prompt is destructive. `0017`'s careful ordering only ever runs on a fresh database and in the
+pglite harness. The populated case needs the `apply-tenancy` treatment and now has it:
+`pnpm --filter @workspace/db run apply-discovery-identity`, step 1b in
+[13-auth-and-tenancy.md](13-auth-and-tenancy.md) §10's order. The statements live once, in
+`lib/db/src/discovery-identity-backfill.ts`, and `discovery-identity-backfill.test.ts` runs them
+against a **seeded** legacy table — the only thing here that proves the backfill produces correct
+values rather than that it parses, because every other gate applies it to an empty database where
+the `UPDATE` matches nothing.
+
+`target_kind`'s backfill is an explicit `UPDATE ... SET target_kind = 'hostname'` and deliberately
+**not** a column `DEFAULT`. Every existing row is a CT hostname, so the value is derived rather than
+assumed — but a default would make it apply to future inserts too, and a cloud enumeration that
+forgot to pass a kind would file a KMS key ring as a hostname with nothing to say so.
+
+One consequence worth knowing before lane P4 starts: `hostname` is now nullable, and both callers of
+`summariseDiscoveryCoverage()` filter the NULLs out rather than coercing them. That is a no-op today
+(certificate transparency writes only hostnames) and stops being one the moment P2 lands. **The fix
+is not to widen that call** — a KMS key ring is not an unexamined host, it is a different kind of
+thing the denominator was never counting. Both sites carry a comment pointing here.
+
+The original plan follows, unedited.
+
+#### Original plan
 
 This is the whole reason this document exists. Every item below is a change to a file that three or
 four later lanes would otherwise each edit. CLAUDE.md already prescribes this shape for migrations —

@@ -72,6 +72,33 @@ export const CREDENTIAL_KIND_VALUES = [
   "secrets_manager_token",
   /** An identity-provider OAuth/OIDC client secret, for reading an IdP's signing configuration. */
   "idp_client_secret",
+  /**
+   * A read-only cloud key for **enumerating an account's resources** — the
+   * credential a discovery run redeems, not a collection run.
+   *
+   * Deliberately separate from `cloud_kms_readonly` even though both are "an
+   * AWS key". They are different asks with different blast radii: KMS-readonly
+   * lists key metadata in one service, while inventory-readonly walks an
+   * account's resources across services, and a customer scoping an IAM policy
+   * needs to be able to grant one without the other. `redeemCredential()`
+   * refuses a ref whose kind does not match the row, so keeping them apart is
+   * what makes that refusal mean something — folding them into one value would
+   * let the enumerator silently accept a key the customer issued for a much
+   * narrower purpose.
+   */
+  "cloud_readonly_inventory",
+  /**
+   * A read-only bind to an MDM/EDR/directory service, for enumerating an
+   * enrolled machine fleet.
+   *
+   * The fleet-directory method proves *enrolment*, which is stronger than
+   * "associated with them" and weaker than "all of theirs" — see
+   * `DISCOVERY_METHOD_CAVEATS`. **This is not an endpoint agent's enrolment
+   * credential**, which is inbound machine identity and a different kind of
+   * thing entirely; nothing in this product addresses that yet, and §7 Q7
+   * records it as unanswered rather than assuming this row would serve.
+   */
+  "fleet_directory_readonly",
 ] as const;
 
 export type CredentialKind = (typeof CREDENTIAL_KIND_VALUES)[number];

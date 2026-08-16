@@ -1,7 +1,7 @@
-import { pgTable, text, serial, integer, timestamp, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, jsonb, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
-import { SURFACE_VALUES } from "@workspace/collectors";
+import { SURFACE_VALUES, type EnumerationRecord } from "@workspace/collectors";
 import { oneOf } from "./sql-helpers";
 import { organizationsTable } from "./organizations";
 
@@ -47,6 +47,23 @@ export const collectionRunsTable = pgTable(
     surface: text("surface").notNull(),
     status: text("status").notNull().default("completed"), // COLLECTION_RUN_STATUS_VALUES
     target: text("target"), // repo/host/package descriptor the collector was pointed at
+    /**
+     * What this run could and could not speak for — docs/Claude/17-discovery-design.md §4.4(b).
+     *
+     * **Nullable with no default, and that is the point.** Absent means a
+     * submission, which made no enumeration claim at all: the customer handed
+     * us an export and we recorded it. An *empty* record would say "we
+     * enumerated, and successfully enumerated nothing", which is a different
+     * and much stronger statement. Same discipline as `assets.key_size` and
+     * A3's classification columns — a value nobody supplied must not be
+     * storable as a value somebody did.
+     *
+     * `jsonb` rather than columns because the shape is a list of scopes whose
+     * fields differ per provider, and because a new scope kind then needs no
+     * migration — the property `assets.location_detail` relies on. Validated at
+     * the application boundary, not by a `CHECK`.
+     */
+    enumeration: jsonb("enumeration").$type<EnumerationRecord>(),
     observationCount: integer("observation_count").notNull().default(0),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),

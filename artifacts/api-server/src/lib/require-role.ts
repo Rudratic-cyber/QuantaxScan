@@ -78,6 +78,26 @@ export const ROUTE_ROLE_OVERRIDES: ReadonlyArray<{ method: string; path: RegExp;
   // direction and must not be harder than suppressing it.
   { method: "POST", path: /^\/waivers$/, role: "admin" },
 
+  // Discovery stage 0 — the credentialed routes, gated before any of them
+  // exists. Same reasoning that put RBAC's own management surface in this list
+  // before it shipped: *a gate added after the route is a window that was open
+  // in between.*
+  //
+  // Two distinct reasons, both admin:
+  //   - A `/poll` route redeems a stored credential. Holding one is already
+  //     admin-only (see `/credentials` above), so being able to *spend* one
+  //     without holding it would route straight around that decision.
+  //   - A discovery run is an outbound act against the customer's own
+  //     infrastructure that costs money in provider API calls, and its result
+  //     names which accounts they operate.
+  //
+  // Deliberately NOT listed: `POST /projects/:id/discovery` (D8, certificate
+  // transparency). It reads a public log, redeems nothing and spends nothing of
+  // the customer's, so it stays on the default `member` gate — gating it would
+  // be ceremony rather than control.
+  { method: "POST", path: /^\/projects\/[^/]+\/[^/]+\/poll$/, role: "admin" },
+  { method: "POST", path: /^\/projects\/[^/]+\/discovery\/cloud$/, role: "admin" },
+
   { method: "GET", path: /^\/organization\/members$/, role: "admin" },
   { method: "POST", path: /^\/organization\/members$/, role: "admin" },
   { method: "PATCH", path: /^\/organization\/members\/[^/]+$/, role: "admin" },

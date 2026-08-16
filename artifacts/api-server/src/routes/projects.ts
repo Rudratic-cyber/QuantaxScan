@@ -262,7 +262,13 @@ router.get("/projects/:id/coverage", async (req, res): Promise<void> => {
       discovered.length === 0
         ? undefined
         : summariseDiscoveryCoverage({
-            hostnames: discovered.map((d) => d.hostname),
+            // Hostname-bearing targets only — `hostname` is nullable since
+            // stage 0 and this meter matches names against `assets.location`.
+            // A no-op today (certificate transparency writes only hostnames);
+            // reshaping the meter for target kinds that have no DNS name is
+            // lane P4's work, not stage 0's. See the same note in
+            // `routes/discovery.ts`.
+            hostnames: discovered.flatMap((d) => (d.hostname === null ? [] : [d.hostname])),
             examinedHostnames: examinedHostPorts(
               repo,
               assets.filter((a) => a.surface === "tls").map((a) => a.location),

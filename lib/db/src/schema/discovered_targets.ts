@@ -3,9 +3,12 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import {
   DISCOVERY_METHOD_VALUES,
+  DISCOVERY_TARGET_KIND_VALUES,
   DNS_RESOLUTION_VALUES,
   type CtCertificateEvidence,
   type DiscoveryMethod,
+  type DiscoveryScope,
+  type DiscoveryTargetKind,
   type DnsResolution,
 } from "@workspace/collectors";
 import { oneOf } from "./sql-helpers";
@@ -77,11 +80,55 @@ export const discoveredTargetsTable = pgTable(
     projectId: integer("project_id")
       .notNull()
       .references(() => projectsTable.id, { onDelete: "cascade" }),
-    /** Normalised: lowercase, no trailing root dot, never a wildcard. See `normaliseHostname()`. */
-    hostname: text("hostname").notNull(),
-    /** The domain the customer asked us to search. Kept so a name's scope claim can be re-checked against the question that produced it. */
-    sourceDomain: text("source_domain").notNull(),
+    /**
+     * The source's own canonical id for this thing — a hostname, an ARN, a
+     * resource name, an Azure `kid`, a machine SID. **Never constructed by us.**
+     *
+     * This was `hostname NOT NULL` when certificate transparency was the only
+     * method, because a CT log yields nothing else. An IAM role, a KMS key, an
+     * S3 bucket and a Windows machine have no hostname, and forcing one would
+     * mean minting a fake name — the exact thing `normaliseHostname()` refuses
+     * to do (*"this function never fixes a name into something plausible,
+     * because a repaired name is a name nobody has evidence for"*). Read it
+     * through `targetKind`, which says what sort of id it is.
+     */
+    identity: text("identity").notNull(),
+    /** How to read `identity`. See `DISCOVERY_TARGET_KIND_VALUES`. */
+    targetKind: text("target_kind").$type<DiscoveryTargetKind>().notNull(),
+    /**
+     * Present **iff** this target genuinely has a DNS name.
+     *
+     * NULL means "this kind of thing does not have one", which is why the three
+     * DNS corroboration columns below are meaningful exactly where this is set
+     * and meaningless where it is not. For a `hostname` target this equals
+     * `identity`; the duplication is deliberate, because a query for "things we
+     * could point the TLS prober at" should not have to know which target kinds
+     * happen to be addressable.
+     */
+    hostname: text("hostname"),
+    /**
+     * What was searched — the question that produced this lead.
+     *
+     * Was `source_domain text NOT NULL`, and the reason it exists is unchanged:
+     * *"a name's scope claim can be re-checked against the question that
+     * produced it."* What changed is that the question outgrew a string. "We
+     * enumerated your AWS account" is four facts — provider, account, service,
+     * region — and any one of them can be the thing that went wrong, so the
+     * shape has to hold them apart. `jsonb`, so a new scope kind needs no
+     * migration; validated at the application boundary. See `DiscoveryScope`.
+     */
+    sourceScope: jsonb("source_scope").$type<DiscoveryScope>().notNull(),
     discoveryMethod: text("discovery_method").$type<DiscoveryMethod>().notNull(),
+    /**
+     * The `discovery_runs` row that most recently saw this target.
+     *
+     * **Not a foreign key**, matching `discovery_runs.credential_id` and
+     * `assets.status_changed_by_run_id`: referential integrity is checked with
+     * RLS bypassed, so an FK is a cross-tenant existence oracle. Null for rows
+     * written before this column existed — which is a real state and not a
+     * defect, since D8 shipped without a run record at all.
+     */
+    lastDiscoveredRunId: integer("last_discovered_run_id"),
     /**
      * The log record this name came from — issuer, serial, validity window,
      * entry id, and the raw name string before normalisation. Every field is
@@ -117,18 +164,24 @@ export const discoveredTargetsTable = pgTable(
     lastDiscoveredAt: timestamp("last_discovered_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    // One row per name per method per project. Re-running discovery must
-    // refresh a name, never duplicate it — a duplicated name would inflate
+    // One row per identity per method per project. Re-running discovery must
+    // refresh a target, never duplicate it — a duplicated target would inflate
     // `knownTargets`, which is the number this whole feature exists to make
     // trustworthy.
-    uniqueIndex("discovered_targets_org_project_hostname_method_idx").on(
+    //
+    // Keyed on `identity` rather than `hostname` since 0017: `hostname` is now
+    // nullable, and NULLs do not collide in a unique index, so keying on it
+    // would let every non-hostname target duplicate freely on every re-run —
+    // silently, and in exactly the number the meter reports.
+    uniqueIndex("discovered_targets_org_project_identity_method_idx").on(
       table.organizationId,
       table.projectId,
-      table.hostname,
+      table.identity,
       table.discoveryMethod,
     ),
     index("discovered_targets_org_project_idx").on(table.organizationId, table.projectId),
     check("discovered_targets_method_check", oneOf(table.discoveryMethod, DISCOVERY_METHOD_VALUES)),
+    check("discovered_targets_kind_check", oneOf(table.targetKind, DISCOVERY_TARGET_KIND_VALUES)),
     // Nullable, so NULL satisfies this — "nobody looked" stays sayable.
     check("discovered_targets_dns_resolution_check", oneOf(table.dnsResolution, DNS_RESOLUTION_VALUES)),
   ],

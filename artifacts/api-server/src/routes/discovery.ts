@@ -13,6 +13,7 @@ import {
   certificateExpired,
   DISCOVERY_EVIDENCE_CAVEAT,
   type CtCertificateEvidence,
+  type DiscoveryScope,
   type DnsResolution,
 } from "@workspace/collectors";
 import type { ScopedTx } from "@workspace/db/org-scope";
@@ -72,13 +73,32 @@ function parseProjectId(raw: unknown): number | null {
   return Number.isInteger(id) ? id : null;
 }
 
+/**
+ * The domain a CT target was found under, read back out of `source_scope`.
+ *
+ * Stage 0 replaced `source_domain text` with a discriminated `source_scope`
+ * jsonb, because "what did you search?" outgrew a string the moment a cloud
+ * account (provider, account, region, service) became answerable. Every row
+ * this route can see is `kind: "domain"` — it is the only method that writes
+ * here — so the fallback is unreachable rather than lossy, and it returns the
+ * empty string rather than inventing a plausible domain, which is the same rule
+ * `normaliseHostname()` follows.
+ */
+function sourceDomainOf(scope: DiscoveryScope): string {
+  return scope.kind === "domain" ? scope.domain : "";
+}
+
 /** Shape of one target as every response in this file returns it. `examined` and `certificateExpired` are derived here, never stored. */
 function targetPayload(row: DiscoveredTarget, examinedPorts: Map<string, number[]>, asOf: Date) {
-  const ports = examinedPorts.get(row.hostname) ?? [];
+  // `hostname` is nullable since stage 0 — a KMS key ring has no DNS name. For
+  // a `hostname`-kind target it always equals `identity`, and this route only
+  // ever sees that kind, so the coalesce is total rather than a guess.
+  const hostname = row.hostname ?? row.identity;
+  const ports = examinedPorts.get(hostname) ?? [];
   return {
     id: row.id,
-    hostname: row.hostname,
-    sourceDomain: row.sourceDomain,
+    hostname,
+    sourceDomain: sourceDomainOf(row.sourceScope),
     discoveryMethod: row.discoveryMethod,
     evidence: row.evidence,
     certificateExpired: certificateExpired(row.evidence, asOf),
@@ -182,10 +202,10 @@ router.post("/projects/:id/discovery", async (req, res): Promise<void> => {
     if (!parent) return null;
 
     const before = await tx
-      .select({ hostname: discoveredTargetsTable.hostname })
+      .select({ identity: discoveredTargetsTable.identity })
       .from(discoveredTargetsTable)
       .where(eq(discoveredTargetsTable.projectId, id));
-    const known = new Set(before.map((b) => b.hostname));
+    const known = new Set(before.map((b) => b.identity));
 
     if (discovered.hostnames.length > 0) {
       const now = new Date();
@@ -197,8 +217,16 @@ router.post("/projects/:id/discovery", async (req, res): Promise<void> => {
             return {
               organizationId: ctx.organizationId,
               projectId: id,
+              // Both, and they are equal here on purpose. `identity` is the id
+              // the unique index keys on for every method; `hostname` is set
+              // only where the target genuinely has a DNS name, which is what
+              // makes the three corroboration columns beneath it meaningful.
+              // For certificate transparency the two coincide — that is a fact
+              // about this method, not a redundancy to collapse.
+              identity: found.hostname,
+              targetKind: "hostname" as const,
               hostname: found.hostname,
-              sourceDomain: discovered.domain,
+              sourceScope: { kind: "domain" as const, domain: discovered.domain },
               discoveryMethod: found.method,
               evidence: found.evidence,
               // Absent from the map = never looked up. Null, not a value.
@@ -213,14 +241,20 @@ router.post("/projects/:id/discovery", async (req, res): Promise<void> => {
           target: [
             discoveredTargetsTable.organizationId,
             discoveredTargetsTable.projectId,
-            discoveredTargetsTable.hostname,
+            // `identity`, not `hostname`, since stage 0 — and this is the line
+            // that has to change rather than merely being allowed to. NULLs do
+            // not collide in a unique index, so an ON CONFLICT keyed on a now-
+            // nullable `hostname` would stop matching for every target kind
+            // without a DNS name and duplicate it on every re-run.
+            discoveredTargetsTable.identity,
             discoveredTargetsTable.discoveryMethod,
           ],
           // `firstDiscoveredAt` is deliberately absent: re-running discovery
           // must not reset when a name was first seen. Everything else is the
           // newer evidence and replaces what was there.
           set: {
-            sourceDomain: sql`excluded.source_domain`,
+            hostname: sql`excluded.hostname`,
+            sourceScope: sql`excluded.source_scope`,
             evidence: sql`excluded.evidence`,
             dnsResolution: sql`excluded.dns_resolution`,
             resolvedAddresses: sql`excluded.resolved_addresses`,
@@ -302,7 +336,20 @@ router.get("/projects/:id/discovered-targets", async (req, res): Promise<void> =
     projectId: id,
     generatedAt: asOf.toISOString(),
     coverage: summariseDiscoveryCoverage({
-      hostnames: outcome.rows.map((r) => r.hostname),
+      // Hostname-bearing targets only. `hostname` became nullable in stage 0
+      // and this meter is keyed on a name it can match against
+      // `assets.location`, so a target without one cannot be matched either
+      // way. Today that filter removes nothing — certificate transparency is
+      // the only writer and every row it produces has a name.
+      //
+      // It stops being a no-op the moment cloud enumeration lands, and the fix
+      // is NOT to widen this call: a KMS key ring is not "unexamined", it is a
+      // different kind of thing that this denominator was never counting.
+      // Reshaping the meter to hold both is lane P4's work
+      // (docs/Claude/17-discovery-design.md §5.2, §6.2) — deliberately not
+      // stage 0's, because a meter that silently changes meaning is worse than
+      // one that visibly does not cover a case yet.
+      hostnames: outcome.rows.flatMap((r) => (r.hostname === null ? [] : [r.hostname])),
       examinedHostnames: outcome.examined.keys(),
     }),
     dns: dnsSummary(outcome.rows),
@@ -362,7 +409,15 @@ router.post("/projects/:id/discovered-targets/probe", async (req, res): Promise<
       .from(discoveredTargetsTable)
       .where(and(eq(discoveredTargetsTable.projectId, id), inArray(discoveredTargetsTable.id, requested)));
 
-    return { hostnames: [...new Set(rows.map((r) => r.hostname))], found: rows.map((r) => r.id) };
+    // A target with no DNS name cannot be probed — you cannot open a TLS
+    // socket to a KMS key ARN. Dropped from the host list rather than
+    // coerced, while its id stays in `found` so the caller is told the
+    // target existed and is not sent a 404 that would read as "no such
+    // target". Empty today: certificate transparency writes only hostnames.
+    return {
+      hostnames: [...new Set(rows.flatMap((r) => (r.hostname === null ? [] : [r.hostname])))],
+      found: rows.map((r) => r.id),
+    };
   });
 
   if (resolved === null) {
