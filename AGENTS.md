@@ -177,6 +177,16 @@ pnpm run hooks:install   # gate every push on it automatically
 Typecheck is blocking in local CI. A green run is the standard for "ready to merge", not a green
 check on the PR.
 
+**Both suites flake under machine load, and a single red is not yet a regression.** Observed twice
+on 2026-08-16, on a host also running other work: `test:api` reported 2 failures out of 471
+(`asset-ingest.test.ts` and `schedule-runner.test.ts`, both pglite-backed), and a separate
+`test:ui` run reported 1 out of 24. **Every one passed in isolation and on an immediate re-run** —
+the UI suite went 24/24 three consecutive times. Not root-caused; the plausible mechanism is
+several pglite instances plus Playwright workers contending, since `asset-ingest.test.ts` alone
+takes ~106s. Before treating a red as yours: re-run the file alone, then re-run the whole suite.
+Two greens after a red is flake; a red that reproduces in isolation is real. Do not "fix" a
+timeout by raising it without establishing which of the two you have.
+
 **`--quick` also skips `pnpm install`, which matters the moment you merge a branch that added a
 dependency.** Wave 4's lane A added `playwright-core` for PDF rendering. After the merge,
 `--quick` passed all five stages and `test:api` passed 471 tests, because nothing they run needs
