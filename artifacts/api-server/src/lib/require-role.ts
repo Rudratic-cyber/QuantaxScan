@@ -69,6 +69,15 @@ export const ROUTE_ROLE_OVERRIDES: ReadonlyArray<{ method: string; path: RegExp;
   { method: "DELETE", path: /^\/divisions\/[^/]+$/, role: "admin" },
   { method: "POST", path: /^\/divisions\/[^/]+\/grants$/, role: "admin" },
   { method: "DELETE", path: /^\/divisions\/[^/]+\/grants\/[^/]+$/, role: "admin" },
+  // C8 — granting a waiver is accepting a risk on the organisation's behalf.
+  // The specific hazard the default gate would miss: the person best placed to
+  // silence an inconvenient finding is the member who submitted the scan that
+  // raised it, and self-service risk acceptance is how an inventory becomes
+  // fiction. Revoking one is NOT listed — it stays on the default `member`
+  // gate, because restoring a finding to the working list is the fail-safe
+  // direction and must not be harder than suppressing it.
+  { method: "POST", path: /^\/waivers$/, role: "admin" },
+
   { method: "GET", path: /^\/organization\/members$/, role: "admin" },
   { method: "POST", path: /^\/organization\/members$/, role: "admin" },
   { method: "PATCH", path: /^\/organization\/members\/[^/]+$/, role: "admin" },

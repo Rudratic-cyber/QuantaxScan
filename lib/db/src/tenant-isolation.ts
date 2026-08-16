@@ -51,6 +51,11 @@ export const ORG_SCOPED_TABLES = [
   // users may see, so a leak here is an authorisation leak and not only a data one.
   "divisions",
   "division_grants",
+  // C8 — the waivers register. Scoped like everything else, and division-scoped
+  // on top: a waiver names an asset, a justification and a person, so a leak
+  // here tells another tenant which of their weaknesses somebody chose to live
+  // with and until when.
+  "waivers",
 ] as const;
 
 export type OrgScopedTable = (typeof ORG_SCOPED_TABLES)[number];

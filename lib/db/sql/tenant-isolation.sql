@@ -76,6 +76,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   activity, shared_reports, community_posts, ot_fleets, vendor_assessments,
   credentials, discovered_targets, network_flows,
   collection_schedules, collection_schedule_runs, divisions, division_grants,
+  waivers,
   organizations, organization_members, user_identities, users, sessions
 TO quantaxscan_app;
 
@@ -326,6 +327,32 @@ DROP POLICY IF EXISTS division_grants_org_isolation ON division_grants;
 CREATE POLICY division_grants_org_isolation ON division_grants AS PERMISSIVE FOR ALL TO quantaxscan_app
   USING      (organization_id = nullif(current_setting('app.current_org_id', true), '')::int
               OR user_id      = nullif(current_setting('app.current_user_id', true), ''))
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+-- C8 — waivers. The standard division-scoped shape, and it must be: a waiver
+-- names an asset, why somebody was willing to live with it, who said so and
+-- until when. A division-restricted viewer who could read the whole register
+-- would learn the estate they are excluded from by reading its exceptions.
+--
+-- No expiry clause appears here, deliberately. `now()` is not immutable so it
+-- cannot be indexed against, but more importantly an expired waiver has to stay
+-- *readable* — the register is the history, and hiding an exception the moment
+-- it lapses would delete the evidence that it ever existed. Expiry is decided
+-- by `resolveWaiverStatus()` (lib/db/src/waivers.ts) on the way out, in one
+-- place, and never in a WHERE clause. What the policy is for is tenancy, and
+-- that is all it does.
+ALTER TABLE waivers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE waivers FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS waivers_org_isolation ON waivers;
+CREATE POLICY waivers_org_isolation ON waivers AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- Tenant clause only, matching every other division-scoped table: the write
+  -- inherits its division from the asset rather than choosing one, so
+  -- constraining the write side would refuse an admin signing off a waiver on a
+  -- division they hold no grant on — which is exactly what an admin is for.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 -- --- Three tables that need a different shape --------------------------------

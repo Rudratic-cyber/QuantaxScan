@@ -70,13 +70,27 @@ is a field rather than a paragraph a renderer might forget: `inventory[].provena
 the inventory in the payload as well as in the rendering), `exceptions`, `methodology`,
 `integrity`.
 
-**Two of the seven are answered by an honest refusal, and that is why they are fields.**
+**One of the seven is answered by an honest refusal, and that is why it is a field.**
 
-- **Waivers.** C8's register is a separate lane and does not exist yet, so
-  `exceptions.registerAvailable` is `false`, `statement` says no exception carries an owner,
-  justification, expiry or approver, and the listed assets are simply those an operator marked
-  `waived`. An empty `waivers: []` would read as "there are no exceptions", which is a different
-  and unsupported claim. When C8 lands, this block is the one to fill in.
+- **Waivers — answered by data since C8 merged, and worth reading as a cautionary tale.** This
+  block used to read `exceptions.registerAvailable: false` with a statement that no exception
+  carried an owner, justification, expiry or approver, because the register genuinely did not
+  exist. E2 and C8 were built in parallel lanes on the same night. **When both landed, nothing
+  failed** — a regulator-facing document went on asserting the absence of a feature the product
+  ships, and no suite in the repository could see it. It was caught by a human reading two lanes'
+  reports side by side, which is not a control.
+
+  It now carries `waivers` — the register's entries, each with a justification, a signatory, a
+  sign-off date and an expiry — and `statusWaivedWithoutRegisterEntry` separately, for assets
+  carrying the inventory's older `waived` status with nothing behind it. Those two lists stay
+  apart because merging them would present four missing fields as present. Two limits are stated
+  rather than implied: the register records **one signatory, not a separate owner and approver**,
+  and `attribution` distinguishes a signature made by an authenticated user from a name asserted
+  through the shared API key — a distinction a printed page loses unless it is said.
+
+  The submission also states in terms that a waiver suppresses nothing: every waived asset appears
+  in the inventory, and no coverage, readiness or risk figure in the document is computed with any
+  knowledge that a waiver exists.
 - **Signed.** `integrity.signed` is `false`. There is a SHA-256 content digest over the document,
   and the statement beside it says a digest detects alteration against a value you already hold
   and proves nothing about origin. Calling an unsigned document signed is the first thing an

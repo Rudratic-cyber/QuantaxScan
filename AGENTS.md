@@ -272,6 +272,16 @@ host is already running local verification, those ports (and container name `qua
 already be taken. Check `docker ps -a` and `ss -tln` first and pick different ports/container name
 for your own session rather than reusing the examples verbatim.
 
+**A free port can still refuse to bind, and `ss -tln` will not show why.** The five-digit ports
+the lane tables use (`554xx`) sit inside Linux's default ephemeral range
+(`net.ipv4.ip_local_port_range`, typically 32768–60999), so another worktree's *outbound*
+connection can transiently occupy one. Docker then fails with `failed to bind host port
+127.0.0.1:<port>: address already in use` while `ss -tln` — listening sockets only — shows nothing
+at all. Diagnose with `ss -tna | grep :<port>`; a `TIME-WAIT` line is the tell. Wait ~60s, or pick
+a port outside the ephemeral range. Removing the leftover `Created` container does not help: it is
+not what holds the port. Hit on 2026-08-15 when lane D's e2e run borrowed lane C's `E2E_PG_PORT`
+as an ephemeral source port.
+
 ## Frontend sharp edges
 
 `ScrollArea` (`components/ui/scroll-area.tsx`) silently clips horizontally. Radix gives the

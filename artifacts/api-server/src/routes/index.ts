@@ -18,6 +18,7 @@ import collectionSchedulesRouter from "./collection-schedules";
 import driftRouter from "./drift";
 import authRouter from "./auth";
 import divisionsRouter from "./divisions";
+import waiversRouter from "./waivers";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(credentialsRouter);
 router.use(discoveryRouter);
 router.use(collectionSchedulesRouter);
 router.use(driftRouter);
+router.use(waiversRouter);
 
 export default router;

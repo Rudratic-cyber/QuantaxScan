@@ -7,6 +7,7 @@ import {
   projectsTable,
   collectionRunsTable,
   observationsTable,
+  waiversTable,
   projectRepoId,
 } from "@workspace/db";
 import { resolveSecrecyLifetime } from "@workspace/db/classification";
@@ -335,7 +336,27 @@ router.get("/inventory/assets", async (req, res): Promise<void> => {
           .from(observationsTable)
           .where(inArray(observationsTable.assetId, presentIds));
 
-    return summariseInventoryAssets({ assets: present, allAssetsStatus, projects, observations, now });
+    // C8 — every waiver, unfiltered. No `where expires_at > now()`: the expiry
+    // rule lives in `resolveWaiverStatus()` and appears in a query nowhere, so
+    // this annotation and `GET /api/waivers` cannot come to disagree about what
+    // is still in force. Cheap: waivers are human-authored and rare.
+    const waivers = presentIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: waiversTable.id,
+            assetId: waiversTable.assetId,
+            justification: waiversTable.justification,
+            signedOffBy: waiversTable.signedOffBy,
+            signedOffByUserId: waiversTable.signedOffByUserId,
+            signedOffAt: waiversTable.signedOffAt,
+            expiresAt: waiversTable.expiresAt,
+            revokedAt: waiversTable.revokedAt,
+          })
+          .from(waiversTable)
+          .where(inArray(waiversTable.assetId, presentIds));
+
+    return summariseInventoryAssets({ assets: present, allAssetsStatus, projects, observations, waivers, now });
   });
 
   res.json(payload);

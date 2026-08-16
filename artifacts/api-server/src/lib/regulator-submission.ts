@@ -32,15 +32,25 @@ import type { Citation, Obligation } from "@workspace/mappings";
  * | Methodology appendix | `methodology` |
  * | Immutable, versioned, signed | `integrity` — and see below |
  *
- * **Two of those seven are answered by an honest refusal rather than by data,
- * and that is the point of stating them as fields.**
+ * **One of those seven is answered by an honest refusal rather than by data,
+ * and that is the point of stating it as a field.**
  *
- *  - *Waivers.* This product has no waiver register yet. `exceptions` therefore
- *    reports that no register is configured and lists the assets whose status is
- *    `waived` as the only exception evidence the inventory actually holds —
- *    without owner, justification, expiry or approver, because none is
- *    recorded. An empty `waivers: []` would read as "there are no exceptions",
- *    which is a different and unsupported claim.
+ *  - *Waivers.* Answered by data since C8 landed. `exceptions.waivers` carries
+ *    the register's entries, each with a justification, a signatory, a sign-off
+ *    date and an expiry. Two limits are stated rather than papered over: the
+ *    register records **one signatory, not a separate owner and approver**, and
+ *    `attribution` distinguishes a signature made by an authenticated user from
+ *    a name asserted through the shared API key. Assets carrying the inventory's
+ *    older `waived` *status* with no register entry behind them are listed
+ *    separately, because that marking records only that somebody set a status —
+ *    folding them in with real waivers would dress four missing fields as
+ *    present.
+ *
+ *    **This block read `registerAvailable: false` until C8 merged**, and nothing
+ *    failed when it became untrue: a regulator-facing document asserting the
+ *    absence of a feature the product ships is invisible to every suite. If a
+ *    later change makes the register optional, this is the field that lies
+ *    first.
  *  - *Signed.* `integrity` carries a SHA-256 digest over the document and says
  *    in terms that a digest is not a signature. Calling an unsigned document
  *    signed is the sort of thing an auditor checks first.
@@ -60,11 +70,16 @@ export const UNSIGNED_STATEMENT =
   "and no key management, so the digest proves integrity against a value you already trust and nothing " +
   "about origin. Treat it accordingly.";
 
-export const NO_WAIVER_REGISTER_STATEMENT =
-  "This product does not yet operate a waiver register, so no exception in this document carries an owner, a " +
-  "justification, an expiry or an approver. The assets listed below are the ones an operator has marked as " +
-  "waived in the inventory; that marking records only that somebody set the status. The absence of a register " +
-  "must not be read as an absence of exceptions.";
+export const WAIVER_REGISTER_STATEMENT =
+  "This product operates a waiver register. Every exception under `waivers` carries a justification, a " +
+  "signatory, a sign-off date and an expiry, and a waiver stops being an exception at the instant it expires " +
+  "rather than at the next collection. Two limits are worth stating: the register records one signatory rather " +
+  "than a separate owner and an approver, and `attribution` says whether that signatory was an authenticated " +
+  "user or a name asserted through a shared API key. Assets under `statusWaivedWithoutRegisterEntry` carry the " +
+  "inventory's older `waived` status with no register entry behind it; that marking records only that somebody " +
+  "set the status, and it must not be read as an approved exception. A waiver suppresses nothing in this " +
+  "document: every waived asset appears in the inventory above, and no coverage, readiness or risk figure " +
+  "anywhere in this submission is computed with any knowledge that a waiver exists.";
 
 export interface AssetProvenance {
   /** `null` when this asset carries no observation at all — the gap is stated, not filled in. */
@@ -137,9 +152,40 @@ export interface RegulatorAsset {
 }
 
 export interface RegulatorExceptions {
-  registerAvailable: false;
+  registerAvailable: true;
   statement: string;
-  waivedAssets: Array<{ fingerprint: string; algorithm: string; location: string; surface: string }>;
+  /**
+   * The register's entries, as of this document's `now`. An expired or revoked
+   * waiver is not here, because `EnrichedInventoryAsset.waiver` is derived at
+   * `now` rather than cached — there is no second copy of the expiry rule in
+   * this file that could disagree with the register's.
+   */
+  waivers: Array<{
+    fingerprint: string;
+    algorithm: string;
+    location: string;
+    surface: string;
+    justification: string;
+    signedOffBy: string;
+    /** `asserted` means a shared API key supplied the name; nobody authenticated as that person. */
+    attribution: "authenticated" | "asserted";
+    signedOffAt: string;
+    expiresAt: string;
+    daysRemaining: number;
+  }>;
+  /**
+   * Assets carrying the inventory's `waived` status with no register entry.
+   *
+   * Listed apart from `waivers` on purpose: these have no justification, no
+   * signatory and no expiry, and merging them in would present four missing
+   * fields as present.
+   */
+  statusWaivedWithoutRegisterEntry: Array<{
+    fingerprint: string;
+    algorithm: string;
+    location: string;
+    surface: string;
+  }>;
   /** Assets excluded from the inventory because a later collection proved them absent. */
   removedAssets: number;
 }
@@ -391,10 +437,24 @@ export function summariseRegulatorSubmission(input: ReportInput): RegulatorSubmi
     },
     inventory,
     exceptions: {
-      registerAvailable: false,
-      statement: NO_WAIVER_REGISTER_STATEMENT,
-      waivedAssets: input.assets
-        .filter((a) => a.status === "waived")
+      registerAvailable: true,
+      statement: WAIVER_REGISTER_STATEMENT,
+      waivers: input.assets
+        .filter((a) => a.waiver !== null)
+        .map((a) => ({
+          fingerprint: a.fingerprint,
+          algorithm: a.algorithm,
+          location: a.location,
+          surface: a.surface,
+          justification: a.waiver!.justification,
+          signedOffBy: a.waiver!.signedOffBy,
+          attribution: a.waiver!.attribution,
+          signedOffAt: a.waiver!.signedOffAt,
+          expiresAt: a.waiver!.expiresAt,
+          daysRemaining: a.waiver!.daysRemaining,
+        })),
+      statusWaivedWithoutRegisterEntry: input.assets
+        .filter((a) => a.status === "waived" && a.waiver === null)
         .map((a) => ({ fingerprint: a.fingerprint, algorithm: a.algorithm, location: a.location, surface: a.surface })),
       removedAssets: input.statusCounts["gone"] ?? 0,
     },

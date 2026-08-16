@@ -20,9 +20,12 @@ import { buildReportInput } from "./report-input-fixture";
  *     carry an explicit note rather than nulls a reader could mistake for zero.
  *  3. **A citation with no retrieval date, unremarked.** Asserted as a counted
  *     field, so the document discloses it rather than leaving a blank.
- *  4. **An empty waiver list read as "there are no exceptions".** The register
- *     does not exist; asserted that the document says so rather than shipping
- *     `waivers: []`.
+ *  4. **A hand-set `waived` status counted as an approved exception.** Since C8
+ *     the register exists, so the hole moved rather than closing: a status
+ *     somebody set by hand carries no justification, signatory or expiry, and
+ *     listing it beside real waivers would present four missing fields as
+ *     present. Asserted as two separate lists, and asserted that an expired
+ *     waiver is in neither.
  *  5. **A digest described as a signature.** Asserted false, in the field and
  *     in the words.
  */
@@ -141,7 +144,7 @@ describe("E2 — the regulator submission", () => {
     expect(submission.coverageLimitations.unexaminedSurfaces.length).toBeGreaterThan(0);
   });
 
-  it("refuses to present an absent waiver register as an absence of exceptions", () => {
+  it("does not count a hand-set waived status as an approved exception", () => {
     const submission = summariseRegulatorSubmission(
       buildReportInput({
         assets: [
@@ -152,11 +155,100 @@ describe("E2 — the regulator submission", () => {
       }),
     );
 
-    expect(submission.exceptions.registerAvailable).toBe(false);
-    expect(submission.exceptions.statement).toMatch(/does not yet operate a waiver register/);
-    expect(submission.exceptions.statement).toMatch(/must not be read as an absence of exceptions/);
-    expect(submission.exceptions.waivedAssets).toHaveLength(1);
-    expect(submission.exceptions.waivedAssets[0].algorithm).toBe("RSA");
+    expect(submission.exceptions.registerAvailable).toBe(true);
+    expect(submission.exceptions.statement).toMatch(/operates a waiver register/);
+    // A status somebody set by hand is not an approved exception, and the two
+    // must not share a list — merging them presents four missing fields as
+    // present.
+    expect(submission.exceptions.waivers).toHaveLength(0);
+    expect(submission.exceptions.statusWaivedWithoutRegisterEntry).toHaveLength(1);
+    expect(submission.exceptions.statusWaivedWithoutRegisterEntry[0].algorithm).toBe("RSA");
+  });
+
+  it("reports a register entry with its justification, signatory and expiry", () => {
+    const submission = summariseRegulatorSubmission(
+      buildReportInput({
+        now: new Date("2026-08-16T09:00:00.000Z"),
+        assets: [
+          {
+            algorithm: "RSA",
+            surface: "source",
+            waiver: {
+              justification: "Vendor appliance; replacement contracted for Q1.",
+              signedOffBy: "ciso@example.test",
+              signedOffByUserId: "u_ciso",
+              signedOffAt: "2026-08-10T00:00:00.000Z",
+              expiresAt: "2026-12-01T00:00:00.000Z",
+            },
+          },
+          { algorithm: "ECDSA", surface: "source" },
+        ],
+        runs: RUNS,
+      }),
+    );
+
+    expect(submission.exceptions.waivers).toHaveLength(1);
+    expect(submission.exceptions.waivers[0].justification).toMatch(/Vendor appliance/);
+    expect(submission.exceptions.waivers[0].signedOffBy).toBe("ciso@example.test");
+    expect(submission.exceptions.waivers[0].attribution).toBe("authenticated");
+    expect(submission.exceptions.waivers[0].expiresAt).toContain("2026-12-01");
+
+    // The waived asset is still in the inventory. A waiver annotates; it never
+    // filters — an estate that looks smaller because somebody accepted a risk
+    // is the one thing this document may not do.
+    expect(submission.inventory).toHaveLength(2);
+  });
+
+  it("does not present an expired waiver as an exception in force", () => {
+    const submission = summariseRegulatorSubmission(
+      buildReportInput({
+        now: new Date("2026-08-16T09:00:00.000Z"),
+        assets: [
+          {
+            algorithm: "RSA",
+            surface: "source",
+            status: "waived",
+            waiver: {
+              justification: "Expired last month and never renewed.",
+              signedOffBy: "ciso@example.test",
+              signedOffAt: "2026-06-01T00:00:00.000Z",
+              expiresAt: "2026-07-15T00:00:00.000Z",
+            },
+          },
+        ],
+        runs: RUNS,
+      }),
+    );
+
+    // Passed to the summariser unfiltered, so this asserts the expiry rule
+    // itself rather than a `where expires_at > now()` somebody wrote twice.
+    expect(submission.exceptions.waivers).toHaveLength(0);
+    expect(submission.exceptions.statusWaivedWithoutRegisterEntry).toHaveLength(1);
+  });
+
+  it("says an asserted signatory is asserted, because a printed page cannot show the difference", () => {
+    const submission = summariseRegulatorSubmission(
+      buildReportInput({
+        now: new Date("2026-08-16T09:00:00.000Z"),
+        assets: [
+          {
+            algorithm: "RSA",
+            surface: "source",
+            waiver: {
+              justification: "Signed off through the shared key.",
+              signedOffBy: "somebody@example.test",
+              signedOffByUserId: null,
+              signedOffAt: "2026-08-10T00:00:00.000Z",
+              expiresAt: "2026-12-01T00:00:00.000Z",
+            },
+          },
+        ],
+        runs: RUNS,
+      }),
+    );
+
+    expect(submission.exceptions.waivers[0].attribution).toBe("asserted");
+    expect(renderRegulatorSubmissionHtml(submission)).toContain("asserted, not authenticated");
   });
 
   it("calls a digest a digest, not a signature", () => {
@@ -177,7 +269,7 @@ describe("E2 — the regulator submission", () => {
     const stripIdentity = (submission: typeof a) => ({
       ...submission,
       inventory: submission.inventory.map((asset) => ({ ...asset, fingerprint: "", location: "" })),
-      exceptions: { ...submission.exceptions, waivedAssets: [] },
+      exceptions: { ...submission.exceptions, waivers: [], statusWaivedWithoutRegisterEntry: [] },
     });
 
     expect(contentDigest(stripIdentity(a))).toBe(contentDigest(stripIdentity(b)));

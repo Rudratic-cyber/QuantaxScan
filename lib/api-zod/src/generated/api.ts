@@ -1383,6 +1383,35 @@ export const GetInventoryAssetsResponse = zod.object({
         .describe(
           "Null when the mapping data has no entry for this algorithm.",
         ),
+      waiver: zod
+        .object({
+          id: zod.number(),
+          justification: zod.string(),
+          signedOffBy: zod
+            .string()
+            .describe(
+              "Who accepted the risk, as stated by the caller who wrote the waiver.",
+            ),
+          attribution: zod
+            .enum(["authenticated", "asserted"])
+            .describe(
+              "Whether the platform verified the name in `signedOffBy` (`authenticated` — a signed-in user wrote the row) or is only repeating it (`asserted` — the shared API key, which has no person behind it). Reported rather than hidden: calling an assertion a signature is the same mistake as storing a resolved obligation on a row.",
+            ),
+          signedOffAt: zod.coerce.date(),
+          expiresAt: zod.coerce.date(),
+          daysRemaining: zod
+            .number()
+            .describe(
+              "Never recomputed by the client from `expiresAt` and a local clock.",
+            ),
+        })
+        .describe(
+          "C8 — the waiver currently in force on an asset, as attached to an inventory row. When an asset has collected several, this is the active one that runs longest, so an about-to-lapse waiver cannot hide a fresh one and produce a finding re-appearing on a day nobody chose.",
+        )
+        .nullable()
+        .describe(
+          'C8 — the active waiver on this asset, or null. \*\*An annotation and nothing more.\*\* The asset appears here whether or not it is waived, and `mosca`, `compliance`, `status`, `statusCounts` and every coverage and readiness figure are computed with no knowledge that this field exists. A client may fold a waived row out of a working list; nothing may use it to make the estate read as smaller or cleaner. Null the instant the waiver expires — there is no cached \"waived\" flag to go stale.',
+        ),
       mosca: zod
         .object({
           x: zod
@@ -1419,7 +1448,12 @@ export const GetInventoryAssetsResponse = zod.object({
   statusCounts: zod
     .record(zod.string(), zod.number())
     .describe(
-      "Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present.",
+      "Every asset status in the organisation, `gone` included — so drift can be reported without a removed asset ever appearing in `assets` as if still present. Unaffected by waivers: a waived asset counts once, under the status it actually has.",
+    ),
+  waivedAssets: zod
+    .number()
+    .describe(
+      "C8 — how many of the assets listed above carry an active waiver. A count \*beside\* the inventory, never subtracted from it. A rising figure is a governance signal, and hiding it would be the same mistake as hiding the assets.",
     ),
   scenarios: zod.array(
     zod.object({
@@ -2690,19 +2724,41 @@ export const GetRegulatorSubmissionResponse = zod
       ),
     exceptions: zod.object({
       registerAvailable: zod
-        .literal(false)
+        .literal(true)
         .describe(
-          '\*\*Always false.\*\* This product operates no waiver register, so no exception carries an owner, justification, expiry or approver. An empty `waivers: []` would read as \"there are no exceptions\", which is a different and unsupported claim.',
+          "\*\*Always true since C8.\*\* This field read `false` until the waiver register shipped, and no test failed when that became untrue — a regulator-facing document asserting the absence of a feature the product operates is invisible to every suite. If the register ever becomes optional, this is the field that lies first.",
         ),
       statement: zod.string(),
-      waivedAssets: zod.array(
-        zod.object({
-          fingerprint: zod.string(),
-          algorithm: zod.string(),
-          location: zod.string(),
-          surface: zod.string(),
-        }),
-      ),
+      waivers: zod
+        .array(
+          zod.object({
+            fingerprint: zod.string(),
+            algorithm: zod.string(),
+            location: zod.string(),
+            surface: zod.string(),
+            justification: zod.string(),
+            signedOffBy: zod.string(),
+            attribution: zod.enum(["authenticated", "asserted"]),
+            signedOffAt: zod.coerce.date(),
+            expiresAt: zod.coerce.date(),
+            daysRemaining: zod.number(),
+          }),
+        )
+        .describe(
+          "The register's entries as of this document's timestamp. An expired or revoked waiver is absent because the field is derived at that instant rather than cached. Two limits are stated in `statement` rather than implied: one signatory rather than a separate owner and approver, and `attribution`, which distinguishes a signature made by an authenticated user from a name asserted through a shared API key.",
+        ),
+      statusWaivedWithoutRegisterEntry: zod
+        .array(
+          zod.object({
+            fingerprint: zod.string(),
+            algorithm: zod.string(),
+            location: zod.string(),
+            surface: zod.string(),
+          }),
+        )
+        .describe(
+          "Assets carrying the inventory's `waived` status with no register entry behind it. Listed apart from `waivers` because they have no justification, no signatory and no expiry — merging them in would present four missing fields as present.",
+        ),
       removedAssets: zod.number(),
     }),
     methodology: zod.object({
@@ -8219,3 +8275,142 @@ export const UpdateOrganizationMemberRoleParams = zod.object({
 export const UpdateOrganizationMemberRoleBody = zod.object({
   role: zod.enum(["viewer", "member", "admin", "owner"]),
 });
+
+/**
+ * Every waiver, **expired and revoked included**, each with a computed `status`. There is no `where expires_at > now()` behind this route: an exceptions register that forgets the exceptions that lapsed cannot answer "what have we been accepting?", which is the only question an auditor asks it. `status` is computed on read rather than stored, so it cannot go stale at exactly the expiry the feature turns on. `counts` is always over the whole register, never over the filtered slice.
+ * @summary The waivers / exceptions register (C8)
+ */
+export const ListWaiversQueryParams = zod.object({
+  status: zod
+    .enum(["active", "expired", "revoked"])
+    .optional()
+    .describe("Return only waivers in this state. Omit for all of them."),
+});
+
+export const ListWaiversResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  waivers: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        assetId: zod.number(),
+        divisionId: zod
+          .number()
+          .nullable()
+          .describe(
+            "Copied from the asset at sign-off, never taken from the caller. A waiver whose division disagreed with its asset's would be visible to people who cannot see what it waives.",
+          ),
+        justification: zod.string(),
+        signedOffBy: zod.string(),
+        attribution: zod.enum(["authenticated", "asserted"]),
+        signedOffAt: zod.coerce.date(),
+        expiresAt: zod.coerce.date(),
+        revokedAt: zod.coerce.date().nullable(),
+        status: zod
+          .enum(["active", "expired", "revoked"])
+          .describe(
+            '`revoked` beats `expired`: a waiver revoked in March and due to expire in June was revoked, and reporting \"expired\" in July would misstate why it stopped applying. Only `active` suppresses anything.',
+          ),
+        daysRemaining: zod.number().describe("Negative once expired."),
+        asset: zod
+          .object({
+            id: zod.number(),
+            fingerprint: zod.string(),
+            surface: zod.string(),
+            algorithm: zod.string(),
+            location: zod.string(),
+            status: zod.string(),
+          })
+          .nullish()
+          .describe(
+            "The asset this waiver names, so the register reads as a list of accepted risks rather than a list of integers. Present on `GET \/waivers` only.",
+          ),
+      })
+      .describe(
+        "A register entry. `status` is computed on read, never stored.",
+      ),
+  ),
+  counts: zod
+    .object({
+      active: zod.number(),
+      expired: zod.number(),
+      revoked: zod.number(),
+    })
+    .describe("Over the whole register, never over a `?status=` slice."),
+});
+
+/**
+ * Admin-gated. The person best placed to silence an inconvenient finding is the member who submitted the scan that raised it, and self-service risk acceptance is how an inventory becomes fiction. `expiresAt` is required and has no "never" spelling; it must be in the future and at most 730 days away. The asset id is confirmed visible inside the tenant scope before the row is written, because a foreign key is checked with row-level security bypassed.
+ * @summary Accept a risk, in writing, with an end date (admin)
+ */
+export const createWaiverBodyJustificationMax = 4000;
+
+export const CreateWaiverBody = zod.object({
+  assetId: zod
+    .number()
+    .describe(
+      "The asset whose risk is being accepted. Confirmed visible inside the tenant scope.",
+    ),
+  justification: zod
+    .string()
+    .max(createWaiverBodyJustificationMax)
+    .describe(
+      "Why the risk was accepted. Required and non-empty — a risk accepted for no stated reason has not been accepted, it has been ignored.",
+    ),
+  signedOffBy: zod
+    .string()
+    .describe(
+      "Who accepted it. Required — a waiver attributed to nobody is an anonymous suppression. See `attribution` for whether the platform verified this name.",
+    ),
+  expiresAt: zod.coerce
+    .date()
+    .describe(
+      'When it stops being a waiver. Required, must be in the future, and at most 730 days away. There is no \"never\": a waiver that does not expire is not an exception, it is a silent edit to the inventory.',
+    ),
+});
+
+/**
+ * Deliberately **not** admin-gated, unlike granting one: revoking restores a finding to the working list, which is the fail-safe direction, and un-silencing must not be harder than silencing. The waiver is closed, never deleted — a register you can delete from records only what nobody minded recording. Revoking an already-expired waiver is allowed and is not a no-op: it says the acceptance was withdrawn rather than merely lapsed.
+ * @summary Withdraw an acceptance early (member)
+ */
+export const RevokeWaiverParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RevokeWaiverResponse = zod
+  .object({
+    id: zod.number(),
+    assetId: zod.number(),
+    divisionId: zod
+      .number()
+      .nullable()
+      .describe(
+        "Copied from the asset at sign-off, never taken from the caller. A waiver whose division disagreed with its asset's would be visible to people who cannot see what it waives.",
+      ),
+    justification: zod.string(),
+    signedOffBy: zod.string(),
+    attribution: zod.enum(["authenticated", "asserted"]),
+    signedOffAt: zod.coerce.date(),
+    expiresAt: zod.coerce.date(),
+    revokedAt: zod.coerce.date().nullable(),
+    status: zod
+      .enum(["active", "expired", "revoked"])
+      .describe(
+        '`revoked` beats `expired`: a waiver revoked in March and due to expire in June was revoked, and reporting \"expired\" in July would misstate why it stopped applying. Only `active` suppresses anything.',
+      ),
+    daysRemaining: zod.number().describe("Negative once expired."),
+    asset: zod
+      .object({
+        id: zod.number(),
+        fingerprint: zod.string(),
+        surface: zod.string(),
+        algorithm: zod.string(),
+        location: zod.string(),
+        status: zod.string(),
+      })
+      .nullish()
+      .describe(
+        "The asset this waiver names, so the register reads as a list of accepted risks rather than a list of integers. Present on `GET \/waivers` only.",
+      ),
+  })
+  .describe("A register entry. `status` is computed on read, never stored.");

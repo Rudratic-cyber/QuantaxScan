@@ -162,7 +162,13 @@ interface RegulatorSubmission {
     indicativeLabel: string;
   };
   inventory: RegulatorAsset[];
-  exceptions: { registerAvailable: boolean; statement: string; waivedAssets: unknown[]; removedAssets: number };
+  exceptions: {
+    registerAvailable: boolean;
+    statement: string;
+    waivers: Array<{ justification: string; signedOffBy: string; attribution: string; expiresAt: string }>;
+    statusWaivedWithoutRegisterEntry: unknown[];
+    removedAssets: number;
+  };
   methodology: { collectors: unknown[]; discoveryModalities: unknown[]; confidenceBasis: string; limitations: string[] };
   integrity: { digestAlgorithm: string; digest: string; signed: boolean; statement: string };
 }
@@ -406,12 +412,16 @@ test.describe("E2 — the regulator submission", () => {
     expect(submission.inventory.every((a) => a.status !== "gone")).toBe(true);
   });
 
-  test("refuses to imply there are no exceptions, and calls its digest a digest", async ({ api }) => {
+  test("reports the waiver register it actually operates, and calls its digest a digest", async ({ api }) => {
     await seedInventory(api, "e2-integrity");
     const submission = await regulatorSubmission(api);
 
-    expect(submission.exceptions.registerAvailable).toBe(false);
-    expect(submission.exceptions.statement).toMatch(/must not be read as an absence of exceptions/);
+    // This asserted `false` until C8 shipped, and nothing failed when that
+    // became untrue — a regulator-facing document asserting the absence of a
+    // feature the product operates is invisible to every other suite.
+    expect(submission.exceptions.registerAvailable).toBe(true);
+    expect(submission.exceptions.statement).toMatch(/operates a waiver register/);
+    expect(submission.exceptions.statement).toMatch(/A waiver suppresses nothing in this document/);
 
     expect(submission.integrity.signed).toBe(false);
     expect(submission.integrity.digestAlgorithm).toBe("SHA-256");

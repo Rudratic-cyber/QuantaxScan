@@ -1,5 +1,5 @@
 import { summariseProjectCoverage } from "./coverage";
-import { summariseInventoryAssets, type InventoryAssetRow } from "./inventory-assets";
+import { summariseInventoryAssets, type InventoryAssetRow, type InventoryWaiverRow } from "./inventory-assets";
 import type { ReportInput, ReportObservationRow, ReportRunRow } from "./report-common";
 
 /**
@@ -38,6 +38,19 @@ export interface FixtureAsset {
     discoveryModality: string;
     observedAt: string;
   } | null;
+  /**
+   * C8 — a register entry for this asset. Passed to `summariseInventoryAssets`
+   * unfiltered, so `activeWaiver()` decides whether it applies at `now`: an
+   * `expiresAt` in the past belongs here and must come back as no waiver at all.
+   */
+  waiver?: {
+    justification: string;
+    signedOffBy: string;
+    signedOffByUserId?: string | null;
+    signedOffAt: string;
+    expiresAt: string;
+    revokedAt?: string | null;
+  };
 }
 
 export interface FixtureRun {
@@ -77,6 +90,7 @@ export function buildReportInput(options: {
 
   const assetRows: InventoryAssetRow[] = [];
   const observations: ReportObservationRow[] = [];
+  const waivers: InventoryWaiverRow[] = [];
 
   for (const asset of options.assets) {
     const id = nextId++;
@@ -95,6 +109,19 @@ export function buildReportInput(options: {
       secrecyLifetimeYears: asset.secrecyLifetimeYears ?? null,
       effortHours: asset.effortHours ?? null,
     });
+
+    if (asset.waiver !== undefined) {
+      waivers.push({
+        id: waivers.length + 1,
+        assetId: id,
+        justification: asset.waiver.justification,
+        signedOffBy: asset.waiver.signedOffBy,
+        signedOffByUserId: asset.waiver.signedOffByUserId ?? null,
+        signedOffAt: asset.waiver.signedOffAt,
+        expiresAt: asset.waiver.expiresAt,
+        revokedAt: asset.waiver.revokedAt ?? null,
+      });
+    }
 
     if (asset.observation === null) continue;
     const observation = asset.observation ?? {
@@ -118,6 +145,7 @@ export function buildReportInput(options: {
     allAssetsStatus: [...assetRows.map((a) => a.status), ...statusExtras],
     projects: projects.map((p) => ({ id: p.id, dataClassification: null, secrecyLifetimeYears: null })),
     observations,
+    waivers,
     now,
   });
 

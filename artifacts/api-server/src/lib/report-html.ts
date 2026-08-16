@@ -350,9 +350,23 @@ ${
 <h2>Exceptions and waivers</h2>
 <div class="callout"><p>${esc(submission.exceptions.statement)}</p>
 ${
-  submission.exceptions.waivedAssets.length === 0
-    ? "<p class=\"small\">No asset in this inventory is currently marked waived.</p>"
-    : `<table class="data"><thead><tr><th>Algorithm</th><th>Surface</th><th>Location</th></tr></thead><tbody>${submission.exceptions.waivedAssets
+  submission.exceptions.waivers.length === 0
+    ? "<p class=\"small\">The register holds no waiver in force over this inventory.</p>"
+    : `<table class="data"><thead><tr><th>Algorithm</th><th>Surface</th><th>Location</th><th>Justification</th><th>Signed off by</th><th>Expires</th></tr></thead><tbody>${submission.exceptions.waivers
+        .map(
+          (w) =>
+            `<tr><td>${esc(w.algorithm)}</td><td>${esc(w.surface)}</td><td class="mono">${esc(w.location)}</td><td>${esc(w.justification)}</td><td>${esc(w.signedOffBy)}${
+              // An asserted name is not an attributed one, and a printed page is
+              // exactly where that difference stops being visible unless it is said.
+              w.attribution === "asserted" ? " <span class=\"small\">(asserted, not authenticated)</span>" : ""
+            }</td><td>${esc(w.expiresAt)}</td></tr>`,
+        )
+        .join("")}</tbody></table>`
+}
+${
+  submission.exceptions.statusWaivedWithoutRegisterEntry.length === 0
+    ? ""
+    : `<p class="small">${esc(submission.exceptions.statusWaivedWithoutRegisterEntry.length)} asset(s) carry a <code>waived</code> status with no register entry behind it — no justification, no signatory, no expiry. They are not approved exceptions:</p><table class="data"><thead><tr><th>Algorithm</th><th>Surface</th><th>Location</th></tr></thead><tbody>${submission.exceptions.statusWaivedWithoutRegisterEntry
         .map(
           (w) =>
             `<tr><td>${esc(w.algorithm)}</td><td>${esc(w.surface)}</td><td class="mono">${esc(w.location)}</td></tr>`,
