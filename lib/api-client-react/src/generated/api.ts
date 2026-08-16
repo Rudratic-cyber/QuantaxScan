@@ -20,6 +20,7 @@ import type {
   ActiveOrganization,
   AuthProviderList,
   AuthSession,
+  BoardPack,
   CbomDocument,
   CertificateIngestSummary,
   ChatBody,
@@ -83,6 +84,7 @@ import type {
   ProtocolConfigIngestSummary,
   RateLimitedResponse,
   ReadinessSummary,
+  RegulatorSubmission,
   RunDueSchedulesResult,
   RunProjectDiscoveryBody,
   Scan,
@@ -2069,6 +2071,477 @@ export function useGetSharedReport<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetSharedReportQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * The estate's post-quantum exposure, answering exactly four questions — are we exposed, how badly and by when, what will it cost, are we on track — plus the coverage gap, on page one.
+
+**No number here implies completeness.** `page1.coverage.estateFraction` is always `null`, with `estateFractionReason` saying why: nothing this product holds supports a figure for how much cryptography sits in the surfaces nobody has examined, so the gap is reported as surfaces out of the collector catalogue rather than invented as a percentage.
+
+`page1` contains no algorithm names by construction (`page1.coverage` is the full coverage block minus `unmappedAlgorithms`); the appendices name everything. Obligations, deadlines and effort estimates are resolved at read time from the standards data version pinned in `header.mappingDataVersion` and are not stored against any asset.
+ * @summary Board / executive pack, as JSON (E1)
+ */
+export const getGetBoardPackUrl = () => {
+  return `/api/report-packs/board`;
+};
+
+export const getBoardPack = async (
+  options?: RequestInit,
+): Promise<BoardPack> => {
+  return customFetch<BoardPack>(getGetBoardPackUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBoardPackQueryKey = () => {
+  return [`/api/report-packs/board`] as const;
+};
+
+export const getGetBoardPackQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBoardPack>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBoardPack>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetBoardPackQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getBoardPack>>> = ({
+    signal,
+  }) => getBoardPack({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBoardPack>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBoardPackQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBoardPack>>
+>;
+export type GetBoardPackQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Board / executive pack, as JSON (E1)
+ */
+
+export function useGetBoardPack<
+  TData = Awaited<ReturnType<typeof getBoardPack>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBoardPack>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBoardPackQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * The same document as `/report-packs/board`, rendered as a self-contained HTML page with print styles. No external stylesheet, script, font or image is referenced, so a saved copy renders identically years later with no network.
+ * @summary Board / executive pack, rendered (E1)
+ */
+export const getGetBoardPackHtmlUrl = () => {
+  return `/api/report-packs/board.html`;
+};
+
+export const getBoardPackHtml = async (
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getGetBoardPackHtmlUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBoardPackHtmlQueryKey = () => {
+  return [`/api/report-packs/board.html`] as const;
+};
+
+export const getGetBoardPackHtmlQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBoardPackHtml>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBoardPackHtml>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetBoardPackHtmlQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getBoardPackHtml>>
+  > = ({ signal }) => getBoardPackHtml({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBoardPackHtml>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBoardPackHtmlQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBoardPackHtml>>
+>;
+export type GetBoardPackHtmlQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Board / executive pack, rendered (E1)
+ */
+
+export function useGetBoardPackHtml<
+  TData = Awaited<ReturnType<typeof getBoardPackHtml>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBoardPackHtml>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBoardPackHtmlQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * The HTML above, printed by headless Chromium. Served as `application/pdf` with a `Content-Disposition: attachment` filename.
+
+**May answer 503.** The PDF step needs a Chromium binary, which `Dockerfile.api` does not install today; `playwright-core` is a dependency but ships no browser. When none can be launched the response is 503 with a message naming the `.html` route, which carries the identical document — never 500, because nothing failed about the inventory. Set `QUANTAXSCAN_CHROMIUM_PATH` to point at an installed browser.
+ * @summary Board / executive pack, as PDF (E1)
+ */
+export const getGetBoardPackPdfUrl = () => {
+  return `/api/report-packs/board.pdf`;
+};
+
+export const getBoardPackPdf = async (options?: RequestInit): Promise<Blob> => {
+  return customFetch<Blob>(getGetBoardPackPdfUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBoardPackPdfQueryKey = () => {
+  return [`/api/report-packs/board.pdf`] as const;
+};
+
+export const getGetBoardPackPdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBoardPackPdf>>,
+  TError = ErrorType<RateLimitedResponse | void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBoardPackPdf>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetBoardPackPdfQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getBoardPackPdf>>> = ({
+    signal,
+  }) => getBoardPackPdf({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBoardPackPdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBoardPackPdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBoardPackPdf>>
+>;
+export type GetBoardPackPdfQueryError = ErrorType<RateLimitedResponse | void>;
+
+/**
+ * @summary Board / executive pack, as PDF (E1)
+ */
+
+export function useGetBoardPackPdf<
+  TData = Awaited<ReturnType<typeof getBoardPackPdf>>,
+  TError = ErrorType<RateLimitedResponse | void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBoardPackPdf>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBoardPackPdfQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * The inventory as evidence: every asset with the collector, collector version, timestamp, confidence and discovery modality behind it, and every compliance claim with its citation and retrieval date.
+
+**Only `verified` obligations appear in `inventory[].obligations`.** Anything the standards data marks `needs-check` is carried separately in `inventory[].indicativeObligations` and labelled with `complianceClaimSummary.indicativeLabel`; the two are never merged, and indicative obligations count toward no compliance figure.
+
+Two of doc 07's seven requirements are answered by an honest refusal rather than by data, and both are fields rather than omissions. `exceptions.registerAvailable` is always `false` — this product operates no waiver register, so no exception carries an owner, justification, expiry or approver, and the assets listed are simply those an operator marked `waived`. And `integrity.signed` is always `false`: the SHA-256 digest detects alteration relative to a value you already hold, and proves nothing about origin.
+
+`coverageLimitations` comes before the inventory in the payload as well as in the rendering, because an undisclosed gap is the finding that sinks an audit.
+ * @summary Regulator / auditor inventory submission, as JSON (E2)
+ */
+export const getGetRegulatorSubmissionUrl = () => {
+  return `/api/report-packs/regulator`;
+};
+
+export const getRegulatorSubmission = async (
+  options?: RequestInit,
+): Promise<RegulatorSubmission> => {
+  return customFetch<RegulatorSubmission>(getGetRegulatorSubmissionUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetRegulatorSubmissionQueryKey = () => {
+  return [`/api/report-packs/regulator`] as const;
+};
+
+export const getGetRegulatorSubmissionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getRegulatorSubmission>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getRegulatorSubmission>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetRegulatorSubmissionQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getRegulatorSubmission>>
+  > = ({ signal }) => getRegulatorSubmission({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getRegulatorSubmission>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetRegulatorSubmissionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getRegulatorSubmission>>
+>;
+export type GetRegulatorSubmissionQueryError = ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Regulator / auditor inventory submission, as JSON (E2)
+ */
+
+export function useGetRegulatorSubmission<
+  TData = Awaited<ReturnType<typeof getRegulatorSubmission>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getRegulatorSubmission>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetRegulatorSubmissionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * The same document as `/report-packs/regulator`, rendered as a self-contained HTML page with print styles and no external references.
+ * @summary Regulator / auditor inventory submission, rendered (E2)
+ */
+export const getGetRegulatorSubmissionHtmlUrl = () => {
+  return `/api/report-packs/regulator.html`;
+};
+
+export const getRegulatorSubmissionHtml = async (
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getGetRegulatorSubmissionHtmlUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetRegulatorSubmissionHtmlQueryKey = () => {
+  return [`/api/report-packs/regulator.html`] as const;
+};
+
+export const getGetRegulatorSubmissionHtmlQueryOptions = <
+  TData = Awaited<ReturnType<typeof getRegulatorSubmissionHtml>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getRegulatorSubmissionHtml>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetRegulatorSubmissionHtmlQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getRegulatorSubmissionHtml>>
+  > = ({ signal }) => getRegulatorSubmissionHtml({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getRegulatorSubmissionHtml>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetRegulatorSubmissionHtmlQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getRegulatorSubmissionHtml>>
+>;
+export type GetRegulatorSubmissionHtmlQueryError =
+  ErrorType<RateLimitedResponse>;
+
+/**
+ * @summary Regulator / auditor inventory submission, rendered (E2)
+ */
+
+export function useGetRegulatorSubmissionHtml<
+  TData = Awaited<ReturnType<typeof getRegulatorSubmissionHtml>>,
+  TError = ErrorType<RateLimitedResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getRegulatorSubmissionHtml>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetRegulatorSubmissionHtmlQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * The HTML above, printed by headless Chromium. Answers 503 under exactly the same conditions as `/report-packs/board.pdf` — see that operation.
+ * @summary Regulator / auditor inventory submission, as PDF (E2)
+ */
+export const getGetRegulatorSubmissionPdfUrl = () => {
+  return `/api/report-packs/regulator.pdf`;
+};
+
+export const getRegulatorSubmissionPdf = async (
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getGetRegulatorSubmissionPdfUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetRegulatorSubmissionPdfQueryKey = () => {
+  return [`/api/report-packs/regulator.pdf`] as const;
+};
+
+export const getGetRegulatorSubmissionPdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof getRegulatorSubmissionPdf>>,
+  TError = ErrorType<RateLimitedResponse | void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getRegulatorSubmissionPdf>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetRegulatorSubmissionPdfQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getRegulatorSubmissionPdf>>
+  > = ({ signal }) => getRegulatorSubmissionPdf({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getRegulatorSubmissionPdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetRegulatorSubmissionPdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getRegulatorSubmissionPdf>>
+>;
+export type GetRegulatorSubmissionPdfQueryError =
+  ErrorType<RateLimitedResponse | void>;
+
+/**
+ * @summary Regulator / auditor inventory submission, as PDF (E2)
+ */
+
+export function useGetRegulatorSubmissionPdf<
+  TData = Awaited<ReturnType<typeof getRegulatorSubmissionPdf>>,
+  TError = ErrorType<RateLimitedResponse | void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getRegulatorSubmissionPdf>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetRegulatorSubmissionPdfQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

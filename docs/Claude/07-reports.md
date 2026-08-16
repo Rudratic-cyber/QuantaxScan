@@ -8,7 +8,36 @@ shareable scan link — a good primitive, not yet any of these.
 
 ---
 
-## E1 — Board / executive pack `P1`
+## E1 — Board / executive pack `P1` — **built 2026-08-16**
+
+`GET /api/report-packs/board`, `.html`, `.pdf`. Computed by
+`artifacts/api-server/src/lib/board-pack.ts` over `report-common.ts`, both pure and drizzle-free
+like their siblings; the route does one `withOrg` read with one `now`.
+
+**Not `/reports/board`.** `PUBLIC_ROUTES` matches the share link with `/^\/reports\/[^/]+$/`, so a
+pack under that prefix would have been served to anonymous callers — a complete map of an
+organisation's cryptographic weaknesses, with no credential. The prefix is different so that
+cannot happen by accident. `tests/e2e/20-report-packs.spec.ts` asserts the near-miss stays one.
+
+**One deviation from the spec below, deliberate.** "Include the coverage gap on page 1 — *this
+covers 31% of estimated estate*" cannot be honoured as written: `coverage.ts` rule 4 says the
+denominator is surfaces, not assets, and nothing this product holds supports a figure for how much
+cryptography sits in an unexamined surface. `estateFraction` is therefore a field that is always
+`null`, alongside `estateFractionReason`; the gap is on page one, stated as surfaces examined out
+of the collector catalogue. A null with a reason is what stops the next person filling it in.
+
+The rest is honoured: no algorithm name reaches page one (`page1.coverage` is the coverage block
+minus `unmappedAlgorithms`, and `board-pack.test.ts` asserts it against every algorithm the input
+holds — plus the complement, so dropping the names everywhere fails too); every number carries its
+assumption inline; the trend says `baseline`, never `0% change`, until two distinct collection
+instants exist. The assumption register rides in Appendix C so page one stays one page.
+
+`generateExecutiveSummary()` in `scanner.ts` is untouched — it is a *scan* summary and still
+correct as one. This pack describes the estate and does not call it.
+
+---
+
+## E1 — the original design
 
 **Audience:** board, audit committee, CFO. **Length:** 1 page + 3 appendix pages.
 **Reader has:** four minutes and no cryptography background.
@@ -32,7 +61,35 @@ describes *a scan* ("We scanned 10 lines of python code"). Rewrite it to describ
 
 ---
 
-## E2 — Regulator / auditor inventory submission `P1`
+## E2 — Regulator / auditor inventory submission `P1` — **built 2026-08-16**
+
+`GET /api/report-packs/regulator`, `.html`, `.pdf`, computed by
+`artifacts/api-server/src/lib/regulator-submission.ts`. Each row of the requirements table below
+is a field rather than a paragraph a renderer might forget: `inventory[].provenance`,
+`inventory[].obligations[].citation`, `header.mappingDataVersion`, `coverageLimitations` (before
+the inventory in the payload as well as in the rendering), `exceptions`, `methodology`,
+`integrity`.
+
+**Two of the seven are answered by an honest refusal, and that is why they are fields.**
+
+- **Waivers.** C8's register is a separate lane and does not exist yet, so
+  `exceptions.registerAvailable` is `false`, `statement` says no exception carries an owner,
+  justification, expiry or approver, and the listed assets are simply those an operator marked
+  `waived`. An empty `waivers: []` would read as "there are no exceptions", which is a different
+  and unsupported claim. When C8 lands, this block is the one to fill in.
+- **Signed.** `integrity.signed` is `false`. There is a SHA-256 content digest over the document,
+  and the statement beside it says a digest detects alteration against a value you already hold
+  and proves nothing about origin. Calling an unsigned document signed is the first thing an
+  auditor checks.
+
+The `verified`-only rule is enforced structurally rather than by a filter a renderer must
+remember: `obligations` carries `verified` claims and `indicativeObligations` carries the rest,
+they are never merged, and `regulator-submission.test.ts` asserts the split is exhaustive — every
+obligation the engine resolved lands in exactly one list, so nothing is silently dropped.
+
+---
+
+## E2 — the original design
 
 **Audience:** an auditor who will try to find holes. **Length:** as long as it takes.
 
@@ -137,6 +194,19 @@ of unmarked vendor defaults presented as customer facts is how trust gets destro
 
 HTML source of truth → PDF via headless Chrome (already a dependency of the dev environment).
 Do not build two renderers.
+
+**Built as described.** `artifacts/api-server/src/lib/report-html.ts` is the one renderer; the
+`.pdf` routes print exactly the markup the `.html` routes serve, so a defect visible in one is
+visible in the other. The markup is dependency-free and inline-styled with no external stylesheet,
+script, font or image — a report is evidence and has to render from a saved file with no network,
+years later. Everything interpolated is escaped: asset locations are attacker-controllable and
+this markup reaches both a browser and headless Chromium.
+
+`playwright-core` is an api-server dependency (it ships no browser, unlike `playwright`, which
+would download ~150 MB on every install in every worktree) and is imported dynamically, so a
+deployment with no Chromium still starts and the `.pdf` routes answer **503 naming the `.html`
+route** rather than 500. `Dockerfile.api` installs no browser today; `QUANTAXSCAN_CHROMIUM_PATH`
+points at one when it does.
 
 **Note on the existing share feature:** `routes/reports.ts` creates public shareable report
 links. Before this handles real inventory data, it needs authentication, expiry, and revocation

@@ -335,6 +335,20 @@ describe("route manifest — a new route cannot ship without being considered", 
     "GET /scans/:id/findings": "org-scoped",
     "POST /scans/multi": "org-scoped",
     "POST /reports": "org-scoped",
+    // E1/E2 — the board pack and the regulator submission. Each reads every
+    // asset, project, collection run and observation in the organisation with
+    // no where clause of its own, exactly like the CBOM export, and is at
+    // least as sensitive: the regulator submission is the CBOM plus per-asset
+    // provenance and per-obligation citations. Deliberately **not** on the
+    // public allowlist, and deliberately not mounted under `/reports/...`,
+    // where `PUBLIC_ROUTES`' share-link regex `/^\/reports\/[^/]+$/` would
+    // have matched them and served them anonymously.
+    "GET /report-packs/board": "org-scoped",
+    "GET /report-packs/board.html": "org-scoped",
+    "GET /report-packs/board.pdf": "org-scoped",
+    "GET /report-packs/regulator": "org-scoped",
+    "GET /report-packs/regulator.html": "org-scoped",
+    "GET /report-packs/regulator.pdf": "org-scoped",
     "GET /stats": "org-scoped",
     // A CBOM is the whole inventory in one response — the single worst thing
     // to leak across a tenant boundary, and the reason it is not public.
@@ -576,6 +590,62 @@ describe("list routes return this organisation's rows and only this organisation
 
     const serialised = JSON.stringify(res.body);
     expect(serialised).not.toContain("their-asset-fingerprint");
+    expect(serialised).not.toContain("secrets/their_key.py");
+  });
+
+  it("GET /api/report-packs/regulator submits our inventory and no trace of theirs", async () => {
+    // The most sensitive payload in the product: every asset, with its
+    // location, its provenance and its obligations, in one document meant for
+    // a regulator. Same adversarial fixture as the timeline and readiness
+    // tests — their completed run and their asset are addressed at OUR
+    // project's identity, and this handler reads the whole organisation with
+    // no where clause of its own, so only the policy separates them.
+    const res = await auth(request.get("/api/report-packs/regulator"));
+    expect(res.status).toBe(200);
+
+    expect(res.body.inventory).toHaveLength(1);
+    expect(res.body.inventory[0].fingerprint).toBe("our-asset-fingerprint");
+    expect(res.body.inventory[0].algorithm).toBe("MD5");
+    expect(res.body.scope.statusCounts).toEqual({ active: 1 });
+
+    // Their collection run must not become our provenance, and their
+    // observation must not become our evidence — the two fields an auditor
+    // would read as "somebody looked at this on our behalf".
+    expect(res.body.header.collectors).toEqual([]);
+    expect(res.body.methodology.discoveryModalities).toEqual([]);
+    expect(res.body.inventory[0].provenance.collector).toBeNull();
+    expect(res.body.inventory[0].provenance.note).not.toBeNull();
+    expect(res.body.coverageLimitations.assetsWithoutObservation).toBe(1);
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain("their-asset-fingerprint");
+    expect(serialised).not.toContain("cross-tenant-coverage-fixture");
+    expect(serialised).not.toContain("secrets/their_key.py");
+    expect(serialised).not.toContain("their confidential project");
+    expect(serialised).not.toContain("leak.py");
+  });
+
+  it("GET /api/report-packs/board counts none of another organisation's exposure", async () => {
+    const res = await auth(request.get("/api/report-packs/board"));
+    expect(res.status).toBe(200);
+
+    // Ours is MD5 — classical hygiene, not a post-quantum problem. Theirs is
+    // the only RSA in the fixture, so a non-zero quantum-vulnerable count here
+    // would mean their asset was scored into our board's headline.
+    expect(res.body.page1.exposure.assetsFound).toBe(1);
+    expect(res.body.page1.exposure.quantumVulnerableAssets).toBe(0);
+    expect(res.body.page1.exposure.classicalHygieneAssets).toBe(1);
+    expect(JSON.stringify(res.body.appendices)).not.toContain("RSA");
+
+    // Their completed run must not become an instant we can claim to trend
+    // against. Zero is the honest answer for an organisation nothing has ever
+    // been collected from.
+    expect(res.body.page1.trend.distinctCollectionInstants).toBe(0);
+    expect(res.body.page1.trend.verdict).toBe("baseline");
+    expect(res.body.header.collectors).toEqual([]);
+
+    const serialised = JSON.stringify(res.body);
+    expect(serialised).not.toContain("their confidential project");
     expect(serialised).not.toContain("secrets/their_key.py");
   });
 

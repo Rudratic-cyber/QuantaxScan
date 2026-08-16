@@ -636,6 +636,176 @@ paths:
         "500":
           description: Failed to fetch report
 
+  # ── E1 / E2 — generated report packs ──────────────────────────────────────
+  #
+  # Deliberately NOT under `/reports/...`. `PUBLIC_ROUTES` matches the share
+  # link with `/^\/reports\/[^/]+$/`, so `/reports/board` would have been served
+  # anonymously — a complete map of an organisation's cryptographic weaknesses,
+  # with no credential. Every operation below requires authentication and none
+  # carries `security: []`.
+  #
+  # Three representations of one document per pack: the JSON it was built from,
+  # the HTML rendering, and that same HTML printed to PDF. There is one
+  # renderer (docs/Claude/07-reports.md §Rendering).
+
+  /report-packs/board:
+    get:
+      operationId: getBoardPack
+      tags: [reports]
+      summary: Board / executive pack, as JSON (E1)
+      description: >-
+        The estate's post-quantum exposure, answering exactly four questions — are we exposed,
+        how badly and by when, what will it cost, are we on track — plus the coverage gap, on
+        page one.
+
+
+        **No number here implies completeness.** `page1.coverage.estateFraction` is always
+        `null`, with `estateFractionReason` saying why: nothing this product holds supports a
+        figure for how much cryptography sits in the surfaces nobody has examined, so the gap is
+        reported as surfaces out of the collector catalogue rather than invented as a percentage.
+
+
+        `page1` contains no algorithm names by construction (`page1.coverage` is the full
+        coverage block minus `unmappedAlgorithms`); the appendices name everything. Obligations,
+        deadlines and effort estimates are resolved at read time from the standards data version
+        pinned in `header.mappingDataVersion` and are not stored against any asset.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: The board pack
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardPack"
+
+  /report-packs/board.html:
+    get:
+      operationId: getBoardPackHtml
+      tags: [reports]
+      summary: Board / executive pack, rendered (E1)
+      description: >-
+        The same document as `/report-packs/board`, rendered as a self-contained HTML page with
+        print styles. No external stylesheet, script, font or image is referenced, so a saved
+        copy renders identically years later with no network.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: The board pack as HTML
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /report-packs/board.pdf:
+    get:
+      operationId: getBoardPackPdf
+      tags: [reports]
+      summary: Board / executive pack, as PDF (E1)
+      description: >-
+        The HTML above, printed by headless Chromium. Served as `application/pdf` with a
+        `Content-Disposition: attachment` filename.
+
+
+        **May answer 503.** The PDF step needs a Chromium binary, which `Dockerfile.api` does not
+        install today; `playwright-core` is a dependency but ships no browser. When none can be
+        launched the response is 503 with a message naming the `.html` route, which carries the
+        identical document — never 500, because nothing failed about the inventory. Set
+        `QUANTAXSCAN_CHROMIUM_PATH` to point at an installed browser.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: The board pack as PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "503":
+          description: >-
+            No Chromium is available to this deployment. The identical document is available from
+            `/report-packs/board.html`.
+
+  /report-packs/regulator:
+    get:
+      operationId: getRegulatorSubmission
+      tags: [reports]
+      summary: Regulator / auditor inventory submission, as JSON (E2)
+      description: >-
+        The inventory as evidence: every asset with the collector, collector version, timestamp,
+        confidence and discovery modality behind it, and every compliance claim with its citation
+        and retrieval date.
+
+
+        **Only `verified` obligations appear in `inventory[].obligations`.** Anything the standards
+        data marks `needs-check` is carried separately in `inventory[].indicativeObligations` and
+        labelled with `complianceClaimSummary.indicativeLabel`; the two are never merged, and
+        indicative obligations count toward no compliance figure.
+
+
+        Two of doc 07's seven requirements are answered by an honest refusal rather than by data,
+        and both are fields rather than omissions. `exceptions.registerAvailable` is always `false`
+        — this product operates no waiver register, so no exception carries an owner, justification,
+        expiry or approver, and the assets listed are simply those an operator marked `waived`. And
+        `integrity.signed` is always `false`: the SHA-256 digest detects alteration relative to a
+        value you already hold, and proves nothing about origin.
+
+
+        `coverageLimitations` comes before the inventory in the payload as well as in the rendering,
+        because an undisclosed gap is the finding that sinks an audit.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: The regulator submission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegulatorSubmission"
+
+  /report-packs/regulator.html:
+    get:
+      operationId: getRegulatorSubmissionHtml
+      tags: [reports]
+      summary: Regulator / auditor inventory submission, rendered (E2)
+      description: >-
+        The same document as `/report-packs/regulator`, rendered as a self-contained HTML page
+        with print styles and no external references.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: The submission as HTML
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /report-packs/regulator.pdf:
+    get:
+      operationId: getRegulatorSubmissionPdf
+      tags: [reports]
+      summary: Regulator / auditor inventory submission, as PDF (E2)
+      description: >-
+        The HTML above, printed by headless Chromium. Answers 503 under exactly the same
+        conditions as `/report-packs/board.pdf` — see that operation.
+      responses:
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "200":
+          description: The submission as PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "503":
+          description: >-
+            No Chromium is available to this deployment. The identical document is available from
+            `/report-packs/regulator.html`.
+
   /chat:
     post:
       operationId: createChatCompletion
@@ -3970,6 +4140,807 @@ components:
         - accessCount
         - createdAt
 
+    # ── E1 / E2 — generated report packs ────────────────────────────────────
+
+    ReportCollectorProvenance:
+      type: object
+      description: One collector, at one version, on one surface. E2's answer to "says who?", rolled up.
+      properties:
+        collector:
+          type: string
+        collectorVersion:
+          type: string
+        surface:
+          type: string
+        completedRuns:
+          type: integer
+        failedRuns:
+          type: integer
+          description: >-
+            Attempts that produced nothing. Counted separately and never as coverage — a failed
+            attempt is not an examination.
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        observations:
+          type: integer
+          description: Observations still reachable from this collector's runs, counted from the observations themselves.
+      required:
+        - collector
+        - collectorVersion
+        - surface
+        - completedRuns
+        - failedRuns
+        - lastRunAt
+        - observations
+
+    ReportQDayScenario:
+      type: object
+      properties:
+        name:
+          type: string
+        qDayYear:
+          type: integer
+        rationale:
+          type: string
+        confidence:
+          type: string
+          description: >-
+            From the source data. Every shipped scenario is `needs-check`, and the rendering says so
+            rather than presenting a year as settled.
+      required: [name, qDayYear, rationale, confidence]
+
+    ReportHeader:
+      type: object
+      description: >-
+        The reproducibility header docs/Claude/07-reports.md requires. Without it a report is an
+        opinion; with it, it is evidence.
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        inventoryAsOf:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            The most recent moment any asset in the document was seen. **Null for an empty
+            inventory** — which is a different statement from "as of now" and must not be rendered
+            as one.
+        mappingDataVersion:
+          type: string
+          description: The `algorithms.json` snapshot every obligation, deadline and effort figure was resolved against. Pinned so the document can be re-derived.
+        frameworksDataVersion:
+          type: string
+        asOf:
+          type: string
+          format: date-time
+          description: The single instant every deadline in the document was evaluated at. One per document, so two findings cannot land on opposite sides of a deadline.
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportQDayScenario"
+        framing:
+          type: string
+          description: Mandatory wherever a scenario year appears. These are compliance deadlines, not predictions about physics.
+        collectors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportCollectorProvenance"
+        productVersion:
+          type: string
+          nullable: true
+          description: Null when no release process stamped one. Never a placeholder version, which would be a lie in an auditor-facing document.
+        coverageSummary:
+          type: string
+      required:
+        - generatedAt
+        - inventoryAsOf
+        - mappingDataVersion
+        - frameworksDataVersion
+        - asOf
+        - scenarios
+        - framing
+        - collectors
+        - productVersion
+        - coverageSummary
+
+    UnexaminedSurface:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        catalogueStatus:
+          type: string
+          enum: [live, planned]
+          description: >-
+            `planned` means no collector exists. `live` here means one exists and has never been run
+            against this organisation. Either way nothing has been examined.
+        reason:
+          type: string
+      required: [id, name, catalogueStatus, reason]
+
+    ReportCoverageLimitations:
+      type: object
+      description: >-
+        The gap, stated where a reader meets it rather than in a footnote. Read this before reading
+        any count in the document.
+      properties:
+        statement:
+          type: string
+        examinedSurfaces:
+          type: integer
+        totalSurfaces:
+          type: integer
+          description: Collector surfaces in the catalogue. The denominator is surfaces, never assets.
+        unexaminedSurfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnexaminedSurface"
+        estateFraction:
+          type: "null"
+          description: >-
+            **Always null.** Nothing this product holds supports a figure for how much cryptography
+            sits in an unexamined surface, so no share of the estate is stated. The field exists,
+            null, with `estateFractionReason`, so a consumer cannot mistake the absence for an
+            oversight and fill it in.
+        estateFractionReason:
+          type: string
+        failedRuns:
+          type: integer
+        assetsWithoutObservation:
+          type: integer
+          description: Present assets backed by no observation record at all — a data gap, reported rather than hidden.
+        unmappedAlgorithms:
+          type: array
+          items:
+            type: string
+          description: >-
+            Algorithms this estate holds that the standards data does not know. They carry no
+            obligation and count toward no compliance figure. Absent from the board pack's page-one
+            projection, which prints no algorithm names.
+        caveats:
+          type: array
+          items:
+            type: string
+      required:
+        - statement
+        - examinedSurfaces
+        - totalSurfaces
+        - unexaminedSurfaces
+        - estateFraction
+        - estateFractionReason
+        - failedRuns
+        - assetsWithoutObservation
+        - unmappedAlgorithms
+        - caveats
+
+    BoardPackPage1Coverage:
+      type: object
+      description: >-
+        `ReportCoverageLimitations` minus `unmappedAlgorithms`. The board pack's page one names no
+        algorithm; the count of unmapped ones survives in `caveats`, and the names appear in the
+        appendices and in the regulator submission.
+      properties:
+        statement:
+          type: string
+        examinedSurfaces:
+          type: integer
+        totalSurfaces:
+          type: integer
+        unexaminedSurfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnexaminedSurface"
+        estateFraction:
+          type: "null"
+        estateFractionReason:
+          type: string
+        failedRuns:
+          type: integer
+        assetsWithoutObservation:
+          type: integer
+        caveats:
+          type: array
+          items:
+            type: string
+      required:
+        - statement
+        - examinedSurfaces
+        - totalSurfaces
+        - unexaminedSurfaces
+        - estateFraction
+        - estateFractionReason
+        - failedRuns
+        - assetsWithoutObservation
+        - caveats
+
+    ReportCostEstimate:
+      type: object
+      description: E1 question 3. Every figure carries its assumptions inline, in `statement`.
+      properties:
+        currency:
+          type: string
+        hourlyRate:
+          type: number
+        hourlyRateAssumed:
+          type: boolean
+          description: True unless `QUANTAXSCAN_BLENDED_HOURLY_RATE` supplied one. A currency without a rate is ignored rather than relabelling the USD default.
+        hourlyRateBasis:
+          type: string
+        estimatedHours:
+          type: number
+        estimatedCost:
+          type: integer
+        assetsCosted:
+          type: integer
+        assetsWithRecordedEffort:
+          type: integer
+          description: Assets carrying an effort estimate recorded against the asset itself.
+        assetsWithDerivedEffort:
+          type: integer
+          description: Assets taking the algorithm's base effort from the standards data — a class average, not an estimate of this asset.
+        assetsWithoutEffortEstimate:
+          type: integer
+          description: >-
+            In-scope assets excluded from the total because nothing supports an effort number for
+            them. Counted, never treated as zero — a zero would make the total read as complete.
+        statement:
+          type: string
+      required:
+        - currency
+        - hourlyRate
+        - hourlyRateAssumed
+        - hourlyRateBasis
+        - estimatedHours
+        - estimatedCost
+        - assetsCosted
+        - assetsWithRecordedEffort
+        - assetsWithDerivedEffort
+        - assetsWithoutEffortEstimate
+        - statement
+
+    ReportTrendStatement:
+      type: object
+      description: E1 question 4. `verdict` is `baseline` until two distinct collection instants exist — never "0% change".
+      properties:
+        sufficient:
+          type: boolean
+        verdict:
+          type: string
+          enum: [baseline, measured]
+        distinctCollectionInstants:
+          type: integer
+        firstCollectionAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastCollectionAt:
+          type: string
+          format: date-time
+          nullable: true
+        basis:
+          type: string
+      required:
+        - sufficient
+        - verdict
+        - distinctCollectionInstants
+        - firstCollectionAt
+        - lastCollectionAt
+        - basis
+
+    ReportAssumption:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        value:
+          type: string
+        basis:
+          type: string
+        assumed:
+          type: boolean
+          description: False only when the customer actually supplied the value. Rendered as a visible marker, per doc 07 §"Assumption marking".
+      required: [id, label, value, basis, assumed]
+
+    BoardPackExposure:
+      type: object
+      description: E1 question 1. `headline` is one plain-English sentence and contains no algorithm name.
+      properties:
+        headline:
+          type: string
+        assetsFound:
+          type: integer
+          description: Present assets this document describes. Not an estate total — see the coverage block.
+        quantumVulnerableAssets:
+          type: integer
+        assetsAlreadyTooLate:
+          type: integer
+          description: Of the quantum-vulnerable ones, how many breach Mosca's inequality under at least one scenario.
+        classicalHygieneAssets:
+          type: integer
+          description: Real cryptographic defects with no post-quantum content. Reported separately and excluded from every post-quantum figure (G-10).
+        unassessableAssets:
+          type: integer
+          description: Assets whose algorithm the standards data does not know. Counted toward nothing else.
+      required:
+        - headline
+        - assetsFound
+        - quantumVulnerableAssets
+        - assetsAlreadyTooLate
+        - classicalHygieneAssets
+        - unassessableAssets
+
+    BoardPackScenarioAnswer:
+      type: object
+      properties:
+        scenario:
+          type: string
+        qDayYear:
+          type: integer
+        assetsBreached:
+          type: integer
+        worstOvershootYears:
+          type: number
+          nullable: true
+          description: The largest `(X + Y) - Z` under this scenario, in years. Null when nothing breaches.
+        confidence:
+          type: string
+        rationale:
+          type: string
+      required: [scenario, qDayYear, assetsBreached, worstOvershootYears, confidence, rationale]
+
+    BoardPackTiming:
+      type: object
+      description: E1 question 2 — the Mosca verdict across all three scenarios, never a single date.
+      properties:
+        headline:
+          type: string
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardPackScenarioAnswer"
+        framing:
+          type: string
+      required: [headline, scenarios, framing]
+
+    BoardPackAppendix:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              label: { type: string }
+            required: [key, label]
+        rows:
+          type: array
+          description: Objects keyed by `columns[].key`. Values are strings, numbers or null.
+          items:
+            type: object
+            additionalProperties:
+              nullable: true
+        notes:
+          type: array
+          items:
+            type: string
+      required: [id, title, summary, columns, rows, notes]
+
+    BoardPack:
+      type: object
+      description: >-
+        E1 — the board / executive pack. One page answering four questions plus the coverage gap,
+        then three appendices. `page1` carries no algorithm names by construction.
+      properties:
+        kind:
+          type: string
+          enum: [board-pack]
+        header:
+          $ref: "#/components/schemas/ReportHeader"
+        page1:
+          type: object
+          properties:
+            exposure:
+              $ref: "#/components/schemas/BoardPackExposure"
+            timing:
+              $ref: "#/components/schemas/BoardPackTiming"
+            cost:
+              $ref: "#/components/schemas/ReportCostEstimate"
+            trend:
+              $ref: "#/components/schemas/ReportTrendStatement"
+            coverage:
+              $ref: "#/components/schemas/BoardPackPage1Coverage"
+          required: [exposure, timing, cost, trend, coverage]
+        appendices:
+          type: array
+          items:
+            $ref: "#/components/schemas/BoardPackAppendix"
+        assumptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportAssumption"
+      required: [kind, header, page1, appendices, assumptions]
+
+    RegulatorAssetProvenance:
+      type: object
+      description: >-
+        The most recent observation behind one asset. Every field is nullable together: an asset
+        with no observation record has no answer to "says who?", and `note` says that rather than
+        the fields quietly reading as zero.
+      properties:
+        collector:
+          type: string
+          nullable: true
+        collectorVersion:
+          type: string
+          nullable: true
+        observedAt:
+          type: string
+          format: date-time
+          nullable: true
+        confidence:
+          type: number
+          nullable: true
+          description: The collector's own confidence, 0 to 1, at the most recent observation.
+        discoveryModality:
+          type: string
+          nullable: true
+          description: How the observation was obtained. An active probe and a submitted form are not the same evidence.
+        observations:
+          type: integer
+        note:
+          type: string
+          nullable: true
+      required:
+        - collector
+        - collectorVersion
+        - observedAt
+        - confidence
+        - discoveryModality
+        - observations
+        - note
+
+    RegulatorObligationDeadline:
+      type: object
+      properties:
+        type:
+          type: string
+        label:
+          type: string
+        effect:
+          type: string
+          enum: [prohibition, caution, permitted]
+        inEffect:
+          type: boolean
+        effectiveFrom:
+          type: string
+          nullable: true
+        appliesTo:
+          type: string
+          nullable: true
+          description: Which use the rule covers. Load-bearing where an algorithm is disallowed for one purpose and permitted for another.
+        securityStrength:
+          type: string
+          nullable: true
+      required: [type, label, effect, inEffect, effectiveFrom, appliesTo, securityStrength]
+
+    RegulatorObligationCitation:
+      type: object
+      properties:
+        document:
+          type: string
+        section:
+          type: string
+          nullable: true
+        url:
+          type: string
+        retrievedAt:
+          type: string
+          nullable: true
+      required: [document, section, url, retrievedAt]
+
+    RegulatorObligation:
+      type: object
+      properties:
+        framework:
+          type: string
+        frameworkName:
+          type: string
+          nullable: true
+        requirement:
+          type: string
+        severity:
+          type: string
+        confidence:
+          type: string
+          description: >-
+            From the standards data, never upgraded. Always `verified` inside `obligations`;
+            anything else lives in `indicativeObligations`.
+        draftStatus:
+          type: string
+          nullable: true
+          description: Present when the citing document is a draft. Must be shown wherever the obligation is.
+        deadline:
+          allOf:
+            - $ref: "#/components/schemas/RegulatorObligationDeadline"
+          nullable: true
+        replacement:
+          type: object
+          nullable: true
+          properties:
+            algorithm: { type: string }
+            standard: { type: string }
+            purpose: { type: string, nullable: true }
+          required: [algorithm, standard, purpose]
+        citation:
+          $ref: "#/components/schemas/RegulatorObligationCitation"
+        citationRetrievalDateMissing:
+          type: boolean
+          description: Stated as a field rather than left for the reader to notice a blank.
+        caveats:
+          type: array
+          items:
+            type: string
+      required:
+        - framework
+        - frameworkName
+        - requirement
+        - severity
+        - confidence
+        - draftStatus
+        - deadline
+        - replacement
+        - citation
+        - citationRetrievalDateMissing
+        - caveats
+
+    RegulatorAsset:
+      type: object
+      properties:
+        fingerprint:
+          type: string
+        surface:
+          type: string
+        surfaceName:
+          type: string
+        algorithm:
+          type: string
+        keySize:
+          type: integer
+          nullable: true
+          description: Null means the collector looked and could not determine it. Never a default (G-05).
+        keySizeNote:
+          type: string
+          nullable: true
+        location:
+          type: string
+        projectId:
+          type: integer
+          nullable: true
+        status:
+          type: string
+        firstSeen:
+          type: string
+          format: date-time
+        lastSeen:
+          type: string
+          format: date-time
+        provenance:
+          $ref: "#/components/schemas/RegulatorAssetProvenance"
+        classification:
+          type: object
+          properties:
+            dataClassification: { type: string, nullable: true }
+            secrecyLifetimeYears: { type: number }
+            source: { type: string, enum: [asset, project, default] }
+            assumed: { type: boolean }
+          required: [dataClassification, secrecyLifetimeYears, source, assumed]
+        mosca:
+          type: object
+          properties:
+            x: { type: number }
+            y: { type: number }
+            applicable: { type: boolean }
+            breachedScenarios:
+              type: array
+              items: { type: string }
+          required: [x, y, applicable, breachedScenarios]
+        obligations:
+          type: array
+          description: "`verified` obligations only."
+          items:
+            $ref: "#/components/schemas/RegulatorObligation"
+        indicativeObligations:
+          type: array
+          description: >-
+            `needs-check` obligations. Never merged with `obligations`, and counted toward no
+            compliance figure. Render them with `complianceClaimSummary.indicativeLabel`.
+          items:
+            $ref: "#/components/schemas/RegulatorObligation"
+        standardsDataEntry:
+          type: boolean
+          description: False when the standards data has no entry for this algorithm. No obligation is invented for it.
+        caveats:
+          type: array
+          items:
+            type: string
+      required:
+        - fingerprint
+        - surface
+        - surfaceName
+        - algorithm
+        - keySize
+        - keySizeNote
+        - location
+        - projectId
+        - status
+        - firstSeen
+        - lastSeen
+        - provenance
+        - classification
+        - mosca
+        - obligations
+        - indicativeObligations
+        - standardsDataEntry
+        - caveats
+
+    RegulatorSubmission:
+      type: object
+      description: >-
+        E2 — the regulator / auditor inventory submission. Ordered so a reader meets the coverage
+        limitations before any count.
+      properties:
+        kind:
+          type: string
+          enum: [regulator-submission]
+        header:
+          $ref: "#/components/schemas/ReportHeader"
+        coverageLimitations:
+          $ref: "#/components/schemas/ReportCoverageLimitations"
+        scope:
+          type: object
+          properties:
+            projects:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: integer }
+                  name: { type: string }
+                  assets: { type: integer }
+                required: [id, name, assets]
+            assetsIncluded:
+              type: integer
+            statusCounts:
+              type: object
+              additionalProperties:
+                type: integer
+              description: Every asset status in the organisation, `gone` included, so the exclusion below is checkable arithmetic.
+            assetsExcluded:
+              type: integer
+            exclusionBasis:
+              type: string
+          required: [projects, assetsIncluded, statusCounts, assetsExcluded, exclusionBasis]
+        complianceClaimSummary:
+          type: object
+          properties:
+            assetsWithVerifiedObligations: { type: integer }
+            assetsWithIndicativeObligationsOnly: { type: integer }
+            assetsWithNoStandardsEntry: { type: integer }
+            verifiedObligations: { type: integer }
+            indicativeObligations: { type: integer }
+            obligationsMissingRetrievalDate: { type: integer }
+            indicativeLabel:
+              type: string
+              description: The words an indicative obligation must be rendered with.
+          required:
+            - assetsWithVerifiedObligations
+            - assetsWithIndicativeObligationsOnly
+            - assetsWithNoStandardsEntry
+            - verifiedObligations
+            - indicativeObligations
+            - obligationsMissingRetrievalDate
+            - indicativeLabel
+        inventory:
+          type: array
+          description: Present assets only, ordered by fingerprint so an unchanged inventory produces an identical document.
+          items:
+            $ref: "#/components/schemas/RegulatorAsset"
+        exceptions:
+          type: object
+          properties:
+            registerAvailable:
+              type: boolean
+              enum: [false]
+              description: >-
+                **Always false.** This product operates no waiver register, so no exception carries
+                an owner, justification, expiry or approver. An empty `waivers: []` would read as
+                "there are no exceptions", which is a different and unsupported claim.
+            statement:
+              type: string
+            waivedAssets:
+              type: array
+              items:
+                type: object
+                properties:
+                  fingerprint: { type: string }
+                  algorithm: { type: string }
+                  location: { type: string }
+                  surface: { type: string }
+                required: [fingerprint, algorithm, location, surface]
+            removedAssets:
+              type: integer
+          required: [registerAvailable, statement, waivedAssets, removedAssets]
+        methodology:
+          type: object
+          properties:
+            collectors:
+              type: array
+              items:
+                $ref: "#/components/schemas/ReportCollectorProvenance"
+            discoveryModalities:
+              type: array
+              items:
+                type: object
+                properties:
+                  modality: { type: string }
+                  observations: { type: integer }
+                required: [modality, observations]
+            confidenceBasis:
+              type: string
+            limitations:
+              type: array
+              items:
+                type: string
+          required: [collectors, discoveryModalities, confidenceBasis, limitations]
+        assumptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportAssumption"
+        integrity:
+          type: object
+          properties:
+            digestAlgorithm:
+              type: string
+              enum: [SHA-256]
+            digest:
+              type: string
+              description: Computed over the document with this field empty, which is the form a recipient can recompute.
+            signed:
+              type: boolean
+              enum: [false]
+              description: >-
+                **Always false.** A digest detects alteration relative to a value you already hold
+                and proves nothing about origin. Calling an unsigned document signed is the first
+                thing an auditor checks.
+            statement:
+              type: string
+          required: [digestAlgorithm, digest, signed, statement]
+      required:
+        - kind
+        - header
+        - coverageLimitations
+        - scope
+        - complianceClaimSummary
+        - inventory
+        - exceptions
+        - methodology
+        - assumptions
+        - integrity
+
     MultiScanFile:
       type: object
       properties:
@@ -5107,6 +6078,16 @@ components:
         secrecyLifetimeYears:
           type: integer
           nullable: true
+        effortHours:
+          type: number
+          nullable: true
+          description: >-
+            Migration effort somebody recorded against **this** asset, in hours. Null means nobody
+            did — no collector writes it today — and it is deliberately not defaulted, for the same
+            reason `keySize` is not: a report has to be able to say that an effort figure came from
+            the algorithm's class average rather than from an estimate made for this asset.
+            `mosca.y` is this value converted to calendar years, so a null here and a `y` of 0 are
+            the same fact seen twice.
         classificationSource:
           type: string
           enum: [asset, project, default]
@@ -5136,6 +6117,7 @@ components:
         - ownerId
         - dataClassification
         - secrecyLifetimeYears
+        - effortHours
         - classificationSource
         - latestConfidence
         - compliance

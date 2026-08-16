@@ -24,8 +24,9 @@ The test architecture bridges the gap between unit-level pattern matching and en
 | **Target-Host Validator Suite** | Vitest | `artifacts/api-server/src/lib/target-host.test.ts` | Pure — G-23's hostname/IP rule, including that it refuses a URL rather than repairing it |
 | **Coverage Summariser Suite** | Vitest | `artifacts/api-server/src/lib/coverage.test.ts` | Pure — no database, no HTTP |
 | **Posture Timeline Suite** | Vitest | `artifacts/api-server/src/lib/posture-timeline.test.ts` | Pure — no database, `now` injected (D7's whole subject is time) |
+| **Report Pack Suites** | Vitest | `artifacts/api-server/src/lib/board-pack.test.ts`, `regulator-submission.test.ts` | Pure — no database, no HTTP, `now` injected. Built over the *real* enrichment path via `report-input-fixture.ts` (`summariseInventoryAssets` + `summariseProjectCoverage`), not hand-written enriched literals, so a change underneath the packs cannot leave them green. Includes E1's page-one no-algorithm rule **and its complement** |
 | **UI Journey Suite** | Playwright | `tests/ui/ui-journey.spec.ts`, `tests/ui/timeline-journey.spec.ts` | Headless Chromium + Vite dev server (`http://localhost:5833`) |
-| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (nineteen files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
+| **Real-Stack E2E Suite** | Playwright | `tests/e2e/*.spec.ts` (twenty files) | Real PostgreSQL 16 container + built API server + Vite dev server, all on ports the run owns |
 | **Continuous Integration** | GitHub Actions | `.github/workflows/ci.yml` | Ubuntu runner (`ubuntu-latest`) |
 
 The UI suite always starts its own Vite dev server (`reuseExistingServer: false`) so it can never

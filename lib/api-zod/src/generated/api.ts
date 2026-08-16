@@ -1216,6 +1216,12 @@ export const GetInventoryAssetsResponse = zod.object({
       ownerId: zod.number().nullable(),
       dataClassification: zod.string().nullable(),
       secrecyLifetimeYears: zod.number().nullable(),
+      effortHours: zod
+        .number()
+        .nullable()
+        .describe(
+          "Migration effort somebody recorded against \*\*this\*\* asset, in hours. Null means nobody did — no collector writes it today — and it is deliberately not defaulted, for the same reason `keySize` is not: a report has to be able to say that an effort figure came from the algorithm's class average rather than from an estimate made for this asset. `mosca.y` is this value converted to calendar years, so a null here and a `y` of 0 are the same fact seen twice.",
+        ),
       classificationSource: zod
         .enum(["asset", "project", "default"])
         .describe(
@@ -2103,6 +2109,665 @@ export const GetSharedReportResponse = zod
   })
   .describe(
     "A `shared_reports` row, returned in full on a public route. `organizationId` and the expiry\/revocation columns are visible to anyone holding the link — see the note in the PR that introduced this documentation.",
+  );
+
+/**
+ * The estate's post-quantum exposure, answering exactly four questions — are we exposed, how badly and by when, what will it cost, are we on track — plus the coverage gap, on page one.
+
+**No number here implies completeness.** `page1.coverage.estateFraction` is always `null`, with `estateFractionReason` saying why: nothing this product holds supports a figure for how much cryptography sits in the surfaces nobody has examined, so the gap is reported as surfaces out of the collector catalogue rather than invented as a percentage.
+
+`page1` contains no algorithm names by construction (`page1.coverage` is the full coverage block minus `unmappedAlgorithms`); the appendices name everything. Obligations, deadlines and effort estimates are resolved at read time from the standards data version pinned in `header.mappingDataVersion` and are not stored against any asset.
+ * @summary Board / executive pack, as JSON (E1)
+ */
+export const GetBoardPackResponse = zod
+  .object({
+    kind: zod.enum(["board-pack"]),
+    header: zod
+      .object({
+        generatedAt: zod.coerce.date(),
+        inventoryAsOf: zod.coerce
+          .date()
+          .nullable()
+          .describe(
+            'The most recent moment any asset in the document was seen. \*\*Null for an empty inventory\*\* — which is a different statement from \"as of now\" and must not be rendered as one.',
+          ),
+        mappingDataVersion: zod
+          .string()
+          .describe(
+            "The `algorithms.json` snapshot every obligation, deadline and effort figure was resolved against. Pinned so the document can be re-derived.",
+          ),
+        frameworksDataVersion: zod.string(),
+        asOf: zod.coerce
+          .date()
+          .describe(
+            "The single instant every deadline in the document was evaluated at. One per document, so two findings cannot land on opposite sides of a deadline.",
+          ),
+        scenarios: zod.array(
+          zod.object({
+            name: zod.string(),
+            qDayYear: zod.number(),
+            rationale: zod.string(),
+            confidence: zod
+              .string()
+              .describe(
+                "From the source data. Every shipped scenario is `needs-check`, and the rendering says so rather than presenting a year as settled.",
+              ),
+          }),
+        ),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory wherever a scenario year appears. These are compliance deadlines, not predictions about physics.",
+          ),
+        collectors: zod.array(
+          zod
+            .object({
+              collector: zod.string(),
+              collectorVersion: zod.string(),
+              surface: zod.string(),
+              completedRuns: zod.number(),
+              failedRuns: zod
+                .number()
+                .describe(
+                  "Attempts that produced nothing. Counted separately and never as coverage — a failed attempt is not an examination.",
+                ),
+              lastRunAt: zod.coerce.date().nullable(),
+              observations: zod
+                .number()
+                .describe(
+                  "Observations still reachable from this collector's runs, counted from the observations themselves.",
+                ),
+            })
+            .describe(
+              'One collector, at one version, on one surface. E2\'s answer to \"says who?\", rolled up.',
+            ),
+        ),
+        productVersion: zod
+          .string()
+          .nullable()
+          .describe(
+            "Null when no release process stamped one. Never a placeholder version, which would be a lie in an auditor-facing document.",
+          ),
+        coverageSummary: zod.string(),
+      })
+      .describe(
+        "The reproducibility header docs\/Claude\/07-reports.md requires. Without it a report is an opinion; with it, it is evidence.",
+      ),
+    page1: zod.object({
+      exposure: zod
+        .object({
+          headline: zod.string(),
+          assetsFound: zod
+            .number()
+            .describe(
+              "Present assets this document describes. Not an estate total — see the coverage block.",
+            ),
+          quantumVulnerableAssets: zod.number(),
+          assetsAlreadyTooLate: zod
+            .number()
+            .describe(
+              "Of the quantum-vulnerable ones, how many breach Mosca's inequality under at least one scenario.",
+            ),
+          classicalHygieneAssets: zod
+            .number()
+            .describe(
+              "Real cryptographic defects with no post-quantum content. Reported separately and excluded from every post-quantum figure (G-10).",
+            ),
+          unassessableAssets: zod
+            .number()
+            .describe(
+              "Assets whose algorithm the standards data does not know. Counted toward nothing else.",
+            ),
+        })
+        .describe(
+          "E1 question 1. `headline` is one plain-English sentence and contains no algorithm name.",
+        ),
+      timing: zod
+        .object({
+          headline: zod.string(),
+          scenarios: zod.array(
+            zod.object({
+              scenario: zod.string(),
+              qDayYear: zod.number(),
+              assetsBreached: zod.number(),
+              worstOvershootYears: zod
+                .number()
+                .nullable()
+                .describe(
+                  "The largest `(X + Y) - Z` under this scenario, in years. Null when nothing breaches.",
+                ),
+              confidence: zod.string(),
+              rationale: zod.string(),
+            }),
+          ),
+          framing: zod.string(),
+        })
+        .describe(
+          "E1 question 2 — the Mosca verdict across all three scenarios, never a single date.",
+        ),
+      cost: zod
+        .object({
+          currency: zod.string(),
+          hourlyRate: zod.number(),
+          hourlyRateAssumed: zod
+            .boolean()
+            .describe(
+              "True unless `QUANTAXSCAN_BLENDED_HOURLY_RATE` supplied one. A currency without a rate is ignored rather than relabelling the USD default.",
+            ),
+          hourlyRateBasis: zod.string(),
+          estimatedHours: zod.number(),
+          estimatedCost: zod.number(),
+          assetsCosted: zod.number(),
+          assetsWithRecordedEffort: zod
+            .number()
+            .describe(
+              "Assets carrying an effort estimate recorded against the asset itself.",
+            ),
+          assetsWithDerivedEffort: zod
+            .number()
+            .describe(
+              "Assets taking the algorithm's base effort from the standards data — a class average, not an estimate of this asset.",
+            ),
+          assetsWithoutEffortEstimate: zod
+            .number()
+            .describe(
+              "In-scope assets excluded from the total because nothing supports an effort number for them. Counted, never treated as zero — a zero would make the total read as complete.",
+            ),
+          statement: zod.string(),
+        })
+        .describe(
+          "E1 question 3. Every figure carries its assumptions inline, in `statement`.",
+        ),
+      trend: zod
+        .object({
+          sufficient: zod.boolean(),
+          verdict: zod.enum(["baseline", "measured"]),
+          distinctCollectionInstants: zod.number(),
+          firstCollectionAt: zod.coerce.date().nullable(),
+          lastCollectionAt: zod.coerce.date().nullable(),
+          basis: zod.string(),
+        })
+        .describe(
+          'E1 question 4. `verdict` is `baseline` until two distinct collection instants exist — never \"0% change\".',
+        ),
+      coverage: zod
+        .object({
+          statement: zod.string(),
+          examinedSurfaces: zod.number(),
+          totalSurfaces: zod.number(),
+          unexaminedSurfaces: zod.array(
+            zod.object({
+              id: zod.string(),
+              name: zod.string(),
+              catalogueStatus: zod
+                .enum(["live", "planned"])
+                .describe(
+                  "`planned` means no collector exists. `live` here means one exists and has never been run against this organisation. Either way nothing has been examined.",
+                ),
+              reason: zod.string(),
+            }),
+          ),
+          estateFraction: zod.null(),
+          estateFractionReason: zod.string(),
+          failedRuns: zod.number(),
+          assetsWithoutObservation: zod.number(),
+          caveats: zod.array(zod.string()),
+        })
+        .describe(
+          "`ReportCoverageLimitations` minus `unmappedAlgorithms`. The board pack's page one names no algorithm; the count of unmapped ones survives in `caveats`, and the names appear in the appendices and in the regulator submission.",
+        ),
+    }),
+    appendices: zod.array(
+      zod.object({
+        id: zod.string(),
+        title: zod.string(),
+        summary: zod.string(),
+        columns: zod.array(
+          zod.object({
+            key: zod.string(),
+            label: zod.string(),
+          }),
+        ),
+        rows: zod
+          .array(zod.record(zod.string(), zod.unknown().nullable()))
+          .describe(
+            "Objects keyed by `columns[].key`. Values are strings, numbers or null.",
+          ),
+        notes: zod.array(zod.string()),
+      }),
+    ),
+    assumptions: zod.array(
+      zod.object({
+        id: zod.string(),
+        label: zod.string(),
+        value: zod.string(),
+        basis: zod.string(),
+        assumed: zod
+          .boolean()
+          .describe(
+            'False only when the customer actually supplied the value. Rendered as a visible marker, per doc 07 §\"Assumption marking\".',
+          ),
+      }),
+    ),
+  })
+  .describe(
+    "E1 — the board \/ executive pack. One page answering four questions plus the coverage gap, then three appendices. `page1` carries no algorithm names by construction.",
+  );
+
+/**
+ * The inventory as evidence: every asset with the collector, collector version, timestamp, confidence and discovery modality behind it, and every compliance claim with its citation and retrieval date.
+
+**Only `verified` obligations appear in `inventory[].obligations`.** Anything the standards data marks `needs-check` is carried separately in `inventory[].indicativeObligations` and labelled with `complianceClaimSummary.indicativeLabel`; the two are never merged, and indicative obligations count toward no compliance figure.
+
+Two of doc 07's seven requirements are answered by an honest refusal rather than by data, and both are fields rather than omissions. `exceptions.registerAvailable` is always `false` — this product operates no waiver register, so no exception carries an owner, justification, expiry or approver, and the assets listed are simply those an operator marked `waived`. And `integrity.signed` is always `false`: the SHA-256 digest detects alteration relative to a value you already hold, and proves nothing about origin.
+
+`coverageLimitations` comes before the inventory in the payload as well as in the rendering, because an undisclosed gap is the finding that sinks an audit.
+ * @summary Regulator / auditor inventory submission, as JSON (E2)
+ */
+export const GetRegulatorSubmissionResponse = zod
+  .object({
+    kind: zod.enum(["regulator-submission"]),
+    header: zod
+      .object({
+        generatedAt: zod.coerce.date(),
+        inventoryAsOf: zod.coerce
+          .date()
+          .nullable()
+          .describe(
+            'The most recent moment any asset in the document was seen. \*\*Null for an empty inventory\*\* — which is a different statement from \"as of now\" and must not be rendered as one.',
+          ),
+        mappingDataVersion: zod
+          .string()
+          .describe(
+            "The `algorithms.json` snapshot every obligation, deadline and effort figure was resolved against. Pinned so the document can be re-derived.",
+          ),
+        frameworksDataVersion: zod.string(),
+        asOf: zod.coerce
+          .date()
+          .describe(
+            "The single instant every deadline in the document was evaluated at. One per document, so two findings cannot land on opposite sides of a deadline.",
+          ),
+        scenarios: zod.array(
+          zod.object({
+            name: zod.string(),
+            qDayYear: zod.number(),
+            rationale: zod.string(),
+            confidence: zod
+              .string()
+              .describe(
+                "From the source data. Every shipped scenario is `needs-check`, and the rendering says so rather than presenting a year as settled.",
+              ),
+          }),
+        ),
+        framing: zod
+          .string()
+          .describe(
+            "Mandatory wherever a scenario year appears. These are compliance deadlines, not predictions about physics.",
+          ),
+        collectors: zod.array(
+          zod
+            .object({
+              collector: zod.string(),
+              collectorVersion: zod.string(),
+              surface: zod.string(),
+              completedRuns: zod.number(),
+              failedRuns: zod
+                .number()
+                .describe(
+                  "Attempts that produced nothing. Counted separately and never as coverage — a failed attempt is not an examination.",
+                ),
+              lastRunAt: zod.coerce.date().nullable(),
+              observations: zod
+                .number()
+                .describe(
+                  "Observations still reachable from this collector's runs, counted from the observations themselves.",
+                ),
+            })
+            .describe(
+              'One collector, at one version, on one surface. E2\'s answer to \"says who?\", rolled up.',
+            ),
+        ),
+        productVersion: zod
+          .string()
+          .nullable()
+          .describe(
+            "Null when no release process stamped one. Never a placeholder version, which would be a lie in an auditor-facing document.",
+          ),
+        coverageSummary: zod.string(),
+      })
+      .describe(
+        "The reproducibility header docs\/Claude\/07-reports.md requires. Without it a report is an opinion; with it, it is evidence.",
+      ),
+    coverageLimitations: zod
+      .object({
+        statement: zod.string(),
+        examinedSurfaces: zod.number(),
+        totalSurfaces: zod
+          .number()
+          .describe(
+            "Collector surfaces in the catalogue. The denominator is surfaces, never assets.",
+          ),
+        unexaminedSurfaces: zod.array(
+          zod.object({
+            id: zod.string(),
+            name: zod.string(),
+            catalogueStatus: zod
+              .enum(["live", "planned"])
+              .describe(
+                "`planned` means no collector exists. `live` here means one exists and has never been run against this organisation. Either way nothing has been examined.",
+              ),
+            reason: zod.string(),
+          }),
+        ),
+        estateFraction: zod
+          .null()
+          .describe(
+            "\*\*Always null.\*\* Nothing this product holds supports a figure for how much cryptography sits in an unexamined surface, so no share of the estate is stated. The field exists, null, with `estateFractionReason`, so a consumer cannot mistake the absence for an oversight and fill it in.",
+          ),
+        estateFractionReason: zod.string(),
+        failedRuns: zod.number(),
+        assetsWithoutObservation: zod
+          .number()
+          .describe(
+            "Present assets backed by no observation record at all — a data gap, reported rather than hidden.",
+          ),
+        unmappedAlgorithms: zod
+          .array(zod.string())
+          .describe(
+            "Algorithms this estate holds that the standards data does not know. They carry no obligation and count toward no compliance figure. Absent from the board pack's page-one projection, which prints no algorithm names.",
+          ),
+        caveats: zod.array(zod.string()),
+      })
+      .describe(
+        "The gap, stated where a reader meets it rather than in a footnote. Read this before reading any count in the document.",
+      ),
+    scope: zod.object({
+      projects: zod.array(
+        zod.object({
+          id: zod.number(),
+          name: zod.string(),
+          assets: zod.number(),
+        }),
+      ),
+      assetsIncluded: zod.number(),
+      statusCounts: zod
+        .record(zod.string(), zod.number())
+        .describe(
+          "Every asset status in the organisation, `gone` included, so the exclusion below is checkable arithmetic.",
+        ),
+      assetsExcluded: zod.number(),
+      exclusionBasis: zod.string(),
+    }),
+    complianceClaimSummary: zod.object({
+      assetsWithVerifiedObligations: zod.number(),
+      assetsWithIndicativeObligationsOnly: zod.number(),
+      assetsWithNoStandardsEntry: zod.number(),
+      verifiedObligations: zod.number(),
+      indicativeObligations: zod.number(),
+      obligationsMissingRetrievalDate: zod.number(),
+      indicativeLabel: zod
+        .string()
+        .describe("The words an indicative obligation must be rendered with."),
+    }),
+    inventory: zod
+      .array(
+        zod.object({
+          fingerprint: zod.string(),
+          surface: zod.string(),
+          surfaceName: zod.string(),
+          algorithm: zod.string(),
+          keySize: zod
+            .number()
+            .nullable()
+            .describe(
+              "Null means the collector looked and could not determine it. Never a default (G-05).",
+            ),
+          keySizeNote: zod.string().nullable(),
+          location: zod.string(),
+          projectId: zod.number().nullable(),
+          status: zod.string(),
+          firstSeen: zod.coerce.date(),
+          lastSeen: zod.coerce.date(),
+          provenance: zod
+            .object({
+              collector: zod.string().nullable(),
+              collectorVersion: zod.string().nullable(),
+              observedAt: zod.coerce.date().nullable(),
+              confidence: zod
+                .number()
+                .nullable()
+                .describe(
+                  "The collector's own confidence, 0 to 1, at the most recent observation.",
+                ),
+              discoveryModality: zod
+                .string()
+                .nullable()
+                .describe(
+                  "How the observation was obtained. An active probe and a submitted form are not the same evidence.",
+                ),
+              observations: zod.number(),
+              note: zod.string().nullable(),
+            })
+            .describe(
+              'The most recent observation behind one asset. Every field is nullable together: an asset with no observation record has no answer to \"says who?\", and `note` says that rather than the fields quietly reading as zero.',
+            ),
+          classification: zod.object({
+            dataClassification: zod.string().nullable(),
+            secrecyLifetimeYears: zod.number(),
+            source: zod.enum(["asset", "project", "default"]),
+            assumed: zod.boolean(),
+          }),
+          mosca: zod.object({
+            x: zod.number(),
+            y: zod.number(),
+            applicable: zod.boolean(),
+            breachedScenarios: zod.array(zod.string()),
+          }),
+          obligations: zod
+            .array(
+              zod.object({
+                framework: zod.string(),
+                frameworkName: zod.string().nullable(),
+                requirement: zod.string(),
+                severity: zod.string(),
+                confidence: zod
+                  .string()
+                  .describe(
+                    "From the standards data, never upgraded. Always `verified` inside `obligations`; anything else lives in `indicativeObligations`.",
+                  ),
+                draftStatus: zod
+                  .string()
+                  .nullable()
+                  .describe(
+                    "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                  ),
+                deadline: zod
+                  .object({
+                    type: zod.string(),
+                    label: zod.string(),
+                    effect: zod.enum(["prohibition", "caution", "permitted"]),
+                    inEffect: zod.boolean(),
+                    effectiveFrom: zod.string().nullable(),
+                    appliesTo: zod
+                      .string()
+                      .nullable()
+                      .describe(
+                        "Which use the rule covers. Load-bearing where an algorithm is disallowed for one purpose and permitted for another.",
+                      ),
+                    securityStrength: zod.string().nullable(),
+                  })
+                  .nullable(),
+                replacement: zod
+                  .object({
+                    algorithm: zod.string(),
+                    standard: zod.string(),
+                    purpose: zod.string().nullable(),
+                  })
+                  .nullable(),
+                citation: zod.object({
+                  document: zod.string(),
+                  section: zod.string().nullable(),
+                  url: zod.string(),
+                  retrievedAt: zod.string().nullable(),
+                }),
+                citationRetrievalDateMissing: zod
+                  .boolean()
+                  .describe(
+                    "Stated as a field rather than left for the reader to notice a blank.",
+                  ),
+                caveats: zod.array(zod.string()),
+              }),
+            )
+            .describe("`verified` obligations only."),
+          indicativeObligations: zod
+            .array(
+              zod.object({
+                framework: zod.string(),
+                frameworkName: zod.string().nullable(),
+                requirement: zod.string(),
+                severity: zod.string(),
+                confidence: zod
+                  .string()
+                  .describe(
+                    "From the standards data, never upgraded. Always `verified` inside `obligations`; anything else lives in `indicativeObligations`.",
+                  ),
+                draftStatus: zod
+                  .string()
+                  .nullable()
+                  .describe(
+                    "Present when the citing document is a draft. Must be shown wherever the obligation is.",
+                  ),
+                deadline: zod
+                  .object({
+                    type: zod.string(),
+                    label: zod.string(),
+                    effect: zod.enum(["prohibition", "caution", "permitted"]),
+                    inEffect: zod.boolean(),
+                    effectiveFrom: zod.string().nullable(),
+                    appliesTo: zod
+                      .string()
+                      .nullable()
+                      .describe(
+                        "Which use the rule covers. Load-bearing where an algorithm is disallowed for one purpose and permitted for another.",
+                      ),
+                    securityStrength: zod.string().nullable(),
+                  })
+                  .nullable(),
+                replacement: zod
+                  .object({
+                    algorithm: zod.string(),
+                    standard: zod.string(),
+                    purpose: zod.string().nullable(),
+                  })
+                  .nullable(),
+                citation: zod.object({
+                  document: zod.string(),
+                  section: zod.string().nullable(),
+                  url: zod.string(),
+                  retrievedAt: zod.string().nullable(),
+                }),
+                citationRetrievalDateMissing: zod
+                  .boolean()
+                  .describe(
+                    "Stated as a field rather than left for the reader to notice a blank.",
+                  ),
+                caveats: zod.array(zod.string()),
+              }),
+            )
+            .describe(
+              "`needs-check` obligations. Never merged with `obligations`, and counted toward no compliance figure. Render them with `complianceClaimSummary.indicativeLabel`.",
+            ),
+          standardsDataEntry: zod
+            .boolean()
+            .describe(
+              "False when the standards data has no entry for this algorithm. No obligation is invented for it.",
+            ),
+          caveats: zod.array(zod.string()),
+        }),
+      )
+      .describe(
+        "Present assets only, ordered by fingerprint so an unchanged inventory produces an identical document.",
+      ),
+    exceptions: zod.object({
+      registerAvailable: zod
+        .literal(false)
+        .describe(
+          '\*\*Always false.\*\* This product operates no waiver register, so no exception carries an owner, justification, expiry or approver. An empty `waivers: []` would read as \"there are no exceptions\", which is a different and unsupported claim.',
+        ),
+      statement: zod.string(),
+      waivedAssets: zod.array(
+        zod.object({
+          fingerprint: zod.string(),
+          algorithm: zod.string(),
+          location: zod.string(),
+          surface: zod.string(),
+        }),
+      ),
+      removedAssets: zod.number(),
+    }),
+    methodology: zod.object({
+      collectors: zod.array(
+        zod
+          .object({
+            collector: zod.string(),
+            collectorVersion: zod.string(),
+            surface: zod.string(),
+            completedRuns: zod.number(),
+            failedRuns: zod
+              .number()
+              .describe(
+                "Attempts that produced nothing. Counted separately and never as coverage — a failed attempt is not an examination.",
+              ),
+            lastRunAt: zod.coerce.date().nullable(),
+            observations: zod
+              .number()
+              .describe(
+                "Observations still reachable from this collector's runs, counted from the observations themselves.",
+              ),
+          })
+          .describe(
+            'One collector, at one version, on one surface. E2\'s answer to \"says who?\", rolled up.',
+          ),
+      ),
+      discoveryModalities: zod.array(
+        zod.object({
+          modality: zod.string(),
+          observations: zod.number(),
+        }),
+      ),
+      confidenceBasis: zod.string(),
+      limitations: zod.array(zod.string()),
+    }),
+    assumptions: zod.array(
+      zod.object({
+        id: zod.string(),
+        label: zod.string(),
+        value: zod.string(),
+        basis: zod.string(),
+        assumed: zod
+          .boolean()
+          .describe(
+            'False only when the customer actually supplied the value. Rendered as a visible marker, per doc 07 §\"Assumption marking\".',
+          ),
+      }),
+    ),
+    integrity: zod.object({
+      digestAlgorithm: zod.enum(["SHA-256"]),
+      digest: zod
+        .string()
+        .describe(
+          "Computed over the document with this field empty, which is the form a recipient can recompute.",
+        ),
+      signed: zod
+        .literal(false)
+        .describe(
+          "\*\*Always false.\*\* A digest detects alteration relative to a value you already hold and proves nothing about origin. Calling an unsigned document signed is the first thing an auditor checks.",
+        ),
+      statement: zod.string(),
+    }),
+  })
+  .describe(
+    "E2 — the regulator \/ auditor inventory submission. Ordered so a reader meets the coverage limitations before any count.",
   );
 
 /**

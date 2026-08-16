@@ -113,6 +113,16 @@ export const BUDGETS = {
    * so a low ceiling costs nothing real.
    */
   discovery: { windowMs: 60 * MINUTE, max: budget("RATE_LIMIT_DISCOVERY_MAX", 10) },
+  /**
+   * E1/E2's `.pdf` routes. Each one launches a Chromium process, renders a
+   * document and tears it down — comfortably the most expensive thing this
+   * server does per request, and memory-bound rather than CPU-bound, so it
+   * fails differently from a scan: the box runs out of RAM rather than getting
+   * slow. Generating a board pack is something a person does occasionally, so
+   * a low ceiling costs nothing real. The JSON and HTML representations of the
+   * same documents stay on the default budget — they are ordinary reads.
+   */
+  reportPdf: { windowMs: 5 * MINUTE, max: budget("RATE_LIMIT_REPORT_PDF_MAX", 10) },
 } as const;
 
 /**
@@ -200,6 +210,7 @@ const scanLimiter = limiter(BUDGETS.scan, principalKey);
 const chatLimiter = limiter(BUDGETS.chat, principalKey);
 const tlsLimiter = limiter(BUDGETS.tls, principalKey);
 const discoveryLimiter = limiter(BUDGETS.discovery, principalKey);
+const reportPdfLimiter = limiter(BUDGETS.reportPdf, principalKey);
 
 /**
  * Per-route budgets. Paths are **mount-relative** — the router is mounted at
@@ -227,6 +238,9 @@ const ROUTE_BUDGETS: ReadonlyArray<{
   { method: "POST", path: /^\/scans\/multi$/, limiter: scanLimiter },
   // Real outbound connections to caller-named hosts — see BUDGETS.tls.
   { method: "POST", path: /^\/projects\/[^/]+\/tls$/, limiter: tlsLimiter },
+  // Launches a browser per request — see BUDGETS.reportPdf. Only the `.pdf`
+  // suffix; the JSON and `.html` forms of the same documents are plain reads.
+  { method: "GET", path: /^\/report-packs\/[^/]+\.pdf$/, limiter: reportPdfLimiter },
   // D8. Egress to a free public service that rations its own callers, fanning
   // out into a few hundred DNS queries — see BUDGETS.discovery. Ordered before
   // the probe entry below because `/discovery` and `/discovered-targets/probe`

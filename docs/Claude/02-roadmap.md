@@ -103,11 +103,22 @@ catalogue from two live surfaces to eight — the manual OT register (B8) began 
 cryptography on its own surface at the same time. What is *not* done is the report half: E1's
 board pack is the only outstanding M2 exit criterion.
 
+*Update 2026-08-16:* **M2 is closed.** E1 and E2 landed together
+([07-reports.md](07-reports.md)) as `/api/report-packs/board` and `/api/report-packs/regulator`,
+each in three representations, and `tests/e2e/20-report-packs.spec.ts` asserts a real `%PDF-`
+against the real stack rather than tolerating the documented HTML fallback. Read the E1 entry's
+note on `estateFraction` before quoting a coverage figure from either pack: the "31% of estimated
+estate" the design asked for is a number this product will not print.
+
 **M2 exit criteria**
 - ✅ A finding maps to its NIST/CNSA/CISA obligations **without a code change** when standards data
   updates — C1 shipped 2026-08-13; the criterion is asserted executably in
   `lib/mappings/src/engine.test.ts`, which mutates the data and checks the output follows
-- Board pack PDF generates end-to-end from real inventory data — **the one criterion still open**
+- ✅ Board pack PDF generates end-to-end from real inventory data — E1 shipped 2026-08-16;
+  `tests/e2e/20-report-packs.spec.ts` seeds assets through a real scan, fetches
+  `/api/report-packs/board.pdf` from the real API server and asserts a `%PDF-` header and a
+  `%%EOF` trailer. The spec deliberately does **not** accept the 503 that a deployment with no
+  Chromium answers — tolerating it would have left this criterion open while the suite went green
 - ✅ Certificate inventory shows which certs outlive the conservative Q-Day scenario — B4 shipped
   2026-08-14; asserted end to end in `tests/e2e/04-certificates.spec.ts` against real
   openssl-generated certificates, per scenario rather than against one hardcoded year

@@ -956,6 +956,446 @@ export interface SharedReport {
   createdAt: string;
 }
 
+/**
+ * One collector, at one version, on one surface. E2's answer to "says who?", rolled up.
+ */
+export interface ReportCollectorProvenance {
+  collector: string;
+  collectorVersion: string;
+  surface: string;
+  completedRuns: number;
+  /** Attempts that produced nothing. Counted separately and never as coverage — a failed attempt is not an examination. */
+  failedRuns: number;
+  lastRunAt: string | null;
+  /** Observations still reachable from this collector's runs, counted from the observations themselves. */
+  observations: number;
+}
+
+export interface ReportQDayScenario {
+  name: string;
+  qDayYear: number;
+  rationale: string;
+  /** From the source data. Every shipped scenario is `needs-check`, and the rendering says so rather than presenting a year as settled. */
+  confidence: string;
+}
+
+/**
+ * The reproducibility header docs/Claude/07-reports.md requires. Without it a report is an opinion; with it, it is evidence.
+ */
+export interface ReportHeader {
+  generatedAt: string;
+  /** The most recent moment any asset in the document was seen. **Null for an empty inventory** — which is a different statement from "as of now" and must not be rendered as one. */
+  inventoryAsOf: string | null;
+  /** The `algorithms.json` snapshot every obligation, deadline and effort figure was resolved against. Pinned so the document can be re-derived. */
+  mappingDataVersion: string;
+  frameworksDataVersion: string;
+  /** The single instant every deadline in the document was evaluated at. One per document, so two findings cannot land on opposite sides of a deadline. */
+  asOf: string;
+  scenarios: ReportQDayScenario[];
+  /** Mandatory wherever a scenario year appears. These are compliance deadlines, not predictions about physics. */
+  framing: string;
+  collectors: ReportCollectorProvenance[];
+  /** Null when no release process stamped one. Never a placeholder version, which would be a lie in an auditor-facing document. */
+  productVersion: string | null;
+  coverageSummary: string;
+}
+
+/**
+ * `planned` means no collector exists. `live` here means one exists and has never been run against this organisation. Either way nothing has been examined.
+ */
+export type UnexaminedSurfaceCatalogueStatus =
+  (typeof UnexaminedSurfaceCatalogueStatus)[keyof typeof UnexaminedSurfaceCatalogueStatus];
+
+export const UnexaminedSurfaceCatalogueStatus = {
+  live: "live",
+  planned: "planned",
+} as const;
+
+export interface UnexaminedSurface {
+  id: string;
+  name: string;
+  /** `planned` means no collector exists. `live` here means one exists and has never been run against this organisation. Either way nothing has been examined. */
+  catalogueStatus: UnexaminedSurfaceCatalogueStatus;
+  reason: string;
+}
+
+/**
+ * The gap, stated where a reader meets it rather than in a footnote. Read this before reading any count in the document.
+ */
+export interface ReportCoverageLimitations {
+  statement: string;
+  examinedSurfaces: number;
+  /** Collector surfaces in the catalogue. The denominator is surfaces, never assets. */
+  totalSurfaces: number;
+  unexaminedSurfaces: UnexaminedSurface[];
+  /**
+   * **Always null.** Nothing this product holds supports a figure for how much cryptography sits in an unexamined surface, so no share of the estate is stated. The field exists, null, with `estateFractionReason`, so a consumer cannot mistake the absence for an oversight and fill it in.
+   * @nullable
+   */
+  estateFraction: null;
+  estateFractionReason: string;
+  failedRuns: number;
+  /** Present assets backed by no observation record at all — a data gap, reported rather than hidden. */
+  assetsWithoutObservation: number;
+  /** Algorithms this estate holds that the standards data does not know. They carry no obligation and count toward no compliance figure. Absent from the board pack's page-one projection, which prints no algorithm names. */
+  unmappedAlgorithms: string[];
+  caveats: string[];
+}
+
+/**
+ * `ReportCoverageLimitations` minus `unmappedAlgorithms`. The board pack's page one names no algorithm; the count of unmapped ones survives in `caveats`, and the names appear in the appendices and in the regulator submission.
+ */
+export interface BoardPackPage1Coverage {
+  statement: string;
+  examinedSurfaces: number;
+  totalSurfaces: number;
+  unexaminedSurfaces: UnexaminedSurface[];
+  /** @nullable */
+  estateFraction: null;
+  estateFractionReason: string;
+  failedRuns: number;
+  assetsWithoutObservation: number;
+  caveats: string[];
+}
+
+/**
+ * E1 question 3. Every figure carries its assumptions inline, in `statement`.
+ */
+export interface ReportCostEstimate {
+  currency: string;
+  hourlyRate: number;
+  /** True unless `QUANTAXSCAN_BLENDED_HOURLY_RATE` supplied one. A currency without a rate is ignored rather than relabelling the USD default. */
+  hourlyRateAssumed: boolean;
+  hourlyRateBasis: string;
+  estimatedHours: number;
+  estimatedCost: number;
+  assetsCosted: number;
+  /** Assets carrying an effort estimate recorded against the asset itself. */
+  assetsWithRecordedEffort: number;
+  /** Assets taking the algorithm's base effort from the standards data — a class average, not an estimate of this asset. */
+  assetsWithDerivedEffort: number;
+  /** In-scope assets excluded from the total because nothing supports an effort number for them. Counted, never treated as zero — a zero would make the total read as complete. */
+  assetsWithoutEffortEstimate: number;
+  statement: string;
+}
+
+export type ReportTrendStatementVerdict =
+  (typeof ReportTrendStatementVerdict)[keyof typeof ReportTrendStatementVerdict];
+
+export const ReportTrendStatementVerdict = {
+  baseline: "baseline",
+  measured: "measured",
+} as const;
+
+/**
+ * E1 question 4. `verdict` is `baseline` until two distinct collection instants exist — never "0% change".
+ */
+export interface ReportTrendStatement {
+  sufficient: boolean;
+  verdict: ReportTrendStatementVerdict;
+  distinctCollectionInstants: number;
+  firstCollectionAt: string | null;
+  lastCollectionAt: string | null;
+  basis: string;
+}
+
+export interface ReportAssumption {
+  id: string;
+  label: string;
+  value: string;
+  basis: string;
+  /** False only when the customer actually supplied the value. Rendered as a visible marker, per doc 07 §"Assumption marking". */
+  assumed: boolean;
+}
+
+/**
+ * E1 question 1. `headline` is one plain-English sentence and contains no algorithm name.
+ */
+export interface BoardPackExposure {
+  headline: string;
+  /** Present assets this document describes. Not an estate total — see the coverage block. */
+  assetsFound: number;
+  quantumVulnerableAssets: number;
+  /** Of the quantum-vulnerable ones, how many breach Mosca's inequality under at least one scenario. */
+  assetsAlreadyTooLate: number;
+  /** Real cryptographic defects with no post-quantum content. Reported separately and excluded from every post-quantum figure (G-10). */
+  classicalHygieneAssets: number;
+  /** Assets whose algorithm the standards data does not know. Counted toward nothing else. */
+  unassessableAssets: number;
+}
+
+export interface BoardPackScenarioAnswer {
+  scenario: string;
+  qDayYear: number;
+  assetsBreached: number;
+  /** The largest `(X + Y) - Z` under this scenario, in years. Null when nothing breaches. */
+  worstOvershootYears: number | null;
+  confidence: string;
+  rationale: string;
+}
+
+/**
+ * E1 question 2 — the Mosca verdict across all three scenarios, never a single date.
+ */
+export interface BoardPackTiming {
+  headline: string;
+  scenarios: BoardPackScenarioAnswer[];
+  framing: string;
+}
+
+export type BoardPackAppendixColumnsItem = {
+  key: string;
+  label: string;
+};
+
+export type BoardPackAppendixRowsItem = { [key: string]: unknown | null };
+
+export interface BoardPackAppendix {
+  id: string;
+  title: string;
+  summary: string;
+  columns: BoardPackAppendixColumnsItem[];
+  /** Objects keyed by `columns[].key`. Values are strings, numbers or null. */
+  rows: BoardPackAppendixRowsItem[];
+  notes: string[];
+}
+
+export type BoardPackKind = (typeof BoardPackKind)[keyof typeof BoardPackKind];
+
+export const BoardPackKind = {
+  "board-pack": "board-pack",
+} as const;
+
+export type BoardPackPage1 = {
+  exposure: BoardPackExposure;
+  timing: BoardPackTiming;
+  cost: ReportCostEstimate;
+  trend: ReportTrendStatement;
+  coverage: BoardPackPage1Coverage;
+};
+
+/**
+ * E1 — the board / executive pack. One page answering four questions plus the coverage gap, then three appendices. `page1` carries no algorithm names by construction.
+ */
+export interface BoardPack {
+  kind: BoardPackKind;
+  header: ReportHeader;
+  page1: BoardPackPage1;
+  appendices: BoardPackAppendix[];
+  assumptions: ReportAssumption[];
+}
+
+/**
+ * The most recent observation behind one asset. Every field is nullable together: an asset with no observation record has no answer to "says who?", and `note` says that rather than the fields quietly reading as zero.
+ */
+export interface RegulatorAssetProvenance {
+  collector: string | null;
+  collectorVersion: string | null;
+  observedAt: string | null;
+  /** The collector's own confidence, 0 to 1, at the most recent observation. */
+  confidence: number | null;
+  /** How the observation was obtained. An active probe and a submitted form are not the same evidence. */
+  discoveryModality: string | null;
+  observations: number;
+  note: string | null;
+}
+
+export type RegulatorObligationDeadlineEffect =
+  (typeof RegulatorObligationDeadlineEffect)[keyof typeof RegulatorObligationDeadlineEffect];
+
+export const RegulatorObligationDeadlineEffect = {
+  prohibition: "prohibition",
+  caution: "caution",
+  permitted: "permitted",
+} as const;
+
+export interface RegulatorObligationDeadline {
+  type: string;
+  label: string;
+  effect: RegulatorObligationDeadlineEffect;
+  inEffect: boolean;
+  effectiveFrom: string | null;
+  /** Which use the rule covers. Load-bearing where an algorithm is disallowed for one purpose and permitted for another. */
+  appliesTo: string | null;
+  securityStrength: string | null;
+}
+
+export interface RegulatorObligationCitation {
+  document: string;
+  section: string | null;
+  url: string;
+  retrievedAt: string | null;
+}
+
+export type RegulatorObligationReplacement = {
+  algorithm: string;
+  standard: string;
+  purpose: string | null;
+} | null;
+
+export interface RegulatorObligation {
+  framework: string;
+  frameworkName: string | null;
+  requirement: string;
+  severity: string;
+  /** From the standards data, never upgraded. Always `verified` inside `obligations`; anything else lives in `indicativeObligations`. */
+  confidence: string;
+  /** Present when the citing document is a draft. Must be shown wherever the obligation is. */
+  draftStatus: string | null;
+  deadline: RegulatorObligationDeadline | null;
+  replacement: RegulatorObligationReplacement;
+  citation: RegulatorObligationCitation;
+  /** Stated as a field rather than left for the reader to notice a blank. */
+  citationRetrievalDateMissing: boolean;
+  caveats: string[];
+}
+
+export type RegulatorAssetClassificationSource =
+  (typeof RegulatorAssetClassificationSource)[keyof typeof RegulatorAssetClassificationSource];
+
+export const RegulatorAssetClassificationSource = {
+  asset: "asset",
+  project: "project",
+  default: "default",
+} as const;
+
+export type RegulatorAssetClassification = {
+  dataClassification: string | null;
+  secrecyLifetimeYears: number;
+  source: RegulatorAssetClassificationSource;
+  assumed: boolean;
+};
+
+export type RegulatorAssetMosca = {
+  x: number;
+  y: number;
+  applicable: boolean;
+  breachedScenarios: string[];
+};
+
+export interface RegulatorAsset {
+  fingerprint: string;
+  surface: string;
+  surfaceName: string;
+  algorithm: string;
+  /** Null means the collector looked and could not determine it. Never a default (G-05). */
+  keySize: number | null;
+  keySizeNote: string | null;
+  location: string;
+  projectId: number | null;
+  status: string;
+  firstSeen: string;
+  lastSeen: string;
+  provenance: RegulatorAssetProvenance;
+  classification: RegulatorAssetClassification;
+  mosca: RegulatorAssetMosca;
+  /** `verified` obligations only. */
+  obligations: RegulatorObligation[];
+  /** `needs-check` obligations. Never merged with `obligations`, and counted toward no compliance figure. Render them with `complianceClaimSummary.indicativeLabel`. */
+  indicativeObligations: RegulatorObligation[];
+  /** False when the standards data has no entry for this algorithm. No obligation is invented for it. */
+  standardsDataEntry: boolean;
+  caveats: string[];
+}
+
+export type RegulatorSubmissionKind =
+  (typeof RegulatorSubmissionKind)[keyof typeof RegulatorSubmissionKind];
+
+export const RegulatorSubmissionKind = {
+  "regulator-submission": "regulator-submission",
+} as const;
+
+export type RegulatorSubmissionScopeProjectsItem = {
+  id: number;
+  name: string;
+  assets: number;
+};
+
+/**
+ * Every asset status in the organisation, `gone` included, so the exclusion below is checkable arithmetic.
+ */
+export type RegulatorSubmissionScopeStatusCounts = { [key: string]: number };
+
+export type RegulatorSubmissionScope = {
+  projects: RegulatorSubmissionScopeProjectsItem[];
+  assetsIncluded: number;
+  /** Every asset status in the organisation, `gone` included, so the exclusion below is checkable arithmetic. */
+  statusCounts: RegulatorSubmissionScopeStatusCounts;
+  assetsExcluded: number;
+  exclusionBasis: string;
+};
+
+export type RegulatorSubmissionComplianceClaimSummary = {
+  assetsWithVerifiedObligations: number;
+  assetsWithIndicativeObligationsOnly: number;
+  assetsWithNoStandardsEntry: number;
+  verifiedObligations: number;
+  indicativeObligations: number;
+  obligationsMissingRetrievalDate: number;
+  /** The words an indicative obligation must be rendered with. */
+  indicativeLabel: string;
+};
+
+export type RegulatorSubmissionExceptionsWaivedAssetsItem = {
+  fingerprint: string;
+  algorithm: string;
+  location: string;
+  surface: string;
+};
+
+export type RegulatorSubmissionExceptions = {
+  /** **Always false.** This product operates no waiver register, so no exception carries an owner, justification, expiry or approver. An empty `waivers: []` would read as "there are no exceptions", which is a different and unsupported claim. */
+  registerAvailable: boolean;
+  statement: string;
+  waivedAssets: RegulatorSubmissionExceptionsWaivedAssetsItem[];
+  removedAssets: number;
+};
+
+export type RegulatorSubmissionMethodologyDiscoveryModalitiesItem = {
+  modality: string;
+  observations: number;
+};
+
+export type RegulatorSubmissionMethodology = {
+  collectors: ReportCollectorProvenance[];
+  discoveryModalities: RegulatorSubmissionMethodologyDiscoveryModalitiesItem[];
+  confidenceBasis: string;
+  limitations: string[];
+};
+
+export type RegulatorSubmissionIntegrityDigestAlgorithm =
+  (typeof RegulatorSubmissionIntegrityDigestAlgorithm)[keyof typeof RegulatorSubmissionIntegrityDigestAlgorithm];
+
+export const RegulatorSubmissionIntegrityDigestAlgorithm = {
+  "SHA-256": "SHA-256",
+} as const;
+
+export type RegulatorSubmissionIntegrity = {
+  digestAlgorithm: RegulatorSubmissionIntegrityDigestAlgorithm;
+  /** Computed over the document with this field empty, which is the form a recipient can recompute. */
+  digest: string;
+  /** **Always false.** A digest detects alteration relative to a value you already hold and proves nothing about origin. Calling an unsigned document signed is the first thing an auditor checks. */
+  signed: boolean;
+  statement: string;
+};
+
+/**
+ * E2 — the regulator / auditor inventory submission. Ordered so a reader meets the coverage limitations before any count.
+ */
+export interface RegulatorSubmission {
+  kind: RegulatorSubmissionKind;
+  header: ReportHeader;
+  coverageLimitations: ReportCoverageLimitations;
+  scope: RegulatorSubmissionScope;
+  complianceClaimSummary: RegulatorSubmissionComplianceClaimSummary;
+  /** Present assets only, ordered by fingerprint so an unchanged inventory produces an identical document. */
+  inventory: RegulatorAsset[];
+  exceptions: RegulatorSubmissionExceptions;
+  methodology: RegulatorSubmissionMethodology;
+  assumptions: ReportAssumption[];
+  integrity: RegulatorSubmissionIntegrity;
+}
+
 export interface MultiScanFile {
   filename: string;
   content: string;
@@ -1515,6 +1955,8 @@ export interface EnrichedInventoryAsset {
   ownerId: number | null;
   dataClassification: string | null;
   secrecyLifetimeYears: number | null;
+  /** Migration effort somebody recorded against **this** asset, in hours. Null means nobody did — no collector writes it today — and it is deliberately not defaulted, for the same reason `keySize` is not: a report has to be able to say that an effort figure came from the algorithm's class average rather than from an estimate made for this asset. `mosca.y` is this value converted to calendar years, so a null here and a `y` of 0 are the same fact seen twice. */
+  effortHours: number | null;
   /** Where the classification behind `mosca.x` actually came from. */
   classificationSource: EnrichedInventoryAssetClassificationSource;
   /** Most recent observation's confidence. Null when the asset has never been observed. */
