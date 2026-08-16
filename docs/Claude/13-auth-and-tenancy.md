@@ -1393,11 +1393,32 @@ database has been prepared **will refuse to boot**. That is the intended failure
 rather than an API serving requests with no isolation. The order:
 
 ```
-1. pnpm --filter @workspace/db run apply-tenancy   # data migration: backfill, then constrain
-2. pnpm --filter @workspace/db run push            # reconcile anything left
-3. pnpm --filter @workspace/db run apply-rls       # roles, grants, policies
+1. pnpm --filter @workspace/db run apply-tenancy             # data migration: backfill, then constrain
+1b. pnpm --filter @workspace/db run apply-discovery-identity # ditto, for discovered_targets (stage 0)
+2. pnpm --filter @workspace/db run push                      # reconcile anything left
+3. pnpm --filter @workspace/db run apply-rls                 # roles, grants, policies
 4. point DATABASE_URL at quantaxscan_app, then deploy
 ```
+
+**Step 1b exists for exactly the same reason step 1 does, and was nearly missed.** Discovery stage 0
+widens `discovered_targets.hostname` into `identity`/`target_kind`/`source_scope`, and the generated
+migration `0017_fine_gravity.sql` does it correctly — add nullable, backfill, constrain. But
+**nothing on the deploy path runs a generated migration.** `push` is the deploy mechanism (see the
+top of this file and CLAUDE.md), it computes DDL from the schema files, and what it computes here is
+`add column identity text not null`, which cannot apply to a table that already has rows. It would
+also have to guess whether `identity` is a new column or a rename of `source_domain`, and the answer
+it offers interactively is the destructive one.
+
+So the correctness fix has to exist twice, in two mechanisms, for two audiences: in `0017` for a
+fresh database and for the pglite harness, and in `apply-discovery-identity` for a populated one.
+The statements themselves live in one place — `lib/db/src/discovery-identity-backfill.ts`, which is
+also the only thing in the repository that runs them against a **seeded** table
+(`discovery-identity-backfill.test.ts`). That test exists because every other gate applies the
+migration to an empty database, where the backfill `UPDATE` matches zero rows and passes while
+proving nothing.
+
+A fresh database needs 1b no more than it needs 1: every statement is guarded and matches nothing.
+Run it anyway — cheaper than deciding each time whether the table is populated.
 
 `apply-tenancy` needs `CAPTAIN_EMAIL` and refuses to run without it — it seeds the owner of
 organisation 1, which every pre-existing row is assigned to.

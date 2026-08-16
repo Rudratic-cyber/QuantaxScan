@@ -19,6 +19,7 @@
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
     "generate": "drizzle-kit generate --config ./drizzle.config.ts",
     "apply-tenancy": "node --experimental-strip-types ./scripts/apply-tenancy.ts",
+    "apply-discovery-identity": "node --experimental-strip-types ./scripts/apply-discovery-identity.ts",
     "apply-rls": "node --experimental-strip-types ./scripts/apply-rls.ts",
     "create-organization": "node --experimental-strip-types ./scripts/create-organization.ts",
     "test": "vitest run",

@@ -885,6 +885,18 @@ Two things the plan below got wrong, recorded because the next lane inherits bot
   add-nullable → backfill → constrain, since they cannot apply to a populated table; the snapshot
   is left untouched, because it describes the end state and is identical either way.
 
+**And a third thing, which the two above hide: the migration is not on the deploy path.** `push` is
+this project's deploy mechanism and computes DDL from the schema files, so what a real database gets
+is `add column identity text not null` — which cannot apply to a populated table, and whose rename
+prompt is destructive. `0017`'s careful ordering only ever runs on a fresh database and in the
+pglite harness. The populated case needs the `apply-tenancy` treatment and now has it:
+`pnpm --filter @workspace/db run apply-discovery-identity`, step 1b in
+[13-auth-and-tenancy.md](13-auth-and-tenancy.md) §10's order. The statements live once, in
+`lib/db/src/discovery-identity-backfill.ts`, and `discovery-identity-backfill.test.ts` runs them
+against a **seeded** legacy table — the only thing here that proves the backfill produces correct
+values rather than that it parses, because every other gate applies it to an empty database where
+the `UPDATE` matches nothing.
+
 `target_kind`'s backfill is an explicit `UPDATE ... SET target_kind = 'hostname'` and deliberately
 **not** a column `DEFAULT`. Every existing row is a CT hostname, so the value is derived rather than
 assumed — but a default would make it apply to future inserts too, and a cloud enumeration that
