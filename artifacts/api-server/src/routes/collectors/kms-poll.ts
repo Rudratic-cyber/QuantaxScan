@@ -8,7 +8,7 @@ import {
   type SecretHandle,
 } from "@workspace/db/credentials";
 import { PollProjectKmsBody } from "@workspace/api-zod";
-import type { DiscoveryScope, EnumerationRecord } from "@workspace/collectors";
+import { kmsLocationPrefix, type DiscoveryScope, type EnumerationRecord } from "@workspace/collectors";
 import { ingestKmsObservations } from "../../lib/asset-ingest";
 import { toKmsKeyResponseEntry, KMS_POLL_EVIDENCE_CAVEAT } from "../../lib/kms-response";
 import { awsKmsAcquisition } from "../../lib/acquisition/aws-kms";
@@ -65,18 +65,25 @@ const router: IRouter = Router();
  * granularity the prefix is taken at — enumerating the AWS account does not
  * license retiring keys in `ap-south-1` if `ap-south-1` was never called."*
  *
- * `kmsLocationPrefix()` exists and returns `<repo>:kms:aws:`, the whole
- * provider. It is deliberately **not** used here. A key's location is
- * `<repo>:kms:aws:<ARN>` and an ARN is `arn:aws:kms:<region>:<account>:key/…`,
- * so appending the region and account narrows the family to exactly the scope
- * that was enumerated — which is the only prefix this run has evidence for.
+ * `kmsLocationPrefix()` returns `<repo>:kms:<provider>:` — the whole provider,
+ * which is too broad to retire against on its own. So it supplies that half and
+ * the ARN's `arn:aws:kms:<region>:<account>:` is appended, narrowing the family
+ * to exactly the scope that was enumerated, which is the only prefix this run
+ * has evidence for.
  *
  * Returns `null` for anything else, which `earnedPrefixes()` treats as no
  * prefix earned: the safe direction.
  */
 function kmsPrefixForScope(repo: string, scope: DiscoveryScope): string | null {
   if (scope.kind !== "cloud_account" || scope.provider !== "aws" || scope.region === undefined) return null;
-  return `${repo}:kms:aws:arn:aws:kms:${scope.region}:${scope.account}:`;
+  // `kmsLocationPrefix()` supplies the `<repo>:kms:<provider>:` half rather than
+  // it being written out here, and that is not tidiness — it is the bug this
+  // line already had. The scope's provider is AWS's word, `aws`; the location's
+  // provider is the collector's, `aws-kms` (KMS_PROVIDER_VALUES names the
+  // product, not the cloud). Hand-writing the prefix silently produced
+  // `…:kms:aws:…`, which is earned, valid, and matches no asset ever stored —
+  // so every guardrail test still passed while retirement did nothing at all.
+  return `${kmsLocationPrefix(repo, awsKmsAcquisition.locationProvider)}arn:aws:kms:${scope.region}:${scope.account}:`;
 }
 
 router.post("/projects/:id/kms/poll", async (req, res): Promise<void> => {

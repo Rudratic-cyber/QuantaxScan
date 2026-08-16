@@ -235,6 +235,39 @@ test.describe("P1 — polling a key store with a stored credential", () => {
     expect(keys.filter((k) => k.status === "gone")).toHaveLength(0);
   });
 
+  test("a clean re-poll DOES retire a key that is genuinely gone", async ({ api }) => {
+    // The other direction, and the only test here that proves the capability
+    // rather than its guardrail. Everything else about §4.5 asserts that
+    // nothing was retired — so if the earned prefix never matched a stored
+    // location at all (a `repo` segment off by a character, a key stored under
+    // a bare KeyId rather than an ARN), every one of those tests would still
+    // pass. The failure would be silent and in the safe direction, which is
+    // exactly why it needs its own assertion.
+    kmsBehaviour = { pages: [{ arns: [arn("eu-west-1", "keep"), arn("eu-west-1", "delete")], more: false }], failWith: null };
+    const { projectId, credentialId } = await seed(api, "cloud_kms_readonly");
+
+    const first = await api.post(`/api/projects/${projectId}/kms/poll`, {
+      data: { credentialId, account: ACCOUNT, regions: ["eu-west-1"] },
+    });
+    expect(((await first.json()) as { keysObserved: number }).keysObserved).toBe(2);
+
+    // The key was deleted from the key store. The region still enumerates
+    // completely, so this run has the evidence to say so.
+    kmsBehaviour = { pages: [{ arns: [arn("eu-west-1", "keep")], more: false }], failWith: null };
+    const second = await api.post(`/api/projects/${projectId}/kms/poll`, {
+      data: { credentialId, account: ACCOUNT, regions: ["eu-west-1"] },
+    });
+
+    const body = (await second.json()) as { assetsMarkedGone: number; reconciliation: string };
+    expect(body.assetsMarkedGone).toBe(1);
+    expect(body.reconciliation).toMatch(/enumerated completely/);
+
+    const inventory = await api.get(`/api/projects/${projectId}/kms`);
+    const keys = ((await inventory.json()) as { keys: Array<{ keyId: string; status: string }> }).keys;
+    expect(keys.find((k) => k.keyId.endsWith("key/delete"))?.status).toBe("gone");
+    expect(keys.find((k) => k.keyId.endsWith("key/keep"))?.status).toBe("active");
+  });
+
   test("a truncated poll withdraws the right to retire, even though a scope was enumerated", async ({ api }) => {
     kmsBehaviour = {
       pages: [{ arns: [arn("eu-west-1", "a"), arn("eu-west-1", "b"), arn("eu-west-1", "c")], more: false }],

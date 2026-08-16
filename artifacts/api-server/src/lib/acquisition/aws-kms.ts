@@ -254,7 +254,7 @@ async function enumerateRegion(
   return { keys, complete: false, truncated: true };
 }
 
-export const awsKmsAcquisition: Acquisition<KmsKeyDescription[]> = {
+export const awsKmsAcquisition: Acquisition<KmsKeyDescription[]> & { readonly locationProvider: "aws-kms" } = {
   // Distinct from the submission path's `"kms-inventory"`, and that is one of
   // the three places the poll-versus-submission distinction is allowed to live
   // (§4.2). It becomes `collection_runs.collector`, so a run is attributable to
@@ -263,6 +263,18 @@ export const awsKmsAcquisition: Acquisition<KmsKeyDescription[]> = {
   version: "1.0.0",
   surface: "kms",
   credentialKind: "cloud_kms_readonly",
+  /**
+   * The provider name this acquisition writes into `KmsKeyDescription.provider`,
+   * and therefore the one that appears in an asset's location.
+   *
+   * Exported rather than left implicit because the route has to build a
+   * location prefix from it, and the obvious guess is wrong: the *scope* says
+   * `aws` (AWS's word for the cloud) while the *location* says `aws-kms`
+   * (`KMS_PROVIDER_VALUES` names the product, since one cloud runs more than
+   * one key service). Reading it from here means the two cannot drift apart
+   * silently, which they already did once.
+   */
+  locationProvider: "aws-kms" as const,
 
   async acquire(secret: SecretHandle, request: AcquisitionRequest): Promise<AcquisitionResult<KmsKeyDescription[]>> {
     const enumerated: EnumeratedScope[] = [];
