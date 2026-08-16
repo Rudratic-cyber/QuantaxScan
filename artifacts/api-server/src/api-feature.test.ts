@@ -429,7 +429,7 @@ packages:
       expect(submitted.body.lockfilesRecognised).toBe(1);
       expect(submitted.body.lockfiles).toEqual([{ path: "pnpm-lock.yaml", kind: "pnpm-lock" }]);
       expect(submitted.body.collectionRunId).toEqual(expect.any(Number));
-      // node-rsa → RSA; elliptic → ECDSA, EdDSA, ECDH/DH.
+      // node-rsa → RSA; elliptic → ECDSA, EdDSA, ECDH.
       expect(submitted.body.assetsCreated).toBe(4);
       expect(submitted.body.observationsCreated).toBe(4);
       // The transitive-dependency caveat travels with every response rather

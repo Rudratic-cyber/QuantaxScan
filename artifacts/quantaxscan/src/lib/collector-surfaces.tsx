@@ -32,7 +32,7 @@ const PRESENTATION: Record<CollectorSurfaceId, SurfacePresentation> = {
     // Only the four asymmetric algorithms have a PQC successor. MD5, SHA-1 and AES-ECB are
     // classical hygiene, not quantum exposure — claiming a "NIST PQC replacement" for them is
     // the same category error the register records as G-10 (and G-09 for the ECB citation).
-    blurb: "Regex + pattern detection across many languages. RSA, ECDSA, ECDH/DH and DSA are quantum-vulnerable and map to a NIST PQC replacement; MD5, SHA-1 and AES-ECB are classical hygiene findings with no PQC successor.",
+    blurb: "Regex + pattern detection across many languages. RSA, ECDSA, ECDH, DH and DSA are quantum-vulnerable and map to a NIST PQC replacement; MD5, SHA-1 and AES-ECB are classical hygiene findings with no PQC successor.",
   },
   dependency: {
     icon: <Boxes className="h-5 w-5" />,

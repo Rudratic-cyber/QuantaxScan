@@ -592,7 +592,7 @@ describe("ingestDataAtRestObservations — B7", () => {
     expect(result.assetsMarkedGone).toBe(1);
     const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
     expect(assets.find((a) => a.algorithm === "RSA")!.status).toBe("gone");
-    expect(assets.find((a) => a.algorithm === "ECDH/DH")!.status).toBe("active");
+    expect(assets.find((a) => a.algorithm === "ECDH")!.status).toBe("active");
     // The bulk cipher was resubmitted unchanged and is untouched.
     expect(assets.find((a) => a.algorithm === "AES")!.status).toBe("active");
   });
@@ -896,7 +896,7 @@ describe("ingestEndpointObservations — EP", () => {
     const assets = await read((tx) => tx.select().from(assetsTable).where(eq(assetsTable.organizationId, ORG_ID)));
     expect(assets.every((a) => a.surface === "endpoint")).toBe(true);
     expect(assets.every((a) => a.location.startsWith(`project:1:endpoint:${MACHINE}:`))).toBe(true);
-    expect(assets.map((a) => a.algorithm).sort()).toEqual(["AES", "ECDH/DH", "RSA", "RSA"]);
+    expect(assets.map((a) => a.algorithm).sort()).toEqual(["AES", "ECDH", "RSA", "RSA"]);
     expect(assets.find((a) => a.algorithm === "AES")?.keySize).toBe(256);
 
     const [run] = await read((tx) => tx.select().from(collectionRunsTable).where(eq(collectionRunsTable.id, result.collectionRunId)));
@@ -946,7 +946,7 @@ describe("ingestEndpointObservations — EP", () => {
     // them gone because a partial agent run omitted them would be a silent
     // false remediation.
     expect(assets.filter((a) => a.algorithm === "AES").every((a) => a.status === "active")).toBe(true);
-    expect(assets.find((a) => a.algorithm === "ECDH/DH")?.status).toBe("active");
+    expect(assets.find((a) => a.algorithm === "ECDH")?.status).toBe("active");
   });
 
   it("retires a suite pruned from a registry that now declares nothing this product reports", async () => {
@@ -970,7 +970,7 @@ describe("ingestEndpointObservations — EP", () => {
       },
     ]);
     expect(second.observationsCreated).toBe(2);
-    // RSA, AES-128 and SHA-1 retire; ECDH/DH and ECDSA are the new suite's.
+    // RSA, AES-128 and SHA-1 retire; ECDH and ECDSA are the new suite's.
     expect(second.assetsMarkedGone).toBe(3);
     expect(second.collectionRunId).toBeGreaterThan(0);
   });

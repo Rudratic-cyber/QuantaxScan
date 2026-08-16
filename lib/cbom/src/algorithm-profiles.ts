@@ -12,8 +12,12 @@
  *   members (`RSAES-OAEP`, `RSASSA-PSS`, …) and a bare `RSA` match does not say
  *   which. Naming one would be a fabrication of exactly the kind
  *   docs/Claude/09-open-gaps.md forbids for key sizes.
- * - `ECDH/DH` is one detector pattern spanning two enum members (`ECDH`,
- *   `FFDH`), so the family is likewise omitted. The primitive is not in doubt.
+ * - `ECDH` and `DH` **now carry their family**, and that is a direct
+ *   consequence of G-24. This entry used to read `ECDH/DH` with the family
+ *   omitted, for the stated reason that one detector pattern spanned two enum
+ *   members (`ECDH`, `FFDH`) and naming either would be a guess. The detector
+ *   distinguishes them since 2026-08-16, so the guess is no longer required
+ *   and the CBOM can say which. The primitive was never in doubt.
  * - `primitive: "unknown"` is the schema's own way of saying "not determined"
  *   and is preferred over silence where the label genuinely leaves it open.
  *
@@ -36,7 +40,8 @@ export const ALGORITHM_PROFILES: Readonly<Record<string, AlgorithmProfile>> = {
   RSA: { primitive: "unknown" },
   DSA: { family: "DSA", primitive: "signature" },
   ECDSA: { family: "ECDSA", primitive: "signature" },
-  "ECDH/DH": { primitive: "key-agree" },
+  ECDH: { family: "ECDH", primitive: "key-agree" },
+  DH: { family: "FFDH", primitive: "key-agree" },
 
   // Hashes.
   MD5: { family: "MD5", primitive: "hash" },

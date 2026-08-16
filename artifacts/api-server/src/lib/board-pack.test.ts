@@ -31,7 +31,7 @@ import { buildReportInput } from "./report-input-fixture";
 const MIXED_ESTATE = [
   { algorithm: "RSA", surface: "source", keySize: 2048 },
   { algorithm: "RSA", surface: "tls", location: "tls:api.example.test:443" },
-  { algorithm: "ECDH/DH", surface: "config", location: "project:1:etc/ssh/sshd_config:12" },
+  { algorithm: "ECDH", surface: "config", location: "project:1:etc/ssh/sshd_config:12" },
   { algorithm: "MD5", surface: "source" },
   { algorithm: "SHA-1", surface: "source" },
 ];
@@ -199,7 +199,7 @@ describe("E1 — the board pack", () => {
     const exposure = pack.page1.exposure;
 
     expect(exposure.assetsFound).toBe(5);
-    expect(exposure.quantumVulnerableAssets).toBe(3); // RSA, RSA, ECDH/DH
+    expect(exposure.quantumVulnerableAssets).toBe(3); // RSA, RSA, ECDH
     expect(exposure.classicalHygieneAssets).toBe(2); // MD5, SHA-1
     expect(exposure.quantumVulnerableAssets + exposure.classicalHygieneAssets).toBe(exposure.assetsFound);
   });
