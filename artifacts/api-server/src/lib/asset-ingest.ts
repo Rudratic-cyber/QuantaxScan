@@ -33,6 +33,7 @@ import {
   collectEndpointObservations,
   type EndpointHostReport,
   type EndpointHostResult,
+  type EnumerationRecord,
 } from "@workspace/collectors";
 import type { DataClassification } from "@workspace/db/classification";
 import type { CollectionRunStatus, RetentionMode } from "@workspace/db/schema";
@@ -160,6 +161,25 @@ interface IngestSpec {
    * `gone`.
    */
   runStatus?: CollectionRunStatus;
+  /**
+   * What this run could and could not speak for — the second half of stage 0's
+   * change to this file (docs/Claude/17-discovery-design.md §4.4(b)).
+   *
+   * **Absent is the correct value for every collector that exists today**, and
+   * absent is not the same as empty. A submission made no enumeration claim at
+   * all: the customer exported something and we recorded it, and the honest
+   * statement about scope is silence. An empty `EnumerationRecord` would say
+   * "we enumerated, and successfully enumerated nothing" — a much stronger
+   * claim, and a false one. The column is nullable with no default so the
+   * difference survives into the database, exactly as it does for
+   * `assets.key_size` and A3's classification columns.
+   *
+   * A credentialed acquisition supplies it via `enumerationRecordFor()` in
+   * `lib/acquisition/types.ts`, so no provider lane assembles the shape by
+   * hand. This is what lets a report say which regions a `kms` number covers
+   * rather than implying it covers the account.
+   */
+  enumeration?: EnumerationRecord;
 }
 
 /**
@@ -374,6 +394,11 @@ async function ingestObservations(tx: ScopedTx, spec: IngestSpec): Promise<Inges
       surface: spec.surface,
       status: spec.runStatus ?? "completed",
       target: spec.repo,
+      // `?? null` rather than letting `undefined` through: drizzle omits an
+      // undefined key from the INSERT, which happens to reach the same NULL
+      // here, but the intent is that absent is a *stored* fact about this run
+      // and not an accident of serialisation.
+      enumeration: spec.enumeration ?? null,
       observationCount: observations.length,
       completedAt: new Date(),
     })

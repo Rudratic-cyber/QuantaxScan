@@ -19,6 +19,7 @@ export * from "./kms-collector";
 export * from "./ot-register-collector";
 export * from "./data-at-rest-collector";
 export * from "./discovery";
+export * from "./discovery-scope";
 export * from "./cipher-suite";
 export * from "./network-flow-collector";
 export * from "./endpoint-report";

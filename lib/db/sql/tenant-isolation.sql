@@ -74,7 +74,7 @@ GRANT USAGE ON SCHEMA public TO quantaxscan_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   projects, scans, findings, assets, observations, collection_runs,
   activity, shared_reports, community_posts, ot_fleets, vendor_assessments,
-  credentials, discovered_targets, network_flows,
+  credentials, discovered_targets, discovery_runs, network_flows,
   collection_schedules, collection_schedule_runs, divisions, division_grants,
   waivers,
   organizations, organization_members, user_identities, users, sessions
@@ -252,6 +252,30 @@ CREATE POLICY discovered_targets_org_isolation ON discovered_targets AS PERMISSI
   -- write side on the caller's division set would refuse legitimate writes
   -- (an admin creating a project inside a division they are not granted) while
   -- adding nothing: the read side is what confines a viewer.
+  WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
+
+-- Discovery stage 0 — one execution of one discovery method. Standard shape.
+--
+-- More sensitive than the targets it produces, which is not obvious. A
+-- `discovered_targets` row is a name a company's own certificates already
+-- disclose publicly. A `discovery_runs` row names the cloud accounts,
+-- directories and issuers that company operates, carries the id of the
+-- credential used to read them, and — in `refused` — lists the scopes where
+-- enumeration was denied or throttled. That is a map of an estate's boundary
+-- together with where its access control is weakest, and it exists even for a
+-- run that produced no lead at all.
+ALTER TABLE discovery_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE discovery_runs FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS discovery_runs_org_isolation ON discovery_runs;
+CREATE POLICY discovery_runs_org_isolation ON discovery_runs AS PERMISSIVE FOR ALL TO quantaxscan_app
+  USING      ((organization_id = nullif(current_setting('app.current_org_id', true), '')::int)
+          AND (coalesce(current_setting('app.current_divisions', true), '') = ''
+              OR division_id IS NULL
+              OR division_id = ANY(string_to_array(current_setting('app.current_divisions', true), ',')::int[])))
+  -- Tenant clause only on the write side, matching every other table here: a
+  -- run lands in the division its project names and the caller does not choose
+  -- it, so constraining the write on the caller's division set would refuse
+  -- legitimate writes while adding nothing the read side does not already do.
   WITH CHECK (organization_id = nullif(current_setting('app.current_org_id', true), '')::int);
 
 -- B11 — the network-conversation inventory. Standard shape. Worth naming what

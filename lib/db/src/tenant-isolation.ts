@@ -42,6 +42,12 @@ export const ORG_SCOPED_TABLES = [
   // Neither substitutes for the other.
   "credentials",
   "discovered_targets",
+  // Discovery stage 0 — one execution of one discovery method. Scoped for the
+  // same reason `discovered_targets` is, and one step stronger: a run row names
+  // the cloud accounts, directories and issuers a company operates, including
+  // the ones enumeration was *refused* on. That list is a map of a tenant's
+  // estate boundary, and it exists whether or not the run produced a lead.
+  "discovery_runs",
   "network_flows",
   "collection_schedules",
   "collection_schedule_runs",

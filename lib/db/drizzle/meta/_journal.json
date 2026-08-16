@@ -113,6 +113,20 @@
       "when": 1786835185396,
       "tag": "0016_chunky_firebrand",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786880413935,
+      "tag": "0017_fine_gravity",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786880448780,
+      "tag": "0018_green_skullbuster",
+      "breakpoints": true
     }
   ]
 }
