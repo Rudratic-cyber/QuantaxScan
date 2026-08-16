@@ -170,6 +170,94 @@ describe("PQC migration items keep their runway (RSA, ECDSA, ECDH/DH)", () => {
   });
 });
 
+describe("C4 — IR 8547 is a ceiling, not a schedule (§4.2 / §4.1.2 / §3.2)", () => {
+  const obligationsOf = (algorithm: string, id: string) =>
+    mappingEngine
+      .resolve({ algorithm }, { asOf: ASOF })!
+      .obligations.filter((o) => o.framework === "NIST-IR-8547" && o.requirement.length > 0 && o.source === "framework" && idMatches(o.requirement, id));
+
+  /** The engine does not surface rule ids, so match on the sentence each rule contributes. */
+  function idMatches(requirement: string, id: string): boolean {
+    if (id === "ceiling") return /Do not treat 2035 as the migration target/.test(requirement);
+    if (id === "key-establishment") return /Migrate this key-establishment use ahead of the general timeline/.test(requirement);
+    if (id === "hybrid") return /hybrid construction is an approved migration path/.test(requirement);
+    throw new Error(`unknown rule id ${id}`);
+  }
+
+  it("tells a quantum-vulnerable finding that 2035 is not the target date", () => {
+    const [ceiling] = obligationsOf("RSA", "ceiling");
+    expect(ceiling).toBeDefined();
+    expect(ceiling.citation.section).toMatch(/4\.2/);
+    // The claim is only worth as much as the quote behind it.
+    expect(ceiling.caveats.join(" ")).toMatch(/may specify earlier transitions/);
+  });
+
+  it("carries the draft label on every one of them, like the deadline rows already do", () => {
+    for (const id of ["ceiling", "hybrid"] as const) {
+      const [obligation] = obligationsOf("ECDSA", id);
+      expect(obligation.draftStatus).toMatch(/DRAFT/);
+      expect(obligation.confidence).toBe("verified");
+    }
+  });
+
+  it("adds no deadline, so it cannot move a bucket or manufacture a failure", () => {
+    const result = mappingEngine.resolve({ algorithm: "RSA" }, { asOf: ASOF })!;
+    const added = result.obligations.filter((o) => o.source === "framework" && o.framework === "NIST-IR-8547");
+    expect(added.length).toBeGreaterThan(0);
+    for (const obligation of added) expect(obligation.deadline).toBeUndefined();
+    expect(result.bucket).toBe("pqc-migration");
+    expect(result.complianceStatus).toBe("future-obligation");
+  });
+
+  it("prioritises key establishment for the harvest-now-decrypt-later purpose, and only that purpose", () => {
+    // RSA declares key-establishment among its purposes (IR 8547 Table 4, SP 800-56B); ECDSA does not.
+    expect(obligationsOf("ECDH/DH", "key-establishment")).toHaveLength(1);
+    expect(obligationsOf("RSA", "key-establishment")).toHaveLength(1);
+    expect(obligationsOf("ECDSA", "key-establishment")).toHaveLength(0);
+    expect(obligationsOf("ECDH/DH", "key-establishment")[0].severity).toBe("high");
+    expect(obligationsOf("ECDH/DH", "key-establishment")[0].caveats.join(" ")).toMatch(
+      /before the classical schemes are generally disallowed/,
+    );
+  });
+
+  it("offers the hybrid allowance without letting it read as compliance", () => {
+    const [hybrid] = obligationsOf("ECDH/DH", "hybrid");
+    expect(hybrid.severity).toBe("informational");
+    expect(hybrid.caveats.join(" ")).toMatch(/does not by itself satisfy/i);
+    expect(hybrid.requirement.toLowerCase()).not.toMatch(/violat|non-compliant/);
+  });
+
+  it("leaves algorithms IR 8547 does not call quantum-vulnerable entirely alone", () => {
+    const aes = mappingEngine.resolve({ algorithm: "AES-256" }, { asOf: ASOF })!;
+    expect(aes.obligations.some((o) => o.framework === "NIST-IR-8547")).toBe(false);
+    expect(aes.bucket).toBe("no-obligation");
+  });
+
+  it("claims no algorithm for the §4.1.3 112-bit symmetric row, because IR 8547 names none", () => {
+    // The row is recorded on the framework so it is not lost, but attaching it to (say) 3DES or
+    // SHA-224 would be an over-claim: IR 8547 says only "a few symmetric cryptography standards".
+    for (const name of mappingEngine.listAlgorithms()) {
+      const result = mappingEngine.resolve({ algorithm: name }, { asOf: ASOF })!;
+      expect(result.obligations.some((o) => o.framework === "NIST-IR-8547" && o.deadline?.in === "2030")).toBe(false);
+    }
+  });
+
+  it("follows the JSON — rewording the §4.2 rule changes the output with no code edit", () => {
+    const engine = engineOver((data) => {
+      const framework = data.frameworks.frameworks.find((f) => f.id === "NIST-IR-8547")!;
+      const rule = framework.findingObligations.find((r) => r.id === "ir8547-2035-is-a-ceiling")!;
+      rule.requirement = "REWORDED BY THE DATA, NOT THE ENGINE.";
+      rule.severity = "critical";
+    });
+
+    const rewritten = engine
+      .resolve({ algorithm: "RSA" }, { asOf: ASOF })!
+      .obligations.find((o) => o.requirement === "REWORDED BY THE DATA, NOT THE ENGINE.")!;
+    expect(rewritten.severity).toBe("critical");
+    expect(rewritten.framework).toBe("NIST-IR-8547");
+  });
+});
+
 describe("G-07 — DSA is a present-tense compliance failure, not a 2035 migration item", () => {
   const result = mappingEngine.resolve({ algorithm: "DSA", confidence: 0.7 }, { asOf: ASOF })!;
 
@@ -282,6 +370,164 @@ describe("applicability — frameworks that do not bind the customer are hidden,
   });
 });
 
+describe("C5 — CNSA 2.0 resolves per purpose, and stays unverified while it does", () => {
+  const NSS = { jurisdiction: "US", sector: "government", systemType: "national-security-system" };
+  const cnsa = (algorithm: string) =>
+    mappingEngine.resolve({ algorithm }, { asOf: ASOF, profile: NSS })!.obligations.filter((o) => o.framework === "CNSA-2.0");
+
+  it("gives a signature finding the signature suite and a key-establishment finding the KEM", () => {
+    const ecdsa = cnsa("ECDSA");
+    expect(ecdsa).toHaveLength(1);
+    expect(ecdsa[0].requirement).toContain("ML-DSA-87");
+    expect(ecdsa[0].requirement).not.toContain("ML-KEM");
+
+    const ecdh = cnsa("ECDH/DH");
+    expect(ecdh).toHaveLength(1);
+    expect(ecdh[0].requirement).toContain("ML-KEM-1024");
+    expect(ecdh[0].requirement).not.toContain("ML-DSA");
+  });
+
+  it("gives RSA both, because IR 8547 lists it under signatures AND key establishment", () => {
+    expect(cnsa("RSA").map((o) => o.requirement).join(" ")).toMatch(/ML-DSA-87[\s\S]*ML-KEM-1024|ML-KEM-1024[\s\S]*ML-DSA-87/);
+    expect(cnsa("RSA")).toHaveLength(2);
+  });
+
+  it("names LMS/XMSS only where CNSA 2.0 does — software and firmware signing", () => {
+    expect(cnsa("ECDSA")[0].requirement).toMatch(/LMS or XMSS \(SP 800-208\)/);
+    expect(cnsa("ECDH/DH")[0].requirement).not.toMatch(/LMS|XMSS/);
+  });
+
+  it("reaches symmetric and hash findings without calling them a PQC migration item", () => {
+    const aes = cnsa("AES-256");
+    expect(aes).toHaveLength(1);
+    expect(aes[0].requirement).toContain("AES-256");
+    expect(aes[0].caveats.join(" ")).toMatch(/NOT quantum-vulnerable/);
+    expect(aes[0].caveats.join(" ")).toMatch(/must not be counted toward a PQC score/);
+    // The bucket is decided by deadlines, and CNSA contributes none — so AES stays where it was.
+    expect(mappingEngine.resolve({ algorithm: "AES-256" }, { asOf: ASOF, profile: NSS })!.bucket).toBe("no-obligation");
+    expect(cnsa("SHA-1")[0].requirement).toMatch(/SHA-384 or SHA-512/);
+  });
+
+  it("keeps every one of them needs-check and carries G-01 to each", () => {
+    for (const algorithm of ["RSA", "ECDSA", "ECDH/DH", "AES-256", "SHA-1", "MD5"]) {
+      for (const obligation of cnsa(algorithm)) {
+        expect(obligation.confidence).toBe("needs-check");
+        expect(obligation.caveats.join(" ")).toMatch(/NOT VERIFIED AGAINST THE PRIMARY SOURCE/);
+        expect(obligation.caveats.join(" ")).toMatch(/re-attempted 2026-08-16 and still 403/);
+        expect(obligation.caveats.join(" ")).toMatch(/PER SYSTEM CATEGORY/);
+      }
+    }
+  });
+
+  it("dates no unverified claim — a needs-check citation carries no retrievedAt", () => {
+    // `check:standards` measures the age of a `retrievedAt`; it cannot tell that one was written
+    // for a document nobody opened. The only safe answer for a 403 source is to have no date.
+    for (const obligation of cnsa("RSA")) {
+      expect(obligation.citation.retrievedAt).toBeUndefined();
+      expect(obligation.citation.document).toMatch(/NOT READ/);
+    }
+  });
+
+  it("still disappears entirely for a customer who is not a US national security system", () => {
+    const ukBank = { jurisdiction: "GB", sector: "financial-services", systemType: "payment-platform" };
+    for (const algorithm of ["RSA", "ECDSA", "AES-256"]) {
+      expect(
+        mappingEngine.resolve({ algorithm }, { asOf: ASOF, profile: ukBank })!.obligations.some((o) => o.framework === "CNSA-2.0"),
+      ).toBe(false);
+    }
+  });
+
+  it("follows the JSON — promoting the confidence in a clone promotes it in the output", () => {
+    // The shape of the eventual G-01 fix: a human reads the FAQ, edits JSON, and nothing else.
+    const engine = engineOver((data) => {
+      const framework = data.frameworks.frameworks.find((f) => f.id === "CNSA-2.0")!;
+      for (const rule of framework.findingObligations) rule.confidence = "verified";
+    });
+    const promoted = engine
+      .resolve({ algorithm: "ECDSA" }, { asOf: ASOF, profile: NSS })!
+      .obligations.filter((o) => o.framework === "CNSA-2.0");
+    expect(promoted).toHaveLength(1);
+    expect(promoted[0].confidence).toBe("verified");
+  });
+});
+
+describe("C6 — the CISA quantum-readiness roadmap, aligned section by section", () => {
+  const cisa = (algorithm: string) =>
+    mappingEngine.resolve({ algorithm }, { asOf: ASOF })!.obligations.filter((o) => o.framework === "CISA-QR");
+
+  it("covers the four inventory-and-prioritisation instructions the factsheet actually gives", () => {
+    const requirements = cisa("RSA").map((o) => o.requirement).join(" | ");
+    expect(requirements).toMatch(/cryptographic inventory/i);
+    expect(requirements).toMatch(/long secrecy lifetime/i);
+    expect(requirements).toMatch(/risk assessment process/i);
+    expect(requirements).toMatch(/industrial control system/i);
+    expect(requirements).toMatch(/post-quantum roadmap/i);
+  });
+
+  it("cites the section each instruction is actually printed under", () => {
+    const sectionOf = (fragment: RegExp) => cisa("RSA").find((o) => fragment.test(o.requirement))!.citation.section!;
+    // Corrected 2026-08-16: the ICS/high-impact sentence is under SUPPLY CHAIN QUANTUM-READINESS,
+    // not under PREPARE A CRYPTOGRAPHIC INVENTORY where it was previously grouped.
+    expect(sectionOf(/industrial control system/i)).toBe("SUPPLY CHAIN QUANTUM-READINESS");
+    expect(sectionOf(/risk assessment process/i)).toBe("PREPARE A CRYPTOGRAPHIC INVENTORY");
+    expect(sectionOf(/post-quantum roadmap/i)).toBe("DISCUSS POST-QUANTUM ROADMAPS WITH TECHNOLOGY VENDORS");
+    expect(sectionOf(/long secrecy lifetime/i)).toMatch(/WHY PREPARE NOW\?/);
+  });
+
+  it("puts the update path in scope for a signature algorithm, and only for one", () => {
+    const updatePath = /software and firmware update path/i;
+    expect(cisa("ECDSA").some((o) => updatePath.test(o.requirement))).toBe(true);
+    expect(cisa("ECDH/DH").some((o) => updatePath.test(o.requirement))).toBe(false);
+  });
+
+  it("carries the factsheet's own admission that discovery has blind spots", () => {
+    const vendor = cisa("RSA").find((o) => /post-quantum roadmap/i.test(o.requirement))!;
+    expect(vendor.caveats.join(" ")).toMatch(/may not be able to identify embedded cryptography/);
+    expect(vendor.caveats.join(" ")).toMatch(/floor on vendor exposure/);
+  });
+
+  it("keeps the inventory instruction universal — it is the one obligation every finding gets", () => {
+    for (const algorithm of ["RSA", "AES-256", "AES-ECB", "MD5", "SHA-1", "DSA"]) {
+      expect(cisa(algorithm).some((o) => /cryptographic inventory/i.test(o.requirement))).toBe(true);
+    }
+    // ...and the quantum-vulnerable-only ones stay off a classical-hygiene finding.
+    expect(cisa("MD5").some((o) => /industrial control system/i.test(o.requirement))).toBe(false);
+  });
+
+  it("adds no deadline, so a CISA obligation cannot change a bucket", () => {
+    for (const obligation of cisa("RSA")) expect(obligation.deadline).toBeUndefined();
+    expect(mappingEngine.resolve({ algorithm: "AES-256" }, { asOf: ASOF })!.bucket).toBe("no-obligation");
+    expect(mappingEngine.resolve({ algorithm: "AES-ECB" }, { asOf: ASOF })!.bucket).toBe("best-practice");
+  });
+
+  it("never presents the factsheet's 2023 draft-standards language as current", () => {
+    for (const obligation of cisa("RSA")) {
+      expect(`${obligation.requirement} ${obligation.caveats.join(" ")}`).not.toMatch(/to be released in 2024|draft PQC standards/i);
+    }
+  });
+
+  it("follows the JSON — a new section instruction becomes an obligation with no code edit", () => {
+    const engine = engineOver((data) => {
+      data.frameworks.frameworks
+        .find((f) => f.id === "CISA-QR")!
+        .findingObligations.push({
+          id: "cisa-qr-example-future-section",
+          match: { quantumVulnerable: true },
+          requirement: "A section this file did not know about when the engine was written.",
+          severity: "medium",
+          citation: { document: "Example", url: "https://example.invalid", retrievedAt: "2026-08-16" },
+          confidence: "verified",
+        });
+    });
+
+    const added = engine
+      .resolve({ algorithm: "RSA" }, { asOf: ASOF })!
+      .obligations.filter((o) => o.framework === "CISA-QR");
+    expect(added.some((o) => /did not know about/.test(o.requirement))).toBe(true);
+    expect(added).toHaveLength(cisa("RSA").length + 1);
+  });
+});
+
 describe("MD5 — never approved, so no transition deadline may be cited", () => {
   const result = mappingEngine.resolve({ algorithm: "MD5" }, { asOf: ASOF })!;
 
@@ -368,6 +614,25 @@ describe("G-05 — key size and the security-strength band the rule is keyed on"
     const result = mappingEngine.resolve({ algorithm: "MD5" }, { asOf: ASOF })!;
     expect(result.obligations.length).toBeGreaterThan(0);
     expect(result.obligations.flatMap((o) => o.caveats).join(" ")).not.toMatch(/Key size undetermined/);
+  });
+
+  it("G-24 — PINS THE DEFECT: a finite-field DH modulus is banded as a curve and loses 2030", () => {
+    // IR 8547 Table 4 lists Finite Field DH/MQV and Elliptic Curve DH/MQV as SEPARATE families:
+    // the first states a modulus, the second a curve order. `algorithms.json` has one entry for
+    // both, with keySizeKind "curve", and the collectors canonicalise finite-field DH onto it
+    // (`protocol-config-collector` resolves diffie-hellman-group14-sha256 to keySize 2048).
+    //
+    // So 2048 is read against curveBits, misses the 112-bit band {0,256}, matches the >= 128 bits
+    // band {384,100000}, and the "deprecated after 2030" row — which DOES apply to a 2048-bit
+    // finite-field group — is filtered out. More runway than the standard allows, with no error
+    // and no "undetermined" caveat, because the engine was correctly told it had a curve size.
+    //
+    // This assertion pins the defect deliberately. When G-24 is fixed in the collectors and the
+    // entry is split, this test must FAIL and be rewritten to assert the 2030 row is present.
+    const rows = ir8547(mappingEngine.resolve({ algorithm: "ECDH/DH", keySize: 2048 }, { asOf: ASOF })!);
+    expect(new Set(rows.map((o) => o.deadline!.securityStrength))).toEqual(new Set([">= 128 bits"]));
+    expect(rows.some((o) => o.deadline!.after === "2030")).toBe(false);
+    expect(rows.flatMap((o) => o.caveats).join(" ")).not.toMatch(/undetermined/);
   });
 
   it("keys the bands off the data, so a revised band changes the answer with no code edit", () => {

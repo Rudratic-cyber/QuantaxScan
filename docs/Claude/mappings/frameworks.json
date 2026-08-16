@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1.1.0",
-  "dataVersion": "0.4.0",
+  "dataVersion": "0.5.0",
   "compiledAt": "2026-08-01",
-  "verifiedAt": "2026-08-01",
-  "verificationNote": "NIST, CISA joint factsheet and CycloneDX entries verified against primary sources on 2026-08-01. CNSA 2.0 and OMB M-23-02 remain needs-check — nsa.gov, media.defense.gov and cisa.gov all return HTTP 403 to automated fetches and must be verified by hand.",
+  "verifiedAt": "2026-08-16",
+  "verificationNote": "PARTIAL re-verification on 2026-08-16 (C4/C5/C6). Re-read against primary sources that day, and `retrievedAt` moved ONLY on these: NIST-IR-8547 (full PDF from nvlpubs.nist.gov plus the CSRC status page — still an initial public draft) and CISA-QR (the NCCoE-hosted copy of the factsheet, all seven sections). NOT reopened and therefore still dated 2026-08-01: NIST-FIPS, FIPS 186-5, SP 800-131A Rev 2, FIPS 180-4, SP 800-38A, NIST-SP-1800-38, CYCLONEDX-CBOM. CNSA-2.0 and OMB-M-23-02 remain needs-check — nsa.gov and media.defense.gov returned HTTP 403 again on 2026-08-16 (see CNSA-2.0.retrievalAttempts) and must be verified by hand. cisa.gov itself is still 403; the CISA factsheet is verified via the NCCoE mirror of the same TLP:CLEAR document.",
 
   "frameworks": [
     {
@@ -27,22 +27,92 @@
       "status": "INITIAL PUBLIC DRAFT",
       "published": "2024-11-12",
       "commentPeriodClosed": "2025-01-10",
-      "finalStatus": "NOT FINAL as of 2026-08-01. The CSRC landing page still shows only the ipd.",
+      "finalStatus": "NOT FINAL as of 2026-08-16. Re-checked at https://csrc.nist.gov/pubs/ir/8547/ipd on 2026-08-16: the document history still lists only '11/12/24: IR 8547 (Draft)'. Received public comments were posted 2025-01-21; no final version, and no withdrawal.",
       "applicability": { "jurisdictions": ["US", "*"], "sectors": ["*"], "systemTypes": ["*"] },
       "role": "Defines the deprecation and disallowance TIMELINE. This is the source of the dates that make our reports actionable.",
       "keyDates": [
-        { "securityStrength": "112 bits", "type": "deprecated", "after": "2030", "appliesTo": "RSA, ECDSA, finite-field DH/MQV, elliptic-curve DH/MQV", "source": "Tables 2 and 4", "confidence": "verified" },
-        { "securityStrength": "112 bits", "type": "disallowed", "after": "2035", "appliesTo": "RSA, ECDSA, finite-field DH/MQV, elliptic-curve DH/MQV", "source": "Tables 2 and 4", "confidence": "verified" },
-        { "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "appliesTo": "RSA, ECDSA, EdDSA, DH/MQV, ECDH/MQV — ALL sizes", "source": "Tables 2 and 4", "confidence": "verified" },
-        { "securityStrength": "112 bits (symmetric)", "type": "disallowed", "in": "2030", "appliesTo": "Symmetric standards at the 112-bit level", "source": "§4.1.3", "confidence": "verified" }
+        { "securityStrength": "112 bits", "type": "deprecated", "after": "2030", "appliesTo": "ECDSA, RSA (signatures)", "source": "Table 2", "confidence": "verified" },
+        { "securityStrength": "112 bits", "type": "disallowed", "after": "2035", "appliesTo": "ECDSA, RSA (signatures)", "source": "Table 2", "confidence": "verified" },
+        { "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "appliesTo": "ECDSA, EdDSA, RSA (signatures) — ALL sizes", "source": "Table 2", "confidence": "verified" },
+        { "securityStrength": "112 bits", "type": "deprecated", "after": "2030", "appliesTo": "Finite Field DH and MQV [SP 800-56A], Elliptic Curve DH and MQV [SP 800-56A], RSA [SP 800-56B] (key establishment)", "source": "Table 4", "confidence": "verified" },
+        { "securityStrength": "112 bits", "type": "disallowed", "after": "2035", "appliesTo": "Finite Field DH and MQV, Elliptic Curve DH and MQV, RSA (key establishment)", "source": "Table 4", "confidence": "verified" },
+        { "securityStrength": ">= 128 bits", "type": "disallowed", "after": "2035", "appliesTo": "Finite Field DH and MQV, Elliptic Curve DH and MQV, RSA (key establishment) — ALL sizes", "source": "Table 4", "confidence": "verified" },
+        { "securityStrength": "112 bits (symmetric)", "type": "disallowed", "in": "2030", "appliesTo": "Symmetric standards at the 112-bit level", "source": "§4.1.3", "confidence": "verified", "note": "Verbatim: 'NIST has a few symmetric cryptography standards at the 112-bit security level, which will be disallowed in 2030.' IR 8547 does NOT enumerate which standards those are, so no algorithm entry in algorithms.json claims this row. Naming a specific algorithm here would be an over-claim; it needs a different primary source (SP 800-131A Rev 2 / SP 800-67) before it can attach to a finding." }
       ],
       "criticalNuance": "Larger classical key sizes do NOT extend the deadline. RSA-3072 and P-384 are disallowed after 2035 on the same schedule as RSA-2048 and P-256. The only difference is that 112-bit parameters get an earlier DEPRECATION milestone in 2030. Many vendors get this wrong.",
       "contextQuote": "§4.1.1: SP 800-57pt1 had projected NIST would disallow 112-bit public-key schemes on 2031-01-01; IR 8547 instead DEPRECATES them at that level so organisations can continue use while migrating.",
+      "applicationSpecificGuidance": {
+        "note": "§4.2 is the reason the 2035 date must never be presented as a target. C4's `ir8547-2035-is-a-ceiling` and `ir8547-key-establishment-priority` obligations below are built from these two quotes and nothing else.",
+        "quotes": [
+          "§4.2: 'While NIST's cryptographic algorithm standards may continue to specify quantum-vulnerable techniques until 2035 and generally allow their use, these application-specific standards and guidelines may specify earlier transitions for certain cryptographic algorithms, techniques, and protocols used within these applications.'",
+          "§4.2: 'NIST expects to prioritize the migration to quantum-resistant key-establishment schemes within these updates to protect against \"harvest now, decrypt later\" attacks, particularly in interactive protocols like TLS and IKE.'",
+          "§4.1.2: 'in order to mitigate the risk of \"harvest now, decrypt later\" attacks on network communications, application-specific guidance, as described in Sec. 4.2, may require or recommend migration to quantum-resistant key establishment schemes before the classical schemes are generally disallowed.'"
+        ],
+        "confidence": "verified"
+      },
+      "hybridAndDualSignatures": {
+        "note": "§3.2 — what an organisation is ALLOWED to do while migrating. Recorded because a report that only states prohibitions gives no migration path.",
+        "quotes": [
+          "§3.2.1: 'NIST currently allows a generic composite key-establishment technique described in SP 800-56C ... any shared secret key generated as specified in FIPS 203 may be used as the value Z in the generic composite mode described in SP 800-56C.'",
+          "§3.2.2: 'Existing NIST standards and guidelines accommodate their use provided that at least one component digital signature algorithm is NIST-approved.'",
+          "§3.2.2: 'NIST will accommodate the use of a hybrid key-establishment mode and dual signatures in FIPS 140 validation when suitably combined with a NIST-approved scheme.'"
+        ],
+        "confidence": "verified"
+      },
       "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
       "pdf": "https://nvlpubs.nist.gov/nistpubs/ir/2024/NIST.IR.8547.ipd.pdf",
-      "retrievedAt": "2026-08-01",
+      "retrievedAt": "2026-08-16",
+      "retrievalNote": "PDF downloaded from nvlpubs.nist.gov and read in full on 2026-08-16 (Tables 1–7, §3.2, §4, §4.1.1–4.1.3, §4.2). Every date and quote in this entry was re-read against that copy; none changed from the 2026-08-01 reading.",
       "confidence": "verified",
-      "customerFacingRule": "Because this is a DRAFT, every customer-facing use must be labelled 'NIST draft guidance (IR 8547 ipd, November 2024)'. Presenting these as final binding dates is a factual error."
+      "customerFacingRule": "Because this is a DRAFT, every customer-facing use must be labelled 'NIST draft guidance (IR 8547 ipd, November 2024)'. Presenting these as final binding dates is a factual error.",
+      "findingObligations": [
+        {
+          "id": "ir8547-2035-is-a-ceiling",
+          "match": { "quantumVulnerable": true },
+          "requirement": "Do not treat 2035 as the migration target for this algorithm. NIST states that application-specific standards and guidelines may specify earlier transitions than the general algorithm-standard dates, so the binding date for a given system may be earlier than the table date.",
+          "severity": "medium",
+          "deadlineNote": "IR 8547 §4.2: 'While NIST's cryptographic algorithm standards may continue to specify quantum-vulnerable techniques until 2035 and generally allow their use, these application-specific standards and guidelines may specify earlier transitions for certain cryptographic algorithms, techniques, and protocols used within these applications.'",
+          "citation": {
+            "document": "NIST IR 8547 ipd",
+            "section": "§4.2 Application-Specific Standards and Guidelines",
+            "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
+            "retrievedAt": "2026-08-16",
+            "published": "2024-11-12"
+          },
+          "confidence": "verified"
+        },
+        {
+          "id": "ir8547-key-establishment-priority",
+          "match": { "purposes": ["key-establishment"] },
+          "requirement": "Migrate this key-establishment use ahead of the general timeline. NIST expects to prioritise migration to quantum-resistant key establishment in its application-specific guidance to protect against harvest-now-decrypt-later attacks, particularly in interactive protocols like TLS and IKE.",
+          "severity": "high",
+          "deadlineNote": "IR 8547 §4.1.2: application-specific guidance 'may require or recommend migration to quantum-resistant key establishment schemes before the classical schemes are generally disallowed.' The 2030/2035 rows are therefore a ceiling for this purpose, not a schedule.",
+          "citation": {
+            "document": "NIST IR 8547 ipd",
+            "section": "§4.1.2 Key Establishment and §4.2",
+            "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
+            "retrievedAt": "2026-08-16",
+            "published": "2024-11-12"
+          },
+          "confidence": "verified"
+        },
+        {
+          "id": "ir8547-hybrid-is-permitted",
+          "match": { "quantumVulnerable": true },
+          "requirement": "A hybrid construction is an approved migration path for this algorithm: a composite key-establishment mode per SP 800-56C, or a dual signature, is accommodated by existing NIST standards provided at least one component is NIST-approved.",
+          "severity": "informational",
+          "caveat": "IR 8547 §3.2.2: 'NIST leaves the decision to each specific application as to whether it can afford the implementation cost, performance reduction, and engineering complexity ... of a hybrid mode for key establishment or the use of dual signatures.' This is an allowance, not a recommendation, and hybrid mode does not by itself satisfy the 2030/2035 transition rows.",
+          "citation": {
+            "document": "NIST IR 8547 ipd",
+            "section": "§3.2 Hybrid and Dual Signature Modes",
+            "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
+            "retrievedAt": "2026-08-16",
+            "published": "2024-11-12"
+          },
+          "confidence": "verified"
+        }
+      ],
+      "notClaimed": "IR 8547 Table 7 records SHA-1 at 80 bits of collision security (Category <1) and SHA-224/SHA-512/224/SHA3-224 at 112 bits. Those are security-strength statements, NOT transition rules, and IR 8547 attaches no date to any of them — so no IR 8547 deadline or obligation is derived for a hash entry here. SHA-1's rules stay sourced to SP 800-131A Rev 2 §9, where they actually live."
     },
     {
       "id": "FIPS 186-5",
@@ -187,20 +257,36 @@
       },
 
       "dataLifetimeSupport": {
-        "note": "PRIMARY-SOURCE SUPPORT for the X variable in Mosca (feature A3).",
+        "note": "PRIMARY-SOURCE SUPPORT for the X variable in Mosca (feature A3). CORRECTED 2026-08-16: these three quotes were listed as though they shared one section. They do not — they come from three different named sections, and a citation that says otherwise is wrong in the one way an auditor can check. Each quote now carries the heading it actually appears under.",
         "quotes": [
-          "'cyber threat actors could be targeting data today that would still require protection in the future (or in other words, has a long secrecy lifetime), using a catch now, break later or harvest now, decrypt later operation'",
-          "'Organizations should include in their inventory when and where quantum-vulnerable cryptography is being leveraged to protect the most sensitive and critical datasets and include estimates on length of protection for these datasets.'",
-          "'Prioritization should be given to high impact systems, industrial control systems (ICSs), and systems with long-term confidentiality/secrecy needs.'"
+          { "section": "WHY PREPARE NOW?", "quote": "'cyber threat actors could be targeting data today that would still require protection in the future (or in other words, has a long secrecy lifetime), using a catch now, break later or harvest now, decrypt later operation'" },
+          { "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "quote": "'Organizations should include in their inventory when and where quantum-vulnerable cryptography is being leveraged to protect the most sensitive and critical datasets and include estimates on length of protection for these datasets.'" },
+          { "section": "SUPPLY CHAIN QUANTUM-READINESS", "quote": "'Prioritization should be given to high impact systems, industrial control systems (ICSs), and systems with long-term confidentiality/secrecy needs.'" }
         ],
         "confidence": "verified"
       },
 
-      "productNote": "The inventory and prioritisation sections are what QuantaXscan automates. Vendor engagement is the vendor collector (B9). Roadmap establishment and migration execution are customer process we evidence but do not perform.",
+      "roadmapAlignment": {
+        "note": "C6. What the product does against each of the factsheet's own named sections — not a numbered stage model, which this document does not have (see CORRECTION). `productRole` is deliberately three-valued so that 'we evidence this' is never printed as 'we do this'.",
+        "sections": [
+          { "heading": "BACKGROUND", "productRole": "context", "note": "No product claim. Framing only." },
+          { "heading": "WHY PREPARE NOW?", "productRole": "evidenced", "note": "The harvest-now-decrypt-later argument is what the A3 secrecy-lifetime input and the Mosca inequality express. The product supplies the exposure evidence; the urgency judgement is the customer's." },
+          { "heading": "ESTABLISH A QUANTUM-READINESS ROADMAP", "productRole": "customer-process", "note": "Establishing a project team and a roadmap is customer process. The product supplies the inventory that section says the roadmap must start from, and nothing more. Claiming to produce the roadmap would be an over-claim." },
+          { "heading": "PREPARE A CRYPTOGRAPHIC INVENTORY", "productRole": "automated", "note": "This is the section QuantaXscan automates. The three discovery targets named under it map to the collector surfaces — see `discoveryTargets`. The factsheet's own embedded-cryptography warning is why a coverage-gap panel (D3) is required rather than optional." },
+          { "heading": "DISCUSS POST-QUANTUM ROADMAPS WITH TECHNOLOGY VENDORS", "productRole": "evidenced", "note": "The vendor assessment register (B9) records what vendors answered. The product does not conduct the engagement." },
+          { "heading": "SUPPLY CHAIN QUANTUM-READINESS", "productRole": "evidenced", "note": "Dependency and vendor findings show where the reliance is. Prioritisation of high-impact systems and ICS is a customer risk decision the product informs." },
+          { "heading": "TECHNOLOGY VENDOR RESPONSIBILITIES", "productRole": "context", "note": "Addressed to vendors, not to the organisation being scanned. No product claim." }
+        ],
+        "confidence": "verified"
+      },
+
+      "stalenessNote": "This factsheet is dated 'As of August 17, 2023' and its forward-looking language is now out of date: it says the PQC standards are 'to be released in 2024' and asks vendors to 'review the NIST-published draft PQC standards'. FIPS 203, 204 and 205 were finalised in August 2024. The factsheet's PROCESS guidance (inventory first, prioritise by secrecy lifetime, engage vendors) is what this entry is cited for and it is unaffected; its draft-standards language must never be surfaced as current. No superseding revision was found on 2026-08-16.",
+
+      "productNote": "The inventory and prioritisation sections are what QuantaXscan automates. Vendor engagement is the vendor collector (B9). Roadmap establishment and migration execution are customer process we evidence but do not perform. Structured form: `roadmapAlignment` above.",
       "url": "https://www.cisa.gov/resources-tools/resources/quantum-readiness-migration-post-quantum-cryptography",
       "mirrorUrl": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf",
-      "retrievedAt": "2026-08-01",
-      "retrievalNote": "cisa.gov returns HTTP 403 to automated fetches; verified against the NIST NCCoE-hosted copy of the same factsheet.",
+      "retrievedAt": "2026-08-16",
+      "retrievalNote": "cisa.gov returns HTTP 403 to automated fetches; verified against the NIST NCCoE-hosted copy of the same factsheet, re-downloaded and read in full on 2026-08-16 (all seven sections, every bullet). Section headings, the three discovery targets and every quote in this entry match verbatim; the section attributions in `dataLifetimeSupport` did not, and were corrected.",
       "confidence": "verified",
       "findingObligations": [
         {
@@ -208,7 +294,7 @@
           "match": {},
           "requirement": "Record this cryptographic asset in the organisation's cryptographic inventory, including where it is used and the secrecy lifetime of the data it protects.",
           "severity": "informational",
-          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-01" },
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
           "confidence": "verified"
         },
         {
@@ -216,7 +302,44 @@
           "match": { "quantumVulnerable": true },
           "requirement": "Prioritise this asset for migration where it protects data with a long secrecy lifetime — harvest-now-decrypt-later exposure starts when the data is recorded, not on the migration deadline.",
           "severity": "high",
-          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-01" },
+          "caveat": "The two halves of this requirement come from two sections: the secrecy-lifetime inventory instruction is under PREPARE A CRYPTOGRAPHIC INVENTORY, and the harvest-now-decrypt-later framing is under WHY PREPARE NOW?.",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY (secrecy lifetime); WHY PREPARE NOW? (harvest now, decrypt later)", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
+          "confidence": "verified"
+        },
+        {
+          "id": "cisa-qr-feed-risk-assessment",
+          "match": { "quantumVulnerable": true },
+          "requirement": "Feed this finding into the organisation's risk assessment process so that risk officials can prioritise where to ensure use of PQC. An inventory that is not read by a risk owner is not the control this factsheet asks for.",
+          "severity": "informational",
+          "caveat": "Verbatim: 'Organizations should feed the quantum-vulnerable inventory into their risk assessment process, allowing risk officials to prioritize where to ensure use of PQC as soon as it is available.'",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "PREPARE A CRYPTOGRAPHIC INVENTORY", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
+          "confidence": "verified"
+        },
+        {
+          "id": "cisa-qr-prioritise-high-impact",
+          "match": { "quantumVulnerable": true },
+          "requirement": "Rank this finding higher where it sits in a high-impact system, an industrial control system, or a system with long-term confidentiality needs. Secrecy lifetime is one of three prioritisation axes the factsheet names, not the only one.",
+          "severity": "high",
+          "caveat": "Verbatim: 'Prioritization should be given to high impact systems, industrial control systems (ICSs), and systems with long-term confidentiality/secrecy needs.'",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "SUPPLY CHAIN QUANTUM-READINESS", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
+          "confidence": "verified"
+        },
+        {
+          "id": "cisa-qr-vendor-roadmap",
+          "match": { "quantumVulnerable": true },
+          "requirement": "Where this algorithm reaches the estate through a vendor product, ask that vendor for its post-quantum roadmap — how it plans to migrate, and on what timeline — and plan the contract changes needed to hold it to one.",
+          "severity": "medium",
+          "caveat": "The factsheet also warns that discovery has a blind spot here: 'Discovery tools may not be able to identify embedded cryptography used internally within products ... Organizations should ask vendors for lists of embedded cryptography within their products.' A scan result is therefore a floor on vendor exposure, not a measure of it.",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "DISCUSS POST-QUANTUM ROADMAPS WITH TECHNOLOGY VENDORS", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
+          "confidence": "verified"
+        },
+        {
+          "id": "cisa-qr-signing-and-update-paths",
+          "match": { "purposes": ["signature"] },
+          "requirement": "Include the software and firmware update path in scope for this signature algorithm. The factsheet names signature creation and validation — and the software and firmware updates that depend on them — as quantum-vulnerable assets in their own right.",
+          "severity": "high",
+          "caveat": "Verbatim: 'Systems and assets with quantum-vulnerable cryptography include those involved in creating and validating digital signatures, which also incorporates software and firmware updates.'",
+          "citation": { "document": "Quantum-Readiness: Migration to Post-Quantum Cryptography (CISA/NSA/NIST joint factsheet, as of August 17, 2023)", "section": "ESTABLISH A QUANTUM-READINESS ROADMAP", "url": "https://www.nccoe.nist.gov/sites/default/files/2023-08/quantum-readiness-fact-sheet.pdf", "retrievedAt": "2026-08-16" },
           "confidence": "verified"
         }
       ],
@@ -240,24 +363,53 @@
         { "category": "CNSA 1.0 acceptance", "note": "accepted without waiver until 2025-12-31", "confidence": "needs-check" }
       ],
       "algorithmsIndicative": "ML-KEM-1024 (FIPS 203), ML-DSA-87 (FIPS 204), AES-256, SHA-384/SHA-512, LMS/XMSS (SP 800-208) for software and firmware signing.",
-      "BLOCKER": "NOT VERIFIED AGAINST PRIMARY SOURCE. nsa.gov and media.defense.gov both return HTTP 403 to automated fetches. The dates above came from search-result summaries and secondary vendor sites and MUST be confirmed by a human opening the CNSA 2.0 FAQ (Ver 2.1, December 2024) directly before any customer-facing use. Note the seed data previously said '~2033 end state' as a single date — the real timeline is per-category and 2033 appears to apply only to custom/legacy equipment.",
+      "BLOCKER": "NOT VERIFIED AGAINST PRIMARY SOURCE. nsa.gov and media.defense.gov both return HTTP 403 to automated fetches. Every date and every algorithm named in this entry came from search-result summaries and secondary vendor sites and MUST be confirmed by a human opening the CNSA 2.0 FAQ directly before any customer-facing use. Note the seed data previously said '~2033 end state' as a single date — the real timeline is per-category and 2033 appears to apply only to custom/legacy equipment.",
       "primarySourceUrls": [
         "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF",
         "https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF",
         "https://www.nsa.gov/Cybersecurity/Post-Quantum-Cybersecurity-Resources/"
       ],
+      "retrievalAttempts": [
+        { "date": "2026-08-01", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF", "result": "HTTP 403" },
+        { "date": "2026-08-16", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF", "result": "HTTP 403" },
+        { "date": "2026-08-16", "url": "https://media.defense.gov/2025/May/30/2003728741/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS.PDF", "result": "HTTP 403" },
+        { "date": "2026-08-16", "url": "https://www.nsa.gov/Cybersecurity/Post-Quantum-Cybersecurity-Resources/", "result": "HTTP 403" },
+        { "date": "2026-08-16", "url": "https://www.nsa.gov/Press-Room/Digital-Media-Center/Document-Gallery/igphoto/2003071836/", "result": "HTTP 403" }
+      ],
+      "secondarySourceConflict": "Checked again on 2026-08-16 and this is why the dates below stay `needs-check` rather than being promoted. Secondary summaries retrieved that day DISAGREE with each other and with the dates recorded here: one set says 'support and prefer by 2025, exclusively by 2030'; another says 'support and prefer by 2027, exclusive use by 2033' and 'from January 1, 2027 NSA expects new deployments to comply'. Two mutually exclusive timelines cannot both be transcribed, and picking one would be indistinguishable from inventing it. There are also reports that CNSSP 15 was updated in 2025 to incorporate CNSA 2.0 and deprecate CNSA 1.0 — likewise unverified, and likewise not recorded as fact.",
       "applicabilityWarning": "Hiding this framework for non-US-NSS customers is REQUIRED. Showing a UK bank a CNSA 2.0 compliance percentage is noise that damages credibility.",
       "confidence": "needs-check",
+      "findingObligationsNote": "C5. Split by PURPOSE, because the CNSA 2.0 suite is organised by purpose and a single blanket sentence made every finding read the same. No date and no algorithm here is new: all of it is the `algorithmsIndicative` and `indicativeDates` already in this entry, redistributed so the right one reaches the right finding. Every one stays `needs-check`, and the framework's BLOCKER reaches all of them as a caveat automatically.",
       "findingObligations": [
         {
-          "id": "cnsa-2.0-replace-quantum-vulnerable",
-          "match": { "quantumVulnerable": true },
-          "requirement": "On a US National Security System, replace this quantum-vulnerable public-key algorithm with the CNSA 2.0 suite: ML-KEM-1024 (FIPS 203), ML-DSA-87 (FIPS 204), AES-256, SHA-384/SHA-512, and LMS/XMSS (SP 800-208) for software and firmware signing.",
+          "id": "cnsa-2.0-signature",
+          "match": { "purposes": ["signature"] },
+          "requirement": "On a US National Security System, replace this signature algorithm with ML-DSA-87 (FIPS 204). For software and firmware signing specifically, LMS or XMSS (SP 800-208) is the indicated CNSA 2.0 choice.",
           "severity": "high",
-          "deadlineNote": "CNSA 2.0 dates are PER SYSTEM CATEGORY — see this framework's `indicativeDates`. There is no single CNSA 2.0 deadline and presenting one would be wrong.",
-          "citation": { "document": "CNSA 2.0 FAQ (Ver 2.1, December 2024)", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF", "retrievedAt": "2026-08-01" },
+          "deadlineNote": "CNSA 2.0 dates are PER SYSTEM CATEGORY, and the earliest category is this one: software and firmware signing is indicated as 'begin transitioning immediately; support and prefer by 2025; exclusively by 2030'. General equipment transitions are indicated as complete by 2030-12-31 and custom applications and legacy equipment by 2033. All four figures are UNVERIFIED — see this framework's `indicativeDates` and `secondarySourceConflict`. There is no single CNSA 2.0 deadline and presenting one would be wrong.",
+          "citation": { "document": "CNSA 2.0 FAQ (Ver 2.1, December 2024) — NOT READ; see retrievalAttempts", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF" },
           "confidence": "needs-check",
-          "caveat": "NOT VERIFIED AGAINST THE PRIMARY SOURCE — nsa.gov and media.defense.gov return HTTP 403 to automated fetches (open gap G-01). Render as indicative and unverified, never as a compliance percentage."
+          "caveat": "NOT VERIFIED AGAINST THE PRIMARY SOURCE — nsa.gov and media.defense.gov return HTTP 403 to automated fetches (open gap G-01), re-attempted 2026-08-16 and still 403. Render as indicative and unverified, never as a compliance percentage."
+        },
+        {
+          "id": "cnsa-2.0-key-establishment",
+          "match": { "purposes": ["key-establishment"] },
+          "requirement": "On a US National Security System, replace this key-establishment scheme with ML-KEM-1024 (FIPS 203).",
+          "severity": "high",
+          "deadlineNote": "CNSA 2.0 dates are PER SYSTEM CATEGORY. General equipment transitions are indicated as complete by 2030-12-31 and custom applications and legacy equipment by 2033; CNSA 1.0 is indicated as accepted without waiver only until 2025-12-31. All UNVERIFIED — see this framework's `indicativeDates` and `secondarySourceConflict`. There is no single CNSA 2.0 deadline and presenting one would be wrong.",
+          "citation": { "document": "CNSA 2.0 FAQ (Ver 2.1, December 2024) — NOT READ; see retrievalAttempts", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF" },
+          "confidence": "needs-check",
+          "caveat": "NOT VERIFIED AGAINST THE PRIMARY SOURCE — nsa.gov and media.defense.gov return HTTP 403 to automated fetches (open gap G-01), re-attempted 2026-08-16 and still 403. Render as indicative and unverified, never as a compliance percentage."
+        },
+        {
+          "id": "cnsa-2.0-symmetric-and-hash",
+          "match": { "families": ["symmetric", "symmetric-mode", "hash"] },
+          "requirement": "On a US National Security System, the indicated CNSA 2.0 symmetric and hash choices are AES-256 and SHA-384 or SHA-512. Confirm the key length and digest size in use — CNSA 2.0 constrains the parameter, not only the algorithm family.",
+          "severity": "medium",
+          "deadlineNote": "CNSA 2.0 dates are PER SYSTEM CATEGORY and all of them are UNVERIFIED here — see this framework's `indicativeDates` and `secondarySourceConflict`.",
+          "citation": { "document": "CNSA 2.0 FAQ (Ver 2.1, December 2024) — NOT READ; see retrievalAttempts", "url": "https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSI_CNSA_2.0_FAQ_.PDF" },
+          "confidence": "needs-check",
+          "caveat": "NOT VERIFIED AGAINST THE PRIMARY SOURCE — nsa.gov and media.defense.gov return HTTP 403 to automated fetches (open gap G-01), re-attempted 2026-08-16 and still 403. Render as indicative and unverified, never as a compliance percentage. Symmetric algorithms are NOT quantum-vulnerable: this is a suite-conformance point, not a PQC migration item, and it must not be counted toward a PQC score."
         }
       ]
     },

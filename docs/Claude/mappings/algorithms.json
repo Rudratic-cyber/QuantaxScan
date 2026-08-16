@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1.0",
-  "dataVersion": "0.4.1",
+  "dataVersion": "0.5.0",
   "compiledAt": "2026-08-01",
   "verifiedAt": "2026-08-01",
   "verificationNote": "NIST entries verified against NIST IR 8547 ipd (November 2024) Tables 2-7, FIPS 186-5 (2023-02-03), SP 800-131A Rev 2 (2019-03), SP 800-38A and SP 800-38D, plus the NIST PQC project page. CNSA 2.0 entries remain needs-check — nsa.gov and media.defense.gov return HTTP 403 to automated fetches and must be checked by hand. See README.md.",
@@ -130,7 +130,7 @@
         "document": "NIST IR 8547 ipd",
         "section": "Tables 2 and 4",
         "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
-        "retrievedAt": "2026-08-01"
+        "retrievedAt": "2026-08-16"
       },
       "confidence": "verified",
       "explanation": "RSA security rests on integer factorisation, which Shor's algorithm solves in polynomial time on a cryptographically-relevant quantum computer.",
@@ -199,7 +199,7 @@
         "document": "NIST IR 8547 ipd",
         "section": "Table 2",
         "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
-        "retrievedAt": "2026-08-01"
+        "retrievedAt": "2026-08-16"
       },
       "confidence": "verified",
       "explanation": "ECDSA rests on the elliptic-curve discrete logarithm problem, broken by Shor's algorithm.",
@@ -242,7 +242,7 @@
         "document": "NIST IR 8547 ipd",
         "section": "Table 2",
         "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
-        "retrievedAt": "2026-08-01"
+        "retrievedAt": "2026-08-16"
       },
       "confidence": "verified",
       "explanation": "EdDSA (Ed25519, Ed448) is elliptic-curve based and broken by Shor's algorithm. Listed explicitly in IR 8547 Table 2, and approved by FIPS 186-5 — so unlike DSA it is still being deployed in new systems.",
@@ -306,13 +306,14 @@
         "document": "NIST IR 8547 ipd",
         "section": "Table 4 and §4.1.2",
         "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
-        "retrievedAt": "2026-08-01"
+        "retrievedAt": "2026-08-16"
       },
       "confidence": "verified",
       "explanation": "Diffie-Hellman key agreement is broken by Shor's algorithm. This is the primary harvest-now-decrypt-later exposure: recorded sessions can be decrypted retroactively once the key exchange is broken.",
       "hndlCritical": true,
       "hndlSourceQuote": "IR8547 §4.1.2: 'in order to mitigate the risk of \"harvest now, decrypt later\" attacks on network communications, application-specific guidance ... may require or recommend migration to quantum-resistant key establishment schemes before the classical schemes are generally disallowed.' — i.e. the 2035 date is a ceiling, not a target, for anything carrying long-lived secrets.",
-      "keySizeKind": "curve"
+      "keySizeKind": "curve",
+      "detectionNuance": "IR 8547 Table 4 lists Finite Field DH and MQV [SP 800-56A] and Elliptic Curve DH and MQV [SP 800-56A] as SEPARATE families whose stated parameter means different things — a modulus for the first, a curve order for the second — while this entry is a single canonicalName (ECDH/DH) with one keySizeKind of \"curve\". A finite-field group reported by modulus size (e.g. diffie-hellman-group14 at 2048 bits) is therefore banded as if 2048 were a curve size, lands in the >= 128 bits band, and LOSES the 2030 deprecation row that in fact applies to it. Open gap G-24: the fix needs the collectors to stop canonicalising finite-field DH onto this entry, so it is recorded rather than patched here."
     },
     {
       "id": "dsa",
@@ -560,7 +561,7 @@
         "document": "NIST IR 8547 ipd",
         "section": "§4.1.3 and Table 6",
         "url": "https://csrc.nist.gov/pubs/ir/8547/ipd",
-        "retrievedAt": "2026-08-01"
+        "retrievedAt": "2026-08-16"
       },
       "confidence": "verified",
       "explanation": "IR 8547 §4.1.3: NIST's symmetric standards are 'significantly less vulnerable to known quantum attacks than the public-key cryptography standards', and all approved symmetric primitives providing at least 128 bits of classical security are believed to meet at least Category 1. Table 6: AES-128 = 128 bits / Category 1, AES-192 = 192 bits / Category 3, AES-256 = 256 bits / Category 5.",
@@ -727,8 +728,8 @@
   ],
   "securityStrengthBands": {
     "_comment": "Maps a stated parameter size to the security-strength band IR 8547 keys its transition rules on. `securityStrength` values here MUST match the strings used in each deadline's `securityStrength` field, because the engine joins on them. `assumedWhenUndetermined` marks the band assumed when a collector could not determine a key size (G-05): the conservative choice is the band with the EARLIER deadline, so an undetermined key is never reported as having more runway than it might have.",
-    "source": "NIST IR 8547 Table 2 (signatures) and Table 4 (key establishment)",
-    "retrievedAt": "2026-08-01",
+    "source": "NIST IR 8547 ipd Table 2 (signatures) and Table 4 (key establishment), read in full 2026-08-16",
+    "retrievedAt": "2026-08-16",
     "confidence": "verified",
     "bands": [
       {

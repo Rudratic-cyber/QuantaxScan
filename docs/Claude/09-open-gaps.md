@@ -39,6 +39,7 @@ Severity is **for the enterprise product**, not for today's demo.
 | G-21 | The package table applies one claim to every version of a package | Medium | Design | B2 follow-up |
 | ~~G-22~~ | ~~The estate timeline tells the customer we have no certificate collector~~ | **Closed** | Done 2026-08-15 | — |
 | ~~G-23~~ | ~~A collection schedule's `host` is validated only by its description~~ | **Closed** | Done 2026-08-15 | — |
+| G-24 | Finite-field DH is banded as if its modulus were a curve, and loses its 2030 deprecation | **High** | Collector change | Opened 2026-08-16 by C4 |
 
 ---
 
@@ -841,6 +842,50 @@ Two properties beyond refusing bad input:
 The spec description now says the rule is enforced rather than merely stating it. Proven in
 `target-host.test.ts` and end to end in `tests/e2e/17-continuity.spec.ts`, where the assertion that
 used to pin the defect now asserts the fix.
+
+---
+
+## G-24 — Finite-field DH loses its 2030 deprecation `High` — **OPENED 2026-08-16**
+
+Found while re-reading NIST IR 8547 for C4. This is a G-05-class failure: it does not error, it
+reports **more runway than the standard allows**.
+
+IR 8547 **Table 4** lists three separate quantum-vulnerable key-establishment families —
+*Finite Field DH and MQV* [SP 800-56A], *Elliptic Curve DH and MQV* [SP 800-56A], and *RSA*
+[SP 800-56B]. The first two are distinct in exactly the way that matters here: a finite-field
+group's stated parameter is a **modulus**, an elliptic curve's is a **curve order**. 2048 means
+112-bit security in the first and something else entirely in the second.
+
+`algorithms.json` has one entry for both — canonical name `ECDH/DH`, `keySizeKind: "curve"` — and
+the collectors canonicalise onto it: `cipher-suite.ts` maps `DH`, `DHE` and `EDH` to `ECDH/DH`,
+and `protocol-config-collector.ts` resolves `diffie-hellman-group14-sha256` to
+`{ algorithm: "ECDH/DH", keySize: 2048 }`.
+
+**Repro, entirely from data already in the tree.** `resolve({ algorithm: "ECDH/DH", keySize: 2048 })`
+reads 2048 against `securityStrengthBands[].curveBits`. The 112-bit band is `{ min: 0, max: 256 }`,
+so it misses; the `>= 128 bits` band is `{ min: 384, max: 100000 }`, so it matches. The finding is
+banded `>= 128 bits` and the **`deprecated after 2030` row is filtered out** — the row that in fact
+applies to a 2048-bit finite-field group. The customer is told the first milestone is 2035.
+
+Note what does *not* happen: no error, no caveat, no "key size undetermined" flag. The engine is
+behaving exactly as designed — it was handed a curve size. The wrong thing happened one layer
+earlier, which is why this is worth an entry rather than a patch.
+
+**The defect is pinned by a passing test**, `lib/mappings/src/engine.test.ts` →
+*"G-24 — PINS THE DEFECT"*. It asserts the wrong answer on purpose, so the claim in this entry is
+verified rather than asserted, and so the fix cannot land silently: when the split happens that
+test must go red and be rewritten to assert the 2030 row is present. Same pattern as G-23.
+
+**Why it was not fixed in the same change.** The fix is a split — a `ffdh` entry with
+`keySizeKind: "modulus"` taking the finite-field aliases, `ecdh` keeping the curve ones — and it is
+worth nothing without the collector half, because nothing would emit the new canonical name. That
+half lands in `cipher-suite.ts`, `protocol-config-collector.ts` and `data-at-rest-collector.ts`,
+and it moves obligation counts on every ECDH finding. C4 was one of four concurrent lanes and those
+are not its files. Recorded in `ecdh.detectionNuance` so the next reader of the entry sees it.
+
+**When it is fixed**, the honest interim behaviour for a token that genuinely cannot be
+distinguished (a bare `DH` with no group) is the G-05 answer: return both candidate bands flagged
+as assumed, not the more generous one.
 
 ---
 

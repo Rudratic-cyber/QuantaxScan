@@ -395,9 +395,9 @@ Four decisions worth stating:
 | C1 | Dynamic mapping engine (data-driven) | `built` | **P0** |
 | C2 | Versioned `mappings/` data + provenance | `built`† | **P0** |
 | C3 | NIST FIPS 203/204/205 algorithm mapping | `built`* | **P0** |
-| C4 | NIST IR 8547 deprecation timeline mapping | `planned` | **P1** |
-| C5 | CNSA 2.0 timeline mapping | `planned` | **P1** |
-| C6 | CISA quantum-readiness roadmap alignment | `planned` | **P1** |
+| C4 | NIST IR 8547 deprecation timeline mapping | `built` | **P1** |
+| C5 | CNSA 2.0 timeline mapping | `built`‡ | **P1** |
+| C6 | CISA quantum-readiness roadmap alignment | `built` | **P1** |
 | C7 | NSM-10 / OMB M-23-02 inventory format | `planned` | **P2** |
 | C8 | Waivers / exceptions register | `planned` | **P1** |
 | C9 | Control framework crosswalk (ISO 27001, SOC 2, PCI DSS 4, DORA) | `planned` | **P3** |
@@ -422,6 +422,30 @@ usually undetermined (G-05), and `controls.json` crosswalks are untouched (C9/G-
 † C2: the data files, provenance fields and boot-time schema validation are in place. The CI check
 that blocks a `needs-check` entry from reaching a customer-facing template is **not built** — the
 `confidence` field travels with each obligation so the renderer can label it, which is weaker.
+
+**C4, C5 and C6 landed 2026-08-16 as data only** — `docs/Claude/mappings/frameworks.json` and
+`algorithms.json`, no TypeScript, no migration, no `openapi.yaml` change. What each adds:
+
+- **C4** — IR 8547's Table 2 and Table 4 dates were already in `algorithms.json`; what was missing
+  was §4.2, which says application-specific guidance may require *earlier* transitions, and that
+  NIST will prioritise key establishment against harvest-now-decrypt-later "particularly in
+  interactive protocols like TLS and IKE". Three framework obligations now carry that, so 2035
+  cannot be read as a target. None carries a deadline, so no bucket or status moved. §4.1.3's
+  112-bit symmetric disallowance is recorded on the framework and attached to **no algorithm** —
+  IR 8547 names none, and a test asserts nothing claims it.
+- **C5** — one blanket CNSA obligation became three matched by purpose (signature /
+  key-establishment / symmetric-and-hash), so an ECDSA finding is no longer told about ML-KEM.
+- **C6** — four obligations from sentences the CISA factsheet actually prints, each cited to the
+  named section it appears under, plus a structured `roadmapAlignment` block with a three-valued
+  `productRole` so "we evidence this" cannot render as "we do this". Two existing citations
+  pointed at the wrong section and were corrected against the primary source.
+
+‡ C5: the mapping **resolves**, but every CNSA 2.0 date and algorithm in it is still
+`needs-check` — `nsa.gov` and `media.defense.gov` returned HTTP 403 again on 2026-08-16, so the
+FAQ has never been opened (G-01). Secondary summaries read that day contradict each other
+(2025/2030 vs 2027/2033), which is recorded in the framework's `secondarySourceConflict` rather
+than resolved by picking one. Every CNSA obligation carries that caveat, and the framework is
+hidden entirely unless the caller declares a US national-security-system profile.
 
 Detail: [05-compliance-mapping.md](05-compliance-mapping.md)
 
